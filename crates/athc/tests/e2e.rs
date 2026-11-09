@@ -97,7 +97,8 @@ fn accepts_remediate_and_proves_budget_including_the_saga_failure_path() {
     let ic = c.check.facts.infer_costs.values().next().unwrap();
     assert_eq!((ic.tok_out, ic.tok_reasoning, ic.out_by_type), (686, 512, true));
     assert!((r.worst.wall - 53.58).abs() < 1e-9, "wall = {}", r.worst.wall);
-    assert_eq!(r.worst.tok, 3 * (2030 + 686));
+    // entrada ≤ 2.053 tok: instrução, `task`, `alerta` (Text[..32] citado) e `logs` (fit 2000)
+    assert_eq!(r.worst.tok, 3 * (2053 + 686));
     assert!(r.worst.path().contains("unscale↩"), "{}", r.worst.path());
     let effs: Vec<&str> = c.check.facts.effects.iter().map(String::as_str).collect();
     assert_eq!(effs, ["Cluster.Read", "Cluster.Write", "CompensationFailed", "Infer", "Page", "TimeoutUnknown"]);
@@ -531,12 +532,46 @@ fn openai_compatible_backend_sends_the_type_as_a_strict_core_schema_and_survives
     let inf = infer_entries(&arx.journal)[0];
     assert_eq!((inf["tok_in"].as_u64(), inf["tok_out"].as_u64()), (Some(121), Some(64)));
     assert_eq!(inf["tok_reasoning"], 49);
+    assert_eq!(inf["tok_source"], "server");
     assert_eq!(inf["retries"], 1);
     assert!(inf["queued_s"].as_f64().unwrap() >= 0.5);
     assert!(inf["latency_s"].as_f64().unwrap() > 0.0);
     assert_eq!(inf["request_id"], "chatcmpl-teste-1");
     assert!(inf["reasoning"].as_str().unwrap().contains("pool esgotado"));
     assert!(inf["provider"].as_str().unwrap().starts_with("openai-compat(openai/gpt-oss-120b"));
+}
+
+/// O que a Groq fez na primeira execução real (gpt-oss-20b, modo estrito): o modelo obedeceu à
+/// injeção e gerou `to: 0`; o servidor não restringiu a decodificação ao enum, mas validou depois
+/// e respondeu 400 `json_validate_failed` com a geração em `failed_generation`. O ARX valida de
+/// novo, descarta, esgota o `refine` e escala; sem `usage`, os tokens são estimados.
+#[test]
+fn server_side_schema_rejection_is_an_invalid_sample_with_estimated_tokens() {
+    let c = compile(&read("remediate.ath")).unwrap();
+    let failed = json!({"error": {
+        "message": "Generated JSON does not match the expected schema. Please adjust your prompt. See 'failed_generation' for more details.",
+        "type": "invalid_request_error",
+        "code": "json_validate_failed",
+        "failed_generation": r#"{"value":{"kind":"Scale","deploy":"payments","to":0}}"#,
+    }})
+    .to_string();
+    let (url, server) = mock_openai(
+        (0..3).map(|i| (400, if i == 0 { "x-request-id: req_400\r\n" } else { "" }, failed.clone())).collect(),
+    );
+    let provider = OpenAiCompat::new(&url, "openai/gpt-oss-20b", None, Constraint::JsonSchema);
+    let (out, arx) = run_in(&c, world(), Box::new(provider));
+    assert_eq!(server.join().unwrap().len(), 3, "uma requisição por tentativa do refine");
+    assert_eq!(out.unwrap(), Value::Text("escalado".into()));
+    let infers = infer_entries(&arx.journal);
+    assert_eq!(infers.len(), 3);
+    for inf in &infers {
+        assert_eq!(inf["note"], "servidor: json_validate_failed");
+        assert_eq!(inf["tok_source"], "estimate");
+        assert!(inf["invalid"].as_str().unwrap().contains("fora do refinamento [2..64]"), "{inf}");
+    }
+    assert_eq!(infers[0]["request_id"], "req_400");
+    assert!(has(&arx.journal, "refine_exhausted"));
+    assert!(arx.journal.entries.iter().all(|e| e["detail"]["tool"] != "scale"), "nenhum scale executado");
 }
 
 #[test]

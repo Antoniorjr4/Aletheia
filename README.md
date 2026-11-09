@@ -18,11 +18,11 @@ $ athc check examples/remediate.ath
                      TimeoutUnknown tratado; reconciliação fora do contrato Δ: ≤ 9,0 s por chave
 ✓ E3 integridade     4 exigência(s) de integridade satisfeitas, inclusive sob pc
 ✓ E5 refinamentos    5 obrigação(ões) provadas por literal, campo refinado ou saída tipada
-                     infer planner -> Action: entrada ≤ 2.030 tok · saída ≤ 686 tok (174 tok do tipo `Action` + 512 tok de raciocínio)
-✓ E6 orçamento       Remediator.alert: pior caminho 8.148 tok · US$ 0,0021 · 53,6 s
+                     infer planner -> Action: entrada ≤ 2.053 tok · saída ≤ 686 tok (174 tok do tipo `Action` + 512 tok de raciocínio)
+✓ E6 orçamento       Remediator.alert: pior caminho 8.217 tok · US$ 0,0022 · 53,6 s
                      ≤ [20.000 tok · US$ 0,50 · 90,0 s]
                      caminho: logs 2,0 → infer planner ×3 26,6 → scale 1,0 → healthy 1,0 → await 20,0 → unscale↩ 1,0 → restored 1,0 → page 1,0
-✓ Codex              11 objetos BLAKE3, raiz #3a2b1a1c4157
+✓ Codex              11 objetos BLAKE3, raiz #43947b1f669f
 ```
 
 ## Começar
@@ -31,7 +31,7 @@ Requer Rust ≥ 1.87 (e Python ≥ 3.10 para o benchmark).
 
 ```sh
 cargo build --release
-cargo test                                    # 48 testes: unidade, propriedade e ponta a ponta
+cargo test                                    # 50 testes: unidade, propriedade e ponta a ponta
 
 # verificar
 ./target/release/athc check examples/remediate.ath
@@ -46,7 +46,7 @@ cargo test                                    # 48 testes: unidade, propriedade 
 
 # contra um modelo real (Groq, OpenAI, vLLM…)
 export OPENAI_API_KEY=…  OPENAI_BASE_URL=https://api.groq.com/openai/v1
-cargo run --release --bin athc -- run examples/remediate.ath --provider openai --model openai/gpt-oss-120b --arg '"api"'
+cargo run --release --bin athc -- run examples/remediate.ath --provider openai --model openai/gpt-oss-20b --arg '"api"'
 
 # a gramática que o tipo `Action` impõe ao modelo, e a máscara agindo sobre uma proposta
 ./target/release/athc grammar examples/remediate.ath --type Action \
@@ -157,7 +157,7 @@ O provedor `openai` é configurado pelo ambiente, e os argumentos da CLI têm pr
 | --- | --- |
 | `OPENAI_API_KEY` | chave (também `GROQ_API_KEY`, `ATH_API_KEY`) |
 | `OPENAI_BASE_URL` | ex.: `https://api.groq.com/openai/v1`; `--base-url` |
-| `ALETHEIA_MODEL` | ex.: `openai/gpt-oss-120b`; `--model` |
+| `ALETHEIA_MODEL` | ex.: `openai/gpt-oss-20b`; `--model` |
 | `ALETHEIA_SCHEMA` | `core` (padrão) ou `full`; `--schema` |
 | `ALETHEIA_CONSTRAINT` | `json-schema` (padrão), `gbnf` ou `none`; `--constraint` |
 | `ALETHEIA_REASONING_EFFORT` | `low` (padrão), `medium`, `high` ou `none` |
@@ -167,8 +167,15 @@ Modelos de raciocínio gastam tokens antes do conteúdo, e o contrato Δ declara
 (`reasoning = 512` no `model`). O pedido usa `max_completion_tokens` = teto do tipo + raciocínio.
 O ARX liquida o orçamento com os tokens e a latência informados pelo servidor e grava no
 journal o identificador da requisição, o raciocínio (truncado), a espera imposta por 429 e as
-novas tentativas. Se o servidor gerar mais tokens que o contrato admite (R0702) ou demorar
-mais do que ele permite (R0703), o resultado é `ContractBreach`.
+novas tentativas, e marca em `tok_source` se as contagens vieram do `usage` do servidor
+(`server`) ou da estimativa de 4 caracteres por token (`estimate`). Se o servidor gerar mais
+tokens que o contrato admite (R0702) ou demorar mais do que ele permite (R0703), o resultado
+é `ContractBreach`.
+
+Na Groq, o modo estrito não restringe a decodificação a um `enum` de inteiros: o modelo pode
+gerar um valor fora dele. O servidor valida depois e responde HTTP 400 `json_validate_failed`,
+com a geração em `failed_generation`. O ARX trata essa resposta como amostra, valida de novo e a
+descarta. Como um 400 não traz `usage`, os tokens dessa amostra ficam como `estimate`.
 
 O workflow [`Fogo real (Groq)`](.github/workflows/live.yml) roda o exemplo e a M1 contra a
 Groq com a chave guardada no segredo de repositório `GROQ_API_KEY`.
@@ -213,10 +220,12 @@ bench/m1/        harness da métrica M1: cenários, linha de base Python, agente
 | --- | --- |
 | 1.3 Codex | forma canônica por definição; referências por hash (inclusive o compensador de uma ferramenta); nomes de definições e de locais não entram no hash |
 | 2.3 `refine … by policy retry n` | políticas puras; só o que a política aceita ganha `Endorsed`; saída fora do tipo é descartada |
-| 2.5 Modelos e inferência | `model` como valor com contrato Δ (inclusive raciocínio); decodificação restrita derivada do tipo; provedor real configurado pelo ambiente |
+| 2.5 Modelos e inferência | `model` como valor com contrato Δ (inclusive raciocínio); provedor real configurado pelo ambiente, testado contra a Groq |
+| 2.5 Compilador de gramática (`ath-grammar`) | tipo → forma → JSON Schema estrito em dois dialetos (`core`: intervalos de até 256 valores viram `enum` exato; `full`: `minimum`/`maximum`/`maxLength`), GBNF, autômato de prefixo viável, máscara de tokens e teto de bytes que entra no E6 |
 | 2.6 Capacidades e integridade | capacidades só vêm dos parâmetros do agente, com atenuação; Untrusted ⊑ Endorsed ⊑ Trusted; `pc` para fluxos implícitos; `quote` obrigatório no prompt; pós-condições ⊒ Endorsed |
 | 2.7 Orçamento | E6 estático no pior caminho sob Δ, inclusive o de falha da saga; reserva antes, liquidação depois; `ContractBreach` por latência ou tokens; obrigações sem reserva |
 | 2.9–2.10 Estratos | E0, E1, E2, E3, E5 (refinamentos decidíveis) e E6, relatando só o primeiro estrato que falha |
+| 2.2 Linearidade (E1) | `own IdemKey` e `Pending[k]` consumidos exatamente uma vez em todos os caminhos, inclusive no `else` de `reconcile`; no runtime, a checagem T9 do journal |
 | 3.4 Sagas | `atomic … recover`, `await … within`, `compensable by`, `on failure`, `CompensationFailed` obrigatório, irrevogáveis só fora da saga |
 | 3.5 Efeitos remotos | `own IdemKey`, `Pending[k]` linear, `TimeoutUnknown`, `reconcile … fuel … else`, `transfer`, provedores `idempotent`/`queryable`/`opaque` |
 | 3.6 Execução durável | journal encadeado por BLAKE3; `verify-journal` detecta adulteração e chaves em aberto (T9) |
@@ -246,12 +255,13 @@ bench/m1/        harness da métrica M1: cenários, linha de base Python, agente
 - **Backend:** interpretador de árvore. Não há MLIR, LLVM nem emissão para Python.
 - **E4 e E5 completo:** sem formas de tensor; refinamentos são intervalos e tetos de texto
   provados por literal ou por contenção, sem SMT; não há listas (`List[T, a..b]`).
-- **Sagas:** o invariante de recuperação é observado por uma sonda, não provado em E5 a partir
-  de contratos `restoring` sobre um estado abstrato do mundo; sem `lease` nem cobertura do
-  footprint das pós-condições; compensações rodam em sequência, sem paralelismo por comutação.
-- **Reconciliação:** o tratador é por agente, sem `resume` explícito; o recuo é fixo (2 s); a
-  recuperação após queda (reler o journal e reconciliar chaves abertas) não está implementada,
-  só a checagem T9.
+- **Prova da recuperação:** as sagas rodam, mas o invariante de recuperação é observado por uma
+  sonda, não provado em E5 a partir de contratos `restoring` sobre um estado abstrato do mundo;
+  sem `lease` nem cobertura do footprint das pós-condições; compensações em sequência, sem
+  paralelismo por comutação.
+- **Recuperação após queda:** reler o journal e reconciliar as chaves abertas depois de um
+  reinício (hoje só a checagem T9 as detecta); tratador `timeout_unknown` por agente, sem `resume`
+  explícito; recuo fixo de 2 s.
 - **Tokenizer:** a entrada é estimada em 4 caracteres por token quando o servidor não informa.
 - **Mundo:** cluster simulado; cenários no estilo do AgentDojo, não as suítes do AgentDojo.
 - **Certificados:** sem `certify`, `Bounded` nem monitor de deriva.

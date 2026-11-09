@@ -1005,6 +1005,9 @@ impl<'m> Arx<'m> {
             text = text.chars().take((out_cap * 4) as usize).collect();
             tok_out = out_cap;
         }
+        // Contagens vêm do `usage` do servidor; sem ele (ex.: HTTP 400 `json_validate_failed`,
+        // provedores locais), são estimadas a 4 caracteres por token, e o journal diz qual foi.
+        let tok_source = if c.tok_in.is_some() && c.tok_out.is_some() { "server" } else { "estimate" };
         let usd = cost(tok_in, tok_out);
         let contract_wall = time(tok_out);
         if let Some(l) = c.latency {
@@ -1058,6 +1061,7 @@ impl<'m> Arx<'m> {
                 "tok_in": tok_in,
                 "tok_out": tok_out,
                 "tok_reasoning": c.tok_reasoning,
+                "tok_source": tok_source,
                 "usd": usd,
                 "latency_s": c.latency,
                 "queued_s": c.queued,
@@ -1081,8 +1085,9 @@ impl<'m> Arx<'m> {
             dt: wall,
             what: format!("infer {} · tentativa {attempt}", d.model),
             detail: format!(
-                "→ {shown}  ({} tok, US$ {}{measured})",
+                "→ {shown}  ({} tok{}, US$ {}{measured})",
                 tok_in + tok_out,
+                if tok_source == "estimate" { " estimados" } else { "" },
                 format!("{usd:.4}").replace('.', ",")
             ),
             note: invalid.map(|m| format!("saída fora do tipo: {m}")).or(c.note),
