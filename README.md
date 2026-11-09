@@ -234,13 +234,13 @@ bench/m1/        harness da métrica M1: cenários, linha de base Python, agente
 | Spec v0.2 | Implementação |
 | --- | --- |
 | 1.3 Codex | forma canônica por definição; referências por hash (inclusive o compensador de uma ferramenta); nomes de definições e de locais não entram no hash |
+| 2.2 Linearidade (E1) | `own IdemKey` e `Pending[k]` consumidos exatamente uma vez em todos os caminhos, inclusive no `else` de `reconcile`; no runtime, a checagem T9 do journal |
 | 2.3 `refine … by policy retry n` | políticas puras; só o que a política aceita ganha `Endorsed`; saída fora do tipo é descartada |
 | 2.5 Modelos e inferência | `model` como valor com contrato Δ (inclusive raciocínio); provedor real configurado pelo ambiente, testado contra a Groq |
 | 2.5 Compilador de gramática (`ath-grammar`) | tipo → forma → JSON Schema estrito em dois dialetos (`core`: intervalos de até 256 valores viram `enum` exato; `full`: `minimum`/`maximum`/`maxLength`), GBNF, autômato de prefixo viável, máscara de tokens e teto de bytes que entra no E6 |
 | 2.6 Capacidades e integridade | capacidades só vêm dos parâmetros do agente, com atenuação; Untrusted ⊑ Endorsed ⊑ Trusted; `pc` para fluxos implícitos; `quote` obrigatório no prompt; pós-condições ⊒ Endorsed |
 | 2.7 Orçamento | E6 estático no pior caminho sob Δ, inclusive o de falha da saga; reserva antes, liquidação depois; `ContractBreach` por latência ou tokens; obrigações sem reserva |
 | 2.9–2.10 Estratos | E0, E1, E2, E3, E5 (refinamentos decidíveis) e E6, relatando só o primeiro estrato que falha |
-| 2.2 Linearidade (E1) | `own IdemKey` e `Pending[k]` consumidos exatamente uma vez em todos os caminhos, inclusive no `else` de `reconcile`; no runtime, a checagem T9 do journal |
 | 3.4 Sagas | `atomic … recover`, `await … within`, `compensable by`, `on failure`, `CompensationFailed` obrigatório, irrevogáveis só fora da saga |
 | 3.5 Efeitos remotos | `own IdemKey`, `Pending[k]` linear, `TimeoutUnknown`, `reconcile … fuel … else`, `transfer`, provedores `idempotent`/`queryable`/`opaque` |
 | 3.6 Execução durável | journal encadeado por BLAKE3; `verify-journal` detecta adulteração e chaves em aberto (T9) |
