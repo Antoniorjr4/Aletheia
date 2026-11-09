@@ -1,0 +1,23 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/ath-syntax",
+    "crates/ath-codex",
+    "crates/ath-check",
+    "crates/arx",
+    "crates/athc",
+]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2021"
+license = "Apache-2.0"
+rust-version = "1.87"
+
+[workspace.dependencies]
+ath-syntax = { path = "crates/ath-syntax" }
+ath-codex = { path = "crates/ath-codex" }
+ath-check = { path = "crates/ath-check" }
+arx = { path = "crates/arx" }
+blake3 = "1"
+serde_json = "1"

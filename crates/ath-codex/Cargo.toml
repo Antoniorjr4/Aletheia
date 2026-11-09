@@ -1,0 +1,11 @@
+[package]
+name = "ath-codex"
+description = "Codex: forma canônica e endereçamento por conteúdo (BLAKE3, DAG de Merkle)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ath-syntax.workspace = true
+blake3.workspace = true

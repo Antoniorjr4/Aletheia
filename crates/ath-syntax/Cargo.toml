@@ -1,0 +1,9 @@
+[package]
+name = "ath-syntax"
+description = "Lexer, AST e parser do subconjunto Aletheia Core 0"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]

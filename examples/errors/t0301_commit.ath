@@ -1,0 +1,68 @@
+-- ERRO ESPERADO · Efeitos: efeito irrevogável sem `commit`
+-- Derivado de examples/remediate.ath por uma única edição.
+module ops.remediate
+
+-- Aletheia Core 0 · Marco Zero
+-- Agente de remediação: lê logs de terceiros (não confiáveis), pede um plano a
+-- um modelo, só executa o que a política aceita e prova o orçamento antes de rodar.
+
+type Action =
+  | Restart { deploy: Text }
+  | Scale   { deploy: Text, to: Int }
+
+-- ① Modelo como valor: preço, janela e latência formam o contrato Δ
+model planner {
+  price_in  = 3.00     -- US$ por milhão de tokens de entrada
+  price_out = 12.00    -- US$ por milhão de tokens de saída
+  ctx       = 128000   -- janela de contexto, em tokens
+  max_out   = 400      -- teto de saída, imposto por corte no runtime
+  ttft      = 1.5      -- segundos até o primeiro token
+  per_tok   = 0.02     -- segundos por token de saída
+}
+
+-- ② Ferramentas: efeito, classe, integridade exigida e latência declarada (contrato Δ)
+tool logs(c: Cap[Cluster.Read], deploy: Text) -> Text ^ Untrusted
+  ! { Cluster.Read } reversible latency 2.0
+
+tool apply(c: Cap[Cluster.Write], a: Action ^ Endorsed, k: IdemKey) -> Text
+  ! { Cluster.Write } compensable latency 1.0
+
+tool page(c: Cap[Page], msg: Text, k: IdemKey) -> Unit
+  ! { Page } irrevocable latency 1.0
+
+-- ③ Política: pura, total e decidível. A autoridade é dela, não do modelo.
+policy SafeRemediation(a: Action) -> Bool =
+  match a {
+    Restart { deploy }   => deploy == "api" || deploy == "worker",
+    Scale { deploy, to } => (deploy == "api" || deploy == "worker") && to >= 2 && to <= 64,
+  }
+
+-- ④ Agente: capacidades e orçamento são parâmetros; o compilador prova o orçamento
+agent Remediator(
+  cluster : Cap[Cluster.Read + Cluster.Write],
+  oncall  : Cap[Page],
+  keys    : Cap[IdemKey.Mint],
+) budget [tok <= 20000, usd <= 0.50, wall <= 60.0]
+{
+  on alert(deploy: Text ^ Untrusted) -> Text ! { Infer, Cluster.Read, Cluster.Write, Page } {
+    let l = logs(cluster, deploy)
+
+    -- ⑤ Inferência: o log entra como dado (quote), nunca como instrução
+    let draft = infer planner -> Action {
+      task = "Diagnostique o incidente e proponha uma ação corretiva.",
+      logs = quote(fit(l, 2000)),
+    }
+
+    -- ⑥ Propor → verificar: só o que a política aceita ganha o rótulo Endorsed
+    let plan = refine draft by SafeRemediation retry 3 else {
+      commit page(oncall, "nenhum plano seguro em 3 tentativas", keys.mint())
+      return "escalado"
+    }
+
+    -- ⑦ Efeitos: capacidade, chave de idempotência linear, irrevogável só via commit
+    let k = keys.mint()
+    let receipt = apply(cluster, plan, k)
+    page(oncall, "remediado: " ++ receipt, keys.mint())
+    "resolvido"
+  }
+}

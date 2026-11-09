@@ -1,0 +1,12 @@
+[package]
+name = "arx"
+description = "ARX: runtime de Aletheia Core 0 — interpretador, medidor de orçamento, journal encadeado"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ath-syntax.workspace = true
+blake3.workspace = true
+serde_json.workspace = true

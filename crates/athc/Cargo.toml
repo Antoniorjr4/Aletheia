@@ -1,0 +1,18 @@
+[package]
+name = "athc"
+description = "Compilador e CLI de Aletheia Core 0"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "athc"
+path = "src/main.rs"
+
+[dependencies]
+ath-syntax.workspace = true
+ath-check.workspace = true
+ath-codex.workspace = true
+arx.workspace = true
+serde_json.workspace = true
