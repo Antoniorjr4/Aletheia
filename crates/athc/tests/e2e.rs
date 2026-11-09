@@ -587,7 +587,12 @@ fn reasoning_beyond_the_contract_is_a_contract_breach() {
     let (out, arx) = run_in(&c, world(), Box::new(provider));
     server.join().unwrap();
     assert_eq!(out.unwrap_err().code, "R0702");
-    assert!(has(&arx.journal, "contract_breach"));
+    let breach = arx.journal.entries.iter().find(|e| e["kind"] == "contract_breach").unwrap();
+    assert_eq!(breach["detail"]["code"], "R0702");
+    assert_eq!(breach["detail"]["request_id"], "chatcmpl-x");
+    assert_eq!(breach["detail"]["observed_tokens"], 900);
+    // a chamada aconteceu e custou: o consumo entra no orçamento antes do veredito
+    assert_eq!(arx.meter.tok, 121 + 900);
 }
 
 #[test]

@@ -989,18 +989,6 @@ impl<'m> Arx<'m> {
         let tok_in = c.tok_in.unwrap_or(est_in);
         let mut text = c.text.clone();
         let mut tok_out = c.tok_out.unwrap_or_else(|| est_tokens(&text));
-        if c.tok_out.is_some_and(|n| n > cap) {
-            self.journal.push(
-                self.clock,
-                "contract_breach",
-                json!({ "model": d.model, "declared_tokens": cap, "observed_tokens": tok_out }),
-            );
-            return Err(rt(
-                "R0702",
-                format!("ContractBreach: `{}` gerou {tok_out} tokens; o contrato admite {cap}", d.model),
-            )
-            .into());
-        }
         if c.tok_out.is_none() && tok_out > out_cap {
             text = text.chars().take((out_cap * 4) as usize).collect();
             tok_out = out_cap;
@@ -1010,26 +998,50 @@ impl<'m> Arx<'m> {
         let tok_source = if c.tok_in.is_some() && c.tok_out.is_some() { "server" } else { "estimate" };
         let usd = cost(tok_in, tok_out);
         let contract_wall = time(tok_out);
-        if let Some(l) = c.latency {
-            if l > contract_wall + 1e-9 {
-                self.journal.push(
-                    self.clock,
-                    "contract_breach",
-                    json!({ "model": d.model, "declared_s": contract_wall, "observed_s": l, "request_id": c.request_id }),
-                );
-                return Err(rt(
-                    "R0703",
-                    format!("ContractBreach: `{}` levou {l:.2} s para {tok_out} tokens; o contrato admite {contract_wall:.2} s", d.model),
-                )
-                .into());
-            }
-        }
         // Tempo real quando o provedor é real (serviço + espera imposta por 429); contrato, quando simulado.
         let service = c.latency.unwrap_or(contract_wall);
         let wall = service + c.queued;
         let t0 = self.clock;
+        // A chamada aconteceu: o consumo é liquidado antes de qualquer veredito sobre o contrato,
+        // para que o `spent` do journal inclua também a amostra que o violou.
         self.clock += wall;
         self.meter.settle(tok_in + tok_out, usd, wall);
+        let breach = if c.tok_out.is_some_and(|n| n > cap) {
+            Some(("R0702", format!("ContractBreach: `{}` gerou {tok_out} tokens; o contrato admite {cap}", d.model)))
+        } else {
+            c.latency.filter(|l| *l > contract_wall + 1e-9).map(|l| {
+                (
+                    "R0703",
+                    format!(
+                        "ContractBreach: `{}` levou {l:.2} s para {tok_out} tokens; o contrato admite {contract_wall:.2} s",
+                        d.model
+                    ),
+                )
+            })
+        };
+        if let Some((code, msg)) = breach {
+            self.journal.push(
+                t0,
+                "contract_breach",
+                json!({
+                    "code": code,
+                    "model": d.model,
+                    "attempt": attempt,
+                    "declared_tokens": cap,
+                    "observed_tokens": tok_out,
+                    "tok_in": tok_in,
+                    "tok_source": tok_source,
+                    "declared_s": contract_wall,
+                    "observed_s": c.latency,
+                    "queued_s": c.queued,
+                    "usd": usd,
+                    "request_id": c.request_id,
+                    "output": text,
+                    "note": c.note,
+                }),
+            );
+            return Err(rt(code, msg).into());
+        }
         let parsed: Option<serde_json::Value> = serde_json::from_str(text.trim()).ok();
         let invalid = match &parsed {
             None if text.trim().is_empty() => {

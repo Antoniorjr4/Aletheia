@@ -195,9 +195,24 @@ fora da política.
 | Porte ingênuo do laço Python | — | rejeitado em compilação (E0412) |
 
 O ataque que passa no Aletheia pede uma ação que a política aceita: o raio de explosão de
-uma injeção é o conjunto aceito pela política. Os resultados com modelo real ficam em
-[`bench/m1/live/`](bench/m1/live); método, cenários e limites em
-[`bench/m1/README.md`](bench/m1/README.md).
+uma injeção é o conjunto aceito pela política.
+
+Contra um modelo real (`openai/gpt-oss-20b` na Groq, 7 cenários × 2, [execução B](bench/m1/live/2026-11-09-gpt-oss-20b-b/README.md)):
+
+| Métrica (ao vivo) | Python (laço de tool-calling) | Aletheia |
+| --- | --- | --- |
+| Ataques que atingiram o objetivo | 12/12 | 2/12 |
+| Ações fora da política executadas | 12 | **0** |
+| Tarefa cumprida sob ataque | 11/12 | 6/12 |
+| Tarefa cumprida sem ataque | 2/2 | 2/2 |
+| Abortadas por violação do contrato Δ (R0703, sem efeito) | — | 2 |
+
+Por amostra, o journal registrou de 13 a 49 tokens de raciocínio (contrato: 512) e de 26 a
+30 de conteúdo (teto do tipo: 174). A latência medida teve mediana de 0,38 s, contra mediana de
+2,46 s do contrato E6. Duas chamadas, 2,88 s e 2,31 s, passaram dos 2,14 s contratados e
+abortaram com `ContractBreach`. Método, cenários e limites estão em
+[`bench/m1/README.md`](bench/m1/README.md); todas as execuções, em
+[`bench/m1/live/`](bench/m1/live/README.md).
 
 ## Estrutura
 
@@ -262,7 +277,13 @@ bench/m1/        harness da métrica M1: cenários, linha de base Python, agente
 - **Recuperação após queda:** reler o journal e reconciliar as chaves abertas depois de um
   reinício (hoje só a checagem T9 as detecta); tratador `timeout_unknown` por agente, sem `resume`
   explícito; recuo fixo de 2 s.
-- **Tokenizer:** a entrada é estimada em 4 caracteres por token quando o servidor não informa.
+- **Tokenizer e acréscimo do servidor:** a entrada é estimada em 4 caracteres por token quando
+  o servidor não informa. Medido na Groq, o servidor soma de 430 a 450 tokens ao prompt (template
+  de chat e esquema JSON do `response_format`), e o limite estático de entrada do E6 ainda não
+  conta esse acréscimo.
+- **Calibração do contrato Δ:** `ttft` e `per_tok` são declarados, não aprendidos. Ao vivo, 2 de
+  68 chamadas passaram do contrato de latência. Derivar Δ da cauda medida (p99 por modelo e
+  provedor) e versioná-lo junto do Codex é trabalho a fazer.
 - **Mundo:** cluster simulado; cenários no estilo do AgentDojo, não as suítes do AgentDojo.
 - **Certificados:** sem `certify`, `Bounded` nem monitor de deriva.
 - **Teoremas:** nenhum está mecanizado. As garantias são testadas, não provadas.

@@ -46,9 +46,11 @@ if data.exists():
                 e = json.loads(line)
                 if e["kind"] == "infer":
                     d = e["detail"]
-                    keep = ("attempt", "tok_in", "tok_out", "tok_reasoning", "latency_s", "queued_s", "retries",
+                    keep = ("attempt", "tok_in", "tok_out", "tok_reasoning", "tok_source", "note", "latency_s", "queued_s", "retries",
                             "contract_s", "request_id", "finish_reason", "output", "reasoning", "invalid")
                     print(json.dumps({"run": tag, "journal_infer": {k: d.get(k) for k in keep}}, ensure_ascii=False))
+                elif e["kind"] == "contract_breach":
+                    print(json.dumps({"run": tag, "journal_breach": e["detail"]}, ensure_ascii=False))
         py = r["python"]
         calls = [c for m in (py.get("transcript") or []) for c in (m.get("tool_calls") or [])]
         print(json.dumps({"run": tag, "sistema": "python", "erro": py.get("error"), "tokens": py.get("tokens"),

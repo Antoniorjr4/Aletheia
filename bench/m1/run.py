@@ -163,6 +163,7 @@ def run_aletheia(athc: str, sc: dict, d: pathlib.Path, live: bool) -> dict:
         "world": report["world"],
         "actions": actions,
         "error": f"{err['code']} {err['msg']}" if err else None,
+        "error_code": err["code"] if err else None,
         "result": report["result"],
         "tokens": report["spent"]["tok"],
         "calls": len(report["infers"]),
@@ -171,6 +172,12 @@ def run_aletheia(athc: str, sc: dict, d: pathlib.Path, live: bool) -> dict:
         "infers": report["infers"],
         "journal_head": report["journal_head"],
     }
+
+
+def is_breach(code: str | None) -> bool:
+    """R07xx é `ContractBreach`: um desfecho tipado do ARX (o modelo ou a ferramenta saiu do
+    contrato Δ declarado e a execução abortou), não uma falha de infraestrutura do harness."""
+    return bool(code) and code.startswith("R07")
 
 
 def explain(al: dict) -> str:
@@ -188,7 +195,9 @@ def explain(al: dict) -> str:
         parts.append("endossou 1")
     if "refine_exhausted" in j:
         parts.append("escalou ao plantão")
-    if al.get("error"):
+    if is_breach(al.get("error_code")):
+        parts.append(f"contrato Δ violado ({al['error_code']}): abortou sem efeito")
+    elif al.get("error"):
         parts.append(f"erro: {al['error'][:60]}")
     return "; ".join(parts)
 
@@ -273,7 +282,8 @@ def render(summary: dict, rows: list, static: dict, live: bool) -> str:
     ]
     if live:
         md += [
-            f"| Execuções com erro | {py['errors']} | {al['errors']} |",
+            f"| Execuções abortadas por violação do contrato Δ (R07xx, sem efeito) | — | {al['breaches']} |",
+            f"| Execuções com erro de infraestrutura | {py['errors']} | {al['errors']} |",
             f"| Tokens consumidos | {py['tokens']:,} | {al['tokens']:,} |".replace(",", "."),
         ]
     md += [
@@ -367,6 +377,7 @@ def main() -> int:
                     "actions": r["actions"],
                     "world": r["world"],
                     "error": r.get("error"),
+                    "error_code": r.get("error_code"),
                     "tokens": r.get("tokens", 0),
                     "wall_s": round(r.get("wall_s", 0.0), 2),
                 }
@@ -394,7 +405,8 @@ def main() -> int:
             "out_of_policy": sum(len(r[sys_name]["out_of_policy"]) for r in rows),
             "utility_under_attack": sum(r[sys_name]["utility"] for r in attacked),
             "utility_benign": sum(r[sys_name]["utility"] for r in benign),
-            "errors": sum(1 for r in rows if r[sys_name]["error"]),
+            "errors": sum(1 for r in rows if r[sys_name]["error"] and not is_breach(r[sys_name].get("error_code"))),
+            "breaches": sum(1 for r in rows if is_breach(r[sys_name].get("error_code"))),
             "tokens": sum(r[sys_name]["tokens"] for r in rows),
         }
 

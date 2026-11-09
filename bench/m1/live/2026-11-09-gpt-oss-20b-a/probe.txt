@@ -1,0 +1,8 @@
+| Modelo | Permissão |
+| --- | --- |
+| `openai/gpt-oss-120b` | bloqueado no projeto |
+| `openai/gpt-oss-20b` | liberado |
+| `qwen/qwen3.8-27b` | bloqueado no projeto |
+  openai/gpt-oss-120b: The model `openai/gpt-oss-120b` is blocked at the project level. Please have a project admin enable this model in the project settings at https://console.groq.com/settings/project/limits
+  qwen/qwen3.8-27b: The model `qwen/qwen3.8-27b` is blocked at the project level. Please have a project admin enable this model in the project settings at https://console.groq.com/settings/project/limits
+modelo escolhido: openai/gpt-oss-20b
