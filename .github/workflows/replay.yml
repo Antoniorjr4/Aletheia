@@ -11,6 +11,9 @@ on:
       model:
         description: "Modelo: auto (primeiro liberado no projeto) ou um id da Groq"
         default: "auto"
+      suite:
+        description: "Casos: injecao (logs com injeção de prompt), capacidade (saturação: sagas e reconciliação) ou todos"
+        default: "todos"
 
 permissions:
   contents: read
@@ -28,6 +31,7 @@ jobs:
       OPENAI_API_KEY: ${{ secrets.GROQ_API_KEY }}
       OPENAI_BASE_URL: https://api.groq.com/openai/v1
       MODEL_INPUT: ${{ inputs.model || 'auto' }}
+      SUITE: ${{ inputs.suite || 'todos' }}
       NO_COLOR: "1"
       PYTHONPATH: runtimes/python
     steps:
@@ -55,11 +59,22 @@ jobs:
               --arg '"api"' --record "rec/$1.arx.cassette.json" --journal "rec/$1.arx.live.jsonl" || true
             test -s "rec/$1.arx.cassette.json"
           }
-          record remediate-world examples/remediate.ath world
-          record remediate-saga-compensa examples/remediate.ath world-saga-compensa
-          record remediate-timeout-reconcilia examples/remediate.ath world-timeout-reconcilia
-          record rollout-world examples/rollout.ath world
-          record rollout-saga-falha examples/rollout.ath world-saga-falha
+          if [ "$SUITE" != capacidade ]; then
+            record remediate-world examples/remediate.ath world
+            record remediate-saga-compensa examples/remediate.ath world-saga-compensa
+            record remediate-timeout-reconcilia examples/remediate.ath world-timeout-reconcilia
+            record rollout-world examples/rollout.ath world
+            record rollout-saga-falha examples/rollout.ath world-saga-falha
+          fi
+          if [ "$SUITE" != injecao ]; then
+            # logs de saturação sem injeção: o plano legítimo é escalar, e o mundo decide a saga
+            record remediate-capacidade examples/remediate.ath world-capacidade
+            record remediate-capacidade-compensa examples/remediate.ath world-capacidade-compensa
+            record remediate-capacidade-falha examples/remediate.ath world-capacidade-falha
+            record remediate-capacidade-timeout examples/remediate.ath world-capacidade-timeout
+            record rollout-capacidade-compensa examples/rollout.ath world-capacidade-compensa
+            record rollout-capacidade-falha examples/rollout.ath world-capacidade-falha
+          fi
       - name: gravar com o runtime Python (tráfego real)
         run: |
           record_py() {  # caso programa mundo
@@ -70,8 +85,14 @@ jobs:
             test -s "rec/$1.py.cassette.json"
             rm "rec/$1.py"
           }
-          record_py remediate-world examples/remediate.ath world
-          record_py rollout-world examples/rollout.ath world
+          if [ "$SUITE" != capacidade ]; then
+            record_py remediate-world examples/remediate.ath world
+            record_py rollout-world examples/rollout.ath world
+          fi
+          if [ "$SUITE" != injecao ]; then
+            record_py remediate-capacidade-compensa examples/remediate.ath world-capacidade-compensa
+            record_py rollout-capacidade-falha examples/rollout.ath world-capacidade-falha
+          fi
       - name: reproduzir cada cassete nos dois backends
         run: |
           status=0
@@ -81,11 +102,12 @@ jobs:
             python3 -m aletheia_runtime replay "$c" rec/replay.py || status=1
             echo "::endgroup::"
           done
-          rm -f rec/replay.py
+          rm -rf rec/replay.py rec/__pycache__
           exit $status
       - name: cassetes no log (tar + base64)
         if: always()
         run: |
+          rm -rf rec/__pycache__
           tar -czf cassettes.tgz rec
           echo "===== cassettes.tgz.b64 ====="
           base64 -w 76 cassettes.tgz

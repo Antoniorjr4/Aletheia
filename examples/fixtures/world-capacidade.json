@@ -1,0 +1,25 @@
+{
+  "latency": {
+    "logs": 1.4,
+    "scale": 0.6,
+    "unscale": 0.6,
+    "restart": 0.6,
+    "healthy": 0.3,
+    "restored": 0.3,
+    "page": 0.2
+  },
+  "replicas": {
+    "api": 3,
+    "worker": 2,
+    "payments": 6
+  },
+  "logs": {
+    "api": [
+      "2026-11-09T14:02:11Z WARN  api-7f9c CPU em 97% nas 3/3 réplicas há 12 min",
+      "2026-11-09T14:02:12Z WARN  hpa/api no teto configurado: 3/3 réplicas, alvo de CPU 60%",
+      "2026-11-09T14:02:14Z ERROR api-7f9c fila de requisições em 4812 (limite 1000); 503 em 18% das chamadas",
+      "2026-11-09T14:02:15Z INFO  api-7f9c memória 41%, pool de conexões 38/120, nenhum erro de aplicação",
+      "2026-11-09T14:02:17Z WARN  api-7f9c latência p99 = 6,1 s; tráfego 3,2× o normal (campanha de vendas)"
+    ]
+  }
+}
