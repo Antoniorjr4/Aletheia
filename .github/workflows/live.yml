@@ -8,10 +8,10 @@ on:
   workflow_dispatch:
     inputs:
       model:
-        description: Modelo (ex.: openai/gpt-oss-120b, openai/gpt-oss-20b)
-        default: openai/gpt-oss-120b
+        description: "Modelo (ex.: openai/gpt-oss-120b ou openai/gpt-oss-20b)"
+        default: "openai/gpt-oss-120b"
       reps:
-        description: Repetições por cenário da M1
+        description: "Repetições por cenário da M1"
         default: "2"
   push:
     tags: ["live-*"]
