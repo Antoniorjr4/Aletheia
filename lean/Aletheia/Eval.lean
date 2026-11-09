@@ -141,4 +141,70 @@ theorem doInfer_ok {S : Sig} {c : Cfg} {m : Nat} {t : Ty} {o r : Out}
   · simp [hb] at h; exact ⟨hb, h.symm⟩
   · simp [hb] at h
 
+/-! ## Rev6 / T2: semântica instrumentada de Cap[E] -/
+
+/-- Na fronteira da ação: confere simultaneamente a permissão léxica
+    e a concessão efetiva da capacidade do runtime, ANTES de emitir evento. -/
+def doScopedAct (S : Sig) (c : Cfg) (A : Authority)
+    (Γ : List ScopedBind) (t k : Nat) (ρ : List Val) (o : Out) : Except Err Out :=
+  match Γ[k]?, ρ[k]? with
+  | some (.cap E), some (.cap id) =>
+      if A.effectOf t ∈ E ∧ A.permits id t then
+        doAct S c t (some (.cap id)) o
+      else .error .noCap
+  | _, _ => .error .noCap
+
+/-- Avaliador total com guarda de efeito no ponto de emissão.
+    Esta é a referência T2; o ARX em Rust ainda requer uma prova de refinamento. -/
+def evalScoped (S : Sig) (c : Cfg) (A : Authority) :
+    Exp → List ScopedBind → List Val → St → Except Err Out
+  | .val v, _, _, s => .ok ⟨v, s, []⟩
+  | .var k, _, ρ, s =>
+      match ρ[k]? with
+      | some v => .ok ⟨v, s, []⟩
+      | none => .error .stuck
+  | .let_ e₁ e₂, Γ, ρ, s =>
+      bnd (evalScoped S c A e₁ Γ ρ s) fun o₁ =>
+      bnd (evalScoped S c A e₂ (.data :: Γ) (o₁.v :: ρ) o₁.st) fun o₂ =>
+      .ok ⟨o₂.v, o₂.st, o₁.tr ++ o₂.tr⟩
+  | .ite cond then_ else_, Γ, ρ, s =>
+      bnd (evalScoped S c A cond Γ ρ s) fun o =>
+      match o.v with
+      | .bool b =>
+          bnd (if b then evalScoped S c A then_ Γ ρ o.st
+              else evalScoped S c A else_ Γ ρ o.st) fun o' =>
+          .ok ⟨o'.v, o'.st, o.tr ++ o'.tr⟩
+      | _ => .error .stuck
+  | .prim op a b, Γ, ρ, s =>
+      bnd (evalScoped S c A a Γ ρ s) fun o₁ =>
+      bnd (evalScoped S c A b Γ ρ o₁.st) fun o₂ =>
+      match o₁.v, o₂.v with
+      | .int x, .int y => .ok ⟨op.apply x y, o₂.st, o₁.tr ++ o₂.tr⟩
+      | _, _ => .error .stuck
+  | .endorse p e d, Γ, ρ, s =>
+      bnd (evalScoped S c A e Γ ρ s) fun o =>
+      if S.pol p o.v then
+        .ok ⟨o.v, o.st, o.tr ++ [.endorse p (some o.v)]⟩
+      else
+        bnd (evalScoped S c A d Γ ρ o.st) fun o' =>
+        .ok ⟨o'.v, o'.st, o.tr ++ .endorse p none :: o'.tr⟩
+  | .act t k a, Γ, ρ, s =>
+      bnd (evalScoped S c A a Γ ρ s) fun o =>
+      doScopedAct S c A Γ t k ρ o
+  | .for_ _ xs body, Γ, ρ, s =>
+      bnd (evalScoped S c A xs Γ ρ s) fun o =>
+      match o.v with
+      | .list vs =>
+          bnd (loop (fun v s' => evalScoped S c A body (.data :: Γ) (v :: ρ) s') vs o.st) fun r =>
+          .ok ⟨.unit, r.1, o.tr ++ r.2⟩
+      | _ => .error .stuck
+  | .infer m t a, Γ, ρ, s =>
+      bnd (evalScoped S c A a Γ ρ s) fun o =>
+      doInfer S c m t o
+
+/-- Nenhuma ação é tentada se a análise de Cap[E] inteira falhar. -/
+def runScoped (S : Sig) (c : Cfg) (A : Authority)
+    (e : Exp) (Γ : List ScopedBind) (ρ : List Val) (s : St) : Except Err Out :=
+  if scopeCheck A Γ e then evalScoped S c A e Γ ρ s else .error .noCap
+
 end Aletheia
