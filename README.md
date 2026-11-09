@@ -32,12 +32,20 @@ $ athc check examples/rollout.ath
 
 ## Começar
 
-Requer Rust ≥ 1.87 e Python ≥ 3.10 (benchmark, runtime Python e testes diferenciais).
+Requer Rust ≥ 1.87 e Python ≥ 3.10 (benchmark, runtime Python e testes diferenciais). As
+provas pedem o Lean 4.20.0, que o `elan` instala a partir de `lean/lean-toolchain`.
 
 ```sh
 cargo build --release
-cargo test                                    # 76 testes, inclusive os diferenciais ARX × Python
+cargo test                                    # 79 testes, inclusive os diferenciais e o replay da Groq
 (cd runtimes/python && PYTHONPATH=. python3 -m unittest discover -s tests)   # runtime Python
+(cd lean && lake build --wfail)               # T1 e T3 em Lean 4, com auditoria de axiomas
+
+# reproduzir tráfego real gravado na Groq, nos dois backends
+./target/release/athc replay bench/replay/2026-11-09-groq-gpt-oss-20b-capacidade/remediate-capacidade-compensa.arx.cassette.json \
+    --emit-py caso.py
+PYTHONPATH=runtimes/python python3 -m aletheia_runtime replay \
+    bench/replay/2026-11-09-groq-gpt-oss-20b-capacidade/remediate-capacidade-compensa.arx.cassette.json caso.py
 
 # verificar
 ./target/release/athc check examples/remediate.ath
