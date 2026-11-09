@@ -22,5 +22,5 @@ ath-codex = { path = "crates/ath-codex" }
 ath-check = { path = "crates/ath-check" }
 arx = { path = "crates/arx" }
 blake3 = "1"
-serde_json = "1"
+serde_json = { version = "1", features = ["float_roundtrip"] }
 ureq = "3"
