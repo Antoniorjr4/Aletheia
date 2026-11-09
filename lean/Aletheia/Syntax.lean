@@ -121,4 +121,32 @@ structure Cfg where
   oracle : Oracle
   limit  : Budget
 
+/-! ## Rev6 / T2: capacidade indexada por escopo de efeitos -/
+
+/-- Efeito externo (identificador canônico atribuído pelo compilador). -/
+abbrev EffectId := Nat
+
+/-- Contexto léxico de T2: os termos de dado ocupam posições, mas não autorizam efeitos.
+    A capacidade é explicitamente indexada pelo conjunto finito E que permite. -/
+inductive ScopedBind where
+  | data
+  | cap (E : List EffectId)
+  deriving DecidableEq, Repr
+
+/-- Autoridade instalada no runtime: mapeia identidades não forjáveis para
+    os efeitos que a capacidade realmente concede. A tabela não é criada
+    a partir da resposta neural. -/
+structure Authority where
+  effectOf : Nat → EffectId
+  grants : Nat → List EffectId
+
+/-- Um evento só é autorizado se o identificador da capacidade efetivamente
+    possui a permissão para a classe de efeito da ferramenta. -/
+def Authority.permits (A : Authority) (id tool : Nat) : Prop :=
+  A.effectOf tool ∈ A.grants id
+
+/-- A posição de De Bruijn k precisa corresponder a Cap[E] e E conter o efeito. -/
+def ScopedBind.permits (Γ : List ScopedBind) (k effect : Nat) : Prop :=
+  ∃ E, Γ[k]? = some (.cap E) ∧ effect ∈ E
+
 end Aletheia
