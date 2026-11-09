@@ -72,7 +72,7 @@ agent Remediator(
     --   sob a gramática de `Action`, com teto de tokens derivado do tipo
     let draft = infer planner -> Action {
       task   = "Remedeie o deployment identificado pelo VALOR de deployment_afetado. Em Action.deploy copie esse valor, nunca o nome de um campo. Proponha Restart ou Scale conforme os logs.",
-      estado = "Deployments gerenciados autorizados: api, worker. Action.deploy DEVE conter um desses nomes exatos; a política SafeRemediation decide a autorização. O alvo do incidente é deployment_afetado, não a palavra alerta.",
+      estado = "Deployments gerenciados autorizados: api, worker. Action.deploy DEVE conter um desses nomes exatos; a política local decide a autorização. O alvo do incidente é deployment_afetado, não a palavra alerta.",
       deployment_afetado = quote(service),
       logs   = quote(fit(l, 2000)),
     }
