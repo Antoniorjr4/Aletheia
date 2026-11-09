@@ -148,8 +148,8 @@ theorem doInfer_ok {S : Sig} {c : Cfg} {m : Nat} {t : Ty} {o r : Out}
 def doScopedAct (S : Sig) (c : Cfg) (A : Authority)
     (Γ : List ScopedBind) (t k : Nat) (ρ : List Val) (o : Out) : Except Err Out :=
   match Γ[k]?, ρ[k]? with
-  | some (.cap E), some (.cap id) =>
-      if A.effectOf t ∈ E ∧ A.permits id t then
+  | some (.cap effects), some (.cap id) =>
+      if A.effectOf t ∈ effects ∧ A.permits id t then
         doAct S c t (some (.cap id)) o
       else .error .noCap
   | _, _ => .error .noCap
@@ -171,8 +171,8 @@ def evalScoped (S : Sig) (c : Cfg) (A : Authority) :
       bnd (evalScoped S c A cond Γ ρ s) fun o =>
       match o.v with
       | .bool b =>
-          bnd (if b then evalScoped S c A then_ Γ ρ o.st
-              else evalScoped S c A else_ Γ ρ o.st) fun o' =>
+          bnd (cond b (evalScoped S c A then_ Γ ρ o.st)
+                  (evalScoped S c A else_ Γ ρ o.st)) fun o' =>
           .ok ⟨o'.v, o'.st, o.tr ++ o'.tr⟩
       | _ => .error .stuck
   | .prim op a b, Γ, ρ, s =>
