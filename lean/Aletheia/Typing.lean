@@ -129,4 +129,40 @@ theorem EnvOk.cap_pos {Γ : List Bind} {ρ : List Val} (h : EnvOk Γ ρ) :
     | zero => rfl
     | succ k => simpa using ih (by simpa using hk)
 
+/-! ## Rev6 / T2: verificação léxica de Cap[E] -/
+
+/-- Checagem total do contexto de capacidade. É complementar ao HasType
+    histórico (T1/T3) e não transforma Cap em valor copiável.
+    A mudança de escopo por let/for preserva o índice de De Bruijn. -/
+def scopeCheck (A : Authority) : List ScopedBind → Exp → Bool
+  | _, .val _ => true
+  | _, .var _ => true
+  | Γ, .let_ e₁ e₂ => scopeCheck A Γ e₁ && scopeCheck A (.data :: Γ) e₂
+  | Γ, .ite c t f => scopeCheck A Γ c && scopeCheck A Γ t && scopeCheck A Γ f
+  | Γ, .prim _ a b => scopeCheck A Γ a && scopeCheck A Γ b
+  | Γ, .endorse _ e d => scopeCheck A Γ e && scopeCheck A Γ d
+  | Γ, .act t k arg =>
+      (match Γ[k]? with
+        | some (.cap E) => E.contains (A.effectOf t)
+        | _ => false) && scopeCheck A Γ arg
+  | Γ, .for_ _ xs body => scopeCheck A Γ xs && scopeCheck A (.data :: Γ) body
+  | Γ, .infer _ _ a => scopeCheck A Γ a
+
+/-- Uma ferramenta sem Cap[E] no escopo é rejeitada antes da avaliação. -/
+theorem scopeCheck_rejects_missing (A : Authority) (Γ : List ScopedBind)
+    (tool k : Nat) (arg : Exp)
+    (h : ¬ ScopedBind.permits Γ k (A.effectOf tool)) :
+    scopeCheck A Γ (.act tool k arg) = false := by
+  simp only [scopeCheck]
+  cases hget : Γ[k]? with
+  | none => simp [hget]
+  | some b =>
+    cases b with
+    | data => simp [hget]
+    | cap E =>
+      have hn : A.effectOf tool ∉ E := by
+        intro he
+        exact h ⟨E, hget, he⟩
+      simp [hget, List.contains_eq_false.mpr hn]
+
 end Aletheia
