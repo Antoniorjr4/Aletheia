@@ -14,15 +14,14 @@ pub struct Compiled {
 }
 
 pub fn compile(src: &str) -> Result<Compiled, Vec<Diag>> {
-    let module = ath_syntax::parse_module(src)
-        .map_err(|e| vec![Diag::new(Stratum::Parse, "P0001", e.msg, e.span, "aqui")])?;
+    let module =
+        ath_syntax::parse_module(src).map_err(|e| vec![Diag::new(Stratum::Parse, "P0001", e.msg, e.span, "aqui")])?;
     let check = check_module(&module);
     if !check.ok() {
         return Err(check.diags);
     }
-    let codex = ath_codex::address(&module).map_err(|m| {
-        vec![Diag::new(Stratum::E0, "C0001", m, ath_syntax::Span::default(), "")]
-    })?;
+    let codex = ath_codex::address(&module)
+        .map_err(|m| vec![Diag::new(Stratum::E0, "C0001", m, ath_syntax::Span::default(), "")])?;
     Ok(Compiled { module, check, codex })
 }
 
@@ -61,7 +60,11 @@ fn underline(src: &str, lo: u32, hi: u32) -> (usize, usize, usize) {
     let (line, col) = line_col(src, lo);
     let (end_line, end_col) = line_col(src, hi);
     let text = line_text(src, line);
-    let width = if end_line == line { end_col.saturating_sub(col).max(1) } else { text.chars().count().saturating_sub(col - 1).max(1) };
+    let width = if end_line == line {
+        end_col.saturating_sub(col).max(1)
+    } else {
+        text.chars().count().saturating_sub(col - 1).max(1)
+    };
     (line, col, width)
 }
 
@@ -83,7 +86,8 @@ pub fn render(src: &str, path: &str, d: &Diag, st: Style) -> String {
     let _ = writeln!(o, "{pad} {}", st.blue("|"));
     // Todas as marcas (principal e secundárias) em ordem de posição; marcas da
     // mesma linha compartilham uma única cópia da linha de código.
-    let mut marks: Vec<(u32, usize, usize, usize, &str, bool)> = vec![(d.span.lo, line, col, width, d.label.as_str(), true)];
+    let mut marks: Vec<(u32, usize, usize, usize, &str, bool)> =
+        vec![(d.span.lo, line, col, width, d.label.as_str(), true)];
     for (s, label) in &d.secondary {
         let (l, c, w) = underline(src, s.lo, s.hi);
         marks.push((s.lo, l, c, w, label.as_str(), false));
@@ -96,7 +100,8 @@ pub fn render(src: &str, path: &str, d: &Diag, st: Style) -> String {
             last_line = l;
         }
         let glyphs = if primary { "^" } else { "-" }.repeat(w);
-        let painted = if primary { st.red(&format!("{glyphs} {label}")) } else { st.blue(&format!("{glyphs} {label}")) };
+        let painted =
+            if primary { st.red(&format!("{glyphs} {label}")) } else { st.blue(&format!("{glyphs} {label}")) };
         let _ = writeln!(o, "{pad} {} {}{}", st.blue("|"), " ".repeat(c - 1), painted);
     }
     if !d.notes.is_empty() || d.help.is_some() {
@@ -117,14 +122,44 @@ pub fn summary(c: &Compiled, st: Style) -> String {
     let ok = st.green("✓");
     let f = &c.check.facts;
     let _ = writeln!(o, "{ok} {:<18} {} definições, todas resolvidas", "E0 estrutura", c.check.definitions);
-    let _ = writeln!(o, "{ok} {:<18} {} vinculação(ões) IdemKey consumidas exatamente uma vez", "E1 multiplicidade", f.linear_lets.len());
+    let _ = writeln!(
+        o,
+        "{ok} {:<18} {} vinculação(ões) IdemKey consumidas exatamente uma vez",
+        "E1 multiplicidade",
+        f.linear_lets.len()
+    );
     let _ = writeln!(
         o,
         "{ok} {:<18} {{{}}} cobertos por capacidades e linhas de efeito",
         "E2 efeitos",
         f.effects.iter().cloned().collect::<Vec<_>>().join(", ")
     );
-    let _ = writeln!(o, "{ok} {:<18} {} exigência(s) de integridade satisfeitas, inclusive sob pc", "E3 integridade", f.integrity_checks);
+    let _ = writeln!(
+        o,
+        "{ok} {:<18} {} exigência(s) de integridade satisfeitas, inclusive sob pc",
+        "E3 integridade", f.integrity_checks
+    );
+    let _ = writeln!(
+        o,
+        "{ok} {:<18} {} obrigação(ões) provadas por literal, campo refinado ou saída tipada",
+        "E5 refinamentos", f.refinement_checks
+    );
+    let mut infers: Vec<_> = f.infer_costs.iter().collect();
+    infers.sort_by_key(|(span, _)| span.lo);
+    for (_, ic) in infers {
+        let ceiling =
+            if ic.out_by_type { format!("teto do tipo `{}`", ic.out_ty) } else { "max_out do modelo".to_string() };
+        let _ = writeln!(
+            o,
+            "  {:<18} infer {} -> {}: entrada ≤ {} · saída ≤ {} ({})",
+            "",
+            ic.model,
+            ic.out_ty,
+            fmt::tok(ic.tok_in),
+            fmt::tok(ic.tok_out),
+            ceiling
+        );
+    }
     for r in &c.check.reports {
         let w = &r.worst;
         let lim = |v: Option<String>| v.unwrap_or_else(|| "∞".into());

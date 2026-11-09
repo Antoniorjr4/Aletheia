@@ -56,7 +56,7 @@ pub fn check_module(m: &Module) -> CheckResult {
     }
 
     let mut reports = Vec::new();
-    if !diags.iter().any(|d| d.stratum <= Stratum::E3) {
+    if !diags.iter().any(|d| d.stratum <= Stratum::E5) {
         for item in &m.items {
             if let Item::Agent(a) = item {
                 for h in &a.handlers {

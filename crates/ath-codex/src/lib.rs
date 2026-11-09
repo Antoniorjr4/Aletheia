@@ -90,7 +90,11 @@ fn visit(
 ) -> Result<(), String> {
     match state.get(name) {
         Some(2) => return Ok(()),
-        Some(1) => return Err(format!("ciclo de definições envolvendo `{name}` (recursão entre definições não é suportada no Marco Zero)")),
+        Some(1) => {
+            return Err(format!(
+                "ciclo de definições envolvendo `{name}` (recursão entre definições não é suportada no Marco Zero)"
+            ))
+        }
         _ => {}
     }
     state.insert(name.to_string(), 1);
@@ -145,7 +149,7 @@ impl Deps<'_> {
     fn ty(&mut self, t: &TypeExpr) {
         match t {
             TypeExpr::Named(id) => self.name(&id.name),
-            TypeExpr::Cap(..) => {}
+            TypeExpr::Refined { .. } | TypeExpr::Cap(..) => {}
             TypeExpr::Labeled(inner, ..) => self.ty(inner),
         }
     }
@@ -277,6 +281,10 @@ impl Canon<'_> {
                 "Int" | "Bool" | "Text" | "Unit" | "IdemKey" => self.w(&id.name),
                 n => self.reference(n),
             },
+            TypeExpr::Refined { base, lo, hi, .. } => {
+                let b = |x: &Option<i64>| x.map(|n| n.to_string()).unwrap_or_else(|| "_".into());
+                let _ = write!(self.out, "({} {} {})", base.name, b(lo), b(hi));
+            }
             TypeExpr::Cap(effs, _) => {
                 let mut names: Vec<&str> = effs.iter().map(|e| e.name.as_str()).collect();
                 names.sort();
@@ -494,7 +502,12 @@ impl Canon<'_> {
                 self.w("(match ");
                 self.expr(scrut);
                 for a in arms {
-                    let _ = write!(self.out, " (arm {} ({})", a.variant.name, a.binds.iter().map(|b| b.name.as_str()).collect::<Vec<_>>().join(" "));
+                    let _ = write!(
+                        self.out,
+                        " (arm {} ({})",
+                        a.variant.name,
+                        a.binds.iter().map(|b| b.name.as_str()).collect::<Vec<_>>().join(" ")
+                    );
                     let depth = self.locals.len();
                     for b in &a.binds {
                         self.locals.push(b.name.clone());

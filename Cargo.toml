@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/ath-syntax",
+    "crates/ath-grammar",
     "crates/ath-codex",
     "crates/ath-check",
     "crates/arx",
@@ -16,8 +17,10 @@ rust-version = "1.87"
 
 [workspace.dependencies]
 ath-syntax = { path = "crates/ath-syntax" }
+ath-grammar = { path = "crates/ath-grammar" }
 ath-codex = { path = "crates/ath-codex" }
 ath-check = { path = "crates/ath-check" }
 arx = { path = "crates/arx" }
 blake3 = "1"
 serde_json = "1"
+ureq = "3"

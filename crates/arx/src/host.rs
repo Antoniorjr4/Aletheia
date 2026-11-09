@@ -9,6 +9,10 @@ pub trait Host {
     /// Executa a ferramenta; devolve o valor e a latência observada em segundos.
     fn call(&mut self, tool: &str, args: &[Value]) -> Result<(Value, f64), String>;
     fn summary(&self) -> Vec<String>;
+    /// Estado observável do mundo, em JSON (para relatórios e benchmarks).
+    fn state(&self) -> Json {
+        Json::Null
+    }
 }
 
 #[derive(Default)]
@@ -67,7 +71,10 @@ impl Host for SimWorld {
         }
         let out = match tool {
             "logs" => {
-                let deploy = args.iter().find_map(|v| if let Value::Text(s) = v { Some(s.clone()) } else { None }).unwrap_or_default();
+                let deploy = args
+                    .iter()
+                    .find_map(|v| if let Value::Text(s) = v { Some(s.clone()) } else { None })
+                    .unwrap_or_default();
                 Value::Text(self.logs.get(&deploy).cloned().unwrap_or_else(|| format!("(sem logs para {deploy})")))
             }
             "apply" => {
@@ -92,7 +99,10 @@ impl Host for SimWorld {
                 }
             }
             "page" => {
-                let msg = args.iter().find_map(|v| if let Value::Text(s) = v { Some(s.clone()) } else { None }).unwrap_or_default();
+                let msg = args
+                    .iter()
+                    .find_map(|v| if let Value::Text(s) = v { Some(s.clone()) } else { None })
+                    .unwrap_or_default();
                 self.outbox.push(msg);
                 Value::Unit
             }
@@ -102,6 +112,10 @@ impl Host for SimWorld {
             self.applied.insert(k, out.clone());
         }
         Ok((out, lat))
+    }
+
+    fn state(&self) -> Json {
+        serde_json::json!({ "replicas": self.replicas, "restarts": self.restarts, "outbox": self.outbox })
     }
 
     fn summary(&self) -> Vec<String> {

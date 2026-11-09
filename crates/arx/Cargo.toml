@@ -10,3 +10,5 @@ rust-version.workspace = true
 ath-syntax.workspace = true
 blake3.workspace = true
 serde_json.workspace = true
+ath-grammar.workspace = true
+ureq.workspace = true

@@ -13,11 +13,12 @@ pub mod journal;
 pub mod model;
 pub mod value;
 
+use ath_grammar::Shape;
 use ath_syntax::ast::*;
 use ath_syntax::{est_tokens, parse_expr_str};
 use host::Host;
 use journal::Journal;
-use model::ModelProvider;
+use model::{ModelProvider, Request};
 use serde_json::json;
 use std::collections::{BTreeSet, HashMap};
 use std::rc::Rc;
@@ -94,6 +95,7 @@ pub struct Event {
     pub dt: f64,
     pub what: String,
     pub detail: String,
+    pub note: Option<String>,
     pub verdict: Option<(bool, String)>,
 }
 
@@ -115,18 +117,47 @@ pub struct Arx<'m> {
 }
 
 fn type_name(t: &TypeExpr) -> String {
-    match t {
-        TypeExpr::Named(id) => id.name.clone(),
-        TypeExpr::Cap(..) => "Cap".into(),
-        TypeExpr::Labeled(inner, ..) => type_name(inner),
-    }
+    t.base_name().to_string()
 }
 
 fn cap_set(t: &TypeExpr) -> BTreeSet<String> {
-    match t {
+    match t.unlabeled() {
         TypeExpr::Cap(effs, _) => effs.iter().map(|e| e.name.clone()).collect(),
-        TypeExpr::Labeled(inner, ..) => cap_set(inner),
-        TypeExpr::Named(_) => BTreeSet::new(),
+        _ => BTreeSet::new(),
+    }
+}
+
+/// Valor de um documento já validado contra a forma.
+fn from_json(shape: &Shape, j: &serde_json::Value) -> Value {
+    match shape {
+        Shape::Int { .. } => Value::Int(j.as_i64().unwrap_or_default()),
+        Shape::Bool => Value::Bool(j.as_bool().unwrap_or_default()),
+        Shape::Text { .. } => Value::Text(j.as_str().unwrap_or_default().to_string()),
+        Shape::Adt { name, variants } => {
+            let kind = j["kind"].as_str().unwrap_or_default();
+            let fields = variants
+                .iter()
+                .find(|v| v.name == kind)
+                .map(|v| v.fields.iter().map(|(f, fs)| (f.clone(), from_json(fs, &j[f.as_str()]))).collect())
+                .unwrap_or_default();
+            Value::Adt { ty: name.clone(), variant: kind.to_string(), fields }
+        }
+    }
+}
+
+/// O valor pertence à forma, inclusive aos refinamentos?
+pub fn fits(shape: &Shape, v: &Value) -> bool {
+    match (shape, v) {
+        (Shape::Int { min, max }, Value::Int(n)) => min.is_none_or(|m| *n >= m) && max.is_none_or(|m| *n <= m),
+        (Shape::Bool, Value::Bool(_)) => true,
+        (Shape::Text { max_chars }, Value::Text(s)) => max_chars.is_none_or(|m| s.chars().count() as u32 <= m),
+        (Shape::Adt { variants, .. }, Value::Adt { variant, fields, .. }) => {
+            variants.iter().find(|x| &x.name == variant).is_some_and(|x| {
+                x.fields.len() == fields.len()
+                    && x.fields.iter().all(|(f, fs)| fields.iter().any(|(g, gv)| g == f && fits(fs, gv)))
+            })
+        }
+        _ => false,
     }
 }
 
@@ -210,7 +241,9 @@ impl<'m> Arx<'m> {
 
     /// Executa `on <event>` do agente. Capacidades concedidas = as declaradas nos parâmetros.
     pub fn run(&mut self, agent: &str, event: &str, args: Vec<Value>) -> Result<Value, RtError> {
-        let (a, h) = self.handler(agent, event).ok_or_else(|| rt("R0001", format!("handler `{agent}.{event}` não encontrado")))?;
+        let (a, h) = self
+            .handler(agent, event)
+            .ok_or_else(|| rt("R0001", format!("handler `{agent}.{event}` não encontrado")))?;
         if args.len() != h.params.len() {
             return Err(rt("R0002", format!("`{agent}.{event}` recebe {} argumento(s)", h.params.len())));
         }
@@ -225,6 +258,15 @@ impl<'m> Arx<'m> {
             scope.push((p.name.name.clone(), Value::Cap(caps)));
         }
         for (p, v) in h.params.iter().zip(&args) {
+            // Refinamentos dos parâmetros do evento são invariantes de entrada: conferidos aqui.
+            if let Ok(shape) = ath_grammar::shape_of(self.m, &p.ty) {
+                if !fits(&shape, v) {
+                    return Err(rt(
+                        "R0003",
+                        format!("argumento `{}` = {} viola o tipo `{}`", p.name.name, v.show(), type_name(&p.ty)),
+                    ));
+                }
+            }
             scope.push((p.name.name.clone(), v.clone()));
         }
         self.scopes = vec![scope];
@@ -289,7 +331,9 @@ impl<'m> Arx<'m> {
             ExprKind::Int(n) => Ok(Value::Int(*n)),
             ExprKind::Bool(b) => Ok(Value::Bool(*b)),
             ExprKind::Str(s) => Ok(Value::Text(s.clone())),
-            ExprKind::Var(n) => self.lookup(n).ok_or_else(|| rt("R0100", format!("variável `{n}` não vinculada")).into()),
+            ExprKind::Var(n) => {
+                self.lookup(n).ok_or_else(|| rt("R0100", format!("variável `{n}` não vinculada")).into())
+            }
             ExprKind::Field(r, f) => match self.eval(r)? {
                 Value::Adt { fields, .. } => fields
                     .into_iter()
@@ -312,7 +356,10 @@ impl<'m> Arx<'m> {
                 }
             }
             ExprKind::Ctor { name, fields } => {
-                let (td, _) = *self.variants.get(name.name.as_str()).ok_or_else(|| rt("R0102", format!("construtor `{}` desconhecido", name.name)))?;
+                let (td, _) = *self
+                    .variants
+                    .get(name.name.as_str())
+                    .ok_or_else(|| rt("R0102", format!("construtor `{}` desconhecido", name.name)))?;
                 let mut out = Vec::new();
                 for (f, x) in fields {
                     out.push((f.name.clone(), self.eval(x)?));
@@ -337,7 +384,8 @@ impl<'m> Arx<'m> {
                 let Value::Adt { variant, fields, .. } = self.eval(scrut)? else {
                     return Err(rt("R0103", "`match` sobre valor não algébrico").into());
                 };
-                let arm = arms.iter().find(|a| a.variant.name == variant).ok_or_else(|| rt("R0104", "nenhum braço casou"))?;
+                let arm =
+                    arms.iter().find(|a| a.variant.name == variant).ok_or_else(|| rt("R0104", "nenhum braço casou"))?;
                 let scope = arm
                     .binds
                     .iter()
@@ -368,7 +416,13 @@ impl<'m> Arx<'m> {
                         prompt.push_str(&format!("### {}\n{}\n", k.name, val));
                     }
                 }
-                Ok(Value::Draft(Rc::new(Draft { model: model.name.clone(), out: ty, prompt, site: e.span })))
+                Ok(Value::Draft(Rc::new(Draft {
+                    model: model.name.clone(),
+                    out: ty,
+                    out_ty: out.clone(),
+                    prompt,
+                    site: e.span,
+                })))
             }
             ExprKind::Refine { draft, policy, retry, els } => {
                 let Value::Draft(d) = self.eval(draft)? else {
@@ -385,11 +439,19 @@ impl<'m> Arx<'m> {
                         Some(v) => {
                             if self.eval_policy(p, v.clone())? {
                                 self.events[idx].verdict = Some((true, format!("Endorsed({})", policy.name)));
-                                self.journal.push(self.clock, "endorse", json!({ "policy": policy.name, "value": v.to_json(), "attempt": attempt }));
+                                self.journal.push(
+                                    self.clock,
+                                    "endorse",
+                                    json!({ "policy": policy.name, "value": v.to_json(), "attempt": attempt }),
+                                );
                                 return Ok(v);
                             }
                             self.events[idx].verdict = Some((false, format!("rejeitada por {}", policy.name)));
-                            self.journal.push(self.clock, "policy_reject", json!({ "policy": policy.name, "value": v.to_json(), "attempt": attempt }));
+                            self.journal.push(
+                                self.clock,
+                                "policy_reject",
+                                json!({ "policy": policy.name, "value": v.to_json(), "attempt": attempt }),
+                            );
                         }
                     }
                 }
@@ -399,6 +461,7 @@ impl<'m> Arx<'m> {
                     dt: 0.0,
                     what: format!("refine esgotou {retry} tentativa(s)"),
                     detail: "executando o `else`".into(),
+                    note: None,
                     verdict: None,
                 });
                 self.block(els)
@@ -496,7 +559,8 @@ impl<'m> Arx<'m> {
         let committed = std::mem::replace(&mut self.committing, false);
         let name = &t.name.name;
         // Defesa em profundidade: confere a capacidade de novo, em runtime.
-        let held: BTreeSet<String> = args.iter().filter_map(|v| if let Value::Cap(c) = v { Some(c.clone()) } else { None }).flatten().collect();
+        let held: BTreeSet<String> =
+            args.iter().filter_map(|v| if let Value::Cap(c) = v { Some(c.clone()) } else { None }).flatten().collect();
         for eff in &t.effects {
             if !held.contains(&eff.name) {
                 return Err(rt("R0502", format!("`{name}` exige capacidade para `{}`", eff.name)).into());
@@ -535,48 +599,87 @@ impl<'m> Arx<'m> {
             dt: lat,
             what: format!("{}{}({})", if committed { "commit " } else { "" }, name, shown.join(", ")),
             detail,
+            note: None,
             verdict: None,
         });
         if lat > t.latency + 1e-9 {
-            self.journal.push(self.clock, "contract_breach", json!({ "tool": name, "declared": t.latency, "observed": lat }));
-            return Err(rt("R0701", format!("ContractBreach: `{name}` levou {lat:.2} s; o contrato Δ declara {:.2} s", t.latency)).into());
+            self.journal.push(
+                self.clock,
+                "contract_breach",
+                json!({ "tool": name, "declared": t.latency, "observed": lat }),
+            );
+            return Err(rt(
+                "R0701",
+                format!("ContractBreach: `{name}` levou {lat:.2} s; o contrato Δ declara {:.2} s", t.latency),
+            )
+            .into());
         }
         Ok(out)
     }
 
-    /// Uma amostra do modelo: reserva o pior custo sob Δ, chama o provedor,
-    /// corta a saída em `max_out`, liquida o custo real e decodifica no tipo.
+    /// Uma amostra do modelo: compila o tipo de saída em forma, reserva o pior custo sob Δ
+    /// (com o teto de saída derivado do tipo), chama o provedor com essa forma, liquida o
+    /// custo real e valida a saída contra o tipo. Saída fora do tipo vira amostra rejeitada.
     fn sample(&mut self, d: &Draft, attempt: u32) -> R<(Option<Value>, usize)> {
         let md = *self.models.get(d.model.as_str()).ok_or_else(|| rt("R0620", "modelo ausente"))?;
+        let shape = ath_grammar::shape_of(self.m, &d.out_ty).map_err(|m| rt("R0622", m))?;
         let p = |k: &str| md.prop(k).unwrap_or(0.0);
         let max_out = p("max_out") as u64;
-        let tok_in = est_tokens(&d.prompt);
-        let res_usd = tok_in as f64 * p("price_in") / 1e6 + max_out as f64 * p("price_out") / 1e6;
-        let res_wall = p("ttft") + max_out as f64 * p("per_tok");
-        self.meter.reserve(tok_in + max_out, res_usd, res_wall, &format!("infer {}", d.model))?;
-        let mut text = self.provider.complete(&d.model, &d.prompt).map_err(|m| rt("R0621", m))?;
-        let mut tok_out = est_tokens(&text);
-        if tok_out > max_out {
-            text = text.chars().take((max_out * 4) as usize).collect();
-            tok_out = max_out;
+        let out_cap = ath_grammar::max_bytes(&shape).map_or(max_out, |b| b.min(max_out));
+        let est_in = est_tokens(&d.prompt);
+        let cost = |tin: u64, tout: u64| tin as f64 * p("price_in") / 1e6 + tout as f64 * p("price_out") / 1e6;
+        let time = |tout: u64| p("ttft") + tout as f64 * p("per_tok");
+        self.meter.reserve(est_in + out_cap, cost(est_in, out_cap), time(out_cap), &format!("infer {}", d.model))?;
+        let req = Request { model: &d.model, prompt: &d.prompt, shape: &shape, max_tokens: out_cap };
+        let provider = self.provider.name();
+        let c = self.provider.complete(&req).map_err(|m| rt("R0621", m))?;
+        let tok_in = c.tok_in.unwrap_or(est_in);
+        let mut text = c.text;
+        let mut tok_out = c.tok_out.unwrap_or_else(|| est_tokens(&text));
+        if c.tok_out.is_some_and(|n| n > out_cap) {
+            self.journal.push(
+                self.clock,
+                "contract_breach",
+                json!({ "model": d.model, "declared": out_cap, "observed": tok_out }),
+            );
+            return Err(rt(
+                "R0702",
+                format!("ContractBreach: `{}` gerou {tok_out} tokens; o teto pedido era {out_cap}", d.model),
+            )
+            .into());
         }
-        let usd = tok_in as f64 * p("price_in") / 1e6 + tok_out as f64 * p("price_out") / 1e6;
-        let wall = p("ttft") + tok_out as f64 * p("per_tok");
+        if tok_out > out_cap {
+            text = text.chars().take((out_cap * 4) as usize).collect();
+            tok_out = out_cap;
+        }
+        let usd = cost(tok_in, tok_out);
+        let wall = time(tok_out);
         let t0 = self.clock;
         self.clock += wall;
         self.meter.settle(tok_in + tok_out, usd, wall);
-        let decoded = if d.out == "Text" { Some(Value::Text(text.clone())) } else { self.literal_from_str(&text, &d.out) };
+        let parsed: Option<serde_json::Value> = serde_json::from_str(text.trim()).ok();
+        let invalid = match &parsed {
+            None => Some("não é JSON".to_string()),
+            Some(j) => ath_grammar::check(&shape, j).err(),
+        };
+        let decoded = match (&parsed, &invalid) {
+            (Some(j), None) => Some(from_json(&shape, &j["value"])),
+            _ => None,
+        };
         self.journal.push(
             self.clock,
             "infer",
             json!({
                 "model": d.model,
+                "provider": provider,
                 "attempt": attempt,
                 "prompt_hash": blake3::hash(d.prompt.as_bytes()).to_hex().to_string(),
                 "tok_in": tok_in,
                 "tok_out": tok_out,
                 "usd": usd,
                 "output": text,
+                "note": c.note,
+                "invalid": invalid,
             }),
         );
         let shown = decoded.as_ref().map(|v| v.show()).unwrap_or_else(|| Value::Text(text.clone()).show());
@@ -585,6 +688,7 @@ impl<'m> Arx<'m> {
             dt: wall,
             what: format!("infer {} · tentativa {attempt}", d.model),
             detail: format!("→ {shown}  ({} tok, US$ {})", tok_in + tok_out, format!("{usd:.4}").replace('.', ",")),
+            note: c.note.or(invalid.map(|m| format!("saída fora do tipo: {m}"))),
             verdict: None,
         });
         Ok((decoded, self.events.len() - 1))

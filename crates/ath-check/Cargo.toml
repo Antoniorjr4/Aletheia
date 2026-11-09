@@ -8,3 +8,4 @@ rust-version.workspace = true
 
 [dependencies]
 ath-syntax.workspace = true
+ath-grammar.workspace = true

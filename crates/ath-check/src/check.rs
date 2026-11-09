@@ -3,7 +3,7 @@
 
 use crate::diag::{Diag, Stratum};
 use crate::fmt;
-use crate::ty::{assignable, unify, LTy, Ty};
+use crate::ty::{assignable, unify, LTy, Refn, Ty};
 use ath_syntax::ast::*;
 use ath_syntax::{est_tokens, Span};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -12,8 +12,11 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 #[derive(Clone, Debug)]
 pub struct InferCost {
     pub model: String,
+    pub out_ty: String,
     pub tok_in: u64,
     pub tok_out: u64,
+    /// O teto de saída veio do tipo (bytes da codificação), não do `max_out` do modelo.
+    pub out_by_type: bool,
     pub usd: f64,
     pub wall: f64,
 }
@@ -27,6 +30,7 @@ pub struct Facts {
     /// Ponto de consumo (`sample`, `refine`) → nó `infer` de origem.
     pub draft_src: HashMap<Span, Span>,
     pub integrity_checks: usize,
+    pub refinement_checks: usize,
     pub tool_calls: usize,
     pub effects: BTreeSet<String>,
 }
@@ -48,11 +52,12 @@ pub struct Ctx<'m> {
     pc_span: Option<Span>,
     used: BTreeMap<String, Span>,
     ret: Option<Ty>,
+    ret_refn: Option<Refn>,
     in_policy: bool,
     commit_ok: bool,
 }
 
-use Stratum::{E0, E2, E3, E6};
+use Stratum::{E0, E2, E3, E5, E6};
 
 impl<'m> Ctx<'m> {
     pub fn new(m: &'m Module) -> Self {
@@ -70,8 +75,56 @@ impl<'m> Ctx<'m> {
             pc_span: None,
             used: BTreeMap::new(),
             ret: None,
+            ret_refn: None,
             in_policy: false,
             commit_ok: false,
+        }
+    }
+
+    /// Refinamento declarado num tipo, se houver.
+    pub fn refn_of(&self, te: &TypeExpr) -> Option<Refn> {
+        match te.unlabeled() {
+            TypeExpr::Refined { base, lo, hi, .. } => match base.name.as_str() {
+                "Int" => Some(Refn::Int { lo: *lo, hi: *hi }),
+                "Text" => hi.map(|h| Refn::Text { max: h as u32 }),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    /// E5: o valor de `arg` precisa satisfazer `want`. Provas aceitas no Marco Zero:
+    /// literal dentro do intervalo, ou valor cujo refinamento conhecido está contido em `want`
+    /// (campos e parâmetros declarados, saídas decodificadas de `infer`).
+    fn expect_refn(&mut self, arg: &Expr, at: &LTy, want: Option<Refn>, what: &str) {
+        let Some(w) = want else { return };
+        self.facts.refinement_checks += 1;
+        if at.ty.is_never() || at.refn.is_some_and(|r| r.within(w)) {
+            return;
+        }
+        let literal = match (&arg.kind, w) {
+            (ExprKind::Int(n), Refn::Int { .. }) => Some(w.admits_int(*n)),
+            (ExprKind::Unary(UnOp::Neg, inner), Refn::Int { .. }) => match inner.kind {
+                ExprKind::Int(n) => Some(w.admits_int(-n)),
+                _ => None,
+            },
+            (ExprKind::Str(s), Refn::Text { .. }) => Some(w.admits_str(s)),
+            _ => None,
+        };
+        match literal {
+            Some(true) => {}
+            Some(false) => self.push(
+                Diag::new(E5, "E0451", "literal fora do refinamento", arg.span, format!("não pertence a {}", w.show()))
+                    .note(format!("exigido por {what}")),
+            ),
+            None => {
+                let known = at.refn.map(Refn::show).unwrap_or_else(|| at.ty.show());
+                self.push(
+                    Diag::new(E5, "E0450", "refinamento não provado", arg.span, format!("conhecido como `{known}`, exigido {}", w.show()))
+                        .note(format!("exigido por {what}"))
+                        .help("prove com um literal, um campo de refinamento igual ou mais estreito, ou a saída decodificada de `infer`; obrigações aritméticas gerais esperam o E5 com SMT"),
+                );
+            }
         }
     }
 
@@ -134,6 +187,20 @@ impl<'m> Ctx<'m> {
                 };
                 (t, None)
             }
+            TypeExpr::Refined { base, .. } => match base.name.as_str() {
+                "Int" => (Ty::Int, None),
+                "Text" => (Ty::Text, None),
+                n => {
+                    self.push(Diag::new(
+                        E0,
+                        "E0004",
+                        format!("`{n}` não admite refinamento"),
+                        base.span,
+                        "só Int e Text",
+                    ));
+                    (Ty::Never, None)
+                }
+            },
             TypeExpr::Cap(effs, _) => (Ty::Cap(effs.iter().map(|e| e.name.clone()).collect()), None),
             TypeExpr::Labeled(inner, l, _) => {
                 let (t, _) = self.resolve(inner);
@@ -150,13 +217,25 @@ impl<'m> Ctx<'m> {
         for item in &m.items {
             let id = item.ident();
             if BUILTINS.contains(&id.name.as_str()) {
-                self.push(Diag::new(E0, "E0002", format!("`{}` é uma primitiva reservada", id.name), id.span, "nome reservado"));
+                self.push(Diag::new(
+                    E0,
+                    "E0002",
+                    format!("`{}` é uma primitiva reservada", id.name),
+                    id.span,
+                    "nome reservado",
+                ));
                 continue;
             }
             if let Some(prev) = seen.get(&id.name).copied() {
                 self.push(
-                    Diag::new(E0, "E0002", format!("`{}` definido mais de uma vez", id.name), id.span, "redefinido aqui")
-                        .secondary(prev, "primeira definição"),
+                    Diag::new(
+                        E0,
+                        "E0002",
+                        format!("`{}` definido mais de uma vez", id.name),
+                        id.span,
+                        "redefinido aqui",
+                    )
+                    .secondary(prev, "primeira definição"),
                 );
                 continue;
             }
@@ -167,8 +246,14 @@ impl<'m> Ctx<'m> {
                     for v in &d.variants {
                         if let Some((_, pv)) = self.variants.get(&v.name.name).copied() {
                             self.push(
-                                Diag::new(E0, "E0002", format!("variante `{}` definida mais de uma vez", v.name.name), v.name.span, "redefinida aqui")
-                                    .secondary(pv.name.span, "primeira definição"),
+                                Diag::new(
+                                    E0,
+                                    "E0002",
+                                    format!("variante `{}` definida mais de uma vez", v.name.name),
+                                    v.name.span,
+                                    "redefinida aqui",
+                                )
+                                .secondary(pv.name.span, "primeira definição"),
                             );
                         } else {
                             self.variants.insert(v.name.name.clone(), (d, v));
@@ -213,10 +298,22 @@ impl<'m> Ctx<'m> {
             for f in &v.fields {
                 let (t, l) = self.resolve(&f.ty);
                 if l.is_some() {
-                    self.push(Diag::new(E0, "E0004", "rótulo de integridade em campo de dado", f.ty.span(), "rótulos pertencem a valores, não a campos"));
+                    self.push(Diag::new(
+                        E0,
+                        "E0004",
+                        "rótulo de integridade em campo de dado",
+                        f.ty.span(),
+                        "rótulos pertencem a valores, não a campos",
+                    ));
                 }
                 if matches!(t, Ty::Cap(_) | Ty::IdemKey) {
-                    self.push(Diag::new(E0, "E0004", "capacidades e chaves não podem ser armazenadas em dados", f.ty.span(), "não armazenável"));
+                    self.push(Diag::new(
+                        E0,
+                        "E0004",
+                        "capacidades e chaves não podem ser armazenadas em dados",
+                        f.ty.span(),
+                        "não armazenável",
+                    ));
                 }
             }
         }
@@ -226,14 +323,26 @@ impl<'m> Ctx<'m> {
         for key in MODEL_PROPS {
             if d.prop(key).is_none() {
                 self.push(
-                    Diag::new(E0, "E0030", format!("modelo `{}` sem `{}`", d.name.name, key), d.name.span, "contrato Δ incompleto")
-                        .help(format!("declare {}", MODEL_PROPS.join(", "))),
+                    Diag::new(
+                        E0,
+                        "E0030",
+                        format!("modelo `{}` sem `{}`", d.name.name, key),
+                        d.name.span,
+                        "contrato Δ incompleto",
+                    )
+                    .help(format!("declare {}", MODEL_PROPS.join(", "))),
                 );
             }
         }
         for p in &d.props {
             if !MODEL_PROPS.contains(&p.key.name.as_str()) {
-                self.push(Diag::new(E0, "E0030", format!("propriedade de modelo desconhecida `{}`", p.key.name), p.key.span, "desconhecida"));
+                self.push(Diag::new(
+                    E0,
+                    "E0030",
+                    format!("propriedade de modelo desconhecida `{}`", p.key.name),
+                    p.key.span,
+                    "desconhecida",
+                ));
             } else if p.value < 0.0 {
                 self.push(Diag::new(E0, "E0030", "propriedade de modelo negativa", p.key.span, "deve ser ≥ 0"));
             }
@@ -280,7 +389,13 @@ impl<'m> Ctx<'m> {
         }
         let (rt, _) = self.resolve(&p.ret);
         if !assignable(&rt, &Ty::Bool) {
-            self.push(Diag::new(E0, "E0008", "uma política devolve `Bool`", p.ret.span(), format!("encontrado `{}`", rt.show())));
+            self.push(Diag::new(
+                E0,
+                "E0008",
+                "uma política devolve `Bool`",
+                p.ret.span(),
+                format!("encontrado `{}`", rt.show()),
+            ));
         }
         let body = self.expr(&p.body);
         if !assignable(&body.ty, &Ty::Bool) {
@@ -294,8 +409,14 @@ impl<'m> Ctx<'m> {
         for b in &a.budget {
             if !["tok", "usd", "wall"].contains(&b.key.name.as_str()) {
                 self.push(
-                    Diag::new(E0, "E0031", format!("dimensão de orçamento desconhecida `{}`", b.key.name), b.key.span, "desconhecida")
-                        .help("use tok, usd ou wall"),
+                    Diag::new(
+                        E0,
+                        "E0031",
+                        format!("dimensão de orçamento desconhecida `{}`", b.key.name),
+                        b.key.span,
+                        "desconhecida",
+                    )
+                    .help("use tok, usd ou wall"),
                 );
             } else if b.value < 0.0 {
                 self.push(Diag::new(E0, "E0031", "orçamento negativo", b.key.span, "deve ser ≥ 0"));
@@ -304,7 +425,13 @@ impl<'m> Ctx<'m> {
         let mut events = HashSet::new();
         for h in &a.handlers {
             if !events.insert(h.event.name.clone()) {
-                self.push(Diag::new(E0, "E0002", format!("handler `on {}` definido mais de uma vez", h.event.name), h.event.span, "duplicado"));
+                self.push(Diag::new(
+                    E0,
+                    "E0002",
+                    format!("handler `on {}` definido mais de uma vez", h.event.name),
+                    h.event.span,
+                    "duplicado",
+                ));
             }
             self.scopes = vec![vec![]];
             self.pc = Label::Trusted;
@@ -314,29 +441,47 @@ impl<'m> Ctx<'m> {
             for p in &a.params {
                 let (t, _) = self.resolve(&p.ty);
                 if !matches!(t, Ty::Cap(_) | Ty::Never) {
-                    self.push(Diag::new(E0, "E0040", "parâmetros de agente são capacidades", p.ty.span(), format!("encontrado `{}`", t.show())));
+                    self.push(Diag::new(
+                        E0,
+                        "E0040",
+                        "parâmetros de agente são capacidades",
+                        p.ty.span(),
+                        format!("encontrado `{}`", t.show()),
+                    ));
                 }
                 self.bind(&p.name.name, LTy::trusted(t));
             }
             for p in &h.params {
                 let (t, l) = self.resolve(&p.ty);
                 if matches!(t, Ty::Cap(_) | Ty::IdemKey) {
-                    self.push(Diag::new(E0, "E0041", "eventos não carregam capacidades nem chaves", p.ty.span(), "capacidades só vêm do agente"));
+                    self.push(Diag::new(
+                        E0,
+                        "E0041",
+                        "eventos não carregam capacidades nem chaves",
+                        p.ty.span(),
+                        "capacidades só vêm do agente",
+                    ));
                 }
                 let lab = l.unwrap_or(Label::Trusted);
-                let mut lt = LTy { ty: t, lab, tok: None, origin: Vec::new() };
+                let mut origin = Vec::new();
                 if lab < Label::Trusted {
-                    lt.origin.push(format!("evento `{}({})` ^ {}", h.event.name, p.name.name, lab.name()));
+                    origin.push(format!("evento `{}({})` ^ {}", h.event.name, p.name.name, lab.name()));
                 }
-                self.bind(&p.name.name, lt);
+                let refn = self.refn_of(&p.ty);
+                self.bind(&p.name.name, LTy::declared(t, lab, refn, origin));
             }
             let (rt, _) = self.resolve(&h.ret);
             self.ret = Some(rt.clone());
+            self.ret_refn = self.refn_of(&h.ret);
             let body = self.block(&h.body);
             if !assignable(&body.ty, &rt) {
                 let sp = h.body.tail.as_ref().map(|t| t.span).unwrap_or(h.body.span);
                 self.mismatch(sp, &rt, &body.ty);
+            } else if let Some(t) = &h.body.tail {
+                let want = self.ret_refn;
+                self.expect_refn(t, &body, want, &format!("o retorno de `on {}`", h.event.name));
             }
+            self.ret_refn = None;
             let declared: BTreeSet<String> = h.effects.iter().map(|e| e.name.clone()).collect();
             let used = std::mem::take(&mut self.used);
             for (eff, sp) in &used {
@@ -397,7 +542,13 @@ impl<'m> Ctx<'m> {
             ExprKind::Var(n) => match self.lookup(n) {
                 Some(t) => t,
                 None => {
-                    self.push(Diag::new(E0, "E0001", format!("variável desconhecida `{n}`"), e.span, "não encontrada neste escopo"));
+                    self.push(Diag::new(
+                        E0,
+                        "E0001",
+                        format!("variável desconhecida `{n}`"),
+                        e.span,
+                        "não encontrada neste escopo",
+                    ));
                     LTy::never()
                 }
             },
@@ -415,7 +566,7 @@ impl<'m> Ctx<'m> {
                 if !assignable(&t.ty, &want) {
                     self.mismatch(x.span, &want, &t.ty);
                 }
-                LTy { ty: want, tok: None, ..t }
+                LTy { ty: want, tok: None, refn: None, ..t }
             }
             ExprKind::If { cond, then, els } => self.if_expr(cond, then, els.as_ref()),
             ExprKind::Match { scrut, arms } => self.match_expr(e, scrut, arms),
@@ -428,6 +579,9 @@ impl<'m> Ctx<'m> {
                 if let Some(r) = self.ret.clone() {
                     if !assignable(&t.ty, &r) {
                         self.mismatch(v.span, &r, &t.ty);
+                    } else {
+                        let want = self.ret_refn;
+                        self.expect_refn(v, &t, want, "o valor de `return`");
                     }
                 }
                 LTy::never()
@@ -442,7 +596,13 @@ impl<'m> Ctx<'m> {
                         return self.expr(x);
                     }
                 }
-                self.push(Diag::new(E2, "T0304", "`commit` exige uma chamada de ferramenta irrevocable", x.span, "não é chamada de ferramenta"));
+                self.push(Diag::new(
+                    E2,
+                    "T0304",
+                    "`commit` exige uma chamada de ferramenta irrevocable",
+                    x.span,
+                    "não é chamada de ferramenta",
+                ));
                 self.expr(x)
             }
         }
@@ -454,17 +614,25 @@ impl<'m> Ctx<'m> {
             Ty::Adt(n) => n.clone(),
             Ty::Never => return LTy::never(),
             other => {
-                self.push(Diag::new(E0, "E0005", format!("`{}` não tem campos", other.show()), f.span, "campo inexistente"));
+                self.push(Diag::new(
+                    E0,
+                    "E0005",
+                    format!("`{}` não tem campos", other.show()),
+                    f.span,
+                    "campo inexistente",
+                ));
                 return LTy::never();
             }
         };
         let decl: &'m TypeDecl = self.types[&name];
         let mut found: Option<Ty> = None;
+        let mut refns: Vec<Option<Refn>> = Vec::new();
         let mut ok = true;
         for v in &decl.variants {
             match v.fields.iter().find(|fd| fd.name.name == f.name) {
                 Some(fd) => {
                     let (t, _) = self.resolve(&fd.ty);
+                    refns.push(self.refn_of(&fd.ty));
                     match &found {
                         None => found = Some(t),
                         Some(prev) if crate::ty::same(prev, &t) => {}
@@ -474,12 +642,23 @@ impl<'m> Ctx<'m> {
                 None => ok = false,
             }
         }
+        // O refinamento do campo vale se for o mesmo em todas as variantes.
+        let refn = match refns.first() {
+            Some(first) if refns.iter().all(|r| r == first) => *first,
+            _ => None,
+        };
         match (ok, found) {
-            (true, Some(t)) => LTy { ty: t, lab: r.lab, tok: None, origin: r.origin },
+            (true, Some(t)) => LTy::declared(t, r.lab, refn, r.origin),
             _ => {
                 self.push(
-                    Diag::new(E0, "E0005", format!("campo `{}` não existe em todas as variantes de `{}`", f.name, name), f.span, "campo ausente em alguma variante")
-                        .help("use `match` para acessar campos de variantes específicas"),
+                    Diag::new(
+                        E0,
+                        "E0005",
+                        format!("campo `{}` não existe em todas as variantes de `{}`", f.name, name),
+                        f.span,
+                        "campo ausente em alguma variante",
+                    )
+                    .help("use `match` para acessar campos de variantes específicas"),
                 );
                 LTy::never()
             }
@@ -489,7 +668,13 @@ impl<'m> Ctx<'m> {
     fn method(&mut self, recv: &Expr, method: &Ident, args: &[Expr]) -> LTy {
         let r = self.expr(recv);
         if method.name != "mint" {
-            self.push(Diag::new(E0, "E0003", format!("método desconhecido `{}`", method.name), method.span, "o Marco Zero só conhece `mint()`"));
+            self.push(Diag::new(
+                E0,
+                "E0003",
+                format!("método desconhecido `{}`", method.name),
+                method.span,
+                "o Marco Zero só conhece `mint()`",
+            ));
             return LTy::never();
         }
         if !args.is_empty() {
@@ -502,8 +687,14 @@ impl<'m> Ctx<'m> {
             Ty::Cap(c) if c.contains("IdemKey.Mint") => {}
             Ty::Never => {}
             other => self.push(
-                Diag::new(E2, "E0502", "capacidade insuficiente", recv.span, format!("`{}` não inclui IdemKey.Mint", other.show()))
-                    .help("cunhar chaves exige um parâmetro `Cap[IdemKey.Mint]` do agente"),
+                Diag::new(
+                    E2,
+                    "E0502",
+                    "capacidade insuficiente",
+                    recv.span,
+                    format!("`{}` não inclui IdemKey.Mint", other.show()),
+                )
+                .help("cunhar chaves exige um parâmetro `Cap[IdemKey.Mint]` do agente"),
             ),
         }
         LTy::trusted(Ty::IdemKey)
@@ -524,11 +715,17 @@ impl<'m> Ctx<'m> {
                 let n = match &args[1].kind {
                     ExprKind::Int(n) if *n > 0 => *n as u64,
                     _ => {
-                        self.push(Diag::new(E0, "E0006", "`fit` exige um inteiro literal positivo", args[1].span, "limite de tokens"));
+                        self.push(Diag::new(
+                            E0,
+                            "E0006",
+                            "`fit` exige um inteiro literal positivo",
+                            args[1].span,
+                            "limite de tokens",
+                        ));
                         0
                     }
                 };
-                return LTy { ty: Ty::Text, lab: t.lab, tok: Some(n), origin: t.origin };
+                return LTy { ty: Ty::Text, lab: t.lab, tok: Some(n), origin: t.origin, refn: None };
             }
             "sample" => {
                 if args.len() != 1 {
@@ -538,16 +735,22 @@ impl<'m> Ctx<'m> {
                 if self.in_policy {
                     self.impure(e.span, "`sample`");
                 }
-                let LTy { ty, lab, origin, .. } = self.expr(&args[0]);
+                let LTy { ty, lab, origin, refn, .. } = self.expr(&args[0]);
                 return match ty {
                     Ty::Draft(inner, ispan) => {
                         self.facts.draft_src.insert(e.span, ispan);
                         self.use_effect("Infer", e.span);
-                        LTy { ty: *inner, lab, tok: None, origin }.with_step("sample(…)")
+                        LTy::declared(*inner, lab, refn, origin).with_step("sample(…)")
                     }
                     Ty::Never => LTy::never(),
                     other => {
-                        self.push(Diag::new(E0, "E0023", "`sample` exige um rascunho de `infer`", args[0].span, format!("encontrado `{}`", other.show())));
+                        self.push(Diag::new(
+                            E0,
+                            "E0023",
+                            "`sample` exige um rascunho de `infer`",
+                            args[0].span,
+                            format!("encontrado `{}`", other.show()),
+                        ));
                         LTy::never()
                     }
                 };
@@ -559,7 +762,13 @@ impl<'m> Ctx<'m> {
         }
         if let Some(p) = self.policies.get(&callee.name).copied() {
             if args.len() != p.params.len() {
-                self.push(Diag::new(E0, "E0007", format!("`{}` recebe {} argumento(s)", callee.name, p.params.len()), e.span, "aridade"));
+                self.push(Diag::new(
+                    E0,
+                    "E0007",
+                    format!("`{}` recebe {} argumento(s)", callee.name, p.params.len()),
+                    e.span,
+                    "aridade",
+                ));
             }
             let mut out = LTy::trusted(Ty::Bool);
             for (prm, a) in p.params.iter().zip(args) {
@@ -567,12 +776,21 @@ impl<'m> Ctx<'m> {
                 let (pt, _) = self.resolve(&prm.ty);
                 if !assignable(&at.ty, &pt) {
                     self.mismatch(a.span, &pt, &at.ty);
+                } else {
+                    let want = self.refn_of(&prm.ty);
+                    self.expect_refn(a, &at, want, &format!("{}({})", callee.name, prm.name.name));
                 }
                 out.meet_from(&at);
             }
             return out;
         }
-        self.push(Diag::new(E0, "E0001", format!("função desconhecida `{}`", callee.name), callee.span, "não é ferramenta, política nem primitiva"));
+        self.push(Diag::new(
+            E0,
+            "E0001",
+            format!("função desconhecida `{}`", callee.name),
+            callee.span,
+            "não é ferramenta, política nem primitiva",
+        ));
         for a in args {
             self.expr(a);
         }
@@ -586,12 +804,24 @@ impl<'m> Ctx<'m> {
         }
         match (tool.class, committed) {
             (EffClass::Irrevocable, false) => self.push(
-                Diag::new(E2, "T0301", "efeito irrevogável fora de `commit`", callee.span, format!("`{}` é irrevocable", callee.name))
-                    .help(format!("escreva `commit {}(…)`: irrevogáveis só depois de toda validação", callee.name)),
+                Diag::new(
+                    E2,
+                    "T0301",
+                    "efeito irrevogável fora de `commit`",
+                    callee.span,
+                    format!("`{}` é irrevocable", callee.name),
+                )
+                .help(format!("escreva `commit {}(…)`: irrevogáveis só depois de toda validação", callee.name)),
             ),
             (c, true) if c != EffClass::Irrevocable => self.push(
-                Diag::new(E2, "T0303", "`commit` sobre efeito revogável", callee.span, format!("`{}` é {}", callee.name, c.name()))
-                    .help("`commit` marca apenas efeitos irrevocable"),
+                Diag::new(
+                    E2,
+                    "T0303",
+                    "`commit` sobre efeito revogável",
+                    callee.span,
+                    format!("`{}` é {}", callee.name, c.name()),
+                )
+                .help("`commit` marca apenas efeitos irrevocable"),
             ),
             _ => {}
         }
@@ -615,22 +845,36 @@ impl<'m> Ctx<'m> {
                 if let (Ty::Cap(have), Ty::Cap(need)) = (&at.ty, &pt) {
                     let missing: Vec<String> = need.difference(have).cloned().collect();
                     self.push(
-                        Diag::new(E2, "E0502", "capacidade insuficiente", a.span, format!("falta {}", missing.join(", ")))
-                            .note(format!("tem: {}", at.ty.show()))
-                            .note(format!("exigido: {}({}: {})", callee.name, p.name.name, pt.show()))
-                            .help("capacidades só vêm dos parâmetros do agente; passe uma que inclua o efeito"),
+                        Diag::new(
+                            E2,
+                            "E0502",
+                            "capacidade insuficiente",
+                            a.span,
+                            format!("falta {}", missing.join(", ")),
+                        )
+                        .note(format!("tem: {}", at.ty.show()))
+                        .note(format!("exigido: {}({}: {})", callee.name, p.name.name, pt.show()))
+                        .help("capacidades só vêm dos parâmetros do agente; passe uma que inclua o efeito"),
                     );
                 } else {
                     self.mismatch(a.span, &pt, &at.ty);
                 }
                 continue;
             }
+            let want = self.refn_of(&p.ty);
+            self.expect_refn(a, &at, want, &format!("{}({})", callee.name, p.name.name));
             if let Some(req) = req {
                 self.facts.integrity_checks += 1;
                 let eff = at.lab.meet(self.pc);
                 if eff < req {
                     let implicit = at.lab >= req;
-                    let mut d = Diag::new(E3, "E0412", "fluxo de integridade violado", a.span, format!("integridade {}", eff.name()));
+                    let mut d = Diag::new(
+                        E3,
+                        "E0412",
+                        "fluxo de integridade violado",
+                        a.span,
+                        format!("integridade {}", eff.name()),
+                    );
                     if implicit {
                         d = d.note(format!(
                             "o valor é {}, mas a chamada ocorre num ramo decidido por dado {}",
@@ -658,16 +902,23 @@ impl<'m> Ctx<'m> {
         }
         let (rt, rl) = self.resolve(&tool.ret);
         let lab = rl.unwrap_or(Label::Trusted);
-        let mut out = LTy { ty: rt, lab, tok: None, origin: Vec::new() };
+        let mut origin = Vec::new();
         if lab < Label::Trusted {
-            out.origin.push(format!("{}(…) devolve ^ {}", callee.name, lab.name()));
+            origin.push(format!("{}(…) devolve ^ {}", callee.name, lab.name()));
         }
-        out
+        let refn = self.refn_of(&tool.ret);
+        LTy::declared(rt, lab, refn, origin)
     }
 
     fn ctor(&mut self, e: &Expr, name: &Ident, fields: &[(Ident, Expr)]) -> LTy {
         let Some((td, v)) = self.variants.get(&name.name).copied() else {
-            self.push(Diag::new(E0, "E0009", format!("construtor desconhecido `{}`", name.name), name.span, "nenhum tipo declara esta variante"));
+            self.push(Diag::new(
+                E0,
+                "E0009",
+                format!("construtor desconhecido `{}`", name.name),
+                name.span,
+                "nenhum tipo declara esta variante",
+            ));
             for (_, x) in fields {
                 self.expr(x);
             }
@@ -681,15 +932,30 @@ impl<'m> Ctx<'m> {
                     let (ft, _) = self.resolve(&fd.ty);
                     if !assignable(&at.ty, &ft) {
                         self.mismatch(fe.span, &ft, &at.ty);
+                    } else {
+                        let want = self.refn_of(&fd.ty);
+                        self.expect_refn(fe, &at, want, &format!("o campo `{}.{}`", name.name, fname.name));
                     }
                     out.meet_from(&at);
                 }
-                None => self.push(Diag::new(E0, "E0010", format!("`{}` não tem campo `{}`", name.name, fname.name), fname.span, "campo inexistente")),
+                None => self.push(Diag::new(
+                    E0,
+                    "E0010",
+                    format!("`{}` não tem campo `{}`", name.name, fname.name),
+                    fname.span,
+                    "campo inexistente",
+                )),
             }
         }
         for fd in &v.fields {
             if !fields.iter().any(|(n, _)| n.name == fd.name.name) {
-                self.push(Diag::new(E0, "E0010", format!("campo `{}` ausente em `{}`", fd.name.name, name.name), e.span, "campo obrigatório"));
+                self.push(Diag::new(
+                    E0,
+                    "E0010",
+                    format!("campo `{}` ausente em `{}`", fd.name.name, name.name),
+                    e.span,
+                    "campo obrigatório",
+                ));
             }
         }
         out
@@ -724,7 +990,13 @@ impl<'m> Ctx<'m> {
                         format!("`{}` {} `{}`", lt.ty.show(), op.symbol(), rt.ty.show()),
                     ));
                 } else if matches!(lt.ty, Ty::Cap(_) | Ty::IdemKey | Ty::Draft(..)) {
-                    self.push(Diag::new(E0, "E0008", "tipo não comparável", e.span, format!("`{}` não admite `{}`", lt.ty.show(), op.symbol())));
+                    self.push(Diag::new(
+                        E0,
+                        "E0008",
+                        "tipo não comparável",
+                        e.span,
+                        format!("`{}` não admite `{}`", lt.ty.show(), op.symbol()),
+                    ));
                 }
             }
         }
@@ -762,7 +1034,13 @@ impl<'m> Ctx<'m> {
                         o
                     }
                     None => {
-                        self.push(Diag::new(E0, "E0011", "ramos com tipos diferentes", b.span, format!("`{}` vs `{}`", t.ty.show(), f.ty.show())));
+                        self.push(Diag::new(
+                            E0,
+                            "E0011",
+                            "ramos com tipos diferentes",
+                            b.span,
+                            format!("`{}` vs `{}`", t.ty.show(), f.ty.show()),
+                        ));
                         LTy::never()
                     }
                 }
@@ -780,7 +1058,13 @@ impl<'m> Ctx<'m> {
             Ty::Adt(n) => n.clone(),
             Ty::Never => return LTy::never(),
             other => {
-                self.push(Diag::new(E0, "E0008", "`match` exige um tipo algébrico", scrut.span, format!("encontrado `{}`", other.show())));
+                self.push(Diag::new(
+                    E0,
+                    "E0008",
+                    "`match` exige um tipo algébrico",
+                    scrut.span,
+                    format!("encontrado `{}`", other.show()),
+                ));
                 return LTy::never();
             }
         };
@@ -794,7 +1078,13 @@ impl<'m> Ctx<'m> {
         let mut seen: HashSet<String> = HashSet::new();
         for arm in arms {
             let Some(v) = decl.variants.iter().find(|v| v.name.name == arm.variant.name) else {
-                self.push(Diag::new(E0, "E0009", format!("`{}` não é variante de `{}`", arm.variant.name, tname), arm.variant.span, "variante inexistente"));
+                self.push(Diag::new(
+                    E0,
+                    "E0009",
+                    format!("`{}` não é variante de `{}`", arm.variant.name, tname),
+                    arm.variant.span,
+                    "variante inexistente",
+                ));
                 continue;
             };
             if !seen.insert(v.name.name.clone()) {
@@ -805,10 +1095,17 @@ impl<'m> Ctx<'m> {
                 match v.fields.iter().find(|f| f.name.name == b.name) {
                     Some(fd) => {
                         let (ft, _) = self.resolve(&fd.ty);
-                        self.bind(&b.name, LTy { ty: ft, lab: s.lab, tok: None, origin: s.origin.clone() });
+                        let refn = self.refn_of(&fd.ty);
+                        self.bind(&b.name, LTy::declared(ft, s.lab, refn, s.origin.clone()));
                     }
                     None => {
-                        self.push(Diag::new(E0, "E0010", format!("`{}` não tem campo `{}`", v.name.name, b.name), b.span, "campo inexistente"));
+                        self.push(Diag::new(
+                            E0,
+                            "E0010",
+                            format!("`{}` não tem campo `{}`", v.name.name, b.name),
+                            b.span,
+                            "campo inexistente",
+                        ));
                         self.bind(&b.name, LTy::never());
                     }
                 }
@@ -825,16 +1122,29 @@ impl<'m> Ctx<'m> {
                         o
                     }
                     None => {
-                        self.push(Diag::new(E0, "E0011", "braços com tipos diferentes", arm.body.span, format!("`{}` vs `{}`", prev.ty.show(), bt.ty.show())));
+                        self.push(Diag::new(
+                            E0,
+                            "E0011",
+                            "braços com tipos diferentes",
+                            arm.body.span,
+                            format!("`{}` vs `{}`", prev.ty.show(), bt.ty.show()),
+                        ));
                         prev
                     }
                 },
             });
         }
         (self.pc, self.pc_span) = saved;
-        let missing: Vec<String> = decl.variants.iter().filter(|v| !seen.contains(&v.name.name)).map(|v| v.name.name.clone()).collect();
+        let missing: Vec<String> =
+            decl.variants.iter().filter(|v| !seen.contains(&v.name.name)).map(|v| v.name.name.clone()).collect();
         if !missing.is_empty() {
-            self.push(Diag::new(E0, "E0012", "`match` não exaustivo", e.span, format!("faltam: {}", missing.join(", "))));
+            self.push(Diag::new(
+                E0,
+                "E0012",
+                "`match` não exaustivo",
+                e.span,
+                format!("faltam: {}", missing.join(", ")),
+            ));
         }
         let mut out = result.unwrap_or_else(LTy::never);
         out.meet_from(&s);
@@ -846,7 +1156,13 @@ impl<'m> Ctx<'m> {
             self.impure(e.span, "`infer`");
         }
         let Some(md) = self.models.get(&model.name).copied() else {
-            self.push(Diag::new(E0, "E0020", format!("modelo desconhecido `{}`", model.name), model.span, "não declarado"));
+            self.push(Diag::new(
+                E0,
+                "E0020",
+                format!("modelo desconhecido `{}`", model.name),
+                model.span,
+                "não declarado",
+            ));
             for (_, v) in fields {
                 self.expr(v);
             }
@@ -854,9 +1170,15 @@ impl<'m> Ctx<'m> {
         };
         let (oty, _) = self.resolve(out);
         if !matches!(oty, Ty::Adt(_) | Ty::Text | Ty::Never) {
-            self.push(Diag::new(E0, "E0021", "a saída de `infer` deve ser um tipo algébrico ou `Text`", out.span(), format!("encontrado `{}`", oty.show())));
+            self.push(Diag::new(
+                E0,
+                "E0021",
+                "a saída de `infer` deve ser um tipo algébrico ou `Text`",
+                out.span(),
+                format!("encontrado `{}`", oty.show()),
+            ));
         }
-        let mut acc = LTy { ty: Ty::Unit, lab: self.pc, tok: None, origin: Vec::new() };
+        let mut acc = LTy { ty: Ty::Unit, lab: self.pc, tok: None, origin: Vec::new(), refn: None };
         if self.pc < Label::Trusted {
             acc.origin.push("contexto de controle (pc)".into());
         }
@@ -866,11 +1188,19 @@ impl<'m> Ctx<'m> {
             let quoted = matches!(v.kind, ExprKind::Quote(_));
             let t = self.expr(v);
             if t.lab == Label::Untrusted && !quoted {
-                let mut d = Diag::new(E3, "E0415", "dado Untrusted em posição de instrução", v.span, "entraria no prompt como instrução");
+                let mut d = Diag::new(
+                    E3,
+                    "E0415",
+                    "dado Untrusted em posição de instrução",
+                    v.span,
+                    "entraria no prompt como instrução",
+                );
                 if !t.origin.is_empty() {
                     d = d.note(format!("origem: {}", t.origin.join(" → ")));
                 }
-                self.push(d.help(format!("envolva com `quote(…)`: `{} = quote(…)` marca o conteúdo como dado", k.name)));
+                self.push(
+                    d.help(format!("envolva com `quote(…)`: `{} = quote(…)` marca o conteúdo como dado", k.name)),
+                );
             }
             let ft = match &t.ty {
                 Ty::Text => match t.tok {
@@ -888,7 +1218,13 @@ impl<'m> Ctx<'m> {
                 Ty::Adt(_) => 64,
                 Ty::Never => 0,
                 other => {
-                    self.push(Diag::new(E0, "E0022", format!("`{}` não pode entrar num prompt", other.show()), v.span, "tipo não serializável"));
+                    self.push(Diag::new(
+                        E0,
+                        "E0022",
+                        format!("`{}` não pode entrar num prompt", other.show()),
+                        v.span,
+                        "tipo não serializável",
+                    ));
                     0
                 }
             };
@@ -897,7 +1233,13 @@ impl<'m> Ctx<'m> {
         }
         self.use_effect("Infer", e.span);
         let p = |k: &str| md.prop(k).unwrap_or(0.0);
-        let tok_out = p("max_out") as u64;
+        // Teto de saída derivado do tipo: bytes da codificação canônica (todo token cobre ≥ 1 byte).
+        let max_out = p("max_out") as u64;
+        let by_type = ath_grammar::shape_of(self.m, out).ok().and_then(|s| ath_grammar::max_bytes(&s));
+        let (tok_out, out_by_type) = match by_type {
+            Some(b) if b < max_out => (b, true),
+            _ => (max_out, false),
+        };
         let ctx = p("ctx") as u64;
         if bounded && tok_in + tok_out > ctx {
             self.push(Diag::new(
@@ -910,8 +1252,19 @@ impl<'m> Ctx<'m> {
         }
         let usd = tok_in as f64 * p("price_in") / 1e6 + tok_out as f64 * p("price_out") / 1e6;
         let wall = p("ttft") + tok_out as f64 * p("per_tok");
-        self.facts.infer_costs.insert(e.span, InferCost { model: model.name.clone(), tok_in, tok_out, usd, wall });
-        LTy { ty: Ty::Draft(Box::new(oty), e.span), lab: acc.lab, tok: None, origin: acc.origin }.with_step(format!("infer {}", model.name))
+        let out_ty = match out.unlabeled() {
+            TypeExpr::Refined { base, lo, hi, .. } => {
+                let b = |x: &Option<i64>| x.map(|n| n.to_string()).unwrap_or_default();
+                format!("{}[{}..{}]", base.name, b(lo), b(hi))
+            }
+            other => other.base_name().to_string(),
+        };
+        self.facts
+            .infer_costs
+            .insert(e.span, InferCost { model: model.name.clone(), out_ty, tok_in, tok_out, out_by_type, usd, wall });
+        let refn = self.refn_of(out);
+        LTy { ty: Ty::Draft(Box::new(oty), e.span), lab: acc.lab, tok: None, origin: acc.origin, refn }
+            .with_step(format!("infer {}", model.name))
     }
 
     fn refine(&mut self, e: &Expr, draft: &Expr, policy: &Ident, _retry: u32, els: &Block) -> LTy {
@@ -926,15 +1279,33 @@ impl<'m> Ctx<'m> {
             }
             Ty::Never => Ty::Never,
             other => {
-                self.push(Diag::new(E0, "E0023", "`refine` exige um rascunho de `infer`", draft.span, format!("encontrado `{}`", other.show())));
+                self.push(Diag::new(
+                    E0,
+                    "E0023",
+                    "`refine` exige um rascunho de `infer`",
+                    draft.span,
+                    format!("encontrado `{}`", other.show()),
+                ));
                 Ty::Never
             }
         };
         match self.policies.get(&policy.name).copied() {
-            None => self.push(Diag::new(E0, "E0024", format!("política desconhecida `{}`", policy.name), policy.span, "não declarada")),
+            None => self.push(Diag::new(
+                E0,
+                "E0024",
+                format!("política desconhecida `{}`", policy.name),
+                policy.span,
+                "não declarada",
+            )),
             Some(p) => {
                 if p.params.len() != 1 {
-                    self.push(Diag::new(E0, "E0024", "a política de `refine` recebe exatamente um argumento", policy.span, "aridade"));
+                    self.push(Diag::new(
+                        E0,
+                        "E0024",
+                        "a política de `refine` recebe exatamente um argumento",
+                        policy.span,
+                        "aridade",
+                    ));
                 } else {
                     let (pt, _) = self.resolve(&p.params[0].ty);
                     if !assignable(&inner, &pt) {
@@ -943,7 +1314,12 @@ impl<'m> Ctx<'m> {
                             "E0008",
                             "política incompatível com o rascunho",
                             policy.span,
-                            format!("`{}` decide sobre `{}`, o rascunho produz `{}`", policy.name, pt.show(), inner.show()),
+                            format!(
+                                "`{}` decide sobre `{}`, o rascunho produz `{}`",
+                                policy.name,
+                                pt.show(),
+                                inner.show()
+                            ),
                         ));
                     }
                 }
@@ -967,7 +1343,9 @@ impl<'m> Ctx<'m> {
             ));
         }
         let base = if d.lab >= Label::Endorsed { d.lab } else { Label::Endorsed };
-        let mut out = LTy { ty: inner, lab: base, tok: None, origin: Vec::new() };
+        // A saída decodificada carrega o refinamento do tipo; um `else` com valor próprio não.
+        let refn = if eb.ty.is_never() { d.refn } else { None };
+        let mut out = LTy::declared(inner, base, refn, Vec::new());
         if !eb.ty.is_never() {
             out.meet_from(&eb);
         }

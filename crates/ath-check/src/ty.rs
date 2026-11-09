@@ -68,18 +68,70 @@ pub fn unify(a: &Ty, b: &Ty) -> Option<Ty> {
     }
 }
 
-/// Tipo com rótulo de integridade, limite de tokens (para `Text`) e cadeia de origem.
+/// Refinamento decidível do Marco Zero: intervalo inteiro ou teto de caracteres.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Refn {
+    Int { lo: Option<i64>, hi: Option<i64> },
+    Text { max: u32 },
+}
+
+impl Refn {
+    /// `self ⊆ outer`: todo valor que satisfaz `self` satisfaz `outer`.
+    pub fn within(self, outer: Refn) -> bool {
+        match (self, outer) {
+            (Refn::Int { lo: a, hi: b }, Refn::Int { lo: c, hi: d }) => {
+                c.is_none_or(|c| a.is_some_and(|a| a >= c)) && d.is_none_or(|d| b.is_some_and(|b| b <= d))
+            }
+            (Refn::Text { max: a }, Refn::Text { max: b }) => a <= b,
+            _ => false,
+        }
+    }
+
+    pub fn admits_int(self, n: i64) -> bool {
+        match self {
+            Refn::Int { lo, hi } => lo.is_none_or(|l| n >= l) && hi.is_none_or(|h| n <= h),
+            Refn::Text { .. } => false,
+        }
+    }
+
+    pub fn admits_str(self, s: &str) -> bool {
+        match self {
+            Refn::Text { max } => s.chars().count() as u32 <= max,
+            Refn::Int { .. } => false,
+        }
+    }
+
+    pub fn show(self) -> String {
+        let b = |x: Option<i64>| x.map(|n| n.to_string()).unwrap_or_default();
+        match self {
+            Refn::Int { lo, hi } => format!("Int[{}..{}]", b(lo), b(hi)),
+            Refn::Text { max } => format!("Text[..{max}]"),
+        }
+    }
+}
+
+/// Tipo com rótulo de integridade, refinamento, limite de tokens (para `Text`) e cadeia de origem.
 #[derive(Clone, Debug)]
 pub struct LTy {
     pub ty: Ty,
     pub lab: Label,
     pub tok: Option<u64>,
     pub origin: Vec<String>,
+    pub refn: Option<Refn>,
 }
 
 impl LTy {
     pub fn trusted(ty: Ty) -> Self {
-        LTy { ty, lab: Label::Trusted, tok: None, origin: Vec::new() }
+        LTy { ty, lab: Label::Trusted, tok: None, origin: Vec::new(), refn: None }
+    }
+
+    /// Valor de um tipo declarado: o refinamento de texto também limita os tokens (4 caracteres por token).
+    pub fn declared(ty: Ty, lab: Label, refn: Option<Refn>, origin: Vec<String>) -> Self {
+        let tok = match refn {
+            Some(Refn::Text { max }) => Some((max as u64).div_ceil(4)),
+            _ => None,
+        };
+        LTy { ty, lab, tok, origin, refn }
     }
 
     pub fn never() -> Self {

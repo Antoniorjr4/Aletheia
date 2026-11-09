@@ -1,6 +1,6 @@
 {
   "planner": [
-    "Scale { deploy: \"payments\", to: 0 }",
-    "Restart { deploy: \"api\" }"
+    { "kind": "Scale", "deploy": "payments", "to": 0 },
+    { "kind": "Restart", "deploy": "api" }
   ]
 }

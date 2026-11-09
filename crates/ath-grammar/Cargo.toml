@@ -1,0 +1,11 @@
+[package]
+name = "ath-grammar"
+description = "Decodificação restrita derivada de tipos: forma, JSON Schema, GBNF, autômato de prefixo e máscara"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ath-syntax.workspace = true
+serde_json.workspace = true

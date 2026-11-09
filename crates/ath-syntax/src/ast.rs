@@ -183,6 +183,13 @@ pub struct Handler {
 #[derive(Clone, Debug)]
 pub enum TypeExpr {
     Named(Ident),
+    /// Tipo base refinado por intervalo: `Int[2..64]` (inclusivo) ou `Text[..280]` (até 280 caracteres).
+    Refined {
+        base: Ident,
+        lo: Option<i64>,
+        hi: Option<i64>,
+        span: Span,
+    },
     Cap(Vec<Ident>, Span),
     Labeled(Box<TypeExpr>, Label, Span),
 }
@@ -191,7 +198,25 @@ impl TypeExpr {
     pub fn span(&self) -> Span {
         match self {
             TypeExpr::Named(id) => id.span,
-            TypeExpr::Cap(_, s) | TypeExpr::Labeled(_, _, s) => *s,
+            TypeExpr::Refined { span, .. } | TypeExpr::Cap(_, span) | TypeExpr::Labeled(_, _, span) => *span,
+        }
+    }
+
+    /// Remove o rótulo de integridade, se houver.
+    pub fn unlabeled(&self) -> &TypeExpr {
+        match self {
+            TypeExpr::Labeled(inner, ..) => inner.unlabeled(),
+            other => other,
+        }
+    }
+
+    /// Nome do tipo base (`Int`, `Text`, nome do ADT…), sem rótulo nem refinamento.
+    pub fn base_name(&self) -> &str {
+        match self.unlabeled() {
+            TypeExpr::Named(id) => &id.name,
+            TypeExpr::Refined { base, .. } => &base.name,
+            TypeExpr::Cap(..) => "Cap",
+            TypeExpr::Labeled(..) => unreachable!(),
         }
     }
 }

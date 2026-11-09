@@ -305,6 +305,40 @@ impl Parser {
         Ok(AgentDecl { name, params, budget, budget_span: bstart.to(bend), handlers })
     }
 
+    /// `Int[lo..hi]`, `Int[lo..]`, `Int[..hi]` (intervalo inclusivo) e `Text[..n]` (até n caracteres).
+    fn refined(&mut self, base: Ident) -> PResult<TypeExpr> {
+        self.expect(Tok::LBrack)?;
+        let bound = |p: &mut Self| -> PResult<Option<i64>> {
+            let neg = p.eat(&Tok::Minus);
+            match p.peek().clone() {
+                Tok::Int(n) => {
+                    p.bump();
+                    Ok(Some(if neg { -n } else { n }))
+                }
+                _ if neg => Err(p.err("esperado inteiro após `-`")),
+                _ => Ok(None),
+            }
+        };
+        let lo = bound(self)?;
+        self.expect(Tok::Dot)?;
+        self.expect(Tok::Dot)?;
+        let hi = bound(self)?;
+        let end = self.expect(Tok::RBrack)?;
+        let span = base.span.to(end);
+        if lo.is_none() && hi.is_none() {
+            return Err(ParseError { msg: "refinamento vazio: informe ao menos um limite".into(), span });
+        }
+        if let (Some(a), Some(b)) = (lo, hi) {
+            if a > b {
+                return Err(ParseError { msg: format!("intervalo vazio: {a} > {b}"), span });
+            }
+        }
+        if base.name == "Text" && (lo.is_some() || hi.is_none_or(|h| h < 0)) {
+            return Err(ParseError { msg: "texto aceita apenas teto de caracteres: `Text[..n]`".into(), span });
+        }
+        Ok(TypeExpr::Refined { base, lo, hi, span })
+    }
+
     fn ty(&mut self) -> PResult<TypeExpr> {
         let start = self.span();
         let base = if self.is_contextual("Cap") && *self.peek_at(1) == Tok::LBrack {
@@ -317,7 +351,12 @@ impl Parser {
             let end = self.expect(Tok::RBrack)?;
             TypeExpr::Cap(effs, start.to(end))
         } else {
-            TypeExpr::Named(self.ident()?)
+            let id = self.ident()?;
+            if *self.peek() == Tok::LBrack && (id.name == "Int" || id.name == "Text") {
+                self.refined(id)?
+            } else {
+                TypeExpr::Named(id)
+            }
         };
         if self.eat(&Tok::Caret) {
             let l = self.ident()?;
@@ -327,7 +366,9 @@ impl Parser {
                 "Trusted" => Label::Trusted,
                 other => {
                     return Err(ParseError {
-                        msg: format!("rótulo de integridade desconhecido `{other}` (use Untrusted, Endorsed ou Trusted)"),
+                        msg: format!(
+                            "rótulo de integridade desconhecido `{other}` (use Untrusted, Endorsed ou Trusted)"
+                        ),
                         span: l.span,
                     })
                 }

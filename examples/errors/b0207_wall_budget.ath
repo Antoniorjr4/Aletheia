@@ -1,4 +1,4 @@
--- ERRO ESPERADO · Orçamento: 3 tentativas não cabem em 30 s no pior caminho
+-- ERRO ESPERADO · Orçamento: 3 tentativas não cabem em 15 s no pior caminho
 -- Derivado de examples/remediate.ath por uma única edição.
 module ops.remediate
 
@@ -6,9 +6,11 @@ module ops.remediate
 -- Agente de remediação: lê logs de terceiros (não confiáveis), pede um plano a
 -- um modelo, só executa o que a política aceita e prova o orçamento antes de rodar.
 
+-- O tipo é a gramática da saída do modelo: só existem estas duas ações, nomes com até
+-- 32 caracteres e réplicas entre 2 e 64. `athc grammar … --type Action` mostra o resultado.
 type Action =
-  | Restart { deploy: Text }
-  | Scale   { deploy: Text, to: Int }
+  | Restart { deploy: Text[..32] }
+  | Scale   { deploy: Text[..32], to: Int[2..64] }
 
 -- ① Modelo como valor: preço, janela e latência formam o contrato Δ
 model planner {
@@ -31,10 +33,11 @@ tool page(c: Cap[Page], msg: Text, k: IdemKey) -> Unit
   ! { Page } irrevocable latency 1.0
 
 -- ③ Política: pura, total e decidível. A autoridade é dela, não do modelo.
+--   (o intervalo de réplicas já está no tipo; a política decide sobre quais deployments agir)
 policy SafeRemediation(a: Action) -> Bool =
   match a {
-    Restart { deploy }   => deploy == "api" || deploy == "worker",
-    Scale { deploy, to } => (deploy == "api" || deploy == "worker") && to >= 2 && to <= 64,
+    Restart { deploy } => deploy == "api" || deploy == "worker",
+    Scale { deploy }   => deploy == "api" || deploy == "worker",
   }
 
 -- ④ Agente: capacidades e orçamento são parâmetros; o compilador prova o orçamento
@@ -42,12 +45,13 @@ agent Remediator(
   cluster : Cap[Cluster.Read + Cluster.Write],
   oncall  : Cap[Page],
   keys    : Cap[IdemKey.Mint],
-) budget [tok <= 20000, usd <= 0.50, wall <= 30.0]
+) budget [tok <= 20000, usd <= 0.50, wall <= 15.0]
 {
   on alert(deploy: Text ^ Untrusted) -> Text ! { Infer, Cluster.Read, Cluster.Write, Page } {
     let l = logs(cluster, deploy)
 
-    -- ⑤ Inferência: o log entra como dado (quote), nunca como instrução
+    -- ⑤ Inferência: o log entra como dado (quote), nunca como instrução; a saída é decodificada
+    --   sob a gramática de `Action`, com teto de tokens derivado do tipo
     let draft = infer planner -> Action {
       task = "Diagnostique o incidente e proponha uma ação corretiva.",
       logs = quote(fit(l, 2000)),

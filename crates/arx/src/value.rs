@@ -1,3 +1,4 @@
+use ath_syntax::ast::TypeExpr;
 use ath_syntax::Span;
 use serde_json::json;
 use std::collections::BTreeSet;
@@ -6,7 +7,10 @@ use std::rc::Rc;
 #[derive(Clone, Debug)]
 pub struct Draft {
     pub model: String,
+    /// Nome do tipo de saída (para mensagens).
     pub out: String,
+    /// Tipo de saída completo, com refinamentos: dele sai a gramática da decodificação.
+    pub out_ty: TypeExpr,
     pub prompt: String,
     pub site: Span,
 }
@@ -30,7 +34,9 @@ impl PartialEq for Value {
             (Value::Bool(a), Value::Bool(b)) => a == b,
             (Value::Text(a), Value::Text(b)) => a == b,
             (Value::Unit, Value::Unit) => true,
-            (Value::Adt { variant: va, fields: fa, .. }, Value::Adt { variant: vb, fields: fb, .. }) => va == vb && fa == fb,
+            (Value::Adt { variant: va, fields: fa, .. }, Value::Adt { variant: vb, fields: fb, .. }) => {
+                va == vb && fa == fb
+            }
             (Value::Key(a), Value::Key(b)) => a == b,
             _ => false,
         }

@@ -120,28 +120,46 @@ pub fn compare(r: &HandlerReport, a: &AgentDecl, diags: &mut Vec<Diag>) {
     if let Some(lim) = r.tok {
         if w.tok > lim {
             diags.push(
-                Diag::new(Stratum::E6, "B0201", "orçamento de tokens excedido", at, format!("pior caso: {}", fmt::tok(w.tok)))
-                    .note(whose.clone())
-                    .help(format!("reduza `retry` ou o prompt, ou eleve `tok` para ≥ {}", fmt::int(w.tok))),
+                Diag::new(
+                    Stratum::E6,
+                    "B0201",
+                    "orçamento de tokens excedido",
+                    at,
+                    format!("pior caso: {}", fmt::tok(w.tok)),
+                )
+                .note(whose.clone())
+                .help(format!("reduza `retry` ou o prompt, ou eleve `tok` para ≥ {}", fmt::int(w.tok))),
             );
         }
     }
     if let Some(lim) = r.usd {
         if w.usd > lim + 1e-12 {
             diags.push(
-                Diag::new(Stratum::E6, "B0202", "orçamento em dólares excedido", at, format!("pior caso: {}", fmt::usd(w.usd)))
-                    .note(whose.clone())
-                    .help("reduza `retry` ou escolha um modelo mais barato"),
+                Diag::new(
+                    Stratum::E6,
+                    "B0202",
+                    "orçamento em dólares excedido",
+                    at,
+                    format!("pior caso: {}", fmt::usd(w.usd)),
+                )
+                .note(whose.clone())
+                .help("reduza `retry` ou escolha um modelo mais barato"),
             );
         }
     }
     if let Some(lim) = r.wall {
         if w.wall > lim + 1e-9 {
             diags.push(
-                Diag::new(Stratum::E6, "B0207", "orçamento de tempo excedido", at, format!("pior caso: {}", fmt::secs(w.wall)))
-                    .note(format!("caminho: {} = {}", w.path(), fmt::secs(w.wall)))
-                    .note(whose)
-                    .help(format!("reduza `retry` ou eleve `wall` para ≥ {}", fmt::dec(w.wall.ceil(), 0))),
+                Diag::new(
+                    Stratum::E6,
+                    "B0207",
+                    "orçamento de tempo excedido",
+                    at,
+                    format!("pior caso: {}", fmt::secs(w.wall)),
+                )
+                .note(format!("caminho: {} = {}", w.path(), fmt::secs(w.wall)))
+                .note(whose)
+                .help(format!("reduza `retry` ou eleve `wall` para ≥ {}", fmt::dec(w.wall.ceil(), 0))),
             );
         }
     }

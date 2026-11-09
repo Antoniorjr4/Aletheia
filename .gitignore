@@ -1,3 +1,5 @@
 /target
 /.arx
 /.codex
+/bench/m1/results/
+__pycache__/
