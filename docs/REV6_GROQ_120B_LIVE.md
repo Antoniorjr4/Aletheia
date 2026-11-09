@@ -53,3 +53,14 @@ Uma nova execução do workflow somente será possível após a configuração
 do segredo e um novo disparo. Os resultados empíricos, inclusive falhas de
 contrato, deverão ser preservados sem inventar contagens ou suavizar
 violações. Resultados da suíte sintética M1 não equivalem ao AgentDojo oficial.
+
+## Segunda tentativa após criação do segredo: HTTP 401
+
+- Reexecução de `run 42716649487`, tentativa 2 (após o usuário configurar `GROQ_API_KEY`).
+- Etapa **Confirmar credencial do laboratório**: sucesso; valor não vazio recebido em `OPENAI_API_KEY`.
+- Etapa **Confirmar permissão real do 120B na Groq**: falha.
+- Resposta real da Groq (todas as sondas): `HTTP 401`, `Invalid API Key`.
+- Sondas rejeitadas: `openai/gpt-oss-120b`, `openai/gpt-oss-20b`, `qwen/qwen3.8-27b`.
+- Resultado: zero inferências concluídas, zero cassetes HTTP, sem amostras de tokens de raciocínio ou latência de geração, M1 indisponível.
+
+**Próximo passo humano**: criar ou recuperar uma chave válida do **projeto Groq correto**, substituí-la em `Settings > Secrets and variables > Actions > GROQ_API_KEY` no Aletheia-Lab e reexecutar o workflow. **Não enviar a chave por chat.** HTTP 401 significa credencial inválida, não prova indisponibilidade ou bloqueio do modelo.
