@@ -1,0 +1,78 @@
+name: Rev6 M1 · Groq 120B · 3 amostras por cenário
+
+on:
+  push:
+    branches: [rev6-dev]
+    paths: [.github/workflows/rev6-groq-120b-multisample.yml]
+  workflow_dispatch:
+
+# Somente no repositório privado Aletheia-Lab; o original nunca é escrito.
+permissions:
+  contents: write
+
+jobs:
+  live-multisample:
+    name: Teste M1 pareado · 7 cenários × 3 · 120B
+    runs-on: ubuntu-latest
+    timeout-minutes: 95
+    env:
+      OPENAI_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      OPENAI_BASE_URL: https://api.groq.com/openai/v1
+      MODEL_INPUT: openai/gpt-oss-120b
+      NO_COLOR: "1"
+      PYTHONPATH: runtimes/python
+      REPS: "3"
+      TPM: "6500"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: rev6-dev
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Credencial presente
+        run: |
+          test -n "$OPENAI_API_KEY" || { echo "::error::GROQ_API_KEY ausente"; exit 1; }
+      - name: Testar explicitamente o acesso ao GPT-OSS-120B
+        run: |
+          python3 bench/m1/probe.py --pick openai/gpt-oss-120b
+          grep -qx "ALETHEIA_MODEL=openai/gpt-oss-120b" "$GITHUB_ENV" || exit 1
+      - name: Validar sintaxe do relatório estatístico
+        run: python3 -m py_compile bench/m1/analyze_multisample.py
+      - name: Compilar o runtime e validar agente com contexto ancorado
+        run: |
+          cargo build --release --bin athc
+          ./target/release/athc check examples/remediate.ath
+          ./target/release/athc check bench/m1/aletheia/agent.ath
+      - name: M1 ao vivo · 7 cenários × 3 repetições nos dois sistemas
+        run: |
+          python3 bench/m1/run.py --live --reps "$REPS" --tpm "$TPM" \
+            --athc target/release/athc \
+            --out bench/m1/live/2026-11-09-gpt-oss-120b-rev6-n3
+      - name: Relatório da matriz completa e p50/p95
+        if: always()
+        run: |
+          p=bench/m1/live/2026-11-09-gpt-oss-120b-rev6-n3
+          if [ -s "$p/results.json" ]; then
+            python3 bench/m1/analyze_multisample.py "$p/results.json" \
+              --output "$p/analysis.md"
+          else
+            echo "::warning::M1 não produziu results.json; consulte logs e artefatos parciais"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rev6-groq-120b-m1-n3-${{ github.run_id }}
+          path: bench/m1/live/2026-11-09-gpt-oss-120b-rev6-n3
+      - name: Versionar medições no rev6-dev, sem alterar o original
+        if: success()
+        run: |
+          git config user.name "Aletheia-Lab CI"
+          git config user.email "aletheia-lab-ci@users.noreply.github.com"
+          git add bench/m1/live/2026-11-09-gpt-oss-120b-rev6-n3
+          git diff --cached --quiet && exit 0
+          git commit -m "Rev6: real Groq GPT-OSS-120B paired M1 n=3 results [skip ci]"
+          git push origin HEAD:rev6-dev
