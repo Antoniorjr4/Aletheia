@@ -571,6 +571,11 @@ fn replay_variants_force_every_contract_and_http_path_identically() {
 /// backends reproduzem exatamente o journal da execução real.
 #[test]
 fn replay_of_real_groq_traffic_reproduces_the_recorded_journal() {
+    // Cassetes gravados na Groq pelo workflow `replay.yml` e versionados em bench/replay/.
+    // Para cada um: journal BLAKE3 idêntico, byte a byte, entre a execução real, o replay no
+    // ARX e o replay no Python emitido; e, extraídos de cada journal, a mesma árvore de
+    // compensação e o mesmo balanço de orçamento. O conjunto precisa cobrir as duas
+    // gravações (ARX e Python) e todos os caminhos de saga sob tráfego real.
     let dir = root().join("bench/replay");
     let mut cassettes: Vec<PathBuf> = Vec::new();
     for d in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
@@ -583,15 +588,79 @@ fn replay_of_real_groq_traffic_reproduces_the_recorded_journal() {
         }
     }
     cassettes.sort();
-    for path in cassettes {
+    let mut kinds = std::collections::BTreeSet::new();
+    let (mut by_arx, mut by_py) = (0, 0);
+    for path in &cassettes {
         let tag = path.file_name().unwrap().to_string_lossy().replace(".cassette.json", "");
-        let cas = Cassette::load(&path).unwrap();
+        let cas = Cassette::load(path).unwrap();
+        assert!(cas.provider.starts_with("openai-compat("), "{tag}: provedor {}", cas.provider);
+        assert!(!cas.exchanges.is_empty(), "{tag}: nenhuma troca HTTP gravada");
+        if tag.ends_with(".py") {
+            by_py += 1
+        } else {
+            by_arx += 1
+        }
         let (arx_journal, _) = replay_arx(&cas);
+        let py_journal = replay_py(&cas, &format!("real-{tag}"));
         assert_same(&format!("{tag}: gravação × replay ARX"), &cas.journal, &arx_journal);
-        assert_same(
-            &format!("{tag}: gravação × replay Python"),
-            &cas.journal,
-            &replay_py(&cas, &format!("real-{tag}")),
-        );
+        assert_same(&format!("{tag}: gravação × replay Python"), &cas.journal, &py_journal);
+        let recorded = saga_tree(&cas.journal);
+        assert_eq!(recorded, saga_tree(&arx_journal), "{tag}: árvore de compensação (ARX)");
+        assert_eq!(recorded, saga_tree(&py_journal), "{tag}: árvore de compensação (Python)");
+        let spent = balance(&cas.journal);
+        assert_eq!(spent, balance(&arx_journal), "{tag}: balanço de orçamento (ARX)");
+        assert_eq!(spent, balance(&py_journal), "{tag}: balanço de orçamento (Python)");
+        for line in cas.journal.lines() {
+            let e: Json = serde_json::from_str(line).unwrap();
+            kinds.insert(e["kind"].as_str().unwrap().to_string());
+        }
     }
+    assert!(by_arx > 0 && by_py > 0, "faltam gravações reais: {by_arx} do ARX, {by_py} do Python");
+    // sagas sob carga real, mais a injeção recusada no decodificador e o esgotamento do refine
+    for k in [
+        "saga_commit",
+        "saga_abort",
+        "compensate",
+        "saga_recovered",
+        "compensation_failed",
+        "reconcile",
+        "decode_reject",
+        "refine_exhausted",
+    ] {
+        assert!(kinds.contains(k), "nenhum cassete real cobre `{k}`: {kinds:?}");
+    }
+}
+
+/// A árvore de compensação de um journal: cada evento de saga (abertura implícita no
+/// primeiro passo, espera, aborto, compensação, recuperação, falha de compensação, commit),
+/// com a ferramenta e o resultado, na ordem causal do journal.
+fn saga_tree(journal: &str) -> Vec<Json> {
+    const SAGA: [&str; 9] = [
+        "await_ok",
+        "await_timeout",
+        "saga_commit",
+        "saga_abort",
+        "compensate",
+        "saga_recovered",
+        "compensation_failed",
+        "timeout_unknown",
+        "reconcile",
+    ];
+    journal
+        .lines()
+        .map(|l| serde_json::from_str::<Json>(l).unwrap())
+        .filter(|e| SAGA.contains(&e["kind"].as_str().unwrap()))
+        .map(|e| json!({ "seq": e["seq"], "kind": e["kind"], "detail": e["detail"] }))
+        .collect()
+}
+
+/// O balanço de orçamento: o gasto final por dimensão, mais o gasto de cada inferência.
+fn balance(journal: &str) -> Json {
+    let entries: Vec<Json> = journal.lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+    let infer: Vec<Json> = entries
+        .iter()
+        .filter(|e| e["kind"] == "infer")
+        .map(|e| json!([e["detail"]["tok_in"], e["detail"]["tok_out"], e["detail"]["usd"]]))
+        .collect();
+    json!({ "end": entries.last().unwrap()["detail"]["spent"], "infer": infer })
 }
