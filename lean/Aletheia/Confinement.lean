@@ -88,7 +88,7 @@ theorem doScopedAct_authorized {S : Sig} {c : Cfg} {A : Authority}
         | unit => simp [hΓ, hρ] at h
         | list vs => simp [hΓ, hρ] at h
         | cap id =>
-          by_cases hp : A.effectOf t ∈ effects ∧ A.permits id t
+          by_cases hp : effects.contains (A.effectOf t) && (A.grants id).contains (A.effectOf t) = true
           · have hact : doAct S c t (some (.cap id)) o = .ok r := by
               simpa [hΓ, hρ, hp] using h
             obtain ⟨id', hcv, _, _, hr⟩ := doAct_ok hact
@@ -98,7 +98,8 @@ theorem doScopedAct_authorized {S : Sig} {c : Cfg} {A : Authority}
             intro ev hev
             simp only [List.mem_singleton] at hev
             cases hev
-            exact hp.2
+            have hright : (A.grants id).contains (A.effectOf t) = true := (Bool.and_eq_true.mp hp).2
+            simpa [AuthorizedEvent, Authority.permits] using hright
           · simp [hΓ, hρ, hp] at h
 
 /-- T2: todos os eventos de ferramenta de uma execucao do nucleo
