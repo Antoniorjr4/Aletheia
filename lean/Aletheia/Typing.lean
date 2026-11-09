@@ -143,7 +143,7 @@ def scopeCheck (A : Authority) : List ScopedBind → Exp → Bool
   | Γ, .endorse _ e d => scopeCheck A Γ e && scopeCheck A Γ d
   | Γ, .act t k arg =>
       (match Γ[k]? with
-        | some (.cap E) => E.contains (A.effectOf t)
+        | some (.cap effects) => effects.contains (A.effectOf t)
         | _ => false) && scopeCheck A Γ arg
   | Γ, .for_ _ xs body => scopeCheck A Γ xs && scopeCheck A (.data :: Γ) body
   | Γ, .infer _ _ a => scopeCheck A Γ a
@@ -153,16 +153,15 @@ theorem scopeCheck_rejects_missing (A : Authority) (Γ : List ScopedBind)
     (tool k : Nat) (arg : Exp)
     (h : ¬ ScopedBind.permits Γ k (A.effectOf tool)) :
     scopeCheck A Γ (.act tool k arg) = false := by
-  simp only [scopeCheck]
   cases hget : Γ[k]? with
-  | none => simp [hget]
+  | none => simp [scopeCheck, hget]
   | some b =>
     cases b with
-    | data => simp [hget]
-    | cap E =>
-      have hn : A.effectOf tool ∉ E := by
+    | data => simp [scopeCheck, hget]
+    | cap effects =>
+      have hn : A.effectOf tool ∉ effects := by
         intro he
-        exact h ⟨E, hget, he⟩
-      simp [hget, List.contains_eq_false.mpr hn]
+        exact h ⟨effects, hget, he⟩
+      simp [scopeCheck, hget, hn]
 
 end Aletheia
