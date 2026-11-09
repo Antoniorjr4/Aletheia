@@ -5,4 +5,5 @@ import Aletheia.Typing
 import Aletheia.Eval
 import Aletheia.Soundness
 import Aletheia.Noninterference
+import Aletheia.Recovery
 import Aletheia.Examples
