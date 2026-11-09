@@ -1,10 +1,11 @@
 # Aletheia em Lean 4: o núcleo λ_Ath mecanizado
 
 Esta pasta é a primeira prova mecanizada do Aletheia. Ela formaliza o núcleo λ_Ath, isto é,
-o subconjunto que o `athc` verifica e o ARX executa, e demonstra dois teoremas.
+o subconjunto que o `athc` verifica e o ARX executa, e demonstra T1, T3 e, na Rev6, T2 para um avaliador com guarda explícita de autoridade.
 
 - **T1**: preservação e progresso, incluindo capacidades lineares e orçamento graduado.
 - **T3**: não-interferência com endosso robusto.
+- **T2 (Rev6, núcleo com escopo)**: toda execução autorizada de `runScoped` passa no checker lexical `Cap[E]` e somente emite eventos externos concedidos à identidade de capacidade. Isto ainda não é uma prova de refinamento do ARX Rust.
 
 Não há `sorry`. Cada teorema principal tem o conjunto de axiomas fixado em
 [`Aletheia/Axioms.lean`](Aletheia/Axioms.lean), que só aceita os três axiomas padrão do Lean
@@ -27,6 +28,9 @@ lake build --wfail          # toolchain fixado em lean-toolchain (Lean 4.20.0)
 | `Eval.lean` | avaliador total de passo grande com quatro erros verificados em tempo de execução | ARX |
 | `Soundness.lean` | T1 | |
 | `Noninterference.lean` | T3 | |
+| `Confinement.lean` | T2 (`T2_scoped`, `T2_confinement`) na semântica `evalScoped` | E1 / escopo de efeito |
+| `T2Examples.lean` | capacidade autorizada, ausente, revogada; testes por redução | E1 / T2 |
+| `Recovery.lean` | primeira modelagem abstrata da recuperação de sagas | T6 / T9 parcial |
 | `Examples.lean` | o padrão de remediação: tipado, executado e com as variantes perigosas recusadas | `examples/remediate.ath` |
 
 As expressões são estas, com índices de de Bruijn:
@@ -130,6 +134,10 @@ endosso aceito satisfaz a sua política auditada.
   - com o modelo respondendo 5, o traço é `[endorse (some 5), act scale 5]`.
 
   Os dois divergem exatamente na decisão de endosso.
+
+## T2 (Rev6): capacidade parametrizada por conjunto de efeitos
+
+O novo contexto lexical distingue `ScopedBind.data` e `ScopedBind.cap E`. `scopeCheck` valida toda referência a `act` (inclusive ramos e laços) antes de iniciar `runScoped`. Em tempo de execução, `doScopedAct` verifica a associação entre o índice da capacidade no contexto, sua identidade concreta e o conjunto de efeitos concedido. O teorema `T2_scoped` combina ambas as garantias e prova, por indução na AST, que todo evento externo do traço foi autorizado, sob oráculo arbitrário. O escopo da prova é o **avaliador Lean instrumentado**, não o `eval` histórico nem o executável Rust. Os teoremas são auditados em `Axioms.lean`: apenas `propext` e `Quot.sound`.
 
 ## Fora deste núcleo, por ora
 
