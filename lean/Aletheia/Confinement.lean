@@ -47,7 +47,7 @@ theorem AuthorizedTrace.consEndorse {A : Authority} {tr : List Ev}
     AuthorizedTrace A (.endorse p v :: tr) := by
   simpa using (AuthorizedTrace.append (AuthorizedTrace.endorse A p v) h)
 
-theorem AuthorizedTrace.loop {A : Authority} {f : Val → St → Except Err Out}
+theorem AuthorizedTrace.loopAllowed {A : Authority} {f : Val → St → Except Err Out}
     (hf : ∀ v s o, f v s = .ok o → AuthorizedTrace A o.tr) :
     ∀ (vs : List Val) (s : St) (r : St × List Ev),
       loop f vs s = .ok r → AuthorizedTrace A r.2 := by
@@ -170,7 +170,7 @@ theorem evalScoped_t2 (S : Sig) (c : Cfg) (A : Authority) :
       · obtain ⟨r, hr, ho⟩ := bnd_eq_ok.mp h
         cases ho
         exact AuthorizedTrace.append (ihx Γ ρ s ox hx)
-          (AuthorizedTrace.loop
+          (AuthorizedTrace.loopAllowed
             (fun v st out hout => ihbody (.data :: Γ) (v :: ρ) st out hout)
             _ _ r hr)
       · cases h
