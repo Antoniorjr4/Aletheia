@@ -55,3 +55,7 @@ open Aletheia
 
 /-- info: 'Aletheia.Examples.looped_not_linear' does not depend on any axioms -/
 #guard_msgs in #print axioms Examples.looped_not_linear
+
+-- Rev6 T2: registrar dependencias formais antes do guard fixo.
+#print axioms T2_confinement
+#print axioms T2_scoped
