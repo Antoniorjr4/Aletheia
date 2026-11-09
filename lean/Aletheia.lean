@@ -7,4 +7,5 @@ import Aletheia.Soundness
 import Aletheia.Noninterference
 import Aletheia.Recovery
 import Aletheia.Confinement
+import Aletheia.T2Examples
 import Aletheia.Examples
