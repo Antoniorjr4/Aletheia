@@ -106,7 +106,7 @@ theorem recovered_is_verified {W : Type u}
   | some w' =>
     cases hv : verify w' with
     | false => simp [compensateOrEscalate, hc, hv] at h
-    | true => exact ⟨w', rfl, rfl⟩
+    | true => exact ⟨w', rfl, hv⟩
 
 /-- T6, nucleo de seguranca: recuperacao notificada implica Inv no mundo
     compensado, DESDE QUE a sonda positiva seja correta. -/
