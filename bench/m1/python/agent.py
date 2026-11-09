@@ -178,7 +178,12 @@ class OpenAiChatModel:
             req = urllib.request.Request(
                 f"{self.base}/chat/completions",
                 data=data,
-                headers={"Content-Type": "application/json", "Authorization": f"Bearer {self.key}"},
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {self.key}",
+                    # O Cloudflare na frente da API da Groq recusa o User-Agent padrão do urllib (erro 1010).
+                    "User-Agent": "aletheia-bench/0.3 (+https://github.com/Antoniorjr4/Aletheia)",
+                },
             )
             t0 = time.monotonic()
             try:

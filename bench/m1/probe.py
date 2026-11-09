@@ -15,6 +15,8 @@ import sys
 import urllib.error
 import urllib.request
 
+# O Cloudflare na frente da API da Groq recusa o User-Agent padrão do urllib (erro 1010).
+USER_AGENT = "aletheia-bench/0.3 (+https://github.com/Antoniorjr4/Aletheia)"
 CANDIDATES = ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"]
 
 
@@ -27,7 +29,7 @@ def probe(base: str, key: str, model: str) -> tuple[str, str]:
     req = urllib.request.Request(
         f"{base}/chat/completions",
         data=json.dumps(body).encode(),
-        headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"},
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}", "User-Agent": USER_AGENT},
     )
     try:
         with urllib.request.urlopen(req, timeout=60) as r:
