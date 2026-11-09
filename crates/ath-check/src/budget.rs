@@ -246,6 +246,71 @@ impl Walker<'_, '_> {
                 .expr(draft)
                 .seq(PCost::leaf(self.infer_cost(e.span, *retry)))
                 .seq(PCost::zero().alt(self.block(els))),
+            // Pior caminho de uma saga: o corpo inteiro executa e só então falha; seguem as
+            // compensações de todos os efeitos compensáveis, a sonda de recuperação e o tratador.
+            ExprKind::Atomic { recover, body, on_failure, on_cf } => {
+                let success = self.block(body);
+                let mut comp = Cost::default();
+                for (name, t) in compensable_calls(self.cx, body) {
+                    let lat = t.latency;
+                    comp = comp.add(&Cost { tok: 0, usd: t.usd, wall: lat, trace: vec![(format!("{name}↩"), lat)] });
+                }
+                let mut handlers = PCost::zero();
+                for (_, b) in on_failure.iter().chain(on_cf.iter()) {
+                    handlers = handlers.alt(self.block(b));
+                }
+                let failure = self.block(body).seq(PCost::leaf(comp)).seq(self.expr(recover)).seq(handlers);
+                success.alt(failure)
+            }
+            ExprKind::Await { cond, within } => self.expr(cond).seq(PCost::leaf(Cost {
+                tok: 0,
+                usd: 0.0,
+                wall: *within,
+                trace: vec![("await".into(), *within)],
+            })),
+            // Reconciliação é obrigação fora do contrato Δ (spec 2.7): não entra no pior caminho.
+            ExprKind::Reconcile { .. } | ExprKind::Transfer(_) => PCost::zero(),
         }
     }
+}
+
+/// Chamadas a ferramentas compensáveis num bloco, com o compensador de cada uma.
+fn compensable_calls<'m>(cx: &Ctx<'m>, b: &Block) -> Vec<(String, &'m ToolDecl)> {
+    fn ex<'m>(cx: &Ctx<'m>, e: &Expr, out: &mut Vec<(String, &'m ToolDecl)>) {
+        match &e.kind {
+            ExprKind::Call { callee, args } => {
+                if let Some(t) = cx.tools.get(&callee.name) {
+                    if t.class == EffClass::Compensable {
+                        if let Some(c) = t.compensator.as_ref().and_then(|c| cx.tools.get(&c.name)) {
+                            out.push((c.name.name.clone(), *c));
+                        }
+                    }
+                }
+                args.iter().for_each(|a| ex(cx, a, out));
+            }
+            ExprKind::Block(b) => blk(cx, b, out),
+            ExprKind::If { cond, then, els } => {
+                ex(cx, cond, out);
+                blk(cx, then, out);
+                if let Some(b) = els {
+                    blk(cx, b, out);
+                }
+            }
+            ExprKind::Match { arms, .. } => arms.iter().for_each(|a| ex(cx, &a.body, out)),
+            ExprKind::Field(r, _) | ExprKind::Unary(_, r) | ExprKind::Quote(r) | ExprKind::Commit(r) => ex(cx, r, out),
+            _ => {}
+        }
+    }
+    fn blk<'m>(cx: &Ctx<'m>, b: &Block, out: &mut Vec<(String, &'m ToolDecl)>) {
+        for s in &b.stmts {
+            let (Stmt::Let { value: e, .. } | Stmt::Expr(e)) = s;
+            ex(cx, e, out);
+        }
+        if let Some(t) = &b.tail {
+            ex(cx, t, out);
+        }
+    }
+    let mut out = Vec::new();
+    blk(cx, b, &mut out);
+    out
 }

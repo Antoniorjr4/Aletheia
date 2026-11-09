@@ -237,18 +237,40 @@ impl Parser {
         let ret = self.ty()?;
         let effects = self.effect_row()?;
         let mut class = EffClass::Reversible;
+        let mut class_span = name.span;
+        let mut compensator = None;
+        let mut provider = ProviderClass::Opaque;
         let mut latency = 0.0;
         let mut usd = 0.0;
         loop {
             if self.is_contextual("reversible") {
-                self.bump();
+                class_span = self.bump().span;
                 class = EffClass::Reversible;
             } else if self.is_contextual("compensable") {
-                self.bump();
+                class_span = self.bump().span;
                 class = EffClass::Compensable;
+                if self.eat(&Tok::By) {
+                    compensator = Some(self.ident()?);
+                }
             } else if self.is_contextual("irrevocable") {
-                self.bump();
+                class_span = self.bump().span;
                 class = EffClass::Irrevocable;
+            } else if self.is_contextual("provider") {
+                self.bump();
+                let k = self.ident()?;
+                provider = match k.name.as_str() {
+                    "idempotent" => ProviderClass::Idempotent,
+                    "queryable" => ProviderClass::Queryable,
+                    "opaque" => ProviderClass::Opaque,
+                    other => {
+                        return Err(ParseError {
+                            msg: format!(
+                                "classe de provedor desconhecida `{other}` (use idempotent, queryable ou opaque)"
+                            ),
+                            span: k.span,
+                        })
+                    }
+                };
             } else if self.is_contextual("latency") {
                 self.bump();
                 latency = self.number()?;
@@ -259,7 +281,7 @@ impl Parser {
                 break;
             }
         }
-        Ok(ToolDecl { name, params, ret, effects, class, latency, usd })
+        Ok(ToolDecl { name, params, ret, effects, class, class_span, compensator, provider, latency, usd })
     }
 
     fn policy_decl(&mut self) -> PResult<PolicyDecl> {
@@ -292,17 +314,31 @@ impl Parser {
         let bend = self.expect(Tok::RBrack)?;
         self.expect(Tok::LBrace)?;
         let mut handlers = Vec::new();
-        while self.eat(&Tok::On) {
-            let event = self.ident()?;
-            let params = self.params()?;
-            self.expect(Tok::Arrow)?;
-            let ret = self.ty()?;
-            let effects = self.effect_row()?;
-            let body = self.block()?;
-            handlers.push(Handler { event, params, ret, effects, body });
+        let mut handles = Vec::new();
+        loop {
+            if self.eat(&Tok::On) {
+                let event = self.ident()?;
+                let params = self.params()?;
+                self.expect(Tok::Arrow)?;
+                let ret = self.ty()?;
+                let effects = self.effect_row()?;
+                let body = self.block()?;
+                handlers.push(Handler { event, params, ret, effects, body });
+            } else if self.is_contextual("handle") {
+                let start = self.bump().span;
+                let effect = self.ident()?;
+                let params = self.params()?;
+                self.expect(Tok::Arrow)?;
+                let ret = self.ty()?;
+                let body = self.block()?;
+                let span = start.to(body.span);
+                handles.push(HandleClause { effect, params, ret, body, span });
+            } else {
+                break;
+            }
         }
         self.expect(Tok::RBrace)?;
-        Ok(AgentDecl { name, params, budget, budget_span: bstart.to(bend), handlers })
+        Ok(AgentDecl { name, params, budget, budget_span: bstart.to(bend), handlers, handles })
     }
 
     /// `Int[lo..hi]`, `Int[lo..]`, `Int[..hi]` (intervalo inclusivo) e `Text[..n]` (até n caracteres).
@@ -341,6 +377,12 @@ impl Parser {
 
     fn ty(&mut self) -> PResult<TypeExpr> {
         let start = self.span();
+        if self.is_contextual("own") {
+            self.bump();
+            let inner = self.ty()?;
+            let span = start.to(inner.span());
+            return Ok(TypeExpr::Own(Box::new(inner), span));
+        }
         let base = if self.is_contextual("Cap") && *self.peek_at(1) == Tok::LBrack {
             self.bump();
             self.bump();
@@ -354,6 +396,12 @@ impl Parser {
             let id = self.ident()?;
             if *self.peek() == Tok::LBrack && (id.name == "Int" || id.name == "Text") {
                 self.refined(id)?
+            } else if *self.peek() == Tok::LBrack && id.name == "Pending" {
+                // `Pending[k]`: o índice é a chave da operação em aberto; `_` = qualquer chave.
+                self.bump();
+                self.ident()?;
+                self.expect(Tok::RBrack)?;
+                TypeExpr::Named(id)
             } else {
                 TypeExpr::Named(id)
             }
@@ -566,6 +614,45 @@ impl Parser {
                 self.bump();
                 Ok(Expr { kind: ExprKind::Bool(false), span: start })
             }
+            Tok::Ident(name) if name == "atomic" && matches!(self.peek_at(1), Tok::Ident(r) if r == "recover") => {
+                self.atomic()
+            }
+            Tok::Ident(name) if name == "await" => {
+                self.bump();
+                let cond = self.expr()?;
+                if !self.is_contextual("within") {
+                    return Err(self.err("`await` exige `within <segundos>`"));
+                }
+                self.bump();
+                let within = self.number()?;
+                let span = start.to(self.prev_span());
+                Ok(Expr { kind: ExprKind::Await { cond: Box::new(cond), within }, span })
+            }
+            Tok::Ident(name) if name == "reconcile" && matches!(self.peek_at(1), Tok::Ident(_)) => {
+                self.bump();
+                let pending = self.ident()?;
+                if !self.is_contextual("fuel") {
+                    return Err(self.err("`reconcile p` exige `fuel <tentativas>`"));
+                }
+                self.bump();
+                let fuel = match self.peek().clone() {
+                    Tok::Int(n) if (1..=64).contains(&n) => {
+                        self.bump();
+                        n as u32
+                    }
+                    _ => return Err(self.err("`fuel` exige um inteiro entre 1 e 64")),
+                };
+                self.expect(Tok::Else)?;
+                let els = self.block()?;
+                let span = start.to(els.span);
+                Ok(Expr { kind: ExprKind::Reconcile { pending, fuel, els }, span })
+            }
+            Tok::Ident(name) if name == "transfer" && matches!(self.peek_at(1), Tok::Ident(_)) => {
+                self.bump();
+                let p = self.ident()?;
+                let span = start.to(p.span);
+                Ok(Expr { kind: ExprKind::Transfer(p), span })
+            }
             Tok::Ident(name) => {
                 let id = self.ident()?;
                 if *self.peek() == Tok::LParen {
@@ -706,6 +793,36 @@ impl Parser {
             }
             other => Err(self.err(format!("esperada uma expressão, encontrado {}", other.describe()))),
         }
+    }
+
+    fn atomic(&mut self) -> PResult<Expr> {
+        let start = self.bump().span; // atomic
+        self.bump(); // recover
+        let saved = self.no_ctor;
+        self.no_ctor = true;
+        let recover = self.expr()?;
+        self.no_ctor = saved;
+        let body = self.block()?;
+        let mut end = body.span;
+        let mut on_failure = None;
+        let mut on_cf = None;
+        while *self.peek() == Tok::On
+            && matches!(self.peek_at(1), Tok::Ident(n) if n == "failure" || n == "compensation_failed")
+        {
+            self.bump();
+            let which = self.ident()?;
+            self.expect(Tok::LParen)?;
+            let bind = self.ident()?;
+            self.expect(Tok::RParen)?;
+            let b = self.block()?;
+            end = b.span;
+            let slot = if which.name == "failure" { &mut on_failure } else { &mut on_cf };
+            if slot.is_some() {
+                return Err(ParseError { msg: format!("`on {}` repetido", which.name), span: which.span });
+            }
+            *slot = Some((bind, b));
+        }
+        Ok(Expr { kind: ExprKind::Atomic { recover: Box::new(recover), body, on_failure, on_cf }, span: start.to(end) })
     }
 
     fn if_expr(&mut self) -> PResult<Expr> {

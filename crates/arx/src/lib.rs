@@ -16,7 +16,7 @@ pub mod value;
 use ath_grammar::Shape;
 use ath_syntax::ast::*;
 use ath_syntax::{est_tokens, parse_expr_str};
-use host::Host;
+use host::{Host, HostError, Status};
 use journal::Journal;
 use model::{ModelProvider, Request};
 use serde_json::json;
@@ -37,7 +37,22 @@ fn rt(code: &str, msg: impl Into<String>) -> RtError {
 enum Unwind {
     Ret(Value),
     Err(RtError),
+    /// O tratador de `TimeoutUnknown` reconciliou a operação: a chamada original devolve este valor.
+    Resume(Value),
+    /// O tratador encerrou o evento com este valor (a obrigação foi transferida).
+    Abort(Value),
 }
+
+/// Efeito compensável executado dentro de um `atomic` (inclusive os que terminaram em resultado desconhecido).
+struct SagaOp<'m> {
+    tool: &'m ToolDecl,
+    args: Vec<Value>,
+}
+
+/// Recuo entre tentativas de reconciliação, em segundos.
+const RECONCILE_BACKOFF: f64 = 2.0;
+/// Intervalo entre sondagens de um `await`, em segundos.
+const AWAIT_POLL: f64 = 5.0;
 
 impl From<RtError> for Unwind {
     fn from(e: RtError) -> Self {
@@ -114,6 +129,10 @@ pub struct Arx<'m> {
     scopes: Vec<Vec<(String, Value)>>,
     next_key: u64,
     committing: bool,
+    agent: Option<&'m AgentDecl>,
+    sagas: Vec<Vec<SagaOp<'m>>>,
+    /// Compensação, recuperação e reconciliação são obrigações: não pedem reserva de orçamento.
+    obligation: bool,
 }
 
 fn type_name(t: &TypeExpr) -> String {
@@ -178,6 +197,9 @@ impl<'m> Arx<'m> {
             scopes: Vec::new(),
             next_key: 1,
             committing: false,
+            agent: None,
+            sagas: Vec::new(),
+            obligation: false,
         };
         for item in &m.items {
             match item {
@@ -247,6 +269,7 @@ impl<'m> Arx<'m> {
         if args.len() != h.params.len() {
             return Err(rt("R0002", format!("`{agent}.{event}` recebe {} argumento(s)", h.params.len())));
         }
+        self.agent = Some(a);
         self.meter.lim_tok = a.budget("tok").map(|v| v as u64);
         self.meter.lim_usd = a.budget("usd");
         self.meter.lim_wall = a.budget("wall");
@@ -275,9 +298,15 @@ impl<'m> Arx<'m> {
             "start",
             json!({ "agent": agent, "event": event, "args": args.iter().map(|v| v.to_json()).collect::<Vec<_>>(), "grants": grants }),
         );
-        let out = match self.block(&h.body) {
-            Ok(v) | Err(Unwind::Ret(v)) => v,
+        let (out, aborted) = match self.block(&h.body) {
+            Ok(v) | Err(Unwind::Ret(v)) => (v, false),
+            Err(Unwind::Abort(v)) => (v, true),
             Err(Unwind::Err(e)) => {
+                self.journal.push(self.clock, "abort", json!({ "code": e.code, "msg": e.msg }));
+                return Err(e);
+            }
+            Err(Unwind::Resume(_)) => {
+                let e = rt("R0950", "retomada fora de uma chamada em aberto");
                 self.journal.push(self.clock, "abort", json!({ "code": e.code, "msg": e.msg }));
                 return Err(e);
             }
@@ -285,7 +314,11 @@ impl<'m> Arx<'m> {
         self.journal.push(
             self.clock,
             "end",
-            json!({ "result": out.to_json(), "spent": { "tok": self.meter.tok, "usd": self.meter.usd, "wall": self.meter.wall } }),
+            json!({
+                "result": out.to_json(),
+                "aborted_by_handler": aborted,
+                "spent": { "tok": self.meter.tok, "usd": self.meter.usd, "wall": self.meter.wall },
+            }),
         );
         Ok(out)
     }
@@ -473,6 +506,284 @@ impl<'m> Arx<'m> {
                 self.committing = false;
                 r
             }
+            ExprKind::Atomic { recover, body, on_failure, on_cf } => {
+                self.atomic(recover, body, on_failure.as_ref(), on_cf.as_ref())
+            }
+            ExprKind::Await { cond, within } => self.await_cond(cond, *within),
+            ExprKind::Reconcile { pending, fuel, els } => self.reconcile(pending, *fuel, els),
+            ExprKind::Transfer(p) => {
+                let Some(Value::Pending { key, tool, .. }) = self.lookup(&p.name) else {
+                    return Err(rt("R0940", "`transfer` sobre valor que não é obrigação").into());
+                };
+                self.journal.push(self.clock, "transfer", json!({ "key": format!("k{key}"), "tool": tool }));
+                self.events.push(Event {
+                    t: self.clock,
+                    dt: 0.0,
+                    what: format!("transfer Pending[k{key}]"),
+                    detail: format!("`{tool}` entregue ao reconciliador durável"),
+                    note: None,
+                    verdict: Some((false, "obrigação escalada".into())),
+                });
+                Ok(Value::Unit)
+            }
+        }
+    }
+
+    fn line(&mut self, what: impl Into<String>, detail: impl Into<String>, dt: f64, verdict: Option<(bool, String)>) {
+        self.events.push(Event {
+            t: self.clock - dt,
+            dt,
+            what: what.into(),
+            detail: detail.into(),
+            note: None,
+            verdict,
+        });
+    }
+
+    /// Saga: executa o corpo; em falha, compensa em ordem reversa, roda a sonda de recuperação e
+    /// escolhe o tratador. Compensar não desfaz o passado: leva o mundo a um estado que a sonda
+    /// confirma; se não confirma, ou se uma compensação falha, o efeito é `CompensationFailed`.
+    fn atomic(
+        &mut self,
+        recover: &Expr,
+        body: &Block,
+        on_failure: Option<&(Ident, Block)>,
+        on_cf: Option<&(Ident, Block)>,
+    ) -> R<Value> {
+        self.sagas.push(Vec::new());
+        let r = self.block(body);
+        let ops = self.sagas.pop().unwrap_or_default();
+        let cause = match r {
+            Ok(v) => {
+                self.journal.push(self.clock, "saga_commit", json!({ "compensable_ops": ops.len() }));
+                return Ok(v);
+            }
+            Err(Unwind::Ret(v)) => return Err(Unwind::Ret(v)),
+            Err(Unwind::Resume(v)) => return Err(Unwind::Resume(v)),
+            Err(other) => other,
+        };
+        let reason = match &cause {
+            Unwind::Err(e) => format!("{} {}", e.code, e.msg),
+            _ => "obrigação transferida durante a saga".to_string(),
+        };
+        self.journal.push(self.clock, "saga_abort", json!({ "reason": reason, "compensable_ops": ops.len() }));
+        self.line("atomic falhou", format!("{reason} → compensando {} efeito(s)", ops.len()), 0.0, None);
+
+        let prev = std::mem::replace(&mut self.obligation, true);
+        let mut residual = Vec::new();
+        for op in ops.iter().rev() {
+            let Some(comp) = op.tool.compensator.as_ref().and_then(|c| self.tools.get(c.name.as_str()).copied()) else {
+                residual.push(format!("{}: sem compensador", op.tool.name.name));
+                continue;
+            };
+            let key = op.args.iter().find_map(|v| if let Value::Key(k) = v { Some(format!("k{k}")) } else { None });
+            match self.host.call(&comp.name.name, &op.args) {
+                Ok((out, lat)) => {
+                    self.clock += lat;
+                    self.meter.settle(0, comp.usd, lat);
+                    self.journal.push(
+                        self.clock,
+                        "compensate",
+                        json!({ "of": op.tool.name.name, "tool": comp.name.name, "key": key, "ok": true, "result": out.to_json() }),
+                    );
+                    self.line(format!("↩ {}({})", comp.name.name, key.unwrap_or_default()), out.show(), lat, None);
+                }
+                Err(e) => {
+                    let msg = match e {
+                        HostError::Failed(m) => m,
+                        HostError::Timeout { elapsed } => {
+                            self.clock += elapsed;
+                            format!("`{}` sem resposta em {elapsed:.1} s", comp.name.name)
+                        }
+                    };
+                    self.journal.push(
+                        self.clock,
+                        "compensate",
+                        json!({ "of": op.tool.name.name, "tool": comp.name.name, "key": key, "ok": false, "error": msg }),
+                    );
+                    self.line(
+                        format!("↩ {}({})", comp.name.name, key.unwrap_or_default()),
+                        msg.clone(),
+                        0.0,
+                        Some((false, "compensação falhou".into())),
+                    );
+                    residual.push(msg);
+                }
+            }
+        }
+        let restored = match self.eval(recover) {
+            Ok(Value::Bool(b)) => b,
+            Ok(_) => false,
+            Err(Unwind::Err(e)) => {
+                residual.push(format!("sonda de recuperação: {}", e.msg));
+                false
+            }
+            Err(_) => false,
+        };
+        self.obligation = prev;
+        if residual.is_empty() && restored {
+            self.journal.push(self.clock, "saga_recovered", json!({}));
+            self.line("invariante de recuperação", "observado pela sonda", 0.0, Some((true, "recuperado".into())));
+            return match (cause, on_failure) {
+                (Unwind::Abort(v), _) => Err(Unwind::Abort(v)),
+                (_, Some((bind, b))) => self.block_with(bind, Value::Text(reason), b),
+                (other, None) => Err(other),
+            };
+        }
+        if !restored && residual.is_empty() {
+            residual.push("a sonda de recuperação não observou o invariante".into());
+        }
+        let cf = residual.join("; ");
+        self.journal.push(self.clock, "compensation_failed", json!({ "residual": residual, "cause": reason }));
+        self.line("CompensationFailed", cf.clone(), 0.0, Some((false, "estado não recuperado".into())));
+        match on_cf {
+            Some((bind, b)) => self.block_with(bind, Value::Text(cf), b),
+            None => Err(rt("R0920", format!("CompensationFailed: {cf}")).into()),
+        }
+    }
+
+    fn block_with(&mut self, bind: &Ident, v: Value, b: &Block) -> R<Value> {
+        self.scopes.push(vec![(bind.name.clone(), v)]);
+        let r = self.block(b);
+        self.scopes.pop();
+        r
+    }
+
+    /// Pós-condição observada: sonda até ser verdadeira ou até o prazo esgotar.
+    fn await_cond(&mut self, cond: &Expr, within: f64) -> R<Value> {
+        let start = self.clock;
+        let deadline = start + within;
+        loop {
+            let ok = match self.eval(cond)? {
+                Value::Bool(b) => b,
+                _ => return Err(rt("R0103", "pós-condição não booleana").into()),
+            };
+            if ok {
+                self.journal.push(self.clock, "await_ok", json!({ "after_s": self.clock - start }));
+                return Ok(Value::Unit);
+            }
+            if self.clock >= deadline {
+                self.journal.push(self.clock, "await_timeout", json!({ "within_s": within }));
+                return Err(rt("R0910", format!("pós-condição não observada em {within:.0} s")).into());
+            }
+            let step = (deadline - self.clock).min(AWAIT_POLL);
+            self.clock += step;
+            self.meter.settle(0, 0.0, step);
+        }
+    }
+
+    /// `TimeoutUnknown` na chamada `t(args)` com chave `key`: entrega a obrigação ao tratador do agente.
+    fn on_timeout(&mut self, t: &'m ToolDecl, args: Vec<Value>, key: u64) -> R<Value> {
+        let Some(h) = self.agent.and_then(|a| a.handles.iter().find(|h| h.effect.name == "timeout_unknown")) else {
+            return Err(rt("R0930", format!("TimeoutUnknown em `{}` sem tratador", t.name.name)).into());
+        };
+        let Some(p) = h.params.first() else { return Err(rt("R0930", "tratador sem parâmetro").into()) };
+        let caps: Vec<(String, Value)> = self
+            .agent
+            .map(|a| a.params.iter().map(|p| (p.name.name.clone(), Value::Cap(cap_set(&p.ty)))).collect())
+            .unwrap_or_default();
+        let saved = std::mem::replace(
+            &mut self.scopes,
+            vec![caps, vec![(p.name.name.clone(), Value::Pending { key, tool: t.name.name.clone(), args })]],
+        );
+        let r = self.block(&h.body);
+        self.scopes = saved;
+        match r {
+            Err(Unwind::Resume(v)) => Ok(v),
+            Ok(v) | Err(Unwind::Ret(v)) | Err(Unwind::Abort(v)) => Err(Unwind::Abort(v)),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Protocolo de reconciliação, conforme a classe do provedor da operação em aberto:
+    /// `idempotent` reenvia com a mesma chave; `queryable` consulta o status pela chave;
+    /// `opaque` não tem protocolo. Termina em Done (retoma a chamada), Failed (a chamada falha)
+    /// ou esgota o combustível (o `else` recebe a obrigação de volta).
+    fn reconcile(&mut self, p: &Ident, fuel: u32, els: &Block) -> R<Value> {
+        let Some(Value::Pending { key, tool, args }) = self.lookup(&p.name) else {
+            return Err(rt("R0940", "`reconcile` sobre valor que não é obrigação").into());
+        };
+        let decl = *self.tools.get(tool.as_str()).ok_or_else(|| rt("R0941", "ferramenta da obrigação ausente"))?;
+        let prev = std::mem::replace(&mut self.obligation, true);
+        let mut outcome: Option<Result<Value, String>> = None;
+        for attempt in 1..=fuel {
+            let (status, lat) = match decl.provider {
+                ProviderClass::Opaque => {
+                    self.journal.push(
+                        self.clock,
+                        "reconcile",
+                        json!({ "key": format!("k{key}"), "attempt": attempt, "status": "opaque" }),
+                    );
+                    self.line(format!("reconcile Pending[k{key}]"), "provedor opaco: sem protocolo", 0.0, None);
+                    break;
+                }
+                ProviderClass::Idempotent => match self.host.call(&tool, &args) {
+                    Ok((v, lat)) => (Status::Done(v), lat),
+                    Err(HostError::Failed(m)) => {
+                        outcome = Some(Err(m));
+                        (Status::NotApplied, decl.latency)
+                    }
+                    Err(HostError::Timeout { elapsed }) => (Status::Unknown, elapsed),
+                },
+                ProviderClass::Queryable => self.host.status(&tool, key),
+            };
+            self.clock += lat;
+            self.meter.settle(0, 0.0, lat);
+            let label = match &status {
+                Status::Done(_) => "done",
+                Status::NotApplied => "not_applied",
+                Status::Unknown => "unknown",
+            };
+            self.journal.push(
+                self.clock,
+                "reconcile",
+                json!({ "key": format!("k{key}"), "attempt": attempt, "provider": decl.provider.name(), "status": label }),
+            );
+            let how = if decl.provider == ProviderClass::Idempotent { "reenvio" } else { "consulta" };
+            self.line(format!("reconcile Pending[k{key}] · {how} {attempt}/{fuel}"), label, lat, None);
+            match status {
+                Status::Done(v) => {
+                    outcome = Some(Ok(v));
+                    break;
+                }
+                Status::NotApplied => {
+                    outcome.get_or_insert(Err("o provedor confirma que a operação não foi aplicada".into()));
+                    break;
+                }
+                Status::Unknown if attempt < fuel => {
+                    self.clock += RECONCILE_BACKOFF;
+                    self.meter.settle(0, 0.0, RECONCILE_BACKOFF);
+                }
+                Status::Unknown => {}
+            }
+        }
+        self.obligation = prev;
+        match outcome {
+            Some(Ok(v)) => {
+                self.journal.push(self.clock, "resolved", json!({ "key": format!("k{key}"), "status": "done" }));
+                self.line(
+                    format!("Pending[k{key}] resolvida"),
+                    format!("`{tool}` aplicada: {}", v.show()),
+                    0.0,
+                    Some((true, "Done".into())),
+                );
+                Err(Unwind::Resume(v))
+            }
+            Some(Err(m)) => {
+                self.journal.push(self.clock, "resolved", json!({ "key": format!("k{key}"), "status": "failed" }));
+                self.line(format!("Pending[k{key}] resolvida"), m.clone(), 0.0, Some((false, "Failed".into())));
+                Err(rt("R0611", format!("`{tool}` não aplicada (reconciliado): {m}")).into())
+            }
+            None => {
+                self.journal.push(self.clock, "reconcile_exhausted", json!({ "key": format!("k{key}"), "fuel": fuel }));
+                self.line(
+                    format!("Pending[k{key}]"),
+                    format!("combustível esgotado após {fuel} tentativa(s)"),
+                    0.0,
+                    None,
+                );
+                self.block(els)
+            }
         }
     }
 
@@ -569,13 +880,52 @@ impl<'m> Arx<'m> {
         if t.class == EffClass::Irrevocable && !committed {
             return Err(rt("R0301", format!("`{name}` é irrevocable e não veio de `commit`")).into());
         }
-        self.meter.reserve(0, t.usd, t.latency, name)?;
+        if !self.obligation {
+            self.meter.reserve(0, t.usd, t.latency, name)?;
+        }
         let shown: Vec<String> = args.iter().map(|v| v.show()).collect();
-        let key = args.iter().find_map(|v| if let Value::Key(k) = v { Some(format!("k{k}")) } else { None });
+        let key_n = args.iter().find_map(|v| if let Value::Key(k) = v { Some(*k) } else { None });
+        let key = key_n.map(|k| format!("k{k}"));
         let t0 = self.clock;
-        let (out, lat) = self.host.call(name, &args).map_err(|m| rt("R0600", m))?;
+        let (out, lat) = match self.host.call(name, &args) {
+            Ok(r) => r,
+            Err(HostError::Failed(m)) => return Err(rt("R0600", m).into()),
+            Err(HostError::Timeout { elapsed }) => {
+                self.clock += elapsed;
+                self.meter.settle(0, t.usd, elapsed);
+                let Some(k) = key_n else {
+                    // Sem chave não há consequência a reconciliar: o timeout é uma falha comum.
+                    return Err(rt("R0601", format!("`{name}` sem resposta em {elapsed:.1} s")).into());
+                };
+                // Compensar é total sobre "aconteceu" e "não aconteceu": a operação em aberto entra na saga.
+                if t.class == EffClass::Compensable {
+                    if let Some(frame) = self.sagas.last_mut() {
+                        frame.push(SagaOp { tool: t, args: args.clone() });
+                    }
+                }
+                self.journal.push(
+                    self.clock,
+                    "timeout_unknown",
+                    json!({ "tool": name, "key": format!("k{k}"), "provider": t.provider.name(), "elapsed": elapsed }),
+                );
+                self.events.push(Event {
+                    t: t0,
+                    dt: elapsed,
+                    what: format!("{}{}({})", if committed { "commit " } else { "" }, name, shown.join(", ")),
+                    detail: format!("sem resposta em {} s", format!("{elapsed:.1}").replace('.', ",")),
+                    note: Some(format!("TimeoutUnknown: k{k} ↦ ? (o efeito pode ter acontecido)")),
+                    verdict: None,
+                });
+                return self.on_timeout(t, args, k);
+            }
+        };
         self.clock += lat;
         self.meter.settle(0, t.usd, lat);
+        if t.class == EffClass::Compensable {
+            if let Some(frame) = self.sagas.last_mut() {
+                frame.push(SagaOp { tool: t, args: args.clone() });
+            }
+        }
         self.journal.push(
             self.clock,
             "tool",
@@ -626,39 +976,62 @@ impl<'m> Arx<'m> {
         let p = |k: &str| md.prop(k).unwrap_or(0.0);
         let max_out = p("max_out") as u64;
         let out_cap = ath_grammar::max_bytes(&shape).map_or(max_out, |b| b.min(max_out));
+        // Modelos de raciocínio: o contrato Δ declara quantos tokens podem ir para o raciocínio.
+        let reasoning = p("reasoning") as u64;
+        let cap = out_cap + reasoning;
         let est_in = est_tokens(&d.prompt);
         let cost = |tin: u64, tout: u64| tin as f64 * p("price_in") / 1e6 + tout as f64 * p("price_out") / 1e6;
         let time = |tout: u64| p("ttft") + tout as f64 * p("per_tok");
-        self.meter.reserve(est_in + out_cap, cost(est_in, out_cap), time(out_cap), &format!("infer {}", d.model))?;
-        let req = Request { model: &d.model, prompt: &d.prompt, shape: &shape, max_tokens: out_cap };
+        self.meter.reserve(est_in + cap, cost(est_in, cap), time(cap), &format!("infer {}", d.model))?;
+        let req = Request { model: &d.model, prompt: &d.prompt, shape: &shape, max_tokens: out_cap, reasoning };
         let provider = self.provider.name();
         let c = self.provider.complete(&req).map_err(|m| rt("R0621", m))?;
         let tok_in = c.tok_in.unwrap_or(est_in);
-        let mut text = c.text;
+        let mut text = c.text.clone();
         let mut tok_out = c.tok_out.unwrap_or_else(|| est_tokens(&text));
-        if c.tok_out.is_some_and(|n| n > out_cap) {
+        if c.tok_out.is_some_and(|n| n > cap) {
             self.journal.push(
                 self.clock,
                 "contract_breach",
-                json!({ "model": d.model, "declared": out_cap, "observed": tok_out }),
+                json!({ "model": d.model, "declared_tokens": cap, "observed_tokens": tok_out }),
             );
             return Err(rt(
                 "R0702",
-                format!("ContractBreach: `{}` gerou {tok_out} tokens; o teto pedido era {out_cap}", d.model),
+                format!("ContractBreach: `{}` gerou {tok_out} tokens; o contrato admite {cap}", d.model),
             )
             .into());
         }
-        if tok_out > out_cap {
+        if c.tok_out.is_none() && tok_out > out_cap {
             text = text.chars().take((out_cap * 4) as usize).collect();
             tok_out = out_cap;
         }
         let usd = cost(tok_in, tok_out);
-        let wall = time(tok_out);
+        let contract_wall = time(tok_out);
+        if let Some(l) = c.latency {
+            if l > contract_wall + 1e-9 {
+                self.journal.push(
+                    self.clock,
+                    "contract_breach",
+                    json!({ "model": d.model, "declared_s": contract_wall, "observed_s": l, "request_id": c.request_id }),
+                );
+                return Err(rt(
+                    "R0703",
+                    format!("ContractBreach: `{}` levou {l:.2} s para {tok_out} tokens; o contrato admite {contract_wall:.2} s", d.model),
+                )
+                .into());
+            }
+        }
+        // Tempo real quando o provedor é real (serviço + espera imposta por 429); contrato, quando simulado.
+        let service = c.latency.unwrap_or(contract_wall);
+        let wall = service + c.queued;
         let t0 = self.clock;
         self.clock += wall;
         self.meter.settle(tok_in + tok_out, usd, wall);
         let parsed: Option<serde_json::Value> = serde_json::from_str(text.trim()).ok();
         let invalid = match &parsed {
+            None if text.trim().is_empty() => {
+                Some(format!("saída vazia (finish_reason: {})", c.finish_reason.as_deref().unwrap_or("?")))
+            }
             None => Some("não é JSON".to_string()),
             Some(j) => ath_grammar::check(&shape, j).err(),
         };
@@ -666,6 +1039,14 @@ impl<'m> Arx<'m> {
             (Some(j), None) => Some(from_json(&shape, &j["value"])),
             _ => None,
         };
+        let reasoning_text = c.reasoning.as_ref().map(|r| {
+            let cut: String = r.chars().take(1200).collect();
+            if r.chars().count() > 1200 {
+                format!("{cut}…")
+            } else {
+                cut
+            }
+        });
         self.journal.push(
             self.clock,
             "infer",
@@ -676,19 +1057,35 @@ impl<'m> Arx<'m> {
                 "prompt_hash": blake3::hash(d.prompt.as_bytes()).to_hex().to_string(),
                 "tok_in": tok_in,
                 "tok_out": tok_out,
+                "tok_reasoning": c.tok_reasoning,
                 "usd": usd,
+                "latency_s": c.latency,
+                "queued_s": c.queued,
+                "retries": c.retries,
+                "contract_s": contract_wall,
+                "request_id": c.request_id,
+                "finish_reason": c.finish_reason,
                 "output": text,
+                "reasoning": reasoning_text,
                 "note": c.note,
                 "invalid": invalid,
             }),
         );
         let shown = decoded.as_ref().map(|v| v.show()).unwrap_or_else(|| Value::Text(text.clone()).show());
+        let measured = match c.latency {
+            Some(l) => format!(", {} s medidos", format!("{l:.2}").replace('.', ",")),
+            None => String::new(),
+        };
         self.events.push(Event {
             t: t0,
             dt: wall,
             what: format!("infer {} · tentativa {attempt}", d.model),
-            detail: format!("→ {shown}  ({} tok, US$ {})", tok_in + tok_out, format!("{usd:.4}").replace('.', ",")),
-            note: c.note.or(invalid.map(|m| format!("saída fora do tipo: {m}"))),
+            detail: format!(
+                "→ {shown}  ({} tok, US$ {}{measured})",
+                tok_in + tok_out,
+                format!("{usd:.4}").replace('.', ",")
+            ),
+            note: invalid.map(|m| format!("saída fora do tipo: {m}")).or(c.note),
             verdict: None,
         });
         Ok((decoded, self.events.len() - 1))

@@ -82,6 +82,26 @@ fn count_expr(e: &Expr, x: &str) -> Cnt {
         ExprKind::Return(v) => count_expr(v, x).diverge(),
         ExprKind::Infer { fields, .. } => seq_all(fields.iter().map(|(_, e)| e), x),
         ExprKind::Refine { draft, els, .. } => count_expr(draft, x).seq(Cnt::zero().alt(count_block(els, x))),
+        ExprKind::Atomic { recover, body, on_failure, on_cf } => {
+            let mut handlers = Cnt::zero();
+            for (bind, b) in on_failure.iter().chain(on_cf.iter()) {
+                if bind.name != x {
+                    handlers = handlers.alt(count_block(b, x));
+                }
+            }
+            count_expr(recover, x).seq(count_block(body, x)).seq(handlers)
+        }
+        ExprKind::Await { cond, .. } => count_expr(cond, x),
+        // `reconcile p … else { … }` consome `p`; no `else`, `p` volta como outra obrigação.
+        ExprKind::Reconcile { pending, els, .. } => {
+            if pending.name == x {
+                Cnt::one()
+            } else {
+                Cnt::zero().alt(count_block(els, x))
+            }
+        }
+        ExprKind::Transfer(p) if p.name == x => Cnt::one(),
+        ExprKind::Transfer(_) => Cnt::zero(),
     }
 }
 
@@ -147,6 +167,20 @@ fn uses(stmts: &[Stmt], tail: Option<&Expr>, x: &str, out: &mut Vec<Span>) {
                 ex(draft, x, out);
                 uses(&els.stmts, els.tail.as_deref(), x, out);
             }
+            ExprKind::Atomic { recover, body, on_failure, on_cf } => {
+                ex(recover, x, out);
+                uses(&body.stmts, body.tail.as_deref(), x, out);
+                for (bind, b) in on_failure.iter().chain(on_cf.iter()) {
+                    if bind.name != x {
+                        uses(&b.stmts, b.tail.as_deref(), x, out);
+                    }
+                }
+            }
+            ExprKind::Await { cond, .. } => ex(cond, x, out),
+            ExprKind::Reconcile { pending, .. } if pending.name == x => out.push(e.span),
+            ExprKind::Reconcile { els, .. } => uses(&els.stmts, els.tail.as_deref(), x, out),
+            ExprKind::Transfer(p) if p.name == x => out.push(e.span),
+            ExprKind::Transfer(_) => {}
         }
     }
     for s in stmts {
@@ -246,5 +280,88 @@ fn walk(e: &Expr, facts: &Facts, diags: &mut Vec<Diag>) {
             walk(draft, facts, diags);
             check_block(els, facts, diags);
         }
+        ExprKind::Atomic { recover, body, on_failure, on_cf } => {
+            walk(recover, facts, diags);
+            check_block(body, facts, diags);
+            for (_, b) in on_failure.iter().chain(on_cf.iter()) {
+                check_block(b, facts, diags);
+            }
+        }
+        ExprKind::Await { cond, .. } => walk(cond, facts, diags),
+        ExprKind::Reconcile { els, .. } => check_block(els, facts, diags),
+        ExprKind::Transfer(_) => {}
+    }
+}
+
+/// Obrigação linear `p: own Pending[_]` no tratador de `TimeoutUnknown`: consumida exatamente
+/// uma vez em todo caminho, por `reconcile` ou `transfer`. No `else` de `reconcile`, a obrigação
+/// volta (o protocolo esgotou o combustível) e precisa ser consumida de novo.
+pub fn check_pending(h: &HandleClause, diags: &mut Vec<Diag>) {
+    let Some(p) = h.params.first() else { return };
+    let name = &p.name.name;
+    let c = count_block(&h.body, name);
+    report_pending(c, p.name.span, name, &h.body, diags, "no tratador");
+    fn reconciles<'a>(b: &'a Block, x: &str, out: &mut Vec<&'a Block>) {
+        fn ex<'a>(e: &'a Expr, x: &str, out: &mut Vec<&'a Block>) {
+            match &e.kind {
+                ExprKind::Reconcile { pending, els, .. } => {
+                    if pending.name == x {
+                        out.push(els);
+                    }
+                    reconciles(els, x, out);
+                }
+                ExprKind::Block(b) => reconciles(b, x, out),
+                ExprKind::If { then, els, .. } => {
+                    reconciles(then, x, out);
+                    if let Some(b) = els {
+                        reconciles(b, x, out);
+                    }
+                }
+                _ => {}
+            }
+        }
+        for s in &b.stmts {
+            let (Stmt::Let { value: e, .. } | Stmt::Expr(e)) = s;
+            ex(e, x, out);
+        }
+        if let Some(t) = &b.tail {
+            ex(t, x, out);
+        }
+    }
+    let mut elses = Vec::new();
+    reconciles(&h.body, name, &mut elses);
+    for els in elses {
+        report_pending(count_block(els, name), els.span, name, els, diags, "no `else` de `reconcile`");
+    }
+}
+
+fn report_pending(c: Cnt, at: Span, name: &str, b: &Block, diags: &mut Vec<Diag>, place: &str) {
+    let all: BTreeSet<u8> = c.fall.union(&c.ret).copied().collect();
+    let mut spans = Vec::new();
+    uses(&b.stmts, b.tail.as_deref(), name, &mut spans);
+    if all.contains(&2) {
+        let mut d = Diag::new(
+            Stratum::E1,
+            "E1104",
+            "valor linear usado mais de uma vez",
+            at,
+            format!("`{name}: Pending[k]` é consumido em mais de um ponto {place}"),
+        );
+        for (k, sp) in spans.iter().enumerate() {
+            d = d.secondary(*sp, format!("consumo {}", k + 1));
+        }
+        diags.push(d.note("uma operação em aberto tem um único destino: reconciliada ou transferida"));
+    } else if all.contains(&0) {
+        diags.push(
+            Diag::new(
+                Stratum::E1,
+                "E1107",
+                "valor linear descartado: Pending[k]",
+                at,
+                format!("`{name}` não é consumido em todos os caminhos {place}"),
+            )
+            .note("descartar a obrigação deixaria a chave em `k ↦ ?`: ninguém saberia se o efeito aconteceu")
+            .help(format!("consuma `{name}` com `reconcile {name} fuel n else {{ … }}` ou `transfer {name}`")),
+        );
     }
 }

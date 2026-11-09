@@ -124,9 +124,8 @@ pub fn summary(c: &Compiled, st: Style) -> String {
     let _ = writeln!(o, "{ok} {:<18} {} definições, todas resolvidas", "E0 estrutura", c.check.definitions);
     let _ = writeln!(
         o,
-        "{ok} {:<18} {} vinculação(ões) IdemKey consumidas exatamente uma vez",
-        "E1 multiplicidade",
-        f.linear_lets.len()
+        "{ok} {:<18} {} chave(s) IdemKey e as obrigações Pending consumidas exatamente uma vez",
+        "E1 multiplicidade", f.keyed_calls
     );
     let _ = writeln!(
         o,
@@ -134,6 +133,24 @@ pub fn summary(c: &Compiled, st: Style) -> String {
         "E2 efeitos",
         f.effects.iter().cloned().collect::<Vec<_>>().join(", ")
     );
+    if f.atomic_blocks > 0 || f.keyed_calls > 0 {
+        let comps: Vec<String> = f.compensations.iter().map(|(a, b)| format!("{a} ↩ {b}")).collect();
+        let _ = writeln!(
+            o,
+            "{ok} {:<18} {} saga(s); compensações: {}; irrevogáveis só via commit, fora de atomic",
+            "E2 sagas",
+            f.atomic_blocks,
+            if comps.is_empty() { "nenhuma".to_string() } else { comps.join(", ") }
+        );
+        if let Some(b) = f.reconcile_bound {
+            let _ = writeln!(
+                o,
+                "  {:<18} TimeoutUnknown tratado; reconciliação fora do contrato Δ: ≤ {} por chave",
+                "",
+                fmt::secs(b)
+            );
+        }
+    }
     let _ = writeln!(
         o,
         "{ok} {:<18} {} exigência(s) de integridade satisfeitas, inclusive sob pc",
@@ -147,8 +164,15 @@ pub fn summary(c: &Compiled, st: Style) -> String {
     let mut infers: Vec<_> = f.infer_costs.iter().collect();
     infers.sort_by_key(|(span, _)| span.lo);
     for (_, ic) in infers {
-        let ceiling =
-            if ic.out_by_type { format!("teto do tipo `{}`", ic.out_ty) } else { "max_out do modelo".to_string() };
+        let content = ic.tok_out - ic.tok_reasoning;
+        let mut ceiling = if ic.out_by_type {
+            format!("{} do tipo `{}`", fmt::tok(content), ic.out_ty)
+        } else {
+            format!("{} do max_out do modelo", fmt::tok(content))
+        };
+        if ic.tok_reasoning > 0 {
+            ceiling.push_str(&format!(" + {} de raciocínio", fmt::tok(ic.tok_reasoning)));
+        }
         let _ = writeln!(
             o,
             "  {:<18} infer {} -> {}: entrada ≤ {} · saída ≤ {} ({})",

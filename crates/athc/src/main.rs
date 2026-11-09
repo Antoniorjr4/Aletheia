@@ -3,6 +3,7 @@ use arx::journal::Journal;
 use arx::model::{Constraint, Masked, ModelProvider, OpenAiCompat, Scripted};
 use arx::{Arx, Value};
 use ath_check::fmt;
+use ath_grammar::Dialect;
 use ath_syntax::ast::{Item, TypeExpr};
 use ath_syntax::parse_module;
 use athc::{compile, render, summary, Compiled, Style};
@@ -25,9 +26,10 @@ uso:
       provedores:
         masked    (padrão) roteiro como proposta + máscara derivada do tipo: saída válida por construção
         scripted  roteiro literal, sem restrição; o ARX valida e rejeita saídas fora do tipo
-        openai    API compatível com OpenAI (OpenAI, vLLM, llama.cpp…):
-                  --base-url URL --remote-model ID [--constraint json-schema|gbnf|none]
-                  chave em ATH_API_KEY ou OPENAI_API_KEY
+        openai    API compatível com OpenAI (OpenAI, Groq, vLLM, llama.cpp…), configurada pelo ambiente:
+                  OPENAI_API_KEY, OPENAI_BASE_URL (ex.: https://api.groq.com/openai/v1), ALETHEIA_MODEL
+                  ou pelos argumentos --model ID --base-url URL
+                  [--constraint json-schema|gbnf|none] [--schema core|full]
   athc grammar <arquivo.ath> --type T [--format all|schema|gbnf|shape] [--decode 'proposta']
       mostra a gramática derivada do tipo T e, com --decode, a decodificação mascarada de uma proposta
   athc hash <arquivo.ath> [--codex dir]
@@ -68,6 +70,19 @@ impl Opts {
 }
 
 fn main() -> ExitCode {
+    // Saída redirecionada para quem fecha o pipe cedo (`athc … | head`): encerra sem pânico.
+    std::panic::set_hook(Box::new(|info| {
+        let msg = info
+            .payload()
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| info.payload().downcast_ref::<&str>().copied())
+            .unwrap_or("");
+        if msg.contains("Broken pipe") {
+            std::process::exit(0);
+        }
+        eprintln!("{info}");
+    }));
     let args: Vec<String> = std::env::args().skip(1).collect();
     let st = Style { color: std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none() };
     let Some(cmd) = args.first() else {
@@ -330,13 +345,18 @@ fn build_provider(opts: &Opts, path: &str) -> Result<Box<dyn ModelProvider>, Str
         "masked" => Ok(Box::new(Masked { inner: Box::new(scripted()?) })),
         "scripted" => Ok(Box::new(scripted()?)),
         "openai" => {
-            let base =
-                opts.one("base-url").ok_or("--provider openai exige --base-url (ex.: http://localhost:8000/v1)")?;
-            let model = opts.one("remote-model").ok_or("--provider openai exige --remote-model")?;
-            let constraint = Constraint::parse(opts.one("constraint").unwrap_or("json-schema"))
-                .ok_or("--constraint deve ser json-schema, gbnf ou none")?;
-            let key = std::env::var("ATH_API_KEY").or_else(|_| std::env::var("OPENAI_API_KEY")).ok();
-            Ok(Box::new(OpenAiCompat::new(base, model, key, constraint)))
+            let model = opts.one("model").or(opts.one("remote-model"));
+            let mut p = OpenAiCompat::from_env(model, opts.one("base-url"))?;
+            if let Some(c) = opts.one("constraint") {
+                p.constraint = Constraint::parse(c).ok_or("--constraint deve ser json-schema, gbnf ou none")?;
+            }
+            if let Some(d) = opts.one("schema") {
+                p.dialect = Dialect::parse(d).ok_or("--schema deve ser core ou full")?;
+            }
+            if p.api_key.is_none() && !p.base_url.contains("localhost") && !p.base_url.contains("127.0.0.1") {
+                return Err(format!("sem chave para {}: defina OPENAI_API_KEY", p.base_url));
+            }
+            Ok(Box::new(p))
         }
         other => Err(format!("provedor desconhecido `{other}` (use masked, scripted ou openai)")),
     }
@@ -411,14 +431,50 @@ fn cmd_verify(opts: &Opts, st: Style) -> Result<bool, String> {
     for (i, line) in s.lines().enumerate().filter(|(_, l)| !l.trim().is_empty()) {
         entries.push(serde_json::from_str(line).map_err(|e| format!("linha {}: {e}", i + 1))?);
     }
-    match Journal::verify(&entries) {
+    let chain_ok = match Journal::verify(&entries) {
         Ok(()) => {
             println!("{} {} entradas, cadeia de hashes íntegra", st.green("✓"), entries.len());
-            Ok(true)
+            true
         }
         Err(i) => {
             println!("{} cadeia quebrada na entrada {i} (seq {i}): conteúdo ou encadeamento adulterado", st.red("✗"));
-            Ok(false)
+            false
+        }
+    };
+    // T9: toda chave que terminou em `k ↦ ?` precisa terminar resolvida (done/failed) ou transferida.
+    let mut open: Vec<String> = Vec::new();
+    let (mut done, mut failed, mut transferred) = (0, 0, 0);
+    for e in &entries {
+        let key = e["detail"]["key"].as_str().unwrap_or_default().to_string();
+        match e["kind"].as_str() {
+            Some("timeout_unknown") => open.push(key),
+            Some("resolved") => {
+                open.retain(|k| *k != key);
+                if e["detail"]["status"] == "done" {
+                    done += 1;
+                } else {
+                    failed += 1;
+                }
+            }
+            Some("transfer") => {
+                open.retain(|k| *k != key);
+                transferred += 1;
+            }
+            _ => {}
         }
     }
+    let minted = entries.iter().filter(|e| e["kind"] == "mint").count();
+    let t9_ok = open.is_empty();
+    if t9_ok {
+        println!(
+            "{} T9 · {minted} chave(s) cunhada(s); resultados desconhecidos: {} resolvido(s) Done, {} Failed, {} transferido(s); nenhuma em aberto",
+            st.green("✓"),
+            done,
+            failed,
+            transferred
+        );
+    } else {
+        println!("{} T9 · chave(s) em aberto sem destino: {}", st.red("✗"), open.join(", "));
+    }
+    Ok(chain_ok && t9_ok)
 }

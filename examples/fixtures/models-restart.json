@@ -1,0 +1,8 @@
+{
+  "planner": [
+    {
+      "kind": "Restart",
+      "deploy": "api"
+    }
+  ]
+}

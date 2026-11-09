@@ -51,6 +51,10 @@ pub fn check_module(m: &Module) -> CheckResult {
                 for h in &a.handlers {
                     linear::check_block(&h.body, &cx.facts, &mut diags);
                 }
+                for h in &a.handles {
+                    linear::check_block(&h.body, &cx.facts, &mut diags);
+                    linear::check_pending(h, &mut diags);
+                }
             }
         }
     }

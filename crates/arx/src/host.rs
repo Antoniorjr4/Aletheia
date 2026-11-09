@@ -1,13 +1,35 @@
 //! Ligações de host: implementações reais das ferramentas declaradas em `.ath`.
-//! O Marco Zero traz um mundo simulado (cluster + pager) carregado de JSON.
+//! O Marco Zero traz um mundo simulado (cluster + pager) carregado de JSON, com falhas
+//! injetáveis para exercitar sagas e reconciliação.
 
 use crate::value::Value;
 use serde_json::Value as Json;
 use std::collections::{BTreeMap, HashMap};
 
+/// Falha de uma chamada remota.
+#[derive(Clone, Debug, PartialEq)]
+pub enum HostError {
+    /// O provedor respondeu com erro: o efeito não aconteceu.
+    Failed(String),
+    /// O prazo expirou sem resposta: o efeito pode ou não ter acontecido.
+    Timeout { elapsed: f64 },
+}
+
+/// Resposta do protocolo de consulta de status (`provider queryable`).
+#[derive(Clone, Debug, PartialEq)]
+pub enum Status {
+    Done(Value),
+    NotApplied,
+    Unknown,
+}
+
 pub trait Host {
     /// Executa a ferramenta; devolve o valor e a latência observada em segundos.
-    fn call(&mut self, tool: &str, args: &[Value]) -> Result<(Value, f64), String>;
+    fn call(&mut self, tool: &str, args: &[Value]) -> Result<(Value, f64), HostError>;
+    /// Consulta o estado da operação identificada pela chave (provedores `queryable`).
+    fn status(&mut self, _tool: &str, _key: u64) -> (Status, f64) {
+        (Status::Unknown, 0.0)
+    }
     fn summary(&self) -> Vec<String>;
     /// Estado observável do mundo, em JSON (para relatórios e benchmarks).
     fn state(&self) -> Json {
@@ -15,19 +37,71 @@ pub trait Host {
     }
 }
 
+/// Falha injetada: na `nth`-ésima chamada a `tool` (ou em todas, sem `nth`).
+#[derive(Clone, Debug)]
+pub struct Fault {
+    pub tool: String,
+    pub nth: Option<u32>,
+    pub kind: FaultKind,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum FaultKind {
+    /// Timeout depois de aplicar o efeito.
+    TimeoutApplied,
+    /// Timeout sem aplicar o efeito.
+    TimeoutLost,
+    /// Erro do provedor.
+    Error,
+    /// As próximas `n` consultas de status desta ferramenta respondem "desconhecido".
+    UnknownStatus(u32),
+}
+
 #[derive(Default)]
 pub struct SimWorld {
     latency: HashMap<String, f64>,
     logs: HashMap<String, String>,
     pub replicas: BTreeMap<String, i64>,
+    initial: BTreeMap<String, i64>,
+    pub health: BTreeMap<String, bool>,
     pub restarts: BTreeMap<String, u32>,
     pub outbox: Vec<String>,
-    /// Chaves já aplicadas → recibo. Repetir uma chave não repete o efeito.
-    applied: HashMap<u64, Value>,
+    faults: Vec<Fault>,
+    calls: HashMap<String, u32>,
+    unknown_status: HashMap<String, u32>,
+    /// (ferramenta, chave) → recibo. Repetir a chave não repete o efeito.
+    applied: HashMap<(String, u64), Value>,
+    /// chave de um `scale` → (deployment, réplicas antes): a pré-imagem que a compensação restaura.
+    preimage: HashMap<u64, (String, i64)>,
 }
 
 fn key_of(args: &[Value]) -> Option<u64> {
     args.iter().find_map(|v| if let Value::Key(k) = v { Some(*k) } else { None })
+}
+
+fn text_arg(args: &[Value]) -> Option<String> {
+    args.iter().find_map(|v| if let Value::Text(s) = v { Some(s.clone()) } else { None })
+}
+
+fn int_arg(args: &[Value]) -> Option<i64> {
+    args.iter().find_map(|v| if let Value::Int(n) = v { Some(*n) } else { None })
+}
+
+/// Deployment e alvo de uma ação: argumentos soltos ou um ADT `Restart`/`Scale`.
+fn target(args: &[Value]) -> (Option<String>, Option<i64>, Option<String>) {
+    if let Some(Value::Adt { variant, fields, .. }) = args.iter().find(|v| matches!(v, Value::Adt { .. })) {
+        let get = |k: &str| fields.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
+        let d = match get("deploy") {
+            Some(Value::Text(d)) => Some(d),
+            _ => None,
+        };
+        let to = match get("to") {
+            Some(Value::Int(n)) => Some(n),
+            _ => None,
+        };
+        return (d, to, Some(variant.clone()));
+    }
+    (text_arg(args), int_arg(args), None)
 }
 
 impl SimWorld {
@@ -53,65 +127,132 @@ impl SimWorld {
                 w.replicas.insert(k.clone(), v.as_i64().ok_or("réplicas devem ser inteiros")?);
             }
         }
+        w.initial = w.replicas.clone();
+        if let Some(m) = j.get("health").and_then(|v| v.as_object()) {
+            for (k, v) in m {
+                w.health.insert(k.clone(), v.as_bool().ok_or("saúde deve ser booleana")?);
+            }
+        }
+        if let Some(list) = j.get("faults").and_then(|v| v.as_array()) {
+            for f in list {
+                let tool = f["tool"].as_str().ok_or("falha sem `tool`")?.to_string();
+                let nth = f["nth"].as_u64().map(|n| n as u32);
+                let kind = match f["kind"].as_str().ok_or("falha sem `kind`")? {
+                    "timeout_applied" => FaultKind::TimeoutApplied,
+                    "timeout_lost" => FaultKind::TimeoutLost,
+                    "error" => FaultKind::Error,
+                    "unknown_status" => FaultKind::UnknownStatus(f["times"].as_u64().unwrap_or(1) as u32),
+                    other => return Err(format!("tipo de falha desconhecido `{other}`")),
+                };
+                if let FaultKind::UnknownStatus(n) = kind {
+                    w.unknown_status.insert(tool.clone(), n);
+                } else {
+                    w.faults.push(Fault { tool, nth, kind });
+                }
+            }
+        }
         Ok(w)
     }
 
     fn lat(&self, tool: &str) -> f64 {
         self.latency.get(tool).copied().unwrap_or(0.5)
     }
+
+    fn fault(&self, tool: &str, n: u32) -> Option<FaultKind> {
+        self.faults.iter().find(|f| f.tool == tool && f.nth.is_none_or(|k| k == n)).map(|f| f.kind.clone())
+    }
+
+    fn apply(&mut self, tool: &str, args: &[Value]) -> Result<Value, HostError> {
+        let (deploy, to, variant) = target(args);
+        let key = key_of(args);
+        let need = |d: Option<String>| d.ok_or_else(|| HostError::Failed(format!("`{tool}` sem deployment")));
+        Ok(match (tool, variant.as_deref()) {
+            ("logs", _) => {
+                let d = need(deploy)?;
+                Value::Text(self.logs.get(&d).cloned().unwrap_or_else(|| format!("(sem logs para {d})")))
+            }
+            ("restart", _) | ("apply", Some("Restart")) => {
+                let d = need(deploy)?;
+                *self.restarts.entry(d.clone()).or_default() += 1;
+                Value::Text(format!("restart {d}"))
+            }
+            ("scale", _) | ("apply", Some("Scale")) => {
+                let d = need(deploy)?;
+                let to = to.ok_or_else(|| HostError::Failed("scale sem réplicas".into()))?;
+                let from = self.replicas.insert(d.clone(), to).unwrap_or(0);
+                if let Some(k) = key {
+                    self.preimage.insert(k, (d.clone(), from));
+                }
+                Value::Text(format!("scale {d} {from}→{to}"))
+            }
+            // Compensação de `scale`: restaura a pré-imagem registrada pela chave da operação original.
+            // Total sobre "aconteceu" e "não aconteceu": sem pré-imagem, não há o que desfazer.
+            ("unscale", _) => match key.and_then(|k| self.preimage.remove(&k)) {
+                Some((d, before)) => {
+                    let now = self.replicas.insert(d.clone(), before).unwrap_or(0);
+                    Value::Text(format!("unscale {d} {now}→{before}"))
+                }
+                None => Value::Text("unscale: nada a restaurar".into()),
+            },
+            ("healthy", _) => Value::Bool(self.health.get(&need(deploy)?).copied().unwrap_or(true)),
+            ("restored", _) => {
+                let d = need(deploy)?;
+                Value::Bool(self.replicas.get(&d) == self.initial.get(&d))
+            }
+            ("page", _) => {
+                self.outbox.push(text_arg(args).unwrap_or_default());
+                Value::Unit
+            }
+            (other, _) => return Err(HostError::Failed(format!("ferramenta `{other}` sem ligação no host"))),
+        })
+    }
 }
 
 impl Host for SimWorld {
-    fn call(&mut self, tool: &str, args: &[Value]) -> Result<(Value, f64), String> {
+    fn call(&mut self, tool: &str, args: &[Value]) -> Result<(Value, f64), HostError> {
         let lat = self.lat(tool);
-        if let Some(k) = key_of(args) {
-            if let Some(prev) = self.applied.get(&k) {
+        let key = key_of(args);
+        if let Some(k) = key {
+            if let Some(prev) = self.applied.get(&(tool.to_string(), k)) {
                 return Ok((prev.clone(), lat));
             }
         }
-        let out = match tool {
-            "logs" => {
-                let deploy = args
-                    .iter()
-                    .find_map(|v| if let Value::Text(s) = v { Some(s.clone()) } else { None })
-                    .unwrap_or_default();
-                Value::Text(self.logs.get(&deploy).cloned().unwrap_or_else(|| format!("(sem logs para {deploy})")))
-            }
-            "apply" => {
-                let action = args.iter().find(|v| matches!(v, Value::Adt { .. })).ok_or("apply sem ação")?;
-                let Value::Adt { variant, fields, .. } = action else { unreachable!() };
-                let get = |k: &str| fields.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
-                let deploy = match get("deploy") {
-                    Some(Value::Text(d)) => d,
-                    _ => return Err("ação sem `deploy`".into()),
-                };
-                match variant.as_str() {
-                    "Restart" => {
-                        *self.restarts.entry(deploy.clone()).or_default() += 1;
-                        Value::Text(format!("restart {deploy}"))
-                    }
-                    "Scale" => {
-                        let Some(Value::Int(to)) = get("to") else { return Err("Scale sem `to`".into()) };
-                        let from = self.replicas.insert(deploy.clone(), to).unwrap_or(0);
-                        Value::Text(format!("scale {deploy} {from}→{to}"))
-                    }
-                    other => return Err(format!("ação desconhecida pelo host: {other}")),
-                }
-            }
-            "page" => {
-                let msg = args
-                    .iter()
-                    .find_map(|v| if let Value::Text(s) = v { Some(s.clone()) } else { None })
-                    .unwrap_or_default();
-                self.outbox.push(msg);
-                Value::Unit
-            }
-            other => return Err(format!("ferramenta `{other}` sem ligação no host")),
+        let n = {
+            let c = self.calls.entry(tool.to_string()).or_default();
+            *c += 1;
+            *c
         };
-        if let Some(k) = key_of(args) {
-            self.applied.insert(k, out.clone());
+        match self.fault(tool, n) {
+            Some(FaultKind::Error) => return Err(HostError::Failed(format!("`{tool}` falhou no provedor"))),
+            Some(FaultKind::TimeoutLost) => return Err(HostError::Timeout { elapsed: lat * 4.0 }),
+            Some(FaultKind::TimeoutApplied) => {
+                let out = self.apply(tool, args)?;
+                if let Some(k) = key {
+                    self.applied.insert((tool.to_string(), k), out);
+                }
+                return Err(HostError::Timeout { elapsed: lat * 4.0 });
+            }
+            _ => {}
+        }
+        let out = self.apply(tool, args)?;
+        if let Some(k) = key {
+            self.applied.insert((tool.to_string(), k), out.clone());
         }
         Ok((out, lat))
+    }
+
+    fn status(&mut self, tool: &str, key: u64) -> (Status, f64) {
+        let lat = self.lat(tool);
+        if let Some(n) = self.unknown_status.get_mut(tool) {
+            if *n > 0 {
+                *n -= 1;
+                return (Status::Unknown, lat);
+            }
+        }
+        match self.applied.get(&(tool.to_string(), key)) {
+            Some(v) => (Status::Done(v.clone()), lat),
+            None => (Status::NotApplied, lat),
+        }
     }
 
     fn state(&self) -> Json {

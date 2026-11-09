@@ -20,7 +20,7 @@ pub mod schema;
 
 pub use gbnf::to_gbnf;
 pub use mask::{allowed, decode_following, mask, viable, Deviation, Trace, Viability};
-pub use schema::to_json_schema;
+pub use schema::{to_json_schema, to_json_schema_with, unenforced, Dialect};
 
 use ath_syntax::ast::{Item, Module, TypeExpr};
 use serde_json::Value as Json;
@@ -47,7 +47,7 @@ pub fn shape_of(m: &Module, ty: &TypeExpr) -> Result<Shape, String> {
 
 fn shape_rec(m: &Module, ty: &TypeExpr, stack: &mut Vec<String>) -> Result<Shape, String> {
     match ty {
-        TypeExpr::Labeled(inner, ..) => shape_rec(m, inner, stack),
+        TypeExpr::Labeled(inner, ..) | TypeExpr::Own(inner, _) => shape_rec(m, inner, stack),
         TypeExpr::Cap(..) => Err("capacidades não podem ser produzidas por um modelo".into()),
         TypeExpr::Refined { base, lo, hi, .. } => match base.name.as_str() {
             "Int" => Ok(Shape::Int { min: *lo, max: *hi }),
@@ -58,7 +58,7 @@ fn shape_rec(m: &Module, ty: &TypeExpr, stack: &mut Vec<String>) -> Result<Shape
             "Int" => Ok(Shape::Int { min: None, max: None }),
             "Bool" => Ok(Shape::Bool),
             "Text" => Ok(Shape::Text { max_chars: None }),
-            "Unit" | "IdemKey" => Err(format!("`{}` não pode ser produzido por um modelo", id.name)),
+            "Unit" | "IdemKey" | "Pending" => Err(format!("`{}` não pode ser produzido por um modelo", id.name)),
             name => {
                 let td = m
                     .items

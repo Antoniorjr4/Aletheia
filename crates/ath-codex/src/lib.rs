@@ -150,7 +150,7 @@ impl Deps<'_> {
         match t {
             TypeExpr::Named(id) => self.name(&id.name),
             TypeExpr::Refined { .. } | TypeExpr::Cap(..) => {}
-            TypeExpr::Labeled(inner, ..) => self.ty(inner),
+            TypeExpr::Labeled(inner, ..) | TypeExpr::Own(inner, _) => self.ty(inner),
         }
     }
 
@@ -161,6 +161,9 @@ impl Deps<'_> {
             Item::Tool(d) => {
                 d.params.iter().for_each(|p| self.ty(&p.ty));
                 self.ty(&d.ret);
+                if let Some(c) = &d.compensator {
+                    self.name(&c.name);
+                }
             }
             Item::Policy(d) => {
                 d.params.iter().for_each(|p| self.ty(&p.ty));
@@ -170,6 +173,11 @@ impl Deps<'_> {
             Item::Agent(d) => {
                 d.params.iter().for_each(|p| self.ty(&p.ty));
                 for h in &d.handlers {
+                    h.params.iter().for_each(|p| self.ty(&p.ty));
+                    self.ty(&h.ret);
+                    self.block(&h.body);
+                }
+                for h in &d.handles {
                     h.params.iter().for_each(|p| self.ty(&p.ty));
                     self.ty(&h.ret);
                     self.block(&h.body);
@@ -236,6 +244,16 @@ impl Deps<'_> {
                 self.name(&policy.name);
                 self.block(els);
             }
+            ExprKind::Atomic { recover, body, on_failure, on_cf } => {
+                self.expr(recover);
+                self.block(body);
+                for (_, b) in on_failure.iter().chain(on_cf.iter()) {
+                    self.block(b);
+                }
+            }
+            ExprKind::Await { cond, .. } => self.expr(cond),
+            ExprKind::Reconcile { els, .. } => self.block(els),
+            ExprKind::Transfer(_) => {}
         }
     }
 }
@@ -296,6 +314,11 @@ impl Canon<'_> {
                 self.ty(inner);
                 self.w(")");
             }
+            TypeExpr::Own(inner, _) => {
+                self.w("(own ");
+                self.ty(inner);
+                self.w(")");
+            }
         }
     }
 
@@ -346,7 +369,13 @@ impl Canon<'_> {
                 self.ty(&d.ret);
                 self.w(") ");
                 self.effects(&d.effects);
-                let _ = write!(self.out, " {} (latency {}) (usd {}))", d.class.name(), d.latency, d.usd);
+                let _ = write!(self.out, " {}", d.class.name());
+                if let Some(c) = &d.compensator {
+                    self.w(" (by ");
+                    self.reference(&c.name);
+                    self.w(")");
+                }
+                let _ = write!(self.out, " (provider {}) (latency {}) (usd {}))", d.provider.name(), d.latency, d.usd);
             }
             Item::Policy(d) => {
                 self.w("(policy ");
@@ -382,6 +411,20 @@ impl Canon<'_> {
                     self.w(") ");
                     self.effects(&h.effects);
                     self.w(" ");
+                    let depth = self.locals.len();
+                    for p in &h.params {
+                        self.locals.push(p.name.name.clone());
+                    }
+                    self.block(&h.body);
+                    self.locals.truncate(depth);
+                    self.w(")");
+                }
+                for h in &d.handles {
+                    let _ = write!(self.out, " (handle {:?} ", h.effect.name);
+                    self.params(&h.params);
+                    self.w(" (ret ");
+                    self.ty(&h.ret);
+                    self.w(") ");
                     let depth = self.locals.len();
                     for p in &h.params {
                         self.locals.push(p.name.name.clone());
@@ -554,6 +597,39 @@ impl Canon<'_> {
             ExprKind::Commit(v) => {
                 self.w("(commit ");
                 self.expr(v);
+                self.w(")");
+            }
+            ExprKind::Atomic { recover, body, on_failure, on_cf } => {
+                self.w("(atomic (recover ");
+                self.expr(recover);
+                self.w(") ");
+                self.block(body);
+                for (tag, h) in [("on-failure", on_failure), ("on-compensation-failed", on_cf)] {
+                    if let Some((bind, b)) = h {
+                        let _ = write!(self.out, " ({tag} ");
+                        self.locals.push(bind.name.clone());
+                        self.block(b);
+                        self.locals.pop();
+                        self.w(")");
+                    }
+                }
+                self.w(")");
+            }
+            ExprKind::Await { cond, within } => {
+                self.w("(await ");
+                self.expr(cond);
+                let _ = write!(self.out, " (within {within}))");
+            }
+            ExprKind::Reconcile { pending, fuel, els } => {
+                self.w("(reconcile ");
+                self.var(&pending.name);
+                let _ = write!(self.out, " (fuel {fuel}) ");
+                self.block(els);
+                self.w(")");
+            }
+            ExprKind::Transfer(p) => {
+                self.w("(transfer ");
+                self.var(&p.name);
                 self.w(")");
             }
         }

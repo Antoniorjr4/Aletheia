@@ -14,8 +14,11 @@ pub struct InferCost {
     pub model: String,
     pub out_ty: String,
     pub tok_in: u64,
+    /// Teto de tokens de saída por amostra: conteúdo + raciocínio.
     pub tok_out: u64,
-    /// O teto de saída veio do tipo (bytes da codificação), não do `max_out` do modelo.
+    /// Parte do teto reservada a raciocínio pelo contrato do modelo.
+    pub tok_reasoning: u64,
+    /// O teto do conteúdo veio do tipo (bytes da codificação), não do `max_out` do modelo.
     pub out_by_type: bool,
     pub usd: f64,
     pub wall: f64,
@@ -32,10 +35,56 @@ pub struct Facts {
     pub integrity_checks: usize,
     pub refinement_checks: usize,
     pub tool_calls: usize,
+    /// Blocos `atomic` e, para cada ferramenta compensável usada neles, o compensador.
+    pub atomic_blocks: usize,
+    pub compensations: std::collections::BTreeSet<(String, String)>,
+    /// Chamadas com chave de idempotência (podem terminar em `TimeoutUnknown`).
+    pub keyed_calls: usize,
+    /// Pior tempo de reconciliação por chave, fora do contrato Δ (segundos).
+    pub reconcile_bound: Option<f64>,
     pub effects: BTreeSet<String>,
 }
 
+/// Recuo entre tentativas de reconciliação no ARX, em segundos.
+pub const RECONCILE_BACKOFF: f64 = 2.0;
+
+/// Assinatura textual de um tipo declarado (para comparar parâmetros).
+pub fn type_sig(t: &TypeExpr) -> String {
+    let b = |x: &Option<i64>| x.map(|n| n.to_string()).unwrap_or_default();
+    match t {
+        TypeExpr::Named(id) => id.name.clone(),
+        TypeExpr::Refined { base, lo, hi, .. } => format!("{}[{}..{}]", base.name, b(lo), b(hi)),
+        TypeExpr::Cap(effs, _) => {
+            let mut n: Vec<&str> = effs.iter().map(|e| e.name.as_str()).collect();
+            n.sort();
+            format!("Cap[{}]", n.join(" + "))
+        }
+        TypeExpr::Labeled(inner, l, _) => format!("{} ^ {}", type_sig(inner), l.name()),
+        TypeExpr::Own(inner, _) => format!("own {}", type_sig(inner)),
+    }
+}
+
+/// Maior `fuel` de `reconcile` num tratador (0 se não reconcilia).
+fn max_fuel(b: &Block) -> u32 {
+    fn ex(e: &Expr) -> u32 {
+        match &e.kind {
+            ExprKind::Reconcile { fuel, els, .. } => (*fuel).max(max_fuel(els)),
+            ExprKind::Block(b) => max_fuel(b),
+            ExprKind::If { then, els, .. } => max_fuel(then).max(els.as_ref().map_or(0, max_fuel)),
+            _ => 0,
+        }
+    }
+    let mut m = 0;
+    for s in &b.stmts {
+        let (Stmt::Expr(e) | Stmt::Let { value: e, .. }) = s;
+        m = m.max(ex(e));
+    }
+    b.tail.as_deref().map_or(m, |t| m.max(ex(t)))
+}
+
 pub const MODEL_PROPS: [&str; 6] = ["price_in", "price_out", "ctx", "max_out", "ttft", "per_tok"];
+/// Propriedades opcionais do contrato Δ: `reasoning` = tokens de raciocínio admitidos por amostra.
+pub const MODEL_OPTIONAL: [&str; 1] = ["reasoning"];
 const BUILTINS: [&str; 2] = ["fit", "sample"];
 
 pub struct Ctx<'m> {
@@ -55,9 +104,15 @@ pub struct Ctx<'m> {
     ret_refn: Option<Refn>,
     in_policy: bool,
     commit_ok: bool,
+    /// Pilha de blocos `atomic` abertos; cada um guarda as chamadas compensáveis que contém.
+    atomic_stack: Vec<Vec<Span>>,
+    /// Dentro de `handle timeout_unknown`.
+    in_handle: bool,
+    /// Ao checar condições de controle, o resultado de uma ferramenta herda a integridade dos argumentos.
+    taint_calls: bool,
 }
 
-use Stratum::{E0, E2, E3, E5, E6};
+use Stratum::{E0, E1, E2, E3, E5, E6};
 
 impl<'m> Ctx<'m> {
     pub fn new(m: &'m Module) -> Self {
@@ -78,7 +133,33 @@ impl<'m> Ctx<'m> {
             ret_refn: None,
             in_policy: false,
             commit_ok: false,
+            atomic_stack: Vec::new(),
+            in_handle: false,
+            taint_calls: false,
         }
+    }
+
+    /// Condições que decidem o desfecho de uma saga precisam de integridade ⊒ Endorsed.
+    fn check_control(&mut self, span: Span, t: &LTy, what: &str) {
+        let eff = t.lab.meet(self.pc);
+        self.facts.integrity_checks += 1;
+        if eff >= Label::Endorsed {
+            return;
+        }
+        let mut d = Diag::new(
+            E3,
+            "E0417",
+            format!("{what} com integridade {}", eff.name()),
+            span,
+            format!("integridade {}", eff.name()),
+        );
+        if !t.origin.is_empty() {
+            d = d.note(format!("origem: {}", t.origin.join(" → ")));
+        }
+        self.push(
+            d.note(format!("exigido: {what} ⊒ Endorsed"))
+                .help("observe o que o plano endossado afetou: use os campos do plano, não o dado do evento"),
+        );
     }
 
     /// Refinamento declarado num tipo, se houver.
@@ -179,6 +260,7 @@ impl<'m> Ctx<'m> {
                     "Text" => Ty::Text,
                     "Unit" => Ty::Unit,
                     "IdemKey" => Ty::IdemKey,
+                    "Pending" => Ty::Pending,
                     n if self.types.contains_key(n) => Ty::Adt(n.to_string()),
                     n => {
                         self.push(Diag::new(E0, "E0004", format!("tipo desconhecido `{n}`"), id.span, "não declarado"));
@@ -206,6 +288,31 @@ impl<'m> Ctx<'m> {
                 let (t, _) = self.resolve(inner);
                 (t, Some(*l))
             }
+            TypeExpr::Own(inner, _) => self.resolve(inner),
+        }
+    }
+
+    /// Parâmetros lineares exigem `own`; `own` só se aplica a tipos lineares.
+    fn check_ownership(&mut self, p: &Param, t: &Ty) {
+        if t.is_linear() && !p.ty.is_own() {
+            self.push(
+                Diag::new(
+                    E1,
+                    "E0042",
+                    format!("`{}` é linear e precisa de posse explícita", t.show()),
+                    p.ty.span(),
+                    "declare `own`",
+                )
+                .help(format!("escreva `{}: own {}`", p.name.name, p.ty.base_name())),
+            );
+        } else if p.ty.is_own() && !t.is_linear() && !t.is_never() {
+            self.push(Diag::new(
+                E1,
+                "E0043",
+                format!("`own` só se aplica a tipos lineares, não a `{}`", t.show()),
+                p.ty.span(),
+                "posse linear desnecessária",
+            ));
         }
     }
 
@@ -335,7 +442,7 @@ impl<'m> Ctx<'m> {
             }
         }
         for p in &d.props {
-            if !MODEL_PROPS.contains(&p.key.name.as_str()) {
+            if !MODEL_PROPS.contains(&p.key.name.as_str()) && !MODEL_OPTIONAL.contains(&p.key.name.as_str()) {
                 self.push(Diag::new(
                     E0,
                     "E0030",
@@ -370,9 +477,85 @@ impl<'m> Ctx<'m> {
                 );
             }
         }
-        self.resolve(&t.ret);
+        let (rt, _) = self.resolve(&t.ret);
+        if rt.is_linear() {
+            self.push(Diag::new(E0, "E0040", "ferramentas não devolvem valores lineares", t.ret.span(), "tipo linear"));
+        }
+        for p in &t.params {
+            let (pt, _) = self.resolve(&p.ty);
+            if matches!(pt, Ty::Pending) {
+                self.push(Diag::new(
+                    E0,
+                    "E0044",
+                    "`Pending` não é argumento de ferramenta",
+                    p.ty.span(),
+                    "só reconcile ou transfer consomem Pending",
+                ));
+            }
+            self.check_ownership(p, &pt);
+        }
         if t.latency < 0.0 || t.usd < 0.0 {
             self.push(Diag::new(E0, "E0030", "latência e custo devem ser ≥ 0", t.name.span, "contrato Δ inválido"));
+        }
+        self.check_compensator(t);
+    }
+
+    /// `compensable by c`: `c` existe, não é a própria ferramenta, recebe os mesmos parâmetros
+    /// (o ARX a chama com os argumentos e a chave da operação original) e não é irrevogável.
+    fn check_compensator(&mut self, t: &'m ToolDecl) {
+        if t.class != EffClass::Compensable {
+            if let Some(c) = &t.compensator {
+                self.push(Diag::new(E2, "E0505", "compensador em efeito não compensável", c.span, "remova `by …`"));
+            }
+            return;
+        }
+        let Some(c) = &t.compensator else {
+            self.push(
+                Diag::new(E2, "E0505", "`compensable` sem compensador", t.class_span, "falta `by <ferramenta>`")
+                    .help("declare a transição de volta: `compensable by <ferramenta com os mesmos parâmetros>`"),
+            );
+            return;
+        };
+        let Some(comp) = self.tools.get(&c.name).copied() else {
+            self.push(Diag::new(
+                E2,
+                "E0505",
+                format!("compensador desconhecido `{}`", c.name),
+                c.span,
+                "não é ferramenta declarada",
+            ));
+            return;
+        };
+        if comp.name.name == t.name.name {
+            self.push(Diag::new(E2, "E0505", "uma ferramenta não compensa a si mesma", c.span, "compensador circular"));
+            return;
+        }
+        if comp.class == EffClass::Irrevocable {
+            self.push(
+                Diag::new(
+                    E2,
+                    "E0505",
+                    format!("compensador `{}` é irrevocable", c.name),
+                    c.span,
+                    "compensação irrevogável",
+                )
+                .note("uma compensação é uma transição de volta; precisa ser reversible ou compensable"),
+            );
+        }
+        let sig = |d: &ToolDecl| d.params.iter().map(|p| type_sig(&p.ty)).collect::<Vec<_>>();
+        if sig(t) != sig(comp) {
+            self.push(
+                Diag::new(
+                    E2,
+                    "E0505",
+                    format!("`{}` não tem a assinatura de `{}`", c.name, t.name.name),
+                    c.span,
+                    "parâmetros diferentes",
+                )
+                .note(format!("{}({})", t.name.name, sig(t).join(", ")))
+                .note(format!("{}({})", c.name, sig(comp).join(", ")))
+                .help("o ARX chama o compensador com os mesmos argumentos e a mesma chave da operação original"),
+            );
         }
     }
 
@@ -405,6 +588,101 @@ impl<'m> Ctx<'m> {
         self.scopes.clear();
     }
 
+    /// Escopo inicial de um handler: as capacidades do agente.
+    fn agent_scope(&mut self, a: &'m AgentDecl, report: bool) {
+        self.scopes = vec![vec![]];
+        self.pc = Label::Trusted;
+        self.pc_span = None;
+        self.used.clear();
+        self.in_policy = false;
+        for p in &a.params {
+            let (t, _) = self.resolve(&p.ty);
+            if report && !matches!(t, Ty::Cap(_) | Ty::Never) {
+                self.push(Diag::new(
+                    E0,
+                    "E0040",
+                    "parâmetros de agente são capacidades",
+                    p.ty.span(),
+                    format!("encontrado `{}`", t.show()),
+                ));
+            }
+            self.bind(&p.name.name, LTy::trusted(t));
+        }
+    }
+
+    /// `handle timeout_unknown(p: own Pending[_]) -> T { … }`. Devolve o tipo de retorno do
+    /// tratador e os efeitos que ele usa (somados à linha de quem executa `TimeoutUnknown`).
+    fn check_handles(&mut self, a: &'m AgentDecl) -> Option<(Ty, Span, BTreeMap<String, Span>)> {
+        let mut out = None;
+        for h in &a.handles {
+            if h.effect.name != "timeout_unknown" {
+                self.push(
+                    Diag::new(
+                        E2,
+                        "E0045",
+                        format!("efeito desconhecido `{}`", h.effect.name),
+                        h.effect.span,
+                        "sem tratador",
+                    )
+                    .help("o Marco Zero trata `timeout_unknown`; `CompensationFailed` é tratado no próprio `atomic`"),
+                );
+                continue;
+            }
+            if out.is_some() {
+                self.push(Diag::new(
+                    E0,
+                    "E0002",
+                    "`handle timeout_unknown` definido mais de uma vez",
+                    h.effect.span,
+                    "duplicado",
+                ));
+                continue;
+            }
+            self.agent_scope(a, false);
+            match h.params.as_slice() {
+                [p] => {
+                    let (t, _) = self.resolve(&p.ty);
+                    if !matches!(t, Ty::Pending | Ty::Never) {
+                        self.push(Diag::new(
+                            E0,
+                            "E0046",
+                            "o tratador recebe `p: own Pending[_]`",
+                            p.ty.span(),
+                            format!("encontrado `{}`", t.show()),
+                        ));
+                    }
+                    self.check_ownership(p, &t);
+                    self.bind(&p.name.name, LTy::trusted(Ty::Pending));
+                }
+                _ => self.push(Diag::new(
+                    E0,
+                    "E0046",
+                    "o tratador recebe exatamente `p: own Pending[_]`",
+                    h.effect.span,
+                    "aridade",
+                )),
+            }
+            let (rt, _) = self.resolve(&h.ret);
+            self.ret = Some(rt.clone());
+            self.in_handle = true;
+            let body = self.block(&h.body);
+            self.in_handle = false;
+            if !assignable(&body.ty, &rt) {
+                let sp = h.body.tail.as_ref().map(|t| t.span).unwrap_or(h.body.span);
+                self.mismatch(sp, &rt, &body.ty);
+            }
+            let used = std::mem::take(&mut self.used);
+            self.ret = None;
+            self.scopes.clear();
+            // pior caso por chave: `fuel` tentativas, cada uma com recuo e a maior latência entre as ferramentas com chave
+            let fuel = max_fuel(&h.body);
+            let lat = self.tools.values().filter(|t| t.keyed()).map(|t| t.latency).fold(0.0, f64::max);
+            self.facts.reconcile_bound = Some(fuel as f64 * (RECONCILE_BACKOFF + lat));
+            out = Some((rt, h.ret.span(), used));
+        }
+        out
+    }
+
     fn check_agent(&mut self, a: &'m AgentDecl) {
         for b in &a.budget {
             if !["tok", "usd", "wall"].contains(&b.key.name.as_str()) {
@@ -422,8 +700,9 @@ impl<'m> Ctx<'m> {
                 self.push(Diag::new(E0, "E0031", "orçamento negativo", b.key.span, "deve ser ≥ 0"));
             }
         }
+        let handle = self.check_handles(a);
         let mut events = HashSet::new();
-        for h in &a.handlers {
+        for (i, h) in a.handlers.iter().enumerate() {
             if !events.insert(h.event.name.clone()) {
                 self.push(Diag::new(
                     E0,
@@ -433,31 +712,14 @@ impl<'m> Ctx<'m> {
                     "duplicado",
                 ));
             }
-            self.scopes = vec![vec![]];
-            self.pc = Label::Trusted;
-            self.pc_span = None;
-            self.used.clear();
-            self.in_policy = false;
-            for p in &a.params {
-                let (t, _) = self.resolve(&p.ty);
-                if !matches!(t, Ty::Cap(_) | Ty::Never) {
-                    self.push(Diag::new(
-                        E0,
-                        "E0040",
-                        "parâmetros de agente são capacidades",
-                        p.ty.span(),
-                        format!("encontrado `{}`", t.show()),
-                    ));
-                }
-                self.bind(&p.name.name, LTy::trusted(t));
-            }
+            self.agent_scope(a, i == 0);
             for p in &h.params {
                 let (t, l) = self.resolve(&p.ty);
-                if matches!(t, Ty::Cap(_) | Ty::IdemKey) {
+                if matches!(t, Ty::Cap(_)) || t.is_linear() {
                     self.push(Diag::new(
                         E0,
                         "E0041",
-                        "eventos não carregam capacidades nem chaves",
+                        "eventos não carregam capacidades, chaves nem obrigações",
                         p.ty.span(),
                         "capacidades só vêm do agente",
                     ));
@@ -482,8 +744,28 @@ impl<'m> Ctx<'m> {
                 self.expect_refn(t, &body, want, &format!("o retorno de `on {}`", h.event.name));
             }
             self.ret_refn = None;
+            let mut used = std::mem::take(&mut self.used);
+            if let Some(&sp) = used.get("TimeoutUnknown") {
+                match &handle {
+                    None => self.push(
+                        Diag::new(E2, "E0503", "efeito `TimeoutUnknown` sem tratador", sp, "chamada com chave pode terminar em resultado desconhecido")
+                            .note("um timeout diz que o agente parou de esperar, não que o efeito não aconteceu")
+                            .help("declare no agente: `handle timeout_unknown(p: own Pending[_]) -> T { reconcile p fuel 3 else { transfer p; … } }`"),
+                    ),
+                    Some((ht, hspan, heffects)) => {
+                        if !assignable(ht, &rt) {
+                            self.push(
+                                Diag::new(E0, "E0008", "o tratador de `TimeoutUnknown` encerra o evento com outro tipo", *hspan, format!("devolve `{}`", ht.show()))
+                                    .note(format!("`on {}` devolve `{}`", h.event.name, rt.show())),
+                            );
+                        }
+                        for (eff, esp) in heffects {
+                            used.entry(eff.clone()).or_insert(*esp);
+                        }
+                    }
+                }
+            }
             let declared: BTreeSet<String> = h.effects.iter().map(|e| e.name.clone()).collect();
-            let used = std::mem::take(&mut self.used);
             for (eff, sp) in &used {
                 if !declared.contains(eff) {
                     self.push(
@@ -540,6 +822,19 @@ impl<'m> Ctx<'m> {
             ExprKind::Bool(_) => LTy::trusted(Ty::Bool),
             ExprKind::Str(s) => LTy { tok: Some(est_tokens(s)), ..LTy::trusted(Ty::Text) },
             ExprKind::Var(n) => match self.lookup(n) {
+                Some(t) if matches!(t.ty, Ty::Pending) => {
+                    self.push(
+                        Diag::new(
+                            E0,
+                            "E0044",
+                            "`Pending` só é consumido por `reconcile` ou `transfer`",
+                            e.span,
+                            "uso indevido de obrigação",
+                        )
+                        .help("uma operação em aberto não é um valor comum: reconcilie-a ou transfira-a"),
+                    );
+                    LTy::never()
+                }
                 Some(t) => t,
                 None => {
                     self.push(Diag::new(
@@ -575,6 +870,12 @@ impl<'m> Ctx<'m> {
                 if self.in_policy {
                     self.impure(e.span, "`return`");
                 }
+                if !self.atomic_stack.is_empty() {
+                    self.push(
+                        Diag::new(E2, "E0602", "`return` dentro de `atomic`", e.span, "a saga precisa confirmar ou falhar")
+                            .help("devolva o valor no fim do bloco, ou saia pelos tratadores `on failure` / `on compensation_failed`"),
+                    );
+                }
                 let t = self.expr(v);
                 if let Some(r) = self.ret.clone() {
                     if !assignable(&t.ty, &r) {
@@ -605,7 +906,139 @@ impl<'m> Ctx<'m> {
                 ));
                 self.expr(x)
             }
+            ExprKind::Atomic { recover, body, on_failure, on_cf } => {
+                self.atomic(e, recover, body, on_failure.as_ref(), on_cf.as_ref())
+            }
+            ExprKind::Await { cond, within } => {
+                if self.atomic_stack.is_empty() {
+                    self.push(
+                        Diag::new(E2, "E0601", "`await` fora de `atomic`", e.span, "pós-condição sem saga")
+                            .help("uma pós-condição observada só faz sentido onde a falha dispara compensações"),
+                    );
+                }
+                if *within < 0.0 {
+                    self.push(Diag::new(E0, "E0030", "`within` negativo", e.span, "deve ser ≥ 0"));
+                }
+                let saved = std::mem::replace(&mut self.taint_calls, true);
+                let c = self.expr(cond);
+                self.taint_calls = saved;
+                if !assignable(&c.ty, &Ty::Bool) {
+                    self.mismatch(cond.span, &Ty::Bool, &c.ty);
+                }
+                self.check_control(cond.span, &c, "a pós-condição de `atomic`");
+                LTy::trusted(Ty::Unit)
+            }
+            ExprKind::Reconcile { pending, els, .. } => {
+                self.pending_operand(e.span, pending, "reconcile");
+                self.block(els)
+            }
+            ExprKind::Transfer(p) => {
+                self.pending_operand(e.span, p, "transfer");
+                LTy::trusted(Ty::Unit)
+            }
         }
+    }
+
+    /// `reconcile p` e `transfer p`: só no tratador de `TimeoutUnknown`, só sobre `Pending`.
+    fn pending_operand(&mut self, span: Span, p: &Ident, op: &str) {
+        if !self.in_handle {
+            self.push(
+                Diag::new(
+                    E2,
+                    "E0603",
+                    format!("`{op}` fora de `handle timeout_unknown`"),
+                    span,
+                    "sem obrigação em aberto aqui",
+                )
+                .help("obrigações chegam ao programa só pelo tratador de `TimeoutUnknown`"),
+            );
+        }
+        match self.lookup(&p.name) {
+            Some(t) if matches!(t.ty, Ty::Pending | Ty::Never) => {}
+            Some(t) => self.mismatch(p.span, &Ty::Pending, &t.ty),
+            None => self.push(Diag::new(
+                E0,
+                "E0001",
+                format!("variável desconhecida `{}`", p.name),
+                p.span,
+                "não encontrada",
+            )),
+        }
+    }
+
+    /// `atomic recover <sonda> { … } on failure(e) { … } on compensation_failed(cf) { … }`
+    fn atomic(
+        &mut self,
+        e: &Expr,
+        recover: &Expr,
+        body: &Block,
+        on_failure: Option<&(Ident, Block)>,
+        on_cf: Option<&(Ident, Block)>,
+    ) -> LTy {
+        if self.in_policy {
+            self.impure(e.span, "`atomic`");
+        }
+        if self.in_handle {
+            self.push(Diag::new(
+                E2,
+                "E0603",
+                "`atomic` dentro do tratador de `TimeoutUnknown`",
+                e.span,
+                "saga dentro de reconciliação",
+            ));
+        }
+        self.facts.atomic_blocks += 1;
+        let saved = std::mem::replace(&mut self.taint_calls, true);
+        let r = self.expr(recover);
+        self.taint_calls = saved;
+        if !assignable(&r.ty, &Ty::Bool) {
+            self.mismatch(recover.span, &Ty::Bool, &r.ty);
+        }
+        self.check_control(recover.span, &r, "a sonda de recuperação de `atomic`");
+        self.atomic_stack.push(Vec::new());
+        let b = self.block(body);
+        let compensable = self.atomic_stack.pop().unwrap_or_default();
+        let mut out = b;
+        for (bind, blk) in on_failure.into_iter().chain(on_cf) {
+            self.scopes.push(vec![(bind.name.clone(), LTy::trusted(Ty::Text))]);
+            let h = self.block(blk);
+            self.scopes.pop();
+            match unify(&out.ty, &h.ty) {
+                Some(ty) => {
+                    let mut o = LTy::trusted(ty);
+                    o.meet_from(&out);
+                    o.meet_from(&h);
+                    out = o;
+                }
+                None => self.push(Diag::new(
+                    E0,
+                    "E0011",
+                    "tratador de `atomic` com tipo diferente do bloco",
+                    blk.span,
+                    format!("`{}` vs `{}`", out.ty.show(), h.ty.show()),
+                )),
+            }
+        }
+        if let Some(&first) = compensable.first() {
+            self.use_effect("CompensationFailed", first);
+            if on_cf.is_none() {
+                let mut d = Diag::new(
+                    E2,
+                    "E0503",
+                    "efeito `CompensationFailed` sem tratador",
+                    first,
+                    "efeito compensável: a compensação também pode falhar",
+                )
+                .note("compensar é executar uma nova transição no mundo; ela pode não restaurar o invariante");
+                for sp in compensable.iter().skip(1) {
+                    d = d.secondary(*sp, "outro efeito compensável");
+                }
+                self.push(d.help(
+                    "acrescente ao `atomic`: `on compensation_failed(cf) { … }` (escalar a um humano, por exemplo)",
+                ));
+            }
+        }
+        out
     }
 
     fn field(&mut self, recv: &Expr, f: &Ident) -> LTy {
@@ -802,7 +1235,52 @@ impl<'m> Ctx<'m> {
         if self.in_policy {
             self.impure(e.span, &format!("chamada de ferramenta `{}`", callee.name));
         }
+        let in_atomic = !self.atomic_stack.is_empty();
+        if in_atomic && tool.class == EffClass::Irrevocable {
+            self.push(
+                Diag::new(
+                    E2,
+                    "T0302",
+                    "efeito irrevogável dentro de `atomic`",
+                    callee.span,
+                    format!("`{}` é irrevocable", callee.name),
+                )
+                .note("um efeito irrevogável não tem compensação: a saga não poderia recuperar o invariante")
+                .help(format!(
+                    "mova `commit {}(…)` para depois do bloco `atomic`, quando a fase compensável já confirmou",
+                    callee.name
+                )),
+            );
+        } else if in_atomic && tool.keyed() && tool.provider == ProviderClass::Opaque {
+            self.push(
+                Diag::new(
+                    E2,
+                    "T0305",
+                    "provedor opaco dentro de `atomic`",
+                    callee.span,
+                    format!("`{}` não tem protocolo de reconciliação", callee.name),
+                )
+                .note("um resultado desconhecido de provedor opaco não pode ser reconciliado nem compensado com segurança")
+                .help("declare `provider idempotent` ou `provider queryable`, ou chame fora da saga"),
+            );
+        }
+        if in_atomic && tool.class == EffClass::Compensable {
+            if let Some(frame) = self.atomic_stack.last_mut() {
+                frame.push(callee.span);
+            }
+            if let Some(comp) = tool.compensator.as_ref().and_then(|c| self.tools.get(&c.name).copied()) {
+                self.facts.compensations.insert((tool.name.name.clone(), comp.name.name.clone()));
+                for eff in &comp.effects {
+                    self.use_effect(&eff.name, e.span);
+                }
+            }
+        }
+        if tool.keyed() {
+            self.facts.keyed_calls += 1;
+            self.use_effect("TimeoutUnknown", e.span);
+        }
         match (tool.class, committed) {
+            (EffClass::Irrevocable, _) if in_atomic => {}
             (EffClass::Irrevocable, false) => self.push(
                 Diag::new(
                     E2,
@@ -838,8 +1316,12 @@ impl<'m> Ctx<'m> {
             }
             return LTy::never();
         }
+        let mut taint = LTy::trusted(Ty::Unit);
         for (p, a) in tool.params.iter().zip(args) {
             let at = self.expr(a);
+            if !matches!(at.ty, Ty::Cap(_) | Ty::IdemKey) {
+                taint.meet_from(&at);
+            }
             let (pt, req) = self.resolve(&p.ty);
             if !assignable(&at.ty, &pt) {
                 if let (Ty::Cap(have), Ty::Cap(need)) = (&at.ty, &pt) {
@@ -907,7 +1389,16 @@ impl<'m> Ctx<'m> {
             origin.push(format!("{}(…) devolve ^ {}", callee.name, lab.name()));
         }
         let refn = self.refn_of(&tool.ret);
-        LTy::declared(rt, lab, refn, origin)
+        let mut out = LTy::declared(rt, lab, refn, origin);
+        if self.taint_calls {
+            // Numa condição de controle, o que a ferramenta observa é escolhido pelos argumentos.
+            if taint.lab < out.lab {
+                out.lab = taint.lab;
+                out.origin = taint.origin;
+                out.origin.push(format!("{}(…)", callee.name));
+            }
+        }
+        out
     }
 
     fn ctor(&mut self, e: &Expr, name: &Ident, fields: &[(Ident, Expr)]) -> LTy {
@@ -1236,10 +1727,13 @@ impl<'m> Ctx<'m> {
         // Teto de saída derivado do tipo: bytes da codificação canônica (todo token cobre ≥ 1 byte).
         let max_out = p("max_out") as u64;
         let by_type = ath_grammar::shape_of(self.m, out).ok().and_then(|s| ath_grammar::max_bytes(&s));
-        let (tok_out, out_by_type) = match by_type {
+        let (content_out, out_by_type) = match by_type {
             Some(b) if b < max_out => (b, true),
             _ => (max_out, false),
         };
+        // Modelos de raciocínio gastam tokens antes do conteúdo: o contrato declara quantos.
+        let tok_reasoning = p("reasoning") as u64;
+        let tok_out = content_out + tok_reasoning;
         let ctx = p("ctx") as u64;
         if bounded && tok_in + tok_out > ctx {
             self.push(Diag::new(
@@ -1259,9 +1753,10 @@ impl<'m> Ctx<'m> {
             }
             other => other.base_name().to_string(),
         };
-        self.facts
-            .infer_costs
-            .insert(e.span, InferCost { model: model.name.clone(), out_ty, tok_in, tok_out, out_by_type, usd, wall });
+        self.facts.infer_costs.insert(
+            e.span,
+            InferCost { model: model.name.clone(), out_ty, tok_in, tok_out, tok_reasoning, out_by_type, usd, wall },
+        );
         let refn = self.refn_of(out);
         LTy { ty: Ty::Draft(Box::new(oty), e.span), lab: acc.lab, tok: None, origin: acc.origin, refn }
             .with_step(format!("infer {}", model.name))

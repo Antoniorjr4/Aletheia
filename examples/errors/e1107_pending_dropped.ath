@@ -1,0 +1,114 @@
+-- ERRO ESPERADO · Multiplicidade: o tratador descarta a obrigação em aberto
+-- Derivado de examples/remediate.ath por uma única edição.
+module ops.remediate
+
+-- Aletheia Core 0 · v0.3
+-- Agente de remediação: lê logs de terceiros (não confiáveis), pede um plano a um modelo,
+-- decodifica a saída sob a gramática do tipo, só executa o que a política aceita, aplica a
+-- fase compensável como saga e reconcilia todo resultado remoto desconhecido.
+
+-- O tipo é a gramática da saída do modelo: só existem estas duas ações, nomes com até
+-- 32 caracteres e réplicas entre 2 e 64. `athc grammar … --type Action` mostra o resultado.
+type Action =
+  | Restart { deploy: Text[..32] }
+  | Scale   { deploy: Text[..32], to: Int[2..64] }
+
+-- ① Modelo como valor: preço, janela, latência e raciocínio formam o contrato Δ
+--   (preços de openai/gpt-oss-120b na Groq em nov/2026; latência com folga de 5×)
+model planner {
+  price_in  = 0.15     -- US$ por milhão de tokens de entrada
+  price_out = 0.60     -- US$ por milhão de tokens de saída
+  ctx       = 131072   -- janela de contexto, em tokens
+  max_out   = 400      -- teto do conteúdo; o tipo `Action` o reduz para 174
+  reasoning = 512      -- tokens de raciocínio admitidos por amostra
+  ttft      = 2.0      -- segundos até o primeiro token
+  per_tok   = 0.01     -- segundos por token de saída
+}
+
+-- ② Ferramentas: efeito, classe, compensação, provedor e latência declarada (contrato Δ)
+tool logs(c: Cap[Cluster.Read], deploy: Text) -> Text ^ Untrusted
+  ! { Cluster.Read } reversible latency 2.0
+
+-- escalar é compensável: `unscale` recebe os mesmos argumentos e a mesma chave, e restaura
+-- a pré-imagem registrada por ela; o provedor permite consultar o status pela chave
+tool scale(c: Cap[Cluster.Write], deploy: Text[..32] ^ Endorsed, to: Int[2..64], k: own IdemKey) -> Text
+  ! { Cluster.Write } compensable by unscale provider queryable latency 1.0
+
+tool unscale(c: Cap[Cluster.Write], deploy: Text[..32] ^ Endorsed, to: Int[2..64], k: own IdemKey) -> Text
+  ! { Cluster.Write } reversible provider idempotent latency 1.0
+
+-- reiniciar derruba conexões: não há volta, então é irrevocable e só existe via `commit`
+tool restart(c: Cap[Cluster.Write], deploy: Text[..32] ^ Endorsed, k: own IdemKey) -> Text
+  ! { Cluster.Write } irrevocable provider idempotent latency 1.0
+
+tool healthy(c: Cap[Cluster.Read], deploy: Text[..32]) -> Bool
+  ! { Cluster.Read } reversible latency 1.0
+
+tool restored(c: Cap[Cluster.Read], deploy: Text[..32]) -> Bool
+  ! { Cluster.Read } reversible latency 1.0
+
+tool page(c: Cap[Page], msg: Text, k: own IdemKey) -> Unit
+  ! { Page } irrevocable provider idempotent latency 1.0
+
+-- ③ Política: pura, total e decidível. A autoridade é dela, não do modelo.
+--   (o intervalo de réplicas já está no tipo; a política decide sobre quais deployments agir)
+policy SafeRemediation(a: Action) -> Bool =
+  match a {
+    Restart { deploy } => deploy == "api" || deploy == "worker",
+    Scale { deploy }   => deploy == "api" || deploy == "worker",
+  }
+
+-- ④ Agente: capacidades e orçamento são parâmetros; o compilador prova o orçamento,
+--   inclusive o caminho de falha da saga
+agent Remediator(
+  cluster : Cap[Cluster.Read + Cluster.Write],
+  oncall  : Cap[Page],
+  keys    : Cap[IdemKey.Mint],
+) budget [tok <= 20000, usd <= 0.50, wall <= 90.0]
+{
+  on alert(service: Text[..32] ^ Untrusted) -> Text
+     ! { Infer, Cluster.Read, Cluster.Write, Page, TimeoutUnknown, CompensationFailed } {
+    let l = logs(cluster, service)
+
+    -- ⑤ Inferência: o log entra como dado (quote), nunca como instrução; a saída é decodificada
+    --   sob a gramática de `Action`, com teto de tokens derivado do tipo
+    let draft = infer planner -> Action {
+      task = "Diagnostique o incidente e proponha uma ação corretiva.",
+      logs = quote(fit(l, 2000)),
+    }
+
+    -- ⑥ Propor → verificar: só o que a política aceita ganha o rótulo Endorsed
+    let plan = refine draft by SafeRemediation retry 3 else {
+      commit page(oncall, "nenhum plano seguro em 3 tentativas", keys.mint())
+      return "escalado"
+    }
+
+    -- ⑦ A fase compensável é uma saga; a irrevogável só existe fora dela, via commit
+    match plan {
+      Restart { deploy } => {
+        commit restart(cluster, deploy, keys.mint())
+        commit page(oncall, deploy ++ " · reiniciado", keys.mint())
+        "resolvido"
+      },
+      Scale { deploy, to } => {
+        let r = atomic recover restored(cluster, deploy) {
+          scale(cluster, deploy, to, keys.mint())
+          await healthy(cluster, deploy) within 20.0
+          "resolvido"
+        } on failure(e) {
+          "compensado: " ++ e
+        } on compensation_failed(cf) {
+          "intervenção humana: " ++ cf
+        }
+        commit page(oncall, deploy ++ " · " ++ r, keys.mint())
+        r
+      },
+    }
+  }
+
+  -- ⑧ Resultado remoto desconhecido nunca é tratado como falha nula: a obrigação é linear
+  --   e termina reconciliada (o efeito aconteceu ou não) ou transferida ao reconciliador durável
+  handle timeout_unknown(p: own Pending[_]) -> Text {
+    "pendente"
+  }
+}

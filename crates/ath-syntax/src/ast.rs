@@ -136,10 +136,43 @@ pub struct ToolDecl {
     pub ret: TypeExpr,
     pub effects: Vec<Ident>,
     pub class: EffClass,
+    pub class_span: Span,
+    /// `compensable by <ferramenta>`: a transição que leva o mundo de volta ao invariante.
+    pub compensator: Option<Ident>,
+    /// Como reconciliar um resultado desconhecido (seção 3.5 da spec).
+    pub provider: ProviderClass,
     /// Latência declarada (contrato Δ), em segundos.
     pub latency: f64,
     /// Custo declarado por chamada, em US$.
     pub usd: f64,
+}
+
+impl ToolDecl {
+    /// Ferramenta com consequência remota: recebe uma chave de idempotência.
+    pub fn keyed(&self) -> bool {
+        self.params.iter().any(|p| p.ty.base_name() == "IdemKey")
+    }
+}
+
+/// Classe de provedor: o protocolo de reconciliação disponível após `TimeoutUnknown`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProviderClass {
+    /// Reenviar com a mesma chave não repete o efeito.
+    Idempotent,
+    /// O estado da operação pode ser consultado pela chave.
+    Queryable,
+    /// Nenhum protocolo: resultado desconhecido não é reconciliável.
+    Opaque,
+}
+
+impl ProviderClass {
+    pub fn name(self) -> &'static str {
+        match self {
+            ProviderClass::Idempotent => "idempotent",
+            ProviderClass::Queryable => "queryable",
+            ProviderClass::Opaque => "opaque",
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -163,6 +196,18 @@ pub struct AgentDecl {
     pub budget: Vec<Prop>,
     pub budget_span: Span,
     pub handlers: Vec<Handler>,
+    /// `handle <efeito>(…)`: tratadores de efeitos algébricos na fronteira do agente.
+    pub handles: Vec<HandleClause>,
+}
+
+/// `handle timeout_unknown(p: own Pending[_]) -> T { … }`
+#[derive(Clone, Debug)]
+pub struct HandleClause {
+    pub effect: Ident,
+    pub params: Vec<Param>,
+    pub ret: TypeExpr,
+    pub body: Block,
+    pub span: Span,
 }
 
 impl AgentDecl {
@@ -183,6 +228,8 @@ pub struct Handler {
 #[derive(Clone, Debug)]
 pub enum TypeExpr {
     Named(Ident),
+    /// `own T`: posse linear (usado exatamente uma vez).
+    Own(Box<TypeExpr>, Span),
     /// Tipo base refinado por intervalo: `Int[2..64]` (inclusivo) ou `Text[..280]` (até 280 caracteres).
     Refined {
         base: Ident,
@@ -198,15 +245,27 @@ impl TypeExpr {
     pub fn span(&self) -> Span {
         match self {
             TypeExpr::Named(id) => id.span,
-            TypeExpr::Refined { span, .. } | TypeExpr::Cap(_, span) | TypeExpr::Labeled(_, _, span) => *span,
+            TypeExpr::Refined { span, .. }
+            | TypeExpr::Cap(_, span)
+            | TypeExpr::Labeled(_, _, span)
+            | TypeExpr::Own(_, span) => *span,
         }
     }
 
-    /// Remove o rótulo de integridade, se houver.
+    /// Remove o rótulo de integridade e a marca `own`, se houver.
     pub fn unlabeled(&self) -> &TypeExpr {
         match self {
-            TypeExpr::Labeled(inner, ..) => inner.unlabeled(),
+            TypeExpr::Labeled(inner, ..) | TypeExpr::Own(inner, _) => inner.unlabeled(),
             other => other,
+        }
+    }
+
+    /// O tipo foi declarado com posse linear (`own T`)?
+    pub fn is_own(&self) -> bool {
+        match self {
+            TypeExpr::Own(..) => true,
+            TypeExpr::Labeled(inner, ..) => inner.is_own(),
+            _ => false,
         }
     }
 
@@ -216,7 +275,7 @@ impl TypeExpr {
             TypeExpr::Named(id) => &id.name,
             TypeExpr::Refined { base, .. } => &base.name,
             TypeExpr::Cap(..) => "Cap",
-            TypeExpr::Labeled(..) => unreachable!(),
+            TypeExpr::Labeled(..) | TypeExpr::Own(..) => unreachable!(),
         }
     }
 }
@@ -247,19 +306,65 @@ pub enum ExprKind {
     Str(String),
     Var(String),
     Field(Box<Expr>, Ident),
-    Call { callee: Ident, args: Vec<Expr> },
-    Method { recv: Box<Expr>, method: Ident, args: Vec<Expr> },
-    Ctor { name: Ident, fields: Vec<(Ident, Expr)> },
+    Call {
+        callee: Ident,
+        args: Vec<Expr>,
+    },
+    Method {
+        recv: Box<Expr>,
+        method: Ident,
+        args: Vec<Expr>,
+    },
+    Ctor {
+        name: Ident,
+        fields: Vec<(Ident, Expr)>,
+    },
     Binary(BinOp, Box<Expr>, Box<Expr>),
     Unary(UnOp, Box<Expr>),
-    If { cond: Box<Expr>, then: Block, els: Option<Block> },
-    Match { scrut: Box<Expr>, arms: Vec<Arm> },
+    If {
+        cond: Box<Expr>,
+        then: Block,
+        els: Option<Block>,
+    },
+    Match {
+        scrut: Box<Expr>,
+        arms: Vec<Arm>,
+    },
     Block(Block),
     Return(Box<Expr>),
-    Infer { model: Ident, out: TypeExpr, fields: Vec<(Ident, Expr)> },
-    Refine { draft: Box<Expr>, policy: Ident, retry: u32, els: Block },
+    Infer {
+        model: Ident,
+        out: TypeExpr,
+        fields: Vec<(Ident, Expr)>,
+    },
+    Refine {
+        draft: Box<Expr>,
+        policy: Ident,
+        retry: u32,
+        els: Block,
+    },
     Quote(Box<Expr>),
     Commit(Box<Expr>),
+    /// `atomic recover <sonda> { … } on failure(e) { … } on compensation_failed(cf) { … }`
+    Atomic {
+        recover: Box<Expr>,
+        body: Block,
+        on_failure: Option<(Ident, Block)>,
+        on_cf: Option<(Ident, Block)>,
+    },
+    /// `await <condição> within <segundos>`
+    Await {
+        cond: Box<Expr>,
+        within: f64,
+    },
+    /// `reconcile p fuel n else { … }`: protocolo de reconciliação de um resultado desconhecido.
+    Reconcile {
+        pending: Ident,
+        fuel: u32,
+        els: Block,
+    },
+    /// `transfer p`: entrega a obrigação ao reconciliador durável.
+    Transfer(Ident),
 }
 
 #[derive(Clone, Debug)]

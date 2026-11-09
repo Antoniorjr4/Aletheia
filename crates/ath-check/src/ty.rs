@@ -12,6 +12,8 @@ pub enum Ty {
     Cap(BTreeSet<String>),
     /// Chave de idempotência: linear (multiplicidade 1).
     IdemKey,
+    /// Resultado remoto em aberto após `TimeoutUnknown`: linear, consumido por `reconcile` ou `transfer`.
+    Pending,
     /// Rascunho produzido por `infer`; o `Span` identifica o nó de inferência de origem.
     Draft(Box<Ty>, Span),
     /// Divergência (`return`) ou erro já relatado; unifica com qualquer tipo.
@@ -19,6 +21,11 @@ pub enum Ty {
 }
 
 impl Ty {
+    /// Tipos lineares: precisam de `own` na declaração e são consumidos exatamente uma vez.
+    pub fn is_linear(&self) -> bool {
+        matches!(self, Ty::IdemKey | Ty::Pending)
+    }
+
     pub fn show(&self) -> String {
         match self {
             Ty::Int => "Int".into(),
@@ -28,6 +35,7 @@ impl Ty {
             Ty::Adt(n) => n.clone(),
             Ty::Cap(s) => format!("Cap[{}]", s.iter().cloned().collect::<Vec<_>>().join(" + ")),
             Ty::IdemKey => "IdemKey".into(),
+            Ty::Pending => "Pending[k]".into(),
             Ty::Draft(t, _) => format!("Draft[{}]", t.show()),
             Ty::Never => "!".into(),
         }
@@ -42,7 +50,7 @@ impl Ty {
 pub fn same(a: &Ty, b: &Ty) -> bool {
     match (a, b) {
         (Ty::Int, Ty::Int) | (Ty::Bool, Ty::Bool) | (Ty::Text, Ty::Text) | (Ty::Unit, Ty::Unit) => true,
-        (Ty::IdemKey, Ty::IdemKey) | (Ty::Never, Ty::Never) => true,
+        (Ty::IdemKey, Ty::IdemKey) | (Ty::Pending, Ty::Pending) | (Ty::Never, Ty::Never) => true,
         (Ty::Adt(x), Ty::Adt(y)) => x == y,
         (Ty::Cap(x), Ty::Cap(y)) => x == y,
         (Ty::Draft(x, _), Ty::Draft(y, _)) => same(x, y),

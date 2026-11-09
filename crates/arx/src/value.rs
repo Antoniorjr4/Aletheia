@@ -21,10 +21,20 @@ pub enum Value {
     Bool(bool),
     Text(String),
     Unit,
-    Adt { ty: String, variant: String, fields: Vec<(String, Value)> },
+    Adt {
+        ty: String,
+        variant: String,
+        fields: Vec<(String, Value)>,
+    },
     Cap(BTreeSet<String>),
     Key(u64),
     Draft(Rc<Draft>),
+    /// Obrigação em aberto: a chamada `tool(args)` com a chave `key` terminou em `TimeoutUnknown`.
+    Pending {
+        key: u64,
+        tool: String,
+        args: Vec<Value>,
+    },
 }
 
 impl PartialEq for Value {
@@ -69,6 +79,7 @@ impl Value {
             Value::Cap(_) => "⟨cap⟩".into(),
             Value::Key(k) => format!("k{k}"),
             Value::Draft(d) => format!("⟨rascunho {}⟩", d.model),
+            Value::Pending { key, tool, .. } => format!("Pending[k{key}]({tool})"),
         }
     }
 
@@ -96,6 +107,7 @@ impl Value {
             Value::Cap(c) => json!({ "cap": c.iter().cloned().collect::<Vec<_>>() }),
             Value::Key(k) => json!(format!("k{k}")),
             Value::Draft(d) => json!({ "draft": d.model }),
+            Value::Pending { key, tool, .. } => json!({ "pending": format!("k{key}"), "tool": tool }),
         }
     }
 }
