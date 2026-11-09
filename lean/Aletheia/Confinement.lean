@@ -72,25 +72,24 @@ theorem doScopedAct_authorized {S : Sig} {c : Cfg} {A : Authority}
     (h : doScopedAct S c A Γ t k ρ o = .ok r)
     (hprev : AuthorizedTrace A o.tr) :
     AuthorizedTrace A r.tr := by
-  unfold doScopedAct at h
   cases hΓ : Γ[k]? with
-  | none => simp [hΓ] at h
+  | none => simp [doScopedAct, hΓ] at h
   | some b =>
     cases b with
-    | data => simp [hΓ] at h
+    | data => simp [doScopedAct, hΓ] at h
     | cap effects =>
       cases hρ : ρ[k]? with
-      | none => simp [hΓ, hρ] at h
+      | none => simp [doScopedAct, hΓ, hρ] at h
       | some v =>
         cases v with
-        | int n => simp [hΓ, hρ] at h
-        | bool b => simp [hΓ, hρ] at h
-        | unit => simp [hΓ, hρ] at h
-        | list vs => simp [hΓ, hρ] at h
+        | int n => simp [doScopedAct, hΓ, hρ] at h
+        | bool b => simp [doScopedAct, hΓ, hρ] at h
+        | unit => simp [doScopedAct, hΓ, hρ] at h
+        | list vs => simp [doScopedAct, hΓ, hρ] at h
         | cap id =>
-          by_cases hp : effects.contains (A.effectOf t) && (A.grants id).contains (A.effectOf t) = true
+          by_cases hp : A.effectOf t ∈ effects ∧ A.effectOf t ∈ A.grants id
           · have hact : doAct S c t (some (.cap id)) o = .ok r := by
-              simpa [hΓ, hρ, hp] using h
+              simpa [doScopedAct, hΓ, hρ, hp] using h
             obtain ⟨id', hcv, _, _, hr⟩ := doAct_ok hact
             cases hcv
             cases hr
@@ -98,9 +97,8 @@ theorem doScopedAct_authorized {S : Sig} {c : Cfg} {A : Authority}
             intro ev hev
             simp only [List.mem_singleton] at hev
             cases hev
-            have hright : (A.grants id).contains (A.effectOf t) = true := (Bool.and_eq_true.mp hp).2
-            simpa [AuthorizedEvent, Authority.permits] using hright
-          · simp [hΓ, hρ, hp] at h
+            exact hp.2
+          · simp [doScopedAct, hΓ, hρ, hp] at h
 
 /-- T2: todos os eventos de ferramenta de uma execucao do nucleo
     instrumentado sao autorizados, inclusive sob oraculo neural arbitrario. -/
