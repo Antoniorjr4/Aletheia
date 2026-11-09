@@ -1,0 +1,59 @@
+name: Fogo real (Groq)
+
+# Executa o athc e a métrica M1 contra um modelo real numa API compatível com OpenAI.
+# A chave fica no segredo de repositório GROQ_API_KEY; nada dela entra em logs ou journals.
+# Disparo: aba Actions → "Fogo real (Groq)" → Run workflow, ou um push de tag `live-*`.
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: Modelo (ex.: openai/gpt-oss-120b, openai/gpt-oss-20b)
+        default: openai/gpt-oss-120b
+      reps:
+        description: Repetições por cenário da M1
+        default: "2"
+  push:
+    tags: ["live-*"]
+
+permissions:
+  contents: read
+
+jobs:
+  live:
+    name: athc + M1 contra modelo real
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      OPENAI_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      OPENAI_BASE_URL: https://api.groq.com/openai/v1
+      ALETHEIA_MODEL: ${{ inputs.model || 'openai/gpt-oss-120b' }}
+      REPS: ${{ inputs.reps || '2' }}
+      NO_COLOR: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - name: segredo GROQ_API_KEY
+        run: |
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "::error::defina o segredo de repositório GROQ_API_KEY (Settings → Secrets and variables → Actions)"
+            exit 1
+          fi
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: athc run contra o modelo real (injeção nos logs)
+        run: |
+          mkdir -p live
+          cargo run --release --bin athc -- run examples/remediate.ath --provider openai --model "$ALETHEIA_MODEL" \
+            --arg '"api"' --journal live/journal.jsonl --report live/report.json | tee live/run.txt
+      - name: auditar o journal (cadeia de hashes e T9)
+        run: ./target/release/athc verify-journal live/journal.jsonl | tee -a live/run.txt
+      - name: M1 ao vivo
+        run: python3 bench/m1/run.py --live --reps "$REPS" --athc target/release/athc --out live/m1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-${{ github.run_id }}
+          path: live
