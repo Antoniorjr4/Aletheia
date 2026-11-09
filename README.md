@@ -4,7 +4,9 @@
 
 Implementação executável de Aletheia: o subconjunto **Aletheia Core 0**, com o
 compilador `athc`, o runtime `ARX` em Rust e um segundo backend, Python sobre o
-`aletheia_runtime`, verificado contra o ARX por testes diferenciais. O objetivo é provar uma coisa:
+`aletheia_runtime`, verificado contra o ARX por testes diferenciais, inclusive por replay de
+tráfego real da Groq. Há também um núcleo formal em Lean 4, com a solidez de tipos (T1) e a
+não-interferência com endosso robusto (T3) provadas sem `sorry`. O objetivo é provar uma coisa:
 integridade, efeitos, capacidades, linearidade, refinamentos, orçamento e transações
 sobre o mundo podem ser verificados **juntos, antes de rodar**, num programa de agente
 real. E o tipo da saída de um modelo pode ser, ao mesmo tempo, a gramática que o modelo
@@ -298,6 +300,68 @@ orçamento. São 29 casos:
 - 8 planos de `rollout.ath`, inclusive sagas e reconciliação dentro de laços;
 - os 7 cenários da M1.
 
+## Replay de tráfego real
+
+Os dois backends têm o provedor `openai`, com a mesma requisição byte a byte: corpo, esquema,
+dialeto e política de novas tentativas. Ele fala com qualquer API compatível (Groq, vLLM,
+llama.cpp). `--record` grava um **cassete**: cada requisição exata com a resposta crua (status,
+`retry-after`, `x-request-id`, corpo e latência medida), mais o programa, o mundo, os
+argumentos e o journal da execução real. A chave de API nunca entra no cassete.
+
+```bash
+athc run examples/remediate.ath --provider openai --world examples/fixtures/world.json \
+  --arg '"api"' --record caso.cassette.json
+athc replay caso.cassette.json --emit-py caso.py        # reproduz no ARX e emite o Python
+PYTHONPATH=runtimes/python python3 -m aletheia_runtime replay caso.cassette.json caso.py
+```
+
+No replay, cada backend reconstrói as requisições a partir do programa e exige que sejam
+idênticas às gravadas. Depois reinterpreta as respostas com as mesmas latências, e a espera
+de um `429` é contabilizada sem dormir. Os dois comandos só retornam 0 se o journal for
+idêntico ao da execução real.
+
+O workflow [`replay.yml`](.github/workflows/replay.yml) grava na Groq pelo ARX e pelo runtime
+Python. Os 15 cassetes gravados com `openai/gpt-oss-20b` estão em
+[`bench/replay/`](bench/replay/README.md), e o CI os reproduz a cada push. Para cada cassete, o
+teste exige o mesmo journal BLAKE3, a mesma árvore de compensação e o mesmo balanço de
+orçamento nos dois backends. Também exige cobertura, sob tráfego real, de commit, compensação,
+falha de compensação, reconciliação de timeout, recusa no decodificador e esgotamento do
+`refine`.
+
+Dois resultados das gravações:
+
+- **Injeção bloqueada no decodificador.** Os logs do `rollout` traziam uma injeção, e o modelo
+  a seguiu nas 6 tentativas: o plano abria com `Scale payments → 0`. O refinamento
+  `to: Int[2..64]` vai para o esquema de decodificação como `enum`, e a Groq recusou cada
+  geração com `400 json_validate_failed`. Nada chegou à política nem a uma ferramenta, e o
+  resultado foi `escalado`.
+- **Sagas sob carga real.** Com logs de saturação e sem injeção, o modelo propôs
+  `Scale api → 5`. O mundo levou a saga por cada caminho, e os dois backends reproduziram a
+  árvore de compensação idêntica.
+
+## Núcleo formal (Lean 4)
+
+[`lean/`](lean/README.md) mecaniza o núcleo λ_Ath que o `athc` verifica e o ARX executa:
+dados de primeira ordem com `List[T, 0..n]`, capacidades lineares, o reticulado
+`Untrusted ⊑ Endorsed ⊑ Trusted`, orçamentos graduados sobre as seis dimensões, inferência por
+um oráculo adversarial, endosso por política auditada e ações. O julgamento é
+Γ; pc ⊢ e : τ ^ ι ▷ β, e o avaliador verifica em tempo de execução tudo o que o ARX verifica:
+efeito sem capacidade, reuso de capacidade linear, estouro de orçamento antes do efeito.
+
+- **T1, solidez** (`soundness`, `progress`, `preservation`, `eval_nodup`): um programa bem
+  tipado, linear e com β dentro do teto executa sem erro. O valor final tem o tipo estático, e
+  o gasto real fica dentro de β em cada dimensão; um laço gasta no máximo `n • β(corpo)`.
+  Nenhuma capacidade é consumida duas vezes.
+- **T3, não-interferência com endosso robusto** (`noninterference`, `robust_endorsement`,
+  `endorsed_sound`, `confine`, `noninterference_total`): duas execuções com as mesmas entradas
+  confiáveis, mas entradas `Untrusted` e oráculos arbitrários, produzem o mesmo traço de ações
+  ou divergem numa decisão de endosso. Com as mesmas decisões, as ações, as capacidades e os
+  argumentos são idênticos. Todo valor endossado satisfaz a sua política, e o endosso só ocorre
+  sob `pc ⊒ Endorsed`.
+
+O CI roda `lake build --wfail`, e um alvo de auditoria fixa o conjunto de axiomas de cada
+teorema: só `propext`, `Quot.sound` e `Classical.choice`.
+
 ## Métrica M1
 
 `bench/m1` roda sete cenários no estilo do AgentDojo, com o ataque "important_instructions",
@@ -343,10 +407,12 @@ crates/
   arx/           interpretador, sagas, reconciliação, provedores, orçamento por reserva, journal
   ath-emit/      emissor Python (ANF, nomes únicos, metadados calculados em Rust)
   athc/          CLI, renderização de diagnósticos, testes ponta a ponta e diferenciais
-runtimes/python/ aletheia_runtime: a semântica do ARX em Python (só biblioteca padrão) e seus testes
+runtimes/python/ aletheia_runtime: a semântica do ARX em Python (só biblioteca padrão), provedor openai, gravação e replay
+lean/            núcleo λ_Ath em Lean 4: sintaxe, tipagem, avaliador, T1 e T3, exemplos e auditoria de axiomas
 examples/        remediação, plano em lista (rollout), mundos com falhas, 24 variantes com erro e o gerador
 bench/m1/        harness da métrica M1: cenários, linha de base Python, agente, orquestrador
-.github/         CI (fmt, clippy -D warnings, testes, diferenciais, runtime Python, M1) e o fogo real
+bench/replay/    cassetes de tráfego real da Groq, reproduzidos nos dois backends a cada push
+.github/         CI (fmt, clippy -D warnings, testes, diferenciais, replay, runtime Python, Lean, M1), fogo real e gravação
 ```
 
 ## O que está implementado
@@ -368,6 +434,8 @@ bench/m1/        harness da métrica M1: cenários, linha de base Python, agente
 | 3.6 Execução durável | journal encadeado por BLAKE3; `verify-journal` detecta adulteração e chaves em aberto (T9) |
 | 5.4 Métrica M1 | harness reprodutível no CI (simulado) e contra modelo real (workflow) |
 | F1 Backend Python | `athc emit --target py` + `aletheia_runtime`; testes diferenciais traço a traço contra o ARX no CI |
+| F1 Replay | provedor `openai` nos dois backends; `--record`/`replay` no nível HTTP; 15 cassetes reais da Groq reproduzidos no CI com o mesmo journal, a mesma árvore de compensação e o mesmo balanço |
+| 4 Metateoria (T1, T3) | `lean/`: núcleo λ_Ath em Lean 4 com solidez (progresso, preservação, orçamento graduado, linearidade) e não-interferência com endosso robusto; sem `sorry`, axiomas auditados no build |
 
 ### Erros que o compilador já pega
 
@@ -393,9 +461,9 @@ bench/m1/        harness da métrica M1: cenários, linha de base Python, agente
 
 ## O que ainda não existe
 
-- **Backends nativos:** não há MLIR nem LLVM. O ARX interpreta a árvore; o backend Python
-  roda sobre o `aletheia_runtime`, ainda sem o provedor `openai` (os testes diferenciais usam
-  os provedores roteirizado e mascarado, que são deterministas).
+- **Backends nativos:** não há MLIR nem LLVM. O ARX interpreta a árvore, e o backend Python
+  roda sobre o `aletheia_runtime`. O provedor mascarado (decodificação token a token) existe
+  nos dois, mas o replay de tráfego real cobre só o provedor `openai`.
 - **E4 e E5 completo:** sem formas de tensor nem SMT. Refinamentos são intervalos, tetos de texto
   e limites de listas, provados por literal ou por contenção. Laços sem teto (`while`) não
   existem, por desenho.
@@ -413,17 +481,20 @@ bench/m1/        harness da métrica M1: cenários, linha de base Python, agente
   observada, mas ela ainda não volta sozinha ao contrato nem é versionada pelo CI.
 - **Mundo:** cluster simulado; cenários no estilo do AgentDojo, não as suítes do AgentDojo.
 - **Certificados:** sem `certify`, `Bounded` nem monitor de deriva estatística.
-- **Teoremas:** nenhum está mecanizado. As garantias são testadas, não provadas. A equivalência
-  entre os backends é verificada por testes diferenciais, não demonstrada.
+- **Teoremas:** T1 e T3 estão provados para o núcleo λ_Ath, e só para ele. Ficam de fora
+  registros, variantes e `match`, `Text`, `retry`, sagas e reconciliação (T2, T6), graus de
+  certeza, localizações e T4/T5. A prova é do cálculo. Entre o cálculo e o ARX, e entre o ARX
+  e o Python, a correspondência é verificada por construção e por testes diferenciais, não
+  demonstrada.
 
 ## Próximos marcos
 
-1. **Núcleo formal em Lean 4**: λ_Ath restrito ao que já roda, com T1 e T2, depois T3
-   (não-interferência com endosso robusto), T6 (recuperação de sagas) e a correção do E6 para
-   laços (β(laço) ⪯ teto · β(corpo)).
-2. **Suítes reais do AgentDojo** pelo provedor `openai`, medindo M1 e utilidade com vários modelos.
-3. **Provedor `openai` no runtime Python** e testes diferenciais por replay: os dois backends
-   consumindo as mesmas respostas gravadas de um servidor real.
+1. **Sagas no Lean**: `atomic … recover`, compensação e `reconcile` no núcleo, com T2
+   (efeitos e capacidades) e T6 (recuperação de sagas) sobre um estado abstrato do mundo.
+2. **O avaliador do Lean como terceiro backend**: compilar o avaliador mecanizado e rodá-lo
+   nos testes diferenciais do núcleo, ligando o journal do ARX ao traço do cálculo.
+3. **Suítes reais do AgentDojo** pelo provedor `openai`, medindo M1 e utilidade com vários
+   modelos, com cada execução gravada como cassete.
 4. **Invariantes de recuperação provados**: contratos `restoring` sobre um estado abstrato do
    mundo, descarregados em E5 com SMT, e cobertura de footprint nas pós-condições.
 5. **Recuperação após queda** a partir do journal, e o reconciliador durável como serviço.

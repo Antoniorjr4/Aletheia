@@ -1,0 +1,11 @@
+name = "aletheia"
+version = "0.1.0"
+defaultTargets = ["Aletheia", "Audit"]
+
+[[lean_lib]]
+name = "Aletheia"
+
+# auditoria: fixa o conjunto de axiomas de cada teorema (falha com `sorry`)
+[[lean_lib]]
+name = "Audit"
+roots = ["Aletheia.Axioms"]
