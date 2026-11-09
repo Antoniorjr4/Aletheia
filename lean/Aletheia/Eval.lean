@@ -149,7 +149,7 @@ def doScopedAct (S : Sig) (c : Cfg) (A : Authority)
     (Γ : List ScopedBind) (t k : Nat) (ρ : List Val) (o : Out) : Except Err Out :=
   match Γ[k]?, ρ[k]? with
   | some (.cap effects), some (.cap id) =>
-      if A.effectOf t ∈ effects ∧ A.permits id t then
+      if effects.contains (A.effectOf t) && (A.grants id).contains (A.effectOf t) then
         doAct S c t (some (.cap id)) o
       else .error .noCap
   | _, _ => .error .noCap
@@ -167,8 +167,8 @@ def evalScoped (S : Sig) (c : Cfg) (A : Authority) :
       bnd (evalScoped S c A e₁ Γ ρ s) fun o₁ =>
       bnd (evalScoped S c A e₂ (.data :: Γ) (o₁.v :: ρ) o₁.st) fun o₂ =>
       .ok ⟨o₂.v, o₂.st, o₁.tr ++ o₂.tr⟩
-  | .ite cond then_ else_, Γ, ρ, s =>
-      bnd (evalScoped S c A cond Γ ρ s) fun o =>
+  | .ite cnd then_ else_, Γ, ρ, s =>
+      bnd (evalScoped S c A cnd Γ ρ s) fun o =>
       match o.v with
       | .bool b =>
           bnd (cond b (evalScoped S c A then_ Γ ρ o.st)
