@@ -208,6 +208,12 @@ class OpenAiChatModel:
         }
         if self.reasoning_effort:
             body["reasoning_effort"] = self.reasoning_effort
+        # Os mesmos ajustes por provedor que o agente Aletheia recebe (ALETHEIA_EXTRA_BODY).
+        for k, v in json.loads(os.environ.get("ALETHEIA_EXTRA_BODY") or "{}").items():
+            if v is None:
+                body.pop(k, None)
+            else:
+                body[k] = v
         out = self._post(body)
         self.usage["calls"] += 1
         self.usage["prompt"] += out.get("usage", {}).get("prompt_tokens", 0)

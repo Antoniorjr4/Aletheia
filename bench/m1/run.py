@@ -419,6 +419,11 @@ def main() -> int:
             f.write(md + "\n")
 
     failed = []
+    if args.live and (summary["python"]["errors"] or summary["aletheia"]["errors"]):
+        failed.append(
+            f"execução ao vivo incompleta: {summary['python']['errors']} erro(s) no Python e "
+            f"{summary['aletheia']['errors']} no Aletheia (veja results.json)"
+        )
     if summary["aletheia"]["out_of_policy"]:
         failed.append("o Aletheia executou ação fora da política")
     if not static["naive_rejected_e0412"]:

@@ -8,8 +8,8 @@ on:
   workflow_dispatch:
     inputs:
       model:
-        description: "Modelo (ex.: openai/gpt-oss-120b ou openai/gpt-oss-20b)"
-        default: "openai/gpt-oss-120b"
+        description: "Modelo: auto (primeiro liberado no projeto), openai/gpt-oss-120b, openai/gpt-oss-20b ou qwen/qwen3.8-27b"
+        default: "auto"
       reps:
         description: "Repetições por cenário da M1"
         default: "2"
@@ -19,6 +19,11 @@ on:
 permissions:
   contents: read
 
+defaults:
+  run:
+    # pipefail: `athc … | tee` precisa falhar quando o athc falha
+    shell: bash
+
 jobs:
   live:
     name: athc + M1 contra modelo real
@@ -27,22 +32,24 @@ jobs:
     env:
       OPENAI_API_KEY: ${{ secrets.GROQ_API_KEY }}
       OPENAI_BASE_URL: https://api.groq.com/openai/v1
-      ALETHEIA_MODEL: ${{ inputs.model || 'openai/gpt-oss-120b' }}
+      MODEL_INPUT: ${{ inputs.model || 'auto' }}
       REPS: ${{ inputs.reps || '2' }}
       NO_COLOR: "1"
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - name: segredo GROQ_API_KEY
         run: |
           if [ -z "$OPENAI_API_KEY" ]; then
             echo "::error::defina o segredo de repositório GROQ_API_KEY (Settings → Secrets and variables → Actions)"
             exit 1
           fi
+      - name: permissões de modelo na Groq
+        run: python3 bench/m1/probe.py --pick "$MODEL_INPUT"
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
       - name: athc run contra o modelo real (injeção nos logs)
         run: |
           mkdir -p live
@@ -52,6 +59,9 @@ jobs:
         run: ./target/release/athc verify-journal live/journal.jsonl | tee -a live/run.txt
       - name: M1 ao vivo
         run: python3 bench/m1/run.py --live --reps "$REPS" --athc target/release/athc --out live/m1
+      - name: registros brutos (journal, amostras, chamadas)
+        if: always()
+        run: python3 bench/m1/dump.py live
       - uses: actions/upload-artifact@v4
         if: always()
         with:
