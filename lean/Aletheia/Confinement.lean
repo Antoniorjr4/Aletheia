@@ -192,4 +192,25 @@ theorem T2_confinement {S : Sig} {c : Cfg} {A : Authority}
   · exact evalScoped_t2 S c A e Γ ρ s o h
   · cases h
 
+/-- A execucao bem-sucedida passou primeiro pela checagem de Cap[E]
+    em todas as posicoes lexicas (incluindo ramos e loops). -/
+theorem T2_lexical {S : Sig} {c : Cfg} {A : Authority}
+    {e : Exp} {Γ : List ScopedBind} {ρ : List Val} {s : St} {o : Out}
+    (h : runScoped S c A e Γ ρ s = .ok o) :
+    scopeCheck A Γ e = true := by
+  by_cases hc : scopeCheck A Γ e = true
+  · exact hc
+  · have hb : runScoped S c A e Γ ρ s = .error .noCap := by
+      simp [runScoped, hc]
+    rw [hb] at h
+    cases h
+
+/-- T2 completo para este nucleo instrumentado: o contexto lexico foi
+    verificado e cada efeito no trace foi permitido por uma capacidade real. -/
+theorem T2_scoped {S : Sig} {c : Cfg} {A : Authority}
+    {e : Exp} {Γ : List ScopedBind} {ρ : List Val} {s : St} {o : Out}
+    (h : runScoped S c A e Γ ρ s = .ok o) :
+    scopeCheck A Γ e = true ∧ AuthorizedTrace A o.tr :=
+  ⟨T2_lexical h, T2_confinement h⟩
+
 end Aletheia
