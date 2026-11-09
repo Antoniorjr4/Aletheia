@@ -40,7 +40,7 @@ jobs:
       - name: Confirmar permissão real do 120B na Groq
         run: |
           python3 bench/m1/probe.py --pick openai/gpt-oss-120b
-          test "$ALETHEIA_MODEL" = "openai/gpt-oss-120b" || { echo "::error::modelo não confirmado"; exit 1; }
+          grep -qx "ALETHEIA_MODEL=openai/gpt-oss-120b" "$GITHUB_ENV" || { echo "::error::modelo não confirmado"; exit 1; }
       - name: Compilar compilador e runtime
         run: cargo build --release --bin athc
       - name: Preparar fonte versionada com contrato de modelo 120B
