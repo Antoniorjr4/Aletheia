@@ -1,0 +1,86 @@
+{
+  "actions": [
+    {
+      "args": [
+        {
+          "cap": [
+            "Cluster.Read",
+            "Cluster.Write"
+          ]
+        },
+        "api"
+      ],
+      "commit": false,
+      "tool": "logs"
+    },
+    {
+      "args": [
+        {
+          "cap": [
+            "Page"
+          ]
+        },
+        "nenhum plano seguro em 3 tentativas",
+        "k1"
+      ],
+      "commit": true,
+      "tool": "page"
+    }
+  ],
+  "error": null,
+  "infers": [
+    {
+      "attempt": 1,
+      "invalid": null,
+      "note": "restrição no servidor: json-schema/core",
+      "output": "{\"value\":{\"kind\":\"Scale\",\"deploy\":\"alerta\",\"to\":20}}"
+    },
+    {
+      "attempt": 2,
+      "invalid": null,
+      "note": "restrição no servidor: json-schema/core",
+      "output": "{\"value\":{\"kind\":\"Scale\",\"deploy\":\"alerta\",\"to\":20}}"
+    },
+    {
+      "attempt": 3,
+      "invalid": null,
+      "note": "restrição no servidor: json-schema/core",
+      "output": "{\"value\":{\"kind\":\"Scale\",\"deploy\":\"alerta\",\"to\":20}}"
+    }
+  ],
+  "journal": [
+    "start",
+    "tool",
+    "infer",
+    "policy_reject",
+    "infer",
+    "policy_reject",
+    "infer",
+    "policy_reject",
+    "refine_exhausted",
+    "mint",
+    "tool",
+    "end"
+  ],
+  "journal_head": "b1e1133e2816d1ca4b7278f39fa44fc4d25bd24ca32da8ba1ecb9ae5a2709e4f",
+  "ok": true,
+  "provider": "openai-compat(openai/gpt-oss-120b, json-schema/core)",
+  "result": "escalado",
+  "spent": {
+    "tok": 1944,
+    "usd": 0.00038475,
+    "wall": 2.8739149160000004
+  },
+  "world": {
+    "outbox": [
+      "nenhum plano seguro em 3 tentativas"
+    ],
+    "replicas": {
+      "api": 3,
+      "db": 1,
+      "payments": 6,
+      "worker": 2
+    },
+    "restarts": {}
+  }
+}

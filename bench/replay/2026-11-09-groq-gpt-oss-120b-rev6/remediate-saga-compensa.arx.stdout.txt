@@ -1,0 +1,21 @@
+✓ verificado: E0 E1 E2 E3 E5 E6 · Codex #43947b1f669f
+▶ Remediator.alert("api")  provedor: openai-compat(openai/gpt-oss-120b, json-schema/core)
+        t      +Δt
+      0,0     +1,4  logs(⟨cap⟩, "api")  5 linhas de texto
+      1,4     +0,6  infer planner · tentativa 1  → Restart { deploy: "alerta" }  (693 tok, US$ 0,0001, 0,58 s medidos)
+                    ↳ restrição no servidor: json-schema/core
+                    ✗ rejeitada por SafeRemediation
+      2,0     +0,4  infer planner · tentativa 2  → Restart { deploy: "alerta" }  (693 tok, US$ 0,0001, 0,44 s medidos)
+                    ↳ restrição no servidor: json-schema/core
+                    ✗ rejeitada por SafeRemediation
+      2,4     +0,6  infer planner · tentativa 3  → Restart { deploy: "alerta" }  (693 tok, US$ 0,0001, 0,57 s medidos)
+                    ↳ restrição no servidor: json-schema/core
+                    ✗ rejeitada por SafeRemediation
+      3,0     +0,0  refine esgotou 3 tentativa(s)  executando o `else`
+      3,0     +0,2  commit page(⟨cap⟩, "nenhum plano seguro em 3 tentativas", k1)  ok
+◀ resultado: "escalado"
+
+  orçamento 2.079 / 20.000 tok · US$ 0,0004 / 0,50 · 3,2 s / 90,0 s
+  mundo     api: 3 réplicas; payments: 6 réplicas; worker: 2 réplicas; pager ← "nenhum plano seguro em 3 tentativas"
+  journal   bench/replay/2026-11-09-groq-gpt-oss-120b-rev6/remediate-saga-compensa.arx.live.jsonl · 12 entradas · cabeça #a840f86c3457 · cadeia íntegra
+  cassete   bench/replay/2026-11-09-groq-gpt-oss-120b-rev6/remediate-saga-compensa.arx.cassette.json · 3 troca(s) HTTP gravada(s)

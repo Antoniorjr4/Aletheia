@@ -1,0 +1,18 @@
+✓ verificado: E0 E1 E2 E3 E5 E6 · Codex #c759e62ad9f5
+▶ Rollout.alert("api")  provedor: openai-compat(openai/gpt-oss-120b, json-schema/core)
+        t      +Δt
+      0,0     +1,4  logs(⟨cap⟩, "api")  5 linhas de texto
+      1,4     +0,5  infer planner · tentativa 1  → [Restart { deploy: "alerta" }, Scale { deploy: "alerta", to: 8 }]  (727 tok, US$ 0,0001, 0,47 s medidos)
+                    ↳ restrição no servidor: json-schema/core
+                    ✗ rejeitada por SafePlan
+      1,9     +0,5  infer planner · tentativa 2  → [Restart { deploy: "alerta" }, Scale { deploy: "alerta", to: 8 }]  (727 tok, US$ 0,0001, 0,46 s medidos)
+                    ↳ restrição no servidor: json-schema/core
+                    ✗ rejeitada por SafePlan
+      2,3     +0,0  refine esgotou 2 tentativa(s)  executando o `else`
+      2,3     +0,2  commit page(⟨cap⟩, "nenhum plano seguro em 2 tentativas", k1)  ok
+◀ resultado: "escalado"
+
+  orçamento 1.454 / 20.000 tok · US$ 0,0003 / 0,50 · 2,5 s / 120,0 s
+  mundo     api: 3 réplicas; payments: 6 réplicas; worker: 2 réplicas; pager ← "nenhum plano seguro em 2 tentativas"
+  journal   bench/replay/2026-11-09-groq-gpt-oss-120b-rev6/rollout-saga-falha.arx.live.jsonl · 10 entradas · cabeça #fe4c631c443e · cadeia íntegra
+  cassete   bench/replay/2026-11-09-groq-gpt-oss-120b-rev6/rollout-saga-falha.arx.cassette.json · 2 troca(s) HTTP gravada(s)
