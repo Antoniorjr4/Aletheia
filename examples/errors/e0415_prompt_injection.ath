@@ -73,8 +73,9 @@ agent Remediator(
     -- ⑤ Inferência: o log entra como dado (quote), nunca como instrução; a saída é decodificada
     --   sob a gramática de `Action`, com teto de tokens derivado do tipo
     let draft = infer planner -> Action {
-      task = "Diagnostique o incidente e proponha uma ação corretiva.",
-      logs = fit(l, 2000),
+      task   = "O deployment em `alerta` disparou um alerta. Diagnostique pelos logs e proponha uma ação corretiva.",
+      alerta = quote(service),
+      logs   = fit(l, 2000),
     }
 
     -- ⑥ Propor → verificar: só o que a política aceita ganha o rótulo Endorsed

@@ -1,0 +1,119 @@
+-- ERRO ESPERADO · Multiplicidade: a mesma chave consumida a cada iteração do laço
+-- Derivado de examples/rollout.ath por uma única edição.
+module ops.rollout
+
+-- Aletheia Core 0 · v0.4 · listas delimitadas e contrato Δ versionado
+-- O modelo propõe um PLANO: uma lista de 1 a 3 ações. A política decide sobre a lista
+-- inteira (`all`), o laço executa cada etapa (a fase compensável como saga) e avisa cada
+-- canal do plantão (laço aninhado). O E6 prova o pior caso multiplicando os tetos dos laços:
+-- β(for) ⪯ teto · β(corpo).
+
+type Action =
+  | Restart { deploy: Text[..32] }
+  | Scale   { deploy: Text[..32], to: Int[2..64] }
+
+-- Contrato Δ estendido: a identidade versionada do modelo servido e o overhead que o
+-- provedor acrescenta a cada prompt (template de chat + esquema de decodificação). Os dois
+-- entram no hash do Codex; o overhead entra na janela, no orçamento e na reserva do ARX.
+-- Calibração: 430–470 tokens medidos na Groq para o esquema de `Action` (nov/2026).
+model planner {
+  id        = "openai/gpt-oss-20b"
+  provider  = "groq"
+  version   = "2026-11-09"
+  price_in  = 0.075
+  price_out = 0.30
+  ctx       = 131072
+  max_out   = 600
+  reasoning = 512
+  overhead  = 768
+  ttft      = 2.0
+  per_tok   = 0.01
+}
+
+tool logs(c: Cap[Cluster.Read], deploy: Text) -> Text ^ Untrusted
+  ! { Cluster.Read } reversible latency 2.0
+
+tool scale(c: Cap[Cluster.Write], deploy: Text[..32] ^ Endorsed, to: Int[2..64], k: own IdemKey) -> Text
+  ! { Cluster.Write } compensable by unscale provider queryable latency 1.0
+
+tool unscale(c: Cap[Cluster.Write], deploy: Text[..32] ^ Endorsed, to: Int[2..64], k: own IdemKey) -> Text
+  ! { Cluster.Write } reversible provider idempotent latency 1.0
+
+tool restart(c: Cap[Cluster.Write], deploy: Text[..32] ^ Endorsed, k: own IdemKey) -> Text
+  ! { Cluster.Write } irrevocable provider idempotent latency 1.0
+
+tool healthy(c: Cap[Cluster.Read], deploy: Text[..32]) -> Bool
+  ! { Cluster.Read } reversible latency 1.0
+
+tool restored(c: Cap[Cluster.Read], deploy: Text[..32]) -> Bool
+  ! { Cluster.Read } reversible latency 1.0
+
+tool page(c: Cap[Page], msg: Text, k: own IdemKey) -> Unit
+  ! { Page } irrevocable provider idempotent latency 1.0
+
+policy SafeAction(a: Action) -> Bool =
+  match a {
+    Restart { deploy } => deploy == "api" || deploy == "worker",
+    Scale { deploy }   => deploy == "api" || deploy == "worker",
+  }
+
+-- A política do plano quantifica sobre a lista: todas as etapas precisam ser seguras.
+policy SafePlan(p: List[Action, 1..3]) -> Bool = all a in p => SafeAction(a)
+
+agent Rollout(
+  cluster : Cap[Cluster.Read + Cluster.Write],
+  oncall  : Cap[Page],
+  keys    : Cap[IdemKey.Mint],
+) budget [tok <= 20000, usd <= 0.50, wall <= 120.0]
+{
+  on alert(service: Text[..32] ^ Untrusted) -> Text
+     ! { Infer, Cluster.Read, Cluster.Write, Page, TimeoutUnknown, CompensationFailed } {
+    let l = logs(cluster, service)
+
+    -- a saída é uma lista: `minItems`/`maxItems` no esquema, repetição limitada na GBNF
+    let draft = infer planner -> List[Action, 1..3] {
+      task   = "O deployment em `alerta` disparou um alerta. Proponha um plano de 1 a 3 ações corretivas.",
+      alerta = quote(service),
+      logs   = quote(fit(l, 1500)),
+    }
+
+    let plan = refine draft by SafePlan retry 2 else {
+      commit page(oncall, "nenhum plano seguro em 2 tentativas", keys.mint())
+      return "escalado"
+    }
+
+    -- até 3 etapas; cada uma avisa 2 canais: o E6 conta 3 × (etapa + 2 × page)
+    for a in plan {
+      let r = match a {
+        Restart { deploy } => {
+          commit restart(cluster, deploy, keys.mint())
+          deploy ++ " · reiniciado"
+        },
+        Scale { deploy, to } => {
+          let s = atomic recover restored(cluster, deploy) {
+            scale(cluster, deploy, to, keys.mint())
+            await healthy(cluster, deploy) within 10.0
+            "escalado"
+          } on failure(e) {
+            "compensado"
+          } on compensation_failed(cf) {
+            "intervenção humana"
+          }
+          deploy ++ " · " ++ s
+        },
+      }
+      let k = keys.mint()
+      for ch in ["sre", "dev"] {
+        commit page(oncall, ch ++ " ← " ++ r, k)
+      }
+    }
+    "concluído"
+  }
+
+  handle timeout_unknown(p: own Pending[_]) -> Text {
+    reconcile p fuel 3 else {
+      transfer p
+      "pendente"
+    }
+  }
+}

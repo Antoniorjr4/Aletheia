@@ -35,6 +35,7 @@ pub enum Value {
         tool: String,
         args: Vec<Value>,
     },
+    List(Vec<Value>),
 }
 
 impl PartialEq for Value {
@@ -48,6 +49,7 @@ impl PartialEq for Value {
                 va == vb && fa == fb
             }
             (Value::Key(a), Value::Key(b)) => a == b,
+            (Value::List(a), Value::List(b)) => a == b,
             _ => false,
         }
     }
@@ -80,6 +82,7 @@ impl Value {
             Value::Key(k) => format!("k{k}"),
             Value::Draft(d) => format!("⟨rascunho {}⟩", d.model),
             Value::Pending { key, tool, .. } => format!("Pending[k{key}]({tool})"),
+            Value::List(items) => format!("[{}]", items.iter().map(Value::show).collect::<Vec<_>>().join(", ")),
         }
     }
 
@@ -108,6 +111,7 @@ impl Value {
             Value::Key(k) => json!(format!("k{k}")),
             Value::Draft(d) => json!({ "draft": d.model }),
             Value::Pending { key, tool, .. } => json!({ "pending": format!("k{key}"), "tool": tool }),
+            Value::List(items) => serde_json::Value::Array(items.iter().map(Value::to_json).collect()),
         }
     }
 }

@@ -18,12 +18,20 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+      # python3 também roda nos testes diferenciais (crates/athc/tests/differential.rs):
+      # o código emitido por `athc emit --target py` precisa produzir o mesmo journal do ARX
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - name: cargo fmt
         run: cargo fmt --all -- --check
       - name: cargo clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
-      - name: cargo test
+      - name: cargo test (inclui os testes diferenciais ARX × Python)
         run: cargo test --all
+      - name: aletheia_runtime (testes de unidade)
+        working-directory: runtimes/python
+        run: PYTHONPATH=. python3 -m unittest discover -s tests -v
 
   m1:
     name: métrica M1 (injeção de prompt)

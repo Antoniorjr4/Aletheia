@@ -73,6 +73,7 @@ fn collect_unenforced(shape: &Shape, dialect: Dialect, path: &str, out: &mut Vec
         Shape::Int { .. } => out.push(format!("{path}: limites inteiros")),
         Shape::Text { max_chars: Some(n) } => out.push(format!("{path}: até {n} caracteres")),
         Shape::Text { max_chars: None } => {}
+        Shape::List { elem, .. } => collect_unenforced(elem, dialect, &format!("{path}[]"), out),
         Shape::Adt { variants, .. } => {
             for v in variants {
                 for (f, fs) in &v.fields {
@@ -102,6 +103,14 @@ fn schema(shape: &Shape, dialect: Dialect) -> Json {
             }
         },
         Shape::Bool => json!({ "type": "boolean" }),
+        // `minItems`/`maxItems` nos dois dialetos: fazem parte do núcleo das saídas estruturadas
+        // (OpenAI, vLLM); onde o servidor não os impõe, a validação do ARX rejeita a amostra.
+        Shape::List { elem, min, max } => json!({
+            "type": "array",
+            "items": schema(elem, dialect),
+            "minItems": min,
+            "maxItems": max,
+        }),
         Shape::Text { max_chars } => {
             let mut s = json!({ "type": "string" });
             if let (Dialect::Full, Some(m)) = (dialect, max_chars) {
@@ -148,6 +157,19 @@ mod tests {
         assert_eq!(variants[1]["properties"]["to"]["maximum"], 64);
         assert_eq!(variants[1]["properties"]["deploy"]["maxLength"], 32);
         assert_eq!(variants[1]["required"], serde_json::json!(["kind", "deploy", "to"]));
+    }
+
+    #[test]
+    fn lists_carry_min_and_max_items() {
+        for d in [Dialect::Full, Dialect::Core] {
+            let s = to_json_schema_with(&crate::tests::plan_shape(), d);
+            let v = &s["properties"]["value"];
+            assert_eq!(
+                (v["type"].as_str(), v["minItems"].as_u64(), v["maxItems"].as_u64()),
+                (Some("array"), Some(1), Some(3))
+            );
+            assert_eq!(v["items"]["anyOf"].as_array().unwrap().len(), 2);
+        }
     }
 
     #[test]

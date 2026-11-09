@@ -6,6 +6,7 @@ members = [
     "crates/ath-codex",
     "crates/ath-check",
     "crates/arx",
+    "crates/ath-emit",
     "crates/athc",
 ]
 
@@ -21,6 +22,7 @@ ath-grammar = { path = "crates/ath-grammar" }
 ath-codex = { path = "crates/ath-codex" }
 ath-check = { path = "crates/ath-check" }
 arx = { path = "crates/arx" }
+ath-emit = { path = "crates/ath-emit" }
 blake3 = "1"
 serde_json = { version = "1", features = ["float_roundtrip"] }
 ureq = "3"

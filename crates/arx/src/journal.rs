@@ -80,4 +80,31 @@ mod tests {
         let reread: Vec<Value> = j.to_jsonl().lines().map(|l| serde_json::from_str(l).expect("linha JSON")).collect();
         assert_eq!(Journal::verify(&reread), Ok(()));
     }
+
+    /// A grafia dos floats no journal é parte do hash: o runtime Python
+    /// (`runtimes/python/aletheia_runtime/canon.py`) reproduz esta mesma tabela.
+    #[test]
+    fn grafia_dos_floats_que_o_runtime_python_reproduz() {
+        for (x, s) in [
+            (0.0, "0.0"),
+            (-0.0, "-0.0"),
+            (2.0, "2.0"),
+            (131072.0, "131072.0"),
+            (9.630000000000001e-05, "0.00009630000000000001"),
+            (3.3098843550000003, "3.3098843550000003"),
+            (1e-5, "0.00001"),
+            (1e-6, "1e-6"),
+            (1e-7, "1e-7"),
+            (1.5e-7, "1.5e-7"),
+            (9e15, "9000000000000000.0"),
+            (1e16, "1e+16"),
+            (1.2345e16, "1.2345e+16"),
+            (1e20, "1e+20"),
+            (1.5e300, "1.5e+300"),
+            (5e-324, "5e-324"),
+            (123.456, "123.456"),
+        ] {
+            assert_eq!(json!(x).to_string(), s, "{x:?}");
+        }
+    }
 }

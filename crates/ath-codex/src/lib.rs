@@ -151,6 +151,7 @@ impl Deps<'_> {
             TypeExpr::Named(id) => self.name(&id.name),
             TypeExpr::Refined { .. } | TypeExpr::Cap(..) => {}
             TypeExpr::Labeled(inner, ..) | TypeExpr::Own(inner, _) => self.ty(inner),
+            TypeExpr::List { elem, .. } => self.ty(elem),
         }
     }
 
@@ -254,6 +255,15 @@ impl Deps<'_> {
             ExprKind::Await { cond, .. } => self.expr(cond),
             ExprKind::Reconcile { els, .. } => self.block(els),
             ExprKind::Transfer(_) => {}
+            ExprKind::List(items) => items.iter().for_each(|x| self.expr(x)),
+            ExprKind::For { iter, body, .. } => {
+                self.expr(iter);
+                self.block(body);
+            }
+            ExprKind::Quant { iter, body, .. } => {
+                self.expr(iter);
+                self.expr(body);
+            }
         }
     }
 }
@@ -319,6 +329,11 @@ impl Canon<'_> {
                 self.ty(inner);
                 self.w(")");
             }
+            TypeExpr::List { elem, lo, hi, .. } => {
+                self.w("(list ");
+                self.ty(elem);
+                let _ = write!(self.out, " {lo} {hi})");
+            }
         }
     }
 
@@ -354,7 +369,11 @@ impl Canon<'_> {
                 self.w(")");
             }
             Item::Model(d) => {
-                let mut props: Vec<(&str, f64)> = d.props.iter().map(|p| (p.key.name.as_str(), p.value)).collect();
+                // O contrato Δ inteiro (números e identidade versionada) entra no hash: mudar o
+                // overhead, a versão ou o provedor é mudar de contrato.
+                let mut props: Vec<(&str, String)> =
+                    d.props.iter().map(|p| (p.key.name.as_str(), p.value.to_string())).collect();
+                props.extend(d.meta.iter().map(|(k, v)| (k.name.as_str(), format!("{v:?}"))));
                 props.sort_by(|a, b| a.0.cmp(b.0));
                 self.w("(model");
                 for (k, v) in props {
@@ -630,6 +649,29 @@ impl Canon<'_> {
             ExprKind::Transfer(p) => {
                 self.w("(transfer ");
                 self.var(&p.name);
+                self.w(")");
+            }
+            ExprKind::List(items) => {
+                self.w("(list");
+                self.list(items);
+                self.w(")");
+            }
+            ExprKind::For { var, iter, body } => {
+                self.w("(for ");
+                self.expr(iter);
+                self.w(" ");
+                self.locals.push(var.name.clone());
+                self.block(body);
+                self.locals.pop();
+                self.w(")");
+            }
+            ExprKind::Quant { all, var, iter, body } => {
+                self.w(if *all { "(all " } else { "(any " });
+                self.expr(iter);
+                self.w(" ");
+                self.locals.push(var.name.clone());
+                self.expr(body);
+                self.locals.pop();
                 self.w(")");
             }
         }

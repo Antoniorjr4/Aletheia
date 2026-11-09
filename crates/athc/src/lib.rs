@@ -25,6 +25,20 @@ pub fn compile(src: &str) -> Result<Compiled, Vec<Diag>> {
     Ok(Compiled { module, check, codex })
 }
 
+/// Hash do Codex de cada modelo declarado: a identidade do contrato Δ que o ARX grava no journal.
+pub fn contract_hashes(c: &Compiled) -> std::collections::HashMap<String, String> {
+    c.module
+        .items
+        .iter()
+        .filter_map(|i| match i {
+            ath_syntax::ast::Item::Model(m) => {
+                c.codex.hash_of(&m.name.name).map(|h| (m.name.name.clone(), h.to_string()))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
 /// Estilo de saída: com ou sem cores ANSI.
 #[derive(Clone, Copy)]
 pub struct Style {
@@ -173,16 +187,34 @@ pub fn summary(c: &Compiled, st: Style) -> String {
         if ic.tok_reasoning > 0 {
             ceiling.push_str(&format!(" + {} de raciocínio", fmt::tok(ic.tok_reasoning)));
         }
+        let entrada = if ic.overhead > 0 {
+            format!(
+                "{} ({} de prompt + {} de overhead)",
+                fmt::tok(ic.tok_in),
+                fmt::int(ic.tok_in - ic.overhead),
+                fmt::int(ic.overhead)
+            )
+        } else {
+            fmt::tok(ic.tok_in)
+        };
         let _ = writeln!(
             o,
             "  {:<18} infer {} -> {}: entrada ≤ {} · saída ≤ {} ({})",
             "",
             ic.model,
             ic.out_ty,
-            fmt::tok(ic.tok_in),
+            entrada,
             fmt::tok(ic.tok_out),
             ceiling
         );
+    }
+    for item in &c.module.items {
+        if let ath_syntax::ast::Item::Model(m) = item {
+            let Some(label) = m.contract_label() else { continue };
+            let hash = c.codex.hash_of(&m.name.name).map(ath_codex::short).unwrap_or("?");
+            let ov = m.prop("overhead").map(|v| format!(" · overhead {}", fmt::tok(v as u64))).unwrap_or_default();
+            let _ = writeln!(o, "{ok} {:<18} `{}` = {label} #{hash}{ov}", "Δ contrato", m.name.name);
+        }
     }
     for r in &c.check.reports {
         let w = &r.worst;
@@ -208,6 +240,13 @@ pub fn summary(c: &Compiled, st: Style) -> String {
         if !w.trace.is_empty() {
             let _ = writeln!(o, "  {:<18} {}", "", st.dim(&format!("caminho: {}", w.path())));
         }
+    }
+    if f.loops > 0 {
+        let _ = writeln!(
+            o,
+            "  {:<18} {} laço(s)/quantificador(es) delimitado(s): β(laço) ⪯ teto · β(corpo), aninhados por multiplicação",
+            "", f.loops
+        );
     }
     let _ = writeln!(
         o,

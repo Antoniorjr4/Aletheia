@@ -39,6 +39,8 @@ pub struct Completion {
     pub retries: u32,
     pub request_id: Option<String>,
     pub finish_reason: Option<String>,
+    /// Modelo que o servidor declara ter servido (campo `model` da resposta).
+    pub served_model: Option<String>,
 }
 
 pub trait ModelProvider {
@@ -375,6 +377,7 @@ impl ModelProvider for OpenAiCompat {
                 retries: attempt,
                 request_id: j["id"].as_str().map(String::from).or(header_id),
                 finish_reason: j["choices"][0]["finish_reason"].as_str().map(String::from),
+                served_model: j["model"].as_str().map(String::from),
             });
         }
     }

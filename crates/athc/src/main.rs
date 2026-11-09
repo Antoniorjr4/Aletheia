@@ -35,7 +35,12 @@ uso:
   athc hash <arquivo.ath> [--codex dir]
       grava as formas canônicas no Codex (padrão: .codex) e lista os hashes
   athc verify-journal <journal.jsonl>
-      recalcula a cadeia de hashes do journal";
+      recalcula a cadeia de hashes do journal
+  athc contract-report <journal.jsonl> [--journal outro.jsonl]...
+      aderência ao contrato Δ medida nos journals: latência contra o contrato, overhead de entrada
+      observado, raciocínio, violações; sugere o Δ recalibrado pela cauda observada
+  athc emit <arquivo.ath> --target py [--out programa.py]
+      emite o programa para Python sobre o aletheia_runtime (segunda realização da semântica do ARX)";
 
 struct Opts {
     file: Option<String>,
@@ -102,6 +107,8 @@ fn main() -> ExitCode {
         "hash" => cmd_hash(&opts, st),
         "grammar" => cmd_grammar(&opts, st),
         "verify-journal" => cmd_verify(&opts, st),
+        "contract-report" => cmd_contract_report(&opts, st),
+        "emit" => cmd_emit(&opts, st),
         "help" | "--help" | "-h" => {
             println!("{USAGE}");
             Ok(true)
@@ -199,6 +206,7 @@ fn cmd_run(opts: &Opts, st: Style) -> Result<bool, String> {
     let provider = build_provider(opts, &path)?;
     let provider_name = provider.name();
     let mut arx = Arx::new(&c.module, Box::new(world), provider);
+    arx.contracts = athc::contract_hashes(&c);
     let event = match opts.one("on") {
         Some(e) => e.to_string(),
         None => c
@@ -218,9 +226,9 @@ fn cmd_run(opts: &Opts, st: Style) -> Result<bool, String> {
     }
     let mut args = Vec::new();
     for (p, r) in h.params.iter().zip(&raw) {
-        let ty = p.ty.base_name().to_string();
+        let ty = p.ty.unlabeled().sig();
         let v = arx
-            .literal_from_str(r, &ty)
+            .literal_from_str(r, &p.ty)
             .ok_or_else(|| format!("`{r}` não é um literal do tipo `{ty}` (texto vai entre aspas: --arg '\"api\"')"))?;
         args.push(v);
     }
@@ -477,4 +485,170 @@ fn cmd_verify(opts: &Opts, st: Style) -> Result<bool, String> {
         println!("{} T9 · chave(s) em aberto sem destino: {}", st.red("✗"), open.join(", "));
     }
     Ok(chain_ok && t9_ok)
+}
+
+fn read_journal(path: &str) -> Result<Vec<serde_json::Value>, String> {
+    let s = std::fs::read_to_string(path).map_err(|e| format!("não foi possível ler `{path}`: {e}"))?;
+    s.lines()
+        .enumerate()
+        .filter(|(_, l)| !l.trim().is_empty())
+        .map(|(i, l)| serde_json::from_str(l).map_err(|e| format!("{path}: linha {}: {e}", i + 1)))
+        .collect()
+}
+
+fn quantile(xs: &mut [f64], q: f64) -> f64 {
+    xs.sort_by(|a, b| a.total_cmp(b));
+    let i = ((xs.len() as f64 - 1.0) * q).round() as usize;
+    xs[i.min(xs.len() - 1)]
+}
+
+/// Aderência ao contrato Δ medida em journals reais e o Δ recalibrado pela cauda observada.
+fn cmd_contract_report(opts: &Opts, st: Style) -> Result<bool, String> {
+    let mut paths: Vec<String> = opts.file.iter().cloned().collect();
+    paths.extend(opts.flags.get("journal").cloned().unwrap_or_default());
+    if paths.is_empty() {
+        return Err("informe ao menos um journal".into());
+    }
+    #[derive(Default)]
+    struct Acc {
+        label: String,
+        lat: Vec<f64>,
+        excess: Vec<f64>,
+        ratio: Vec<f64>,
+        overhead_seen: Vec<u64>,
+        declared_overhead: Option<u64>,
+        reasoning: Vec<u64>,
+        tok_out: Vec<u64>,
+        samples: usize,
+        estimated: usize,
+        breaches: std::collections::BTreeMap<String, usize>,
+    }
+    let mut by: std::collections::BTreeMap<String, Acc> = std::collections::BTreeMap::new();
+    for p in &paths {
+        for e in read_journal(p)? {
+            let kind = e["kind"].as_str().unwrap_or_default();
+            if kind != "infer" && kind != "contract_breach" {
+                continue;
+            }
+            let d = &e["detail"];
+            let model = d["model"].as_str().unwrap_or("?").to_string();
+            let c = &d["contract"];
+            let key = c["hash"].as_str().map(|h| format!("{model}#{}", &h[..12.min(h.len())])).unwrap_or(model.clone());
+            let a = by.entry(key).or_default();
+            a.label = match (c["provider"].as_str(), c["id"].as_str(), c["version"].as_str()) {
+                (p, Some(id), v) => format!(
+                    "{}{id}{}",
+                    p.map(|p| format!("{p}:")).unwrap_or_default(),
+                    v.map(|v| format!("@{v}")).unwrap_or_default()
+                ),
+                _ => "(sem identidade declarada)".into(),
+            };
+            a.declared_overhead = c["overhead"].as_u64().or(a.declared_overhead);
+            if kind == "contract_breach" {
+                *a.breaches.entry(d["code"].as_str().unwrap_or("?").to_string()).or_default() += 1;
+                if let (Some(l), Some(cs)) = (d["observed_s"].as_f64(), d["declared_s"].as_f64()) {
+                    a.lat.push(l);
+                    a.excess.push(l - cs);
+                    a.ratio.push(l / cs);
+                }
+                continue;
+            }
+            a.samples += 1;
+            let server = d["tok_source"].as_str() == Some("server") || d["finish_reason"].is_string();
+            if !server {
+                a.estimated += 1;
+            }
+            if let (Some(l), Some(cs)) = (d["latency_s"].as_f64(), d["contract_s"].as_f64()) {
+                a.lat.push(l);
+                a.excess.push(l - cs);
+                a.ratio.push(l / cs);
+            }
+            if server {
+                if let Some(r) = d["tok_reasoning"].as_u64() {
+                    a.reasoning.push(r);
+                }
+                if let Some(t) = d["tok_out"].as_u64() {
+                    a.tok_out.push(t);
+                }
+                if let (Some(tin), Some(bound), Some(ov)) =
+                    (d["tok_in"].as_u64(), d["tok_in_contract"].as_u64(), c["overhead"].as_u64())
+                {
+                    // prompt estimado = limite do contrato − overhead declarado
+                    a.overhead_seen.push(tin.saturating_sub(bound - ov));
+                }
+            }
+        }
+    }
+    if by.is_empty() {
+        println!("nenhuma amostra de modelo nos journals");
+        return Ok(true);
+    }
+    for (key, a) in &mut by {
+        println!("{} `{key}` = {}", st.bold("contrato"), a.label);
+        println!("  amostras          {} ({} com tokens estimados)", a.samples, a.estimated);
+        if !a.lat.is_empty() {
+            let max_ratio = a.ratio.iter().cloned().fold(f64::MIN, f64::max);
+            let max_excess = a.excess.iter().cloned().fold(f64::MIN, f64::max);
+            let (p50, p95, max) =
+                (quantile(&mut a.lat.clone(), 0.5), quantile(&mut a.lat.clone(), 0.95), quantile(&mut a.lat, 1.0));
+            println!(
+                "  latência medida   p50 {} · p95 {} · máx {} · maior razão latência/contrato {}",
+                fmt::secs(p50),
+                fmt::secs(p95),
+                fmt::secs(max),
+                fmt::dec(max_ratio, 2)
+            );
+            if max_excess > 0.0 {
+                println!(
+                    "  {}  a cauda passou do contrato em até {}: eleve `ttft` em ≥ {}",
+                    st.red("Δ recalibrado"),
+                    fmt::secs(max_excess),
+                    fmt::secs((max_excess * 100.0).ceil() / 100.0)
+                );
+            } else {
+                println!("  {}  a cauda observada cabe no contrato de latência", st.green("Δ"));
+            }
+        }
+        if let Some(m) = a.overhead_seen.iter().max() {
+            let decl = a.declared_overhead.unwrap_or(0);
+            let suggest = ((*m as f64) * 1.25).ceil() as u64;
+            let verdict = if *m <= decl { st.green("cobre") } else { st.red("NÃO cobre") };
+            println!(
+                "  overhead medido   máx {} · declarado {} ({verdict}) · sugerido ≥ {} (máx × 1,25)",
+                fmt::tok(*m),
+                fmt::tok(decl),
+                fmt::tok(suggest)
+            );
+        } else {
+            println!("  overhead medido   — (journal sem `tok_in_contract` ou sem `usage` do servidor)");
+        }
+        if let (Some(r), Some(t)) = (a.reasoning.iter().max(), a.tok_out.iter().max()) {
+            println!("  saída medida      máx {} (raciocínio máx {})", fmt::tok(*t), fmt::tok(*r));
+        }
+        if a.breaches.is_empty() {
+            println!("  violações         nenhuma");
+        } else {
+            let v: Vec<String> = a.breaches.iter().map(|(k, n)| format!("{k} ×{n}")).collect();
+            println!("  violações         {}", v.join(", "));
+        }
+    }
+    Ok(true)
+}
+
+fn cmd_emit(opts: &Opts, st: Style) -> Result<bool, String> {
+    let (path, src) = load(opts)?;
+    let Some(c) = compile_or_report(&path, &src, st) else { return Ok(false) };
+    match opts.one("target").unwrap_or("py") {
+        "py" | "python" => {}
+        other => return Err(format!("alvo desconhecido `{other}` (o Marco Zero emite `py`)")),
+    }
+    let py = ath_emit::python(&c.module, &c.check, &c.codex, &path).map_err(|e| format!("emissão: {e}"))?;
+    match opts.one("out") {
+        Some(out) => {
+            std::fs::write(out, &py).map_err(|e| format!("falha ao gravar `{out}`: {e}"))?;
+            println!("{} {path} → {out} · Codex #{}", st.green("✓"), ath_codex::short(&c.codex.root));
+        }
+        None => print!("{py}"),
+    }
+    Ok(true)
 }

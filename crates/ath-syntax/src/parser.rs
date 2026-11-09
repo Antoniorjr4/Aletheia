@@ -175,15 +175,21 @@ impl Parser {
         let name = self.ident()?;
         self.expect(Tok::LBrace)?;
         let mut props = Vec::new();
+        let mut meta = Vec::new();
         while *self.peek() != Tok::RBrace {
             let key = self.ident()?;
             self.expect(Tok::Assign)?;
-            let value = self.number()?;
-            props.push(Prop { key, value });
+            if let Tok::Str(s) = self.peek().clone() {
+                self.bump();
+                meta.push((key, s));
+            } else {
+                let value = self.number()?;
+                props.push(Prop { key, value });
+            }
             self.eat(&Tok::Comma);
         }
         self.expect(Tok::RBrace)?;
-        Ok(ModelDecl { name, props })
+        Ok(ModelDecl { name, props, meta })
     }
 
     fn params(&mut self) -> PResult<Vec<Param>> {
@@ -375,6 +381,35 @@ impl Parser {
         Ok(TypeExpr::Refined { base, lo, hi, span })
     }
 
+    /// `List[T, a..b]` (inclusivo) ou `List[T, ..b]` (de 0 a b): toda lista tem teto.
+    fn list_type(&mut self, base: Ident) -> PResult<TypeExpr> {
+        self.expect(Tok::LBrack)?;
+        let elem = self.ty()?;
+        self.expect(Tok::Comma)?;
+        let nat = |p: &mut Self| -> PResult<Option<u32>> {
+            match p.peek().clone() {
+                Tok::Int(n) if (0..=u32::MAX as i64).contains(&n) => {
+                    p.bump();
+                    Ok(Some(n as u32))
+                }
+                Tok::Int(_) | Tok::Minus => Err(p.err("limites de lista são inteiros não negativos")),
+                _ => Ok(None),
+            }
+        };
+        let lo = nat(self)?.unwrap_or(0);
+        self.expect(Tok::Dot)?;
+        self.expect(Tok::Dot)?;
+        let Some(hi) = nat(self)? else {
+            return Err(self.err("lista sem teto: `List[T, a..b]` exige o limite superior b"));
+        };
+        let end = self.expect(Tok::RBrack)?;
+        let span = base.span.to(end);
+        if lo > hi {
+            return Err(ParseError { msg: format!("intervalo de tamanhos vazio: {lo} > {hi}"), span });
+        }
+        Ok(TypeExpr::List { elem: Box::new(elem), lo, hi, span })
+    }
+
     fn ty(&mut self) -> PResult<TypeExpr> {
         let start = self.span();
         if self.is_contextual("own") {
@@ -394,7 +429,9 @@ impl Parser {
             TypeExpr::Cap(effs, start.to(end))
         } else {
             let id = self.ident()?;
-            if *self.peek() == Tok::LBrack && (id.name == "Int" || id.name == "Text") {
+            if *self.peek() == Tok::LBrack && id.name == "List" {
+                self.list_type(id)?
+            } else if *self.peek() == Tok::LBrack && (id.name == "Int" || id.name == "Text") {
                 self.refined(id)?
             } else if *self.peek() == Tok::LBrack && id.name == "Pending" {
                 // `Pending[k]`: o índice é a chave da operação em aberto; `_` = qualquer chave.
@@ -647,6 +684,55 @@ impl Parser {
                 let span = start.to(els.span);
                 Ok(Expr { kind: ExprKind::Reconcile { pending, fuel, els }, span })
             }
+            Tok::Ident(name)
+                if name == "for"
+                    && matches!(self.peek_at(1), Tok::Ident(_))
+                    && matches!(self.peek_at(2), Tok::Ident(k) if k == "in") =>
+            {
+                self.bump();
+                let var = self.ident()?;
+                self.bump(); // in
+                let saved = self.no_ctor;
+                self.no_ctor = true;
+                let iter = self.expr()?;
+                self.no_ctor = saved;
+                let body = self.block()?;
+                let span = start.to(body.span);
+                Ok(Expr { kind: ExprKind::For { var, iter: Box::new(iter), body }, span })
+            }
+            Tok::Ident(name)
+                if (name == "all" || name == "any")
+                    && matches!(self.peek_at(1), Tok::Ident(_))
+                    && matches!(self.peek_at(2), Tok::Ident(k) if k == "in") =>
+            {
+                let all = name == "all";
+                self.bump();
+                let var = self.ident()?;
+                self.bump(); // in
+                let saved = self.no_ctor;
+                self.no_ctor = true;
+                let iter = self.concat_expr()?;
+                self.no_ctor = saved;
+                self.expect(Tok::FatArrow)?;
+                let body = self.expr()?;
+                let span = start.to(body.span);
+                Ok(Expr { kind: ExprKind::Quant { all, var, iter: Box::new(iter), body: Box::new(body) }, span })
+            }
+            Tok::LBrack => {
+                self.bump();
+                let saved = self.no_ctor;
+                self.no_ctor = false;
+                let mut items = Vec::new();
+                while *self.peek() != Tok::RBrack {
+                    items.push(self.expr()?);
+                    if !self.eat(&Tok::Comma) {
+                        break;
+                    }
+                }
+                self.no_ctor = saved;
+                let end = self.expect(Tok::RBrack)?;
+                Ok(Expr { kind: ExprKind::List(items), span: start.to(end) })
+            }
             Tok::Ident(name) if name == "transfer" && matches!(self.peek_at(1), Tok::Ident(_)) => {
                 self.bump();
                 let p = self.ident()?;
@@ -864,6 +950,39 @@ policy Safe(a: Action) -> Bool = match a { Restart { deploy } => deploy == "api"
         let m = parse_module(src).unwrap();
         assert_eq!(m.items.len(), 2);
         assert_eq!(m.items[0].name(), "Action");
+    }
+
+    #[test]
+    fn parses_bounded_lists_loops_and_quantifiers() {
+        let src = r#"
+module t
+type Action = | Restart { deploy: Text[..32] }
+model m { price_in = 1, id = "openai/gpt-oss-20b", provider = "groq", version = "2026-11-09", overhead = 640 }
+policy P(p: List[Action, 1..3]) -> Bool = all a in p => true
+"#;
+        let m = parse_module(src).unwrap();
+        let Item::Model(md) = &m.items[1] else { panic!() };
+        assert_eq!(md.contract_label().as_deref(), Some("groq:openai/gpt-oss-20b@2026-11-09"));
+        assert_eq!(md.prop("overhead"), Some(640.0));
+        let Item::Policy(p) = &m.items[2] else { panic!() };
+        assert_eq!(p.params[0].ty.sig(), "List[Action, 1..3]");
+        assert!(matches!(p.body.kind, ExprKind::Quant { all: true, .. }));
+        let e = parse_expr_str(r#"for x in [1, 2] { f(x) }"#).unwrap();
+        let ExprKind::For { iter, .. } = &e.kind else { panic!("{e:?}") };
+        assert!(matches!(&iter.kind, ExprKind::List(v) if v.len() == 2));
+        assert!(
+            parse_module(
+                "module t
+tool f(x: List[Int, 1..]) -> Unit ! {}"
+            )
+            .is_err(),
+            "lista sem teto"
+        );
+        assert!(parse_module(
+            "module t
+tool f(x: List[Int, 3..1]) -> Unit ! {}"
+        )
+        .is_err());
     }
 
     #[test]

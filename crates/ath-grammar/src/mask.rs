@@ -72,6 +72,40 @@ fn value(shape: &Shape, s: &[char], i: usize) -> Step {
         Shape::Int { min, max } => int(s, i, *min, *max),
         Shape::Text { max_chars } => text(s, i, *max_chars),
         Shape::Adt { variants, .. } => adt(variants, s, i),
+        Shape::List { elem, min, max } => list(elem, *min, *max, s, i),
+    }
+}
+
+/// `[e1,…,en]` com `min ≤ n ≤ max`: cada vírgula exige espaço sob o teto, e `]` exige o mínimo.
+fn list(elem: &Shape, min: u32, max: u32, s: &[char], i: usize) -> Step {
+    let mut j = match lit(s, i, "[") {
+        Step::Ok(j) => j,
+        other => return other,
+    };
+    if j == s.len() {
+        return Step::Eof;
+    }
+    if s[j] == ']' {
+        return if min == 0 { Step::Ok(j + 1) } else { Step::Bad };
+    }
+    if max == 0 {
+        return Step::Bad;
+    }
+    let mut n = 0u32;
+    loop {
+        j = match value(elem, s, j) {
+            Step::Ok(k) => k,
+            other => return other,
+        };
+        n += 1;
+        if j == s.len() {
+            return Step::Eof;
+        }
+        match s[j] {
+            ']' if n >= min => return Step::Ok(j + 1),
+            ',' if n < max => j += 1,
+            _ => return Step::Bad,
+        }
     }
 }
 
@@ -285,7 +319,8 @@ pub fn decode_following(shape: &Shape, proposal: &str, limit: usize) -> Result<T
 }
 
 fn fallback(ok: &[char]) -> char {
-    for p in "\"},:0123456789".chars() {
+    // `]` antes de `,`: fechar a lista assim que o mínimo de elementos permite.
+    for p in "\"}],:0123456789".chars() {
         if ok.contains(&p) {
             return p;
         }
@@ -367,6 +402,20 @@ mod tests {
         let t = decode_following(&s, p, 400).unwrap();
         assert_eq!(t.text, p);
         assert!(t.deviation.is_none());
+    }
+
+    #[test]
+    fn list_lengths_are_enforced_by_the_automaton() {
+        let s = crate::tests::plan_shape();
+        let one = r#"{"kind":"Restart","deploy":"a"}"#;
+        assert_eq!(viable(&s, r#"{"value":[]"#), Viability::Dead, "o mínimo é 1");
+        assert_eq!(viable(&s, &format!(r#"{{"value":[{one}]}}"#)), Viability::Complete);
+        assert_eq!(viable(&s, &format!(r#"{{"value":[{one},{one},{one}]}}"#)), Viability::Complete, "teto exato");
+        assert_eq!(viable(&s, &format!(r#"{{"value":[{one},{one},{one},"#)), Viability::Dead, "acima do teto");
+        let t = decode_following(&s, &format!(r#"{{"value":[{one},{one},{one},{one}]}}"#), 2000).unwrap();
+        assert_eq!(t.text, format!(r#"{{"value":[{one},{one},{one}]}}"#));
+        let t = decode_following(&s, r#"{"value":[]}"#, 2000).unwrap();
+        assert!(check(&s, &serde_json::from_str(&t.text).unwrap()).is_ok(), "{}", t.text);
     }
 
     /// Propriedade: qualquer proposta — inclusive lixo adversarial — vira uma saída válida

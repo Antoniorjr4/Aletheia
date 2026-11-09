@@ -38,6 +38,20 @@ impl Cost {
         }
     }
 
+    /// `k` repetições do mesmo custo; no traço, o laço aparece como um passo com o caminho do corpo.
+    fn scale(&self, k: u32, label: &str) -> Cost {
+        if k == 0 {
+            return Cost::default();
+        }
+        let n = k as f64;
+        Cost {
+            tok: self.tok * k as u64,
+            usd: self.usd * n,
+            wall: self.wall * n,
+            trace: vec![(format!("{label} ×{k} ⟨{}⟩", self.path()), self.wall * n)],
+        }
+    }
+
     pub fn path(&self) -> String {
         self.trace.iter().map(|(n, w)| format!("{} {}", n, fmt::dec(*w, 1))).collect::<Vec<_>>().join(" → ")
     }
@@ -80,6 +94,29 @@ impl PCost {
 
     fn alt(self, b: PCost) -> PCost {
         PCost { fall: max_opt(self.fall, b.fall), ret: max_opt(self.ret, b.ret) }
+    }
+
+    /// Julgamento de custo de um laço de `lo` a `hi` iterações sobre um corpo de custo `self`:
+    ///
+    /// - caminhos que continuam: β_laço ⪯ hi · β_corpo (e custo zero se o laço pode ser vazio
+    ///   mesmo quando o corpo sempre sai);
+    /// - caminhos que saem por `return` no corpo: (hi − 1) iterações completas e a que sai.
+    ///
+    /// Aninhar laços compõe por multiplicação: o corpo do laço externo já traz o custo do interno.
+    fn repeat(self, lo: u32, hi: u32, label: &str) -> PCost {
+        if hi == 0 {
+            return PCost::zero();
+        }
+        let fall = match &self.fall {
+            Some(f) => Some(f.scale(hi, label)),
+            None if lo == 0 => Some(Cost::default()),
+            None => None,
+        };
+        let ret = self.ret.as_ref().map(|r| match &self.fall {
+            Some(f) => f.scale(hi - 1, label).add(r),
+            None => r.clone(),
+        });
+        PCost { fall, ret }
     }
 
     fn diverge(self) -> PCost {
@@ -270,7 +307,21 @@ impl Walker<'_, '_> {
             })),
             // Reconciliação é obrigação fora do contrato Δ (spec 2.7): não entra no pior caminho.
             ExprKind::Reconcile { .. } | ExprKind::Transfer(_) => PCost::zero(),
+            ExprKind::List(items) => self.seq_all(items.iter()),
+            ExprKind::For { var, iter, body } => {
+                let (lo, hi) = self.bounds(e.span);
+                self.expr(iter).seq(self.block(body).repeat(lo, hi, &format!("for {}", var.name)))
+            }
+            ExprKind::Quant { all, var, iter, body } => {
+                let (lo, hi) = self.bounds(e.span);
+                let q = if *all { "all" } else { "any" };
+                self.expr(iter).seq(self.expr(body).repeat(lo, hi, &format!("{q} {}", var.name)))
+            }
         }
+    }
+
+    fn bounds(&self, site: Span) -> (u32, u32) {
+        self.cx.facts.loop_bounds.get(&site).copied().unwrap_or((0, 0))
     }
 }
 
@@ -298,6 +349,26 @@ fn compensable_calls<'m>(cx: &Ctx<'m>, b: &Block) -> Vec<(String, &'m ToolDecl)>
             }
             ExprKind::Match { arms, .. } => arms.iter().for_each(|a| ex(cx, &a.body, out)),
             ExprKind::Field(r, _) | ExprKind::Unary(_, r) | ExprKind::Quote(r) | ExprKind::Commit(r) => ex(cx, r, out),
+            ExprKind::List(items) => items.iter().for_each(|a| ex(cx, a, out)),
+            // Cada iteração registra seus efeitos compensáveis: o pior caso compensa `hi` vezes.
+            ExprKind::For { iter, body, .. } => {
+                ex(cx, iter, out);
+                let hi = cx.facts.loop_bounds.get(&e.span).map_or(0, |b| b.1);
+                let mut inner = Vec::new();
+                blk(cx, body, &mut inner);
+                for _ in 0..hi {
+                    out.extend(inner.iter().cloned());
+                }
+            }
+            ExprKind::Quant { iter, body, .. } => {
+                ex(cx, iter, out);
+                let hi = cx.facts.loop_bounds.get(&e.span).map_or(0, |b| b.1);
+                let mut inner = Vec::new();
+                ex(cx, body, &mut inner);
+                for _ in 0..hi {
+                    out.extend(inner.iter().cloned());
+                }
+            }
             _ => {}
         }
     }

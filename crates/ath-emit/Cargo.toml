@@ -1,0 +1,14 @@
+[package]
+name = "ath-emit"
+description = "Emissores de Aletheia Core 0: Python sobre o aletheia_runtime (segunda realização da semântica do ARX)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ath-syntax.workspace = true
+ath-grammar.workspace = true
+ath-check.workspace = true
+ath-codex.workspace = true
+serde_json.workspace = true

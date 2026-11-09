@@ -116,6 +116,8 @@ pub struct Event {
 
 pub struct Arx<'m> {
     m: &'m Module,
+    /// Hash do Codex de cada modelo: a identidade do contrato Δ registrada no journal.
+    pub contracts: HashMap<String, String>,
     tools: HashMap<&'m str, &'m ToolDecl>,
     models: HashMap<&'m str, &'m ModelDecl>,
     policies: HashMap<&'m str, &'m PolicyDecl>,
@@ -147,8 +149,11 @@ fn cap_set(t: &TypeExpr) -> BTreeSet<String> {
 }
 
 /// Valor de um documento já validado contra a forma.
-fn from_json(shape: &Shape, j: &serde_json::Value) -> Value {
+pub fn from_json(shape: &Shape, j: &serde_json::Value) -> Value {
     match shape {
+        Shape::List { elem, .. } => {
+            Value::List(j.as_array().map(|a| a.iter().map(|x| from_json(elem, x)).collect()).unwrap_or_default())
+        }
         Shape::Int { .. } => Value::Int(j.as_i64().unwrap_or_default()),
         Shape::Bool => Value::Bool(j.as_bool().unwrap_or_default()),
         Shape::Text { .. } => Value::Text(j.as_str().unwrap_or_default().to_string()),
@@ -169,6 +174,9 @@ pub fn fits(shape: &Shape, v: &Value) -> bool {
     match (shape, v) {
         (Shape::Int { min, max }, Value::Int(n)) => min.is_none_or(|m| *n >= m) && max.is_none_or(|m| *n <= m),
         (Shape::Bool, Value::Bool(_)) => true,
+        (Shape::List { elem, min, max }, Value::List(items)) => {
+            (*min as usize..=*max as usize).contains(&items.len()) && items.iter().all(|x| fits(elem, x))
+        }
         (Shape::Text { max_chars }, Value::Text(s)) => max_chars.is_none_or(|m| s.chars().count() as u32 <= m),
         (Shape::Adt { variants, .. }, Value::Adt { variant, fields, .. }) => {
             variants.iter().find(|x| &x.name == variant).is_some_and(|x| {
@@ -184,6 +192,7 @@ impl<'m> Arx<'m> {
     pub fn new(m: &'m Module, host: Box<dyn Host + 'm>, provider: Box<dyn ModelProvider + 'm>) -> Self {
         let mut a = Arx {
             m,
+            contracts: HashMap::new(),
             tools: HashMap::new(),
             models: HashMap::new(),
             policies: HashMap::new(),
@@ -230,13 +239,18 @@ impl<'m> Arx<'m> {
         })
     }
 
-    /// Converte um literal textual (`"api"`, `3`, `Restart { deploy: "api" }`) num valor do tipo pedido.
-    pub fn literal_from_str(&self, src: &str, ty: &str) -> Option<Value> {
+    /// Converte um literal textual (`"api"`, `3`, `Restart { deploy: "api" }`, `["a", "b"]`) num
+    /// valor do tipo pedido.
+    pub fn literal_from_str(&self, src: &str, ty: &TypeExpr) -> Option<Value> {
         let e = parse_expr_str(src.trim()).ok()?;
         self.literal(&e, ty)
     }
 
-    fn literal(&self, e: &Expr, ty: &str) -> Option<Value> {
+    fn literal(&self, e: &Expr, te: &TypeExpr) -> Option<Value> {
+        if let (TypeExpr::List { elem, .. }, ExprKind::List(items)) = (te.unlabeled(), &e.kind) {
+            return items.iter().map(|x| self.literal(x, elem)).collect::<Option<Vec<_>>>().map(Value::List);
+        }
+        let ty = te.base_name();
         match (ty, &e.kind) {
             ("Int", ExprKind::Int(n)) => Some(Value::Int(*n)),
             ("Int", ExprKind::Unary(UnOp::Neg, inner)) => match inner.kind {
@@ -253,7 +267,7 @@ impl<'m> Arx<'m> {
                 let mut out = Vec::new();
                 for fd in &v.fields {
                     let (_, fe) = fields.iter().find(|(n, _)| n.name == fd.name.name)?;
-                    out.push((fd.name.name.clone(), self.literal(fe, &type_name(&fd.ty))?));
+                    out.push((fd.name.name.clone(), self.literal(fe, &fd.ty)?));
                 }
                 Some(Value::Adt { ty: adt.to_string(), variant: v.name.name.clone(), fields: out })
             }
@@ -435,7 +449,7 @@ impl<'m> Arx<'m> {
                 Err(Unwind::Ret(v))
             }
             ExprKind::Infer { model, out, fields } => {
-                let ty = type_name(out);
+                let ty = out.display();
                 let mut prompt = format!("Responda apenas com um valor Aletheia do tipo `{ty}`.\n");
                 for (k, v) in fields {
                     let quoted = matches!(v.kind, ExprKind::Quote(_));
@@ -525,6 +539,38 @@ impl<'m> Arx<'m> {
                     verdict: Some((false, "obrigação escalada".into())),
                 });
                 Ok(Value::Unit)
+            }
+            ExprKind::List(items) => {
+                let mut out = Vec::with_capacity(items.len());
+                for x in items {
+                    out.push(self.eval(x)?);
+                }
+                Ok(Value::List(out))
+            }
+            ExprKind::For { var, iter, body } => {
+                let Value::List(items) = self.eval(iter)? else {
+                    return Err(rt("R0103", "`for` sobre valor que não é lista").into());
+                };
+                for item in items {
+                    self.block_with(var, item, body)?;
+                }
+                Ok(Value::Unit)
+            }
+            ExprKind::Quant { all, var, iter, body } => {
+                let Value::List(items) = self.eval(iter)? else {
+                    return Err(rt("R0103", "quantificador sobre valor que não é lista").into());
+                };
+                for item in items {
+                    self.scopes.push(vec![(var.name.clone(), item)]);
+                    let r = self.eval(body);
+                    self.scopes.pop();
+                    match r? {
+                        Value::Bool(b) if b != *all => return Ok(Value::Bool(b)),
+                        Value::Bool(_) => {}
+                        _ => return Err(rt("R0103", "corpo de quantificador não booleano").into()),
+                    }
+                }
+                Ok(Value::Bool(*all))
             }
         }
     }
@@ -828,6 +874,12 @@ impl<'m> Arx<'m> {
                 let Value::Text(s) = v else { return Err(rt("R0103", "`fit` sobre valor não textual").into()) };
                 return Ok(Value::Text(s.chars().take(n * 4).collect()));
             }
+            "len" => {
+                let Value::List(items) = self.eval(&args[0])? else {
+                    return Err(rt("R0103", "`len` sobre valor que não é lista").into());
+                };
+                return Ok(Value::Int(items.len() as i64));
+            }
             "sample" => {
                 let Value::Draft(d) = self.eval(&args[0])? else {
                     return Err(rt("R0105", "`sample` sobre valor que não é rascunho").into());
@@ -979,9 +1031,18 @@ impl<'m> Arx<'m> {
         // Modelos de raciocínio: o contrato Δ declara quantos tokens podem ir para o raciocínio.
         let reasoning = p("reasoning") as u64;
         let cap = out_cap + reasoning;
-        let est_in = est_tokens(&d.prompt);
+        // Entrada sob o contrato: prompt estimado + overhead declarado (template de chat e esquema).
+        let overhead = p("overhead") as u64;
+        let est_in = est_tokens(&d.prompt) + overhead;
         let cost = |tin: u64, tout: u64| tin as f64 * p("price_in") / 1e6 + tout as f64 * p("price_out") / 1e6;
         let time = |tout: u64| p("ttft") + tout as f64 * p("per_tok");
+        let contract = json!({
+            "id": md.meta("id"),
+            "provider": md.meta("provider"),
+            "version": md.meta("version"),
+            "hash": self.contracts.get(&d.model),
+            "overhead": overhead,
+        });
         self.meter.reserve(est_in + cap, cost(est_in, cap), time(cap), &format!("infer {}", d.model))?;
         let req = Request { model: &d.model, prompt: &d.prompt, shape: &shape, max_tokens: out_cap, reasoning };
         let provider = self.provider.name();
@@ -1006,18 +1067,42 @@ impl<'m> Arx<'m> {
         // para que o `spent` do journal inclua também a amostra que o violou.
         self.clock += wall;
         self.meter.settle(tok_in + tok_out, usd, wall);
-        let breach = if c.tok_out.is_some_and(|n| n > cap) {
+        // Deriva do contrato, em ordem: modelo servido ≠ contratado, tokens de saída acima do teto,
+        // latência acima do contrato, entrada acima de prompt + overhead declarado.
+        let served_drift = match (md.meta("id"), c.served_model.as_deref()) {
+            (Some(want), Some(got)) if want != got => Some(got.to_string()),
+            _ => None,
+        };
+        let breach = if let Some(got) = served_drift {
+            Some((
+                "R0704",
+                format!(
+                    "ContractBreach: o servidor serviu `{got}`; o contrato de `{}` é `{}`",
+                    d.model,
+                    md.contract_label().unwrap_or_default()
+                ),
+            ))
+        } else if c.tok_out.is_some_and(|n| n > cap) {
             Some(("R0702", format!("ContractBreach: `{}` gerou {tok_out} tokens; o contrato admite {cap}", d.model)))
+        } else if let Some(l) = c.latency.filter(|l| *l > contract_wall + 1e-9) {
+            Some((
+                "R0703",
+                format!(
+                    "ContractBreach: `{}` levou {l:.2} s para {tok_out} tokens; o contrato admite {contract_wall:.2} s",
+                    d.model
+                ),
+            ))
+        } else if md.prop("overhead").is_some() && c.tok_in.is_some_and(|n| n > est_in) {
+            Some((
+                "R0705",
+                format!(
+                    "ContractBreach: `{}` recebeu {tok_in} tokens de entrada; o contrato admite {est_in} (prompt {} + overhead {overhead})",
+                    d.model,
+                    est_in - overhead
+                ),
+            ))
         } else {
-            c.latency.filter(|l| *l > contract_wall + 1e-9).map(|l| {
-                (
-                    "R0703",
-                    format!(
-                        "ContractBreach: `{}` levou {l:.2} s para {tok_out} tokens; o contrato admite {contract_wall:.2} s",
-                        d.model
-                    ),
-                )
-            })
+            None
         };
         if let Some((code, msg)) = breach {
             self.journal.push(
@@ -1026,6 +1111,9 @@ impl<'m> Arx<'m> {
                 json!({
                     "code": code,
                     "model": d.model,
+                    "contract": contract,
+                    "served_model": c.served_model,
+                    "tok_in_contract": est_in,
                     "attempt": attempt,
                     "declared_tokens": cap,
                     "observed_tokens": tok_out,
@@ -1070,6 +1158,9 @@ impl<'m> Arx<'m> {
                 "provider": provider,
                 "attempt": attempt,
                 "prompt_hash": blake3::hash(d.prompt.as_bytes()).to_hex().to_string(),
+                "contract": contract,
+                "served_model": c.served_model,
+                "tok_in_contract": est_in,
                 "tok_in": tok_in,
                 "tok_out": tok_out,
                 "tok_reasoning": c.tok_reasoning,

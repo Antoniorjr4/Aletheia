@@ -98,11 +98,33 @@ pub struct Field {
 pub struct ModelDecl {
     pub name: Ident,
     pub props: Vec<Prop>,
+    /// Identidade versionada do contrato Δ: `id`, `provider`, `version` (valores textuais).
+    pub meta: Vec<(Ident, String)>,
 }
 
 impl ModelDecl {
     pub fn prop(&self, key: &str) -> Option<f64> {
         self.props.iter().find(|p| p.key.name == key).map(|p| p.value)
+    }
+
+    pub fn meta(&self, key: &str) -> Option<&str> {
+        self.meta.iter().find(|(k, _)| k.name == key).map(|(_, v)| v.as_str())
+    }
+
+    /// `provider:id@version` (partes ausentes omitidas); `None` se o contrato não declara identidade.
+    pub fn contract_label(&self) -> Option<String> {
+        let id = self.meta("id")?;
+        let mut s = String::new();
+        if let Some(p) = self.meta("provider") {
+            s.push_str(p);
+            s.push(':');
+        }
+        s.push_str(id);
+        if let Some(v) = self.meta("version") {
+            s.push('@');
+            s.push_str(v);
+        }
+        Some(s)
     }
 }
 
@@ -239,6 +261,13 @@ pub enum TypeExpr {
     },
     Cap(Vec<Ident>, Span),
     Labeled(Box<TypeExpr>, Label, Span),
+    /// Lista delimitada `List[T, a..b]`: de `a` a `b` elementos (inclusivo).
+    List {
+        elem: Box<TypeExpr>,
+        lo: u32,
+        hi: u32,
+        span: Span,
+    },
 }
 
 impl TypeExpr {
@@ -246,6 +275,7 @@ impl TypeExpr {
         match self {
             TypeExpr::Named(id) => id.span,
             TypeExpr::Refined { span, .. }
+            | TypeExpr::List { span, .. }
             | TypeExpr::Cap(_, span)
             | TypeExpr::Labeled(_, _, span)
             | TypeExpr::Own(_, span) => *span,
@@ -275,7 +305,33 @@ impl TypeExpr {
             TypeExpr::Named(id) => &id.name,
             TypeExpr::Refined { base, .. } => &base.name,
             TypeExpr::Cap(..) => "Cap",
+            TypeExpr::List { .. } => "List",
             TypeExpr::Labeled(..) | TypeExpr::Own(..) => unreachable!(),
+        }
+    }
+
+    /// Assinatura textual completa: `Int[2..64]`, `List[Action, 1..3]`, `Text ^ Untrusted`.
+    pub fn sig(&self) -> String {
+        let b = |x: &Option<i64>| x.map(|n| n.to_string()).unwrap_or_default();
+        match self {
+            TypeExpr::Named(id) => id.name.clone(),
+            TypeExpr::Refined { base, lo, hi, .. } => format!("{}[{}..{}]", base.name, b(lo), b(hi)),
+            TypeExpr::Cap(effs, _) => {
+                let mut n: Vec<&str> = effs.iter().map(|e| e.name.as_str()).collect();
+                n.sort();
+                format!("Cap[{}]", n.join(" + "))
+            }
+            TypeExpr::Labeled(inner, l, _) => format!("{} ^ {}", inner.sig(), l.name()),
+            TypeExpr::Own(inner, _) => format!("own {}", inner.sig()),
+            TypeExpr::List { elem, lo, hi, .. } => format!("List[{}, {lo}..{hi}]", elem.sig()),
+        }
+    }
+
+    /// Nome do tipo nos prompts e mensagens: o nome base, ou a assinatura inteira de uma lista.
+    pub fn display(&self) -> String {
+        match self.unlabeled() {
+            l @ TypeExpr::List { .. } => l.sig(),
+            other => other.base_name().to_string(),
         }
     }
 }
@@ -365,6 +421,21 @@ pub enum ExprKind {
     },
     /// `transfer p`: entrega a obrigação ao reconciliador durável.
     Transfer(Ident),
+    /// Lista literal `[e1, …, en]`.
+    List(Vec<Expr>),
+    /// `for x in xs { … }`: itera uma lista delimitada; o custo é multiplicado pelo teto da lista.
+    For {
+        var: Ident,
+        iter: Box<Expr>,
+        body: Block,
+    },
+    /// `all x in xs => cond` / `any x in xs => cond`: quantificador limitado (puro em políticas).
+    Quant {
+        all: bool,
+        var: Ident,
+        iter: Box<Expr>,
+        body: Box<Expr>,
+    },
 }
 
 #[derive(Clone, Debug)]

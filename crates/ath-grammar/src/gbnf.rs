@@ -74,6 +74,18 @@ fn rule(shape: &Shape, rules: &mut BTreeMap<String, String>, notes: &mut Vec<Str
                 "int".into()
             }
         },
+        Shape::List { elem, min, max } => {
+            let e = rule(elem, rules, notes);
+            let name = format!("list-{e}-{min}-{max}");
+            let more = |a: u32, b: u32| format!("({} {e}){{{a},{b}}}", quote(","));
+            let body = match (*min, *max) {
+                (_, 0) => format!("{} {}", quote("["), quote("]")),
+                (0, b) => format!("{} ({e} {})? {}", quote("["), more(0, b - 1), quote("]")),
+                (a, b) => format!("{} {e} {} {}", quote("["), more(a - 1, b - 1), quote("]")),
+            };
+            rules.insert(name.clone(), body);
+            name
+        }
         Shape::Adt { name, variants } => {
             let mut alts = Vec::new();
             for v in variants {
@@ -110,5 +122,12 @@ mod tests {
         assert!(g.contains(r#"int-2-64 ::= "64" | "63""#), "{g}");
         assert!(!g.contains(r#""1" |"#), "1 está fora do intervalo: {g}");
         assert!(g.contains(r#"text-32 ::= "\"" char{0,32} "\"""#), "{g}");
+    }
+
+    #[test]
+    fn gbnf_bounds_list_lengths() {
+        let g = super::to_gbnf(&crate::tests::plan_shape());
+        assert!(g.contains(r#"root ::= "{\"value\":" list-action-1-3 "}""#), "{g}");
+        assert!(g.contains(r#"list-action-1-3 ::= "[" action ("," action){0,2} "]""#), "{g}");
     }
 }

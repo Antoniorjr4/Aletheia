@@ -27,10 +27,24 @@ use serde_json::Value as Json;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Shape {
-    Int { min: Option<i64>, max: Option<i64> },
+    Int {
+        min: Option<i64>,
+        max: Option<i64>,
+    },
     Bool,
-    Text { max_chars: Option<u32> },
-    Adt { name: String, variants: Vec<VariantShape> },
+    Text {
+        max_chars: Option<u32>,
+    },
+    Adt {
+        name: String,
+        variants: Vec<VariantShape>,
+    },
+    /// Lista com `min..=max` elementos.
+    List {
+        elem: Box<Shape>,
+        min: u32,
+        max: u32,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -49,6 +63,9 @@ fn shape_rec(m: &Module, ty: &TypeExpr, stack: &mut Vec<String>) -> Result<Shape
     match ty {
         TypeExpr::Labeled(inner, ..) | TypeExpr::Own(inner, _) => shape_rec(m, inner, stack),
         TypeExpr::Cap(..) => Err("capacidades não podem ser produzidas por um modelo".into()),
+        TypeExpr::List { elem, lo, hi, .. } => {
+            Ok(Shape::List { elem: Box::new(shape_rec(m, elem, stack)?), min: *lo, max: *hi })
+        }
         TypeExpr::Refined { base, lo, hi, .. } => match base.name.as_str() {
             "Int" => Ok(Shape::Int { min: *lo, max: *hi }),
             "Text" => Ok(Shape::Text { max_chars: hi.map(|h| h as u32) }),
@@ -106,6 +123,10 @@ fn value_bytes(shape: &Shape) -> Option<u64> {
         Shape::Int { min, max } => Some(int_digits(min.unwrap_or(i64::MIN)).max(int_digits(max.unwrap_or(i64::MAX)))),
         Shape::Bool => Some(5),
         Shape::Text { max_chars } => max_chars.map(|n| 2 + 4 * n as u64),
+        Shape::List { elem, max, .. } => {
+            let e = value_bytes(elem)?;
+            Some(2 + *max as u64 * e + (*max as u64).saturating_sub(1))
+        }
         Shape::Adt { variants, .. } => {
             let mut best = 0;
             for v in variants {
@@ -129,6 +150,14 @@ pub fn proposal_from_json(shape: &Shape, j: &Json) -> String {
 
 fn encode_loose(shape: Option<&Shape>, j: &Json) -> String {
     match j {
+        Json::Array(items) => {
+            let elem = match shape {
+                Some(Shape::List { elem, .. }) => Some(elem.as_ref()),
+                _ => None,
+            };
+            let parts: Vec<String> = items.iter().map(|x| encode_loose(elem, x)).collect();
+            format!("[{}]", parts.join(","))
+        }
         Json::Object(obj) => {
             let kind = obj.get("kind").and_then(|k| k.as_str());
             let variant = match (shape, kind) {
@@ -185,6 +214,17 @@ fn check_value(shape: &Shape, v: &Json, path: &str) -> Result<(), String> {
             let n = s.chars().count() as u32;
             if max_chars.is_some_and(|m| n > m) {
                 return Err(format!("`{path}` tem {n} caracteres; o refinamento admite até {}", max_chars.unwrap()));
+            }
+            Ok(())
+        }
+        Shape::List { elem, min, max } => {
+            let items = v.as_array().ok_or_else(|| format!("`{path}` deve ser uma lista"))?;
+            let n = items.len();
+            if n < *min as usize || n > *max as usize {
+                return Err(format!("`{path}` tem {n} elemento(s); o tipo admite de {min} a {max}"));
+            }
+            for (i, x) in items.iter().enumerate() {
+                check_value(elem, x, &format!("{path}[{i}]"))?;
             }
             Ok(())
         }
@@ -247,6 +287,36 @@ mod tests {
         ] {
             assert!(check(&s, &serde_json::from_str(bad).unwrap()).is_err(), "{bad}");
         }
+    }
+
+    pub(crate) fn plan_shape() -> Shape {
+        let m = parse_module(
+            "module t\ntype Action = | Restart { deploy: Text[..32] } | Scale { deploy: Text[..32], to: Int[2..64] }",
+        )
+        .unwrap();
+        let elem = TypeExpr::Named(ath_syntax::ast::Ident { name: "Action".into(), span: Default::default() });
+        let ty = TypeExpr::List { elem: Box::new(elem), lo: 1, hi: 3, span: Default::default() };
+        shape_of(&m, &ty).unwrap()
+    }
+
+    #[test]
+    fn lists_have_bounded_encodings_and_checked_lengths() {
+        let s = plan_shape();
+        // envelope (10 bytes) + `[` `]` + 3 × Action (164 bytes) + 2 vírgulas
+        assert_eq!(max_bytes(&action_shape()), Some(10 + 164));
+        assert_eq!(max_bytes(&s), Some(10 + 2 + 3 * 164 + 2));
+        let ok = |t: &str| check(&s, &serde_json::from_str(t).unwrap());
+        assert!(ok(r#"{"value":[{"kind":"Restart","deploy":"api"}]}"#).is_ok());
+        assert!(ok(r#"{"value":[{"kind":"Restart","deploy":"api"},{"kind":"Restart","deploy":"api"},{"kind":"Restart","deploy":"api"}]}"#).is_ok(), "teto exato");
+        assert_eq!(ok(r#"{"value":[]}"#).unwrap_err(), "`value` tem 0 elemento(s); o tipo admite de 1 a 3");
+        let four = format!(r#"{{"value":[{}]}}"#, [r#"{"kind":"Restart","deploy":"a"}"#; 4].join(","));
+        assert_eq!(ok(&four).unwrap_err(), "`value` tem 4 elemento(s); o tipo admite de 1 a 3");
+        assert_eq!(
+            ok(r#"{"value":[{"kind":"Scale","deploy":"api","to":0}]}"#).unwrap_err(),
+            "`value[0].to` = 0 fora do refinamento [2..64]"
+        );
+        let j: Json = serde_json::from_str(r#"[{"deploy":"api","kind":"Restart"}]"#).unwrap();
+        assert_eq!(proposal_from_json(&s, &j), r#"{"value":[{"kind":"Restart","deploy":"api"}]}"#);
     }
 
     #[test]

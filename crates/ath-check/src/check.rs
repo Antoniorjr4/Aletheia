@@ -3,7 +3,7 @@
 
 use crate::diag::{Diag, Stratum};
 use crate::fmt;
-use crate::ty::{assignable, unify, LTy, Refn, Ty};
+use crate::ty::{assignable, ty_tokens, unify, LTy, Refn, Ty};
 use ath_syntax::ast::*;
 use ath_syntax::{est_tokens, Span};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -20,6 +20,8 @@ pub struct InferCost {
     pub tok_reasoning: u64,
     /// O teto do conteúdo veio do tipo (bytes da codificação), não do `max_out` do modelo.
     pub out_by_type: bool,
+    /// Overhead declarado no contrato (template de chat + esquema), incluído em `tok_in`.
+    pub overhead: u64,
     pub usd: f64,
     pub wall: f64,
 }
@@ -43,6 +45,9 @@ pub struct Facts {
     /// Pior tempo de reconciliação por chave, fora do contrato Δ (segundos).
     pub reconcile_bound: Option<f64>,
     pub effects: BTreeSet<String>,
+    /// Laços (`for`) e quantificadores (`all`/`any`), indexados pelo span: limites de iterações.
+    pub loop_bounds: HashMap<Span, (u32, u32)>,
+    pub loops: usize,
 }
 
 /// Recuo entre tentativas de reconciliação no ARX, em segundos.
@@ -50,18 +55,7 @@ pub const RECONCILE_BACKOFF: f64 = 2.0;
 
 /// Assinatura textual de um tipo declarado (para comparar parâmetros).
 pub fn type_sig(t: &TypeExpr) -> String {
-    let b = |x: &Option<i64>| x.map(|n| n.to_string()).unwrap_or_default();
-    match t {
-        TypeExpr::Named(id) => id.name.clone(),
-        TypeExpr::Refined { base, lo, hi, .. } => format!("{}[{}..{}]", base.name, b(lo), b(hi)),
-        TypeExpr::Cap(effs, _) => {
-            let mut n: Vec<&str> = effs.iter().map(|e| e.name.as_str()).collect();
-            n.sort();
-            format!("Cap[{}]", n.join(" + "))
-        }
-        TypeExpr::Labeled(inner, l, _) => format!("{} ^ {}", type_sig(inner), l.name()),
-        TypeExpr::Own(inner, _) => format!("own {}", type_sig(inner)),
-    }
+    t.sig()
 }
 
 /// Maior `fuel` de `reconcile` num tratador (0 se não reconcilia).
@@ -84,8 +78,11 @@ fn max_fuel(b: &Block) -> u32 {
 
 pub const MODEL_PROPS: [&str; 6] = ["price_in", "price_out", "ctx", "max_out", "ttft", "per_tok"];
 /// Propriedades opcionais do contrato Δ: `reasoning` = tokens de raciocínio admitidos por amostra.
-pub const MODEL_OPTIONAL: [&str; 1] = ["reasoning"];
-const BUILTINS: [&str; 2] = ["fit", "sample"];
+/// `overhead` = tokens de entrada que o provedor acrescenta (template de chat, esquema de decodificação).
+pub const MODEL_OPTIONAL: [&str; 2] = ["reasoning", "overhead"];
+/// Identidade versionada do contrato Δ.
+pub const MODEL_META: [&str; 3] = ["id", "provider", "version"];
+const BUILTINS: [&str; 3] = ["fit", "sample", "len"];
 
 pub struct Ctx<'m> {
     pub m: &'m Module,
@@ -289,7 +286,104 @@ impl<'m> Ctx<'m> {
                 (t, Some(*l))
             }
             TypeExpr::Own(inner, _) => self.resolve(inner),
+            TypeExpr::List { elem, lo, hi, .. } => {
+                let (et, el) = self.resolve(elem);
+                if el.is_some() {
+                    self.push(
+                        Diag::new(
+                            E0,
+                            "E0004",
+                            "rótulo de integridade dentro de `List`",
+                            elem.span(),
+                            "rótulo no elemento",
+                        )
+                        .help("rotule a lista inteira: `List[T, a..b] ^ Untrusted`"),
+                    );
+                }
+                if matches!(et, Ty::Cap(_)) || et.is_linear() {
+                    self.push(Diag::new(
+                        E0,
+                        "E0004",
+                        "capacidades, chaves e obrigações não entram em listas",
+                        elem.span(),
+                        "não armazenável",
+                    ));
+                }
+                let refn = self.refn_of(elem);
+                (Ty::List(Box::new(et), refn, *lo, *hi), None)
+            }
         }
+    }
+
+    /// O tipo `have` está contido no tipo declarado `want`? Limites de listas (em qualquer
+    /// nível de aninhamento) e refinamentos dos elementos.
+    fn ty_within(&self, have: &Ty, want: &TypeExpr) -> bool {
+        match (have, want.unlabeled()) {
+            (Ty::List(elem, er, a, b), TypeExpr::List { elem: we, lo, hi, .. }) => {
+                let elem_ok = match self.refn_of(we) {
+                    Some(w) => er.is_some_and(|r| r.within(w)),
+                    None => true,
+                };
+                a >= lo && b <= hi && elem_ok && self.ty_within(elem, we)
+            }
+            _ => true,
+        }
+    }
+
+    /// E5 para um argumento declarado com o tipo `te`: refinamento escalar ou, para listas,
+    /// limites de tamanho e refinamento dos elementos.
+    fn expect_param(&mut self, arg: &Expr, at: &LTy, te: &TypeExpr, what: &str) {
+        if !matches!(te.unlabeled(), TypeExpr::List { .. }) {
+            let want = self.refn_of(te);
+            self.expect_refn(arg, at, want, what);
+            return;
+        }
+        if !matches!(at.ty, Ty::List(..)) {
+            return;
+        }
+        self.facts.refinement_checks += 1;
+        if self.ty_within(&at.ty, te) {
+            return;
+        }
+        let TypeExpr::List { elem, lo, hi, .. } = te.unlabeled() else { return };
+        let Ty::List(et, _, a, b) = &at.ty else { return };
+        if let ExprKind::List(items) = &arg.kind {
+            let n = items.len() as u32;
+            if n < *lo || n > *hi {
+                self.push(
+                    Diag::new(
+                        E5,
+                        "E0452",
+                        "lista fora dos limites",
+                        arg.span,
+                        format!("{n} elemento(s); `{}` admite de {lo} a {hi}", te.unlabeled().sig()),
+                    )
+                    .note(format!("exigido por {what}")),
+                );
+                return;
+            }
+            let want = self.refn_of(elem);
+            for it in items {
+                let lt = LTy::trusted((**et).clone());
+                match &it.kind {
+                    ExprKind::List(_) => self.expect_param(it, &LTy::trusted((**et).clone()), elem, what),
+                    _ => self.expect_refn(it, &lt, want, what),
+                }
+            }
+            return;
+        }
+        let known = format!("List[_, {a}..{b}]");
+        self.push(
+            Diag::new(
+                E5,
+                "E0450",
+                "refinamento não provado",
+                arg.span,
+                format!("conhecida como `{}`, exigido `{}`", at.ty.show(), te.unlabeled().sig()),
+            )
+            .note(format!("exigido por {what}; limites conhecidos {known}"))
+            .help("passe uma lista cujo tipo declarado tenha limites contidos nos exigidos, ou uma lista literal"),
+        );
     }
 
     /// Parâmetros lineares exigem `own`; `own` só se aplica a tipos lineares.
@@ -452,6 +546,30 @@ impl<'m> Ctx<'m> {
                 ));
             } else if p.value < 0.0 {
                 self.push(Diag::new(E0, "E0030", "propriedade de modelo negativa", p.key.span, "deve ser ≥ 0"));
+            }
+        }
+        for (k, v) in &d.meta {
+            if !MODEL_META.contains(&k.name.as_str()) {
+                self.push(
+                    Diag::new(
+                        E0,
+                        "E0030",
+                        format!("campo de contrato desconhecido `{}`", k.name),
+                        k.span,
+                        "desconhecido",
+                    )
+                    .help("a identidade do contrato Δ é `id`, `provider` e `version`"),
+                );
+            } else if v.trim().is_empty() {
+                self.push(Diag::new(E0, "E0030", "campo de contrato vazio", k.span, "informe um valor"));
+            }
+        }
+        if d.meta("id").is_none() {
+            if let Some((k, _)) = d.meta.iter().find(|(k, _)| k.name == "provider" || k.name == "version") {
+                self.push(
+                    Diag::new(E0, "E0030", "contrato versionado sem `id`", k.span, "versão de quê?")
+                        .help("declare o modelo servido: `id = \"openai/gpt-oss-20b\"`"),
+                );
             }
         }
     }
@@ -936,6 +1054,129 @@ impl<'m> Ctx<'m> {
                 self.pending_operand(e.span, p, "transfer");
                 LTy::trusted(Ty::Unit)
             }
+            ExprKind::List(items) => self.list_lit(items),
+            ExprKind::For { var, iter, body } => {
+                if self.in_policy {
+                    self.impure(e.span, "laço `for` (use `all x in xs => …` ou `any`)");
+                }
+                let Some((it, elem)) = self.iteration(e.span, iter, "for") else {
+                    self.scopes.push(vec![(var.name.clone(), LTy::never())]);
+                    self.block(body);
+                    self.scopes.pop();
+                    return LTy::trusted(Ty::Unit);
+                };
+                let saved = (self.pc, self.pc_span);
+                // O número de iterações é decidido pela lista: fluxo implícito, como num `match`.
+                if it.lab < self.pc {
+                    self.pc = it.lab;
+                    self.pc_span = Some(iter.span);
+                }
+                self.scopes.push(vec![(var.name.clone(), elem)]);
+                self.block(body);
+                self.scopes.pop();
+                (self.pc, self.pc_span) = saved;
+                LTy::trusted(Ty::Unit)
+            }
+            ExprKind::Quant { var, iter, body, .. } => {
+                let Some((it, elem)) = self.iteration(e.span, iter, "quantificador") else {
+                    self.scopes.push(vec![(var.name.clone(), LTy::never())]);
+                    self.expr(body);
+                    self.scopes.pop();
+                    return LTy::trusted(Ty::Bool);
+                };
+                let saved = (self.pc, self.pc_span);
+                if it.lab < self.pc {
+                    self.pc = it.lab;
+                    self.pc_span = Some(iter.span);
+                }
+                self.scopes.push(vec![(var.name.clone(), elem)]);
+                let b = self.expr(body);
+                self.scopes.pop();
+                (self.pc, self.pc_span) = saved;
+                if !assignable(&b.ty, &Ty::Bool) {
+                    self.mismatch(body.span, &Ty::Bool, &b.ty);
+                }
+                let mut out = LTy::trusted(Ty::Bool);
+                out.meet_from(&it);
+                out.meet_from(&b);
+                out
+            }
+        }
+    }
+
+    /// Lista literal: tipo dos elementos unificado, limites exatos `n..n` e, para os elementos,
+    /// a envoltória dos refinamentos (literais contam como intervalos exatos).
+    fn list_lit(&mut self, items: &[Expr]) -> LTy {
+        let mut elem = Ty::Never;
+        let mut out = LTy::trusted(Ty::Unit);
+        let mut refn: Option<Option<Refn>> = None;
+        let mut tok: Option<u64> = Some(2);
+        for x in items {
+            let t = self.expr(x);
+            match unify(&elem, &t.ty) {
+                Some(u) => elem = u,
+                None => self.push(Diag::new(
+                    E0,
+                    "E0011",
+                    "elementos de lista com tipos diferentes",
+                    x.span,
+                    format!("`{}` vs `{}`", elem.show(), t.ty.show()),
+                )),
+            }
+            let r = match &x.kind {
+                ExprKind::Int(n) => Some(Refn::Int { lo: Some(*n), hi: Some(*n) }),
+                ExprKind::Unary(UnOp::Neg, inner) => match inner.kind {
+                    ExprKind::Int(n) => Some(Refn::Int { lo: Some(-n), hi: Some(-n) }),
+                    _ => t.refn,
+                },
+                ExprKind::Str(s) => Some(Refn::Text { max: s.chars().count() as u32 }),
+                _ => t.refn,
+            };
+            refn = Some(match refn {
+                None => r,
+                Some(prev) => match (prev, r) {
+                    (Some(p), Some(q)) => p.hull(q),
+                    _ => None,
+                },
+            });
+            tok = match (tok, t.tok.or_else(|| ty_tokens(&t.ty, t.refn))) {
+                (Some(a), Some(b)) => Some(a + b + 1),
+                _ => None,
+            };
+            out.meet_from(&t);
+        }
+        let n = items.len() as u32;
+        LTy { ty: Ty::List(Box::new(elem), refn.flatten(), n, n), lab: out.lab, tok, origin: out.origin, refn: None }
+    }
+
+    /// Operando de `for`/`all`/`any`: precisa ser uma lista delimitada. Registra os limites
+    /// de iterações (para o E6) e devolve o tipo do elemento, com a integridade da lista.
+    fn iteration(&mut self, span: Span, iter: &Expr, what: &str) -> Option<(LTy, LTy)> {
+        let it = self.expr(iter);
+        match &it.ty {
+            Ty::List(elem, er, lo, hi) => {
+                self.facts.loop_bounds.insert(span, (*lo, *hi));
+                self.facts.loops += 1;
+                let mut el = LTy::declared((**elem).clone(), it.lab, *er, it.origin.clone());
+                if el.tok.is_none() {
+                    el.tok = ty_tokens(elem, *er).filter(|_| matches!(**elem, Ty::List(..)));
+                }
+                Some((it.clone(), el))
+            }
+            Ty::Never => None,
+            other => {
+                self.push(
+                    Diag::new(
+                        E0,
+                        "E0008",
+                        format!("`{what}` exige uma lista delimitada"),
+                        iter.span,
+                        format!("encontrado `{}`", other.show()),
+                    )
+                    .help("itere uma `List[T, a..b]`: o teto `b` limita o custo do laço no E6"),
+                );
+                None
+            }
         }
     }
 
@@ -1160,6 +1401,34 @@ impl<'m> Ctx<'m> {
                 };
                 return LTy { ty: Ty::Text, lab: t.lab, tok: Some(n), origin: t.origin, refn: None };
             }
+            "len" => {
+                if args.len() != 1 {
+                    self.push(Diag::new(E0, "E0007", "`len(lista)` recebe 1 argumento", e.span, "aridade"));
+                    return LTy::never();
+                }
+                let t = self.expr(&args[0]);
+                return match &t.ty {
+                    // O tamanho herda os limites do tipo: `len(xs)` é um `Int[a..b]` provado.
+                    Ty::List(_, _, lo, hi) => LTy {
+                        ty: Ty::Int,
+                        lab: t.lab,
+                        tok: None,
+                        origin: t.origin.clone(),
+                        refn: Some(Refn::Int { lo: Some(*lo as i64), hi: Some(*hi as i64) }),
+                    },
+                    Ty::Never => LTy::never(),
+                    other => {
+                        self.push(Diag::new(
+                            E0,
+                            "E0008",
+                            "`len` exige uma lista",
+                            args[0].span,
+                            format!("encontrado `{}`", other.show()),
+                        ));
+                        LTy::never()
+                    }
+                };
+            }
             "sample" => {
                 if args.len() != 1 {
                     self.push(Diag::new(E0, "E0007", "`sample(rascunho)` recebe 1 argumento", e.span, "aridade"));
@@ -1210,8 +1479,7 @@ impl<'m> Ctx<'m> {
                 if !assignable(&at.ty, &pt) {
                     self.mismatch(a.span, &pt, &at.ty);
                 } else {
-                    let want = self.refn_of(&prm.ty);
-                    self.expect_refn(a, &at, want, &format!("{}({})", callee.name, prm.name.name));
+                    self.expect_param(a, &at, &prm.ty, &format!("{}({})", callee.name, prm.name.name));
                 }
                 out.meet_from(&at);
             }
@@ -1343,8 +1611,7 @@ impl<'m> Ctx<'m> {
                 }
                 continue;
             }
-            let want = self.refn_of(&p.ty);
-            self.expect_refn(a, &at, want, &format!("{}({})", callee.name, p.name.name));
+            self.expect_param(a, &at, &p.ty, &format!("{}({})", callee.name, p.name.name));
             if let Some(req) = req {
                 self.facts.integrity_checks += 1;
                 let eff = at.lab.meet(self.pc);
@@ -1424,8 +1691,7 @@ impl<'m> Ctx<'m> {
                     if !assignable(&at.ty, &ft) {
                         self.mismatch(fe.span, &ft, &at.ty);
                     } else {
-                        let want = self.refn_of(&fd.ty);
-                        self.expect_refn(fe, &at, want, &format!("o campo `{}.{}`", name.name, fname.name));
+                        self.expect_param(fe, &at, &fd.ty, &format!("o campo `{}.{}`", name.name, fname.name));
                     }
                     out.meet_from(&at);
                 }
@@ -1660,11 +1926,11 @@ impl<'m> Ctx<'m> {
             return LTy::never();
         };
         let (oty, _) = self.resolve(out);
-        if !matches!(oty, Ty::Adt(_) | Ty::Text | Ty::Never) {
+        if !matches!(oty, Ty::Adt(_) | Ty::Text | Ty::List(..) | Ty::Never) {
             self.push(Diag::new(
                 E0,
                 "E0021",
-                "a saída de `infer` deve ser um tipo algébrico ou `Text`",
+                "a saída de `infer` deve ser um tipo algébrico, `Text` ou uma lista delimitada",
                 out.span(),
                 format!("encontrado `{}`", oty.show()),
             ));
@@ -1707,6 +1973,19 @@ impl<'m> Ctx<'m> {
                 },
                 Ty::Int | Ty::Bool => 4,
                 Ty::Adt(_) => 64,
+                Ty::List(..) => {
+                    match t.tok.or_else(|| ty_tokens(&t.ty, t.refn)) {
+                        Some(n) => n,
+                        None => {
+                            bounded = false;
+                            self.push(
+                            Diag::new(E6, "B0110", "contagem de tokens ilimitada no prompt", v.span, "lista de `Text` sem limite superior")
+                                .help("use elementos `Text[..n]`: o teto da lista vezes o teto do elemento limita o prompt"),
+                        );
+                            0
+                        }
+                    }
+                }
                 Ty::Never => 0,
                 other => {
                     self.push(Diag::new(
@@ -1734,28 +2013,73 @@ impl<'m> Ctx<'m> {
         // Modelos de raciocínio gastam tokens antes do conteúdo: o contrato declara quantos.
         let tok_reasoning = p("reasoning") as u64;
         let tok_out = content_out + tok_reasoning;
+        // Contrato Δ estendido: o provedor acrescenta template de chat e esquema de decodificação
+        // ao prompt. O overhead declarado entra na janela, no orçamento e na reserva do ARX.
+        let overhead = p("overhead") as u64;
+        let prompt = tok_in;
+        tok_in += overhead;
+        if md.prop("overhead").is_some() {
+            if let Ok(shape) = ath_grammar::shape_of(self.m, out) {
+                let schema = ath_grammar::to_json_schema_with(&shape, ath_grammar::Dialect::Core).to_string();
+                let need = est_tokens(&schema);
+                if overhead < need {
+                    self.push(
+                        Diag::new(
+                            E6,
+                            "B0302",
+                            "overhead do contrato não cobre o esquema de decodificação",
+                            out.span(),
+                            format!(
+                                "esquema de `{}` ≈ {}; overhead declarado {}",
+                                out.display(),
+                                fmt::tok(need),
+                                fmt::tok(overhead)
+                            ),
+                        )
+                        .note(format!("o provedor injeta o esquema no prompt de cada amostra de `{}`", model.name))
+                        .help(format!(
+                            "eleve `overhead` no contrato de `{}` para ≥ {} mais o template de chat",
+                            model.name,
+                            fmt::int(need)
+                        )),
+                    );
+                }
+            }
+        }
         let ctx = p("ctx") as u64;
         if bounded && tok_in + tok_out > ctx {
-            self.push(Diag::new(
-                E6,
-                "B0301",
-                "janela de contexto excedida",
-                e.span,
-                format!("{} + {} > {}", fmt::tok(tok_in), fmt::tok(tok_out), fmt::tok(ctx)),
-            ));
+            let label = if overhead > 0 {
+                format!(
+                    "{} + {} de overhead + {} > {}",
+                    fmt::tok(prompt),
+                    fmt::tok(overhead),
+                    fmt::tok(tok_out),
+                    fmt::tok(ctx)
+                )
+            } else {
+                format!("{} + {} > {}", fmt::tok(tok_in), fmt::tok(tok_out), fmt::tok(ctx))
+            };
+            self.push(Diag::new(E6, "B0301", "janela de contexto excedida", e.span, label));
         }
         let usd = tok_in as f64 * p("price_in") / 1e6 + tok_out as f64 * p("price_out") / 1e6;
         let wall = p("ttft") + tok_out as f64 * p("per_tok");
         let out_ty = match out.unlabeled() {
-            TypeExpr::Refined { base, lo, hi, .. } => {
-                let b = |x: &Option<i64>| x.map(|n| n.to_string()).unwrap_or_default();
-                format!("{}[{}..{}]", base.name, b(lo), b(hi))
-            }
+            r @ (TypeExpr::Refined { .. } | TypeExpr::List { .. }) => r.sig(),
             other => other.base_name().to_string(),
         };
         self.facts.infer_costs.insert(
             e.span,
-            InferCost { model: model.name.clone(), out_ty, tok_in, tok_out, tok_reasoning, out_by_type, usd, wall },
+            InferCost {
+                model: model.name.clone(),
+                out_ty,
+                tok_in,
+                tok_out,
+                tok_reasoning,
+                out_by_type,
+                overhead,
+                usd,
+                wall,
+            },
         );
         let refn = self.refn_of(out);
         LTy { ty: Ty::Draft(Box::new(oty), e.span), lab: acc.lab, tok: None, origin: acc.origin, refn }
@@ -1803,6 +2127,26 @@ impl<'m> Ctx<'m> {
                     ));
                 } else {
                     let (pt, _) = self.resolve(&p.params[0].ty);
+                    if assignable(&inner, &pt) && !self.ty_within(&inner, &p.params[0].ty) {
+                        // A política decide sobre o valor decodificado: o tipo do rascunho (com os
+                        // limites das listas) precisa estar contido no domínio dela.
+                        self.facts.refinement_checks += 1;
+                        self.push(
+                            Diag::new(
+                                E5,
+                                "E0450",
+                                "refinamento não provado",
+                                policy.span,
+                                format!(
+                                    "`{}` decide sobre `{}`, o rascunho produz `{}`",
+                                    policy.name,
+                                    p.params[0].ty.unlabeled().sig(),
+                                    inner.show()
+                                ),
+                            )
+                            .help("alinhe os limites: o domínio da política precisa conter a saída do `infer`"),
+                        );
+                    }
                     if !assignable(&inner, &pt) {
                         self.push(Diag::new(
                             E0,

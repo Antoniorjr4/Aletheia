@@ -126,6 +126,13 @@ fn rejects_each_error_example_in_the_expected_stratum() {
         ("e0451_refinement_literal.ath", "E0451", Stratum::E5),
         ("b0110_unbounded_prompt.ath", "B0110", Stratum::E6),
         ("b0207_wall_budget.ath", "B0207", Stratum::E6),
+        ("e0452_list_bounds.ath", "E0452", Stratum::E5),
+        ("e0450_policy_domain.ath", "E0450", Stratum::E5),
+        ("e1104_key_in_loop.ath", "E1104", Stratum::E1),
+        ("e0412_untrusted_iteration.ath", "E0412", Stratum::E3),
+        ("b0302_overhead_schema.ath", "B0302", Stratum::E6),
+        ("b0207_loop_budget.ath", "B0207", Stratum::E6),
+        ("e0030_contract_without_id.ath", "E0030", Stratum::E0),
     ];
     let on_disk = std::fs::read_dir(examples().join("errors"))
         .unwrap()
@@ -152,8 +159,11 @@ fn implicit_flow_points_at_the_untrusted_condition() {
 
 #[test]
 fn injection_diagnostic_traces_the_origin() {
+    // o prompt cita o evento (`alerta = quote(service)`) e os logs, ambos Untrusted: a cadeia
+    // de origem parte do primeiro deles e atravessa o `infer` e a amostra crua
     let d = &compile(&read("errors/e0412_injection.ath")).err().unwrap()[0];
-    assert!(d.notes[0].contains("logs(…) devolve ^ Untrusted → infer planner → sample(…)"), "{:?}", d.notes);
+    assert!(d.notes[0].starts_with("origem: evento `alert(service)` ^ Untrusted"), "{:?}", d.notes);
+    assert!(d.notes[0].ends_with("→ infer planner → sample(…)"), "{:?}", d.notes);
 }
 
 #[test]
@@ -671,4 +681,77 @@ fn grammar_command_prints_schema_gbnf_and_mask_trace() {
     assert!(s.contains("action-scale ::="), "{s}");
     assert!(s.contains("teto da codificação: 174 bytes"), "{s}");
     assert!(s.contains("o tipo só admitia R | S"), "{s}");
+}
+
+// ------------------------------------------------------------------ deriva do contrato Δ
+
+fn rollout_reply(model: &str, prompt_tokens: u64) -> String {
+    json!({
+        "id": "chatcmpl-deriva",
+        "model": model,
+        "choices": [{
+            "message": { "role": "assistant", "content": r#"{"value":[{"kind":"Restart","deploy":"api"}]}"# },
+            "finish_reason": "stop",
+        }],
+        "usage": { "prompt_tokens": prompt_tokens, "completion_tokens": 40, "completion_tokens_details": { "reasoning_tokens": 14 } },
+    })
+    .to_string()
+}
+
+fn run_rollout_against(reply: String) -> (Result<Value, arx::RtError>, Vec<serde_json::Value>) {
+    let c = compile(&read("rollout.ath")).unwrap();
+    let (url, server) = mock_openai(vec![(200, "", reply)]);
+    let provider = OpenAiCompat::new(&url, "openai/gpt-oss-20b", None, Constraint::JsonSchema);
+    let mut arx = Arx::new(&c.module, Box::new(world()), Box::new(provider));
+    arx.contracts = athc::contract_hashes(&c);
+    let out = arx.run("Rollout", "alert", api());
+    server.join().unwrap();
+    (out, arx.journal.entries.clone())
+}
+
+#[test]
+fn contract_drift_served_model_is_r0704() {
+    let (out, j) = run_rollout_against(rollout_reply("openai/gpt-oss-120b", 700));
+    let e = out.unwrap_err();
+    assert_eq!(e.code, "R0704");
+    assert!(
+        e.msg.contains("serviu `openai/gpt-oss-120b`; o contrato de `planner` é `groq:openai/gpt-oss-20b@2026-11-09`"),
+        "{}",
+        e.msg
+    );
+    let b = j.iter().find(|x| x["kind"] == "contract_breach").unwrap();
+    assert_eq!(
+        (b["detail"]["code"].as_str(), b["detail"]["served_model"].as_str()),
+        (Some("R0704"), Some("openai/gpt-oss-120b"))
+    );
+    assert_eq!(b["detail"]["contract"]["version"], "2026-11-09");
+    assert!(
+        !j.iter().any(|x| x["kind"] == "tool" && x["detail"]["tool"] == "restart"),
+        "nenhum efeito depois da deriva"
+    );
+}
+
+#[test]
+fn contract_drift_input_above_prompt_plus_overhead_is_r0705() {
+    let (out, j) = run_rollout_against(rollout_reply("openai/gpt-oss-20b", 99_999));
+    let e = out.unwrap_err();
+    assert_eq!(e.code, "R0705");
+    let b = j.iter().find(|x| x["kind"] == "contract_breach").unwrap();
+    let bound = b["detail"]["tok_in_contract"].as_u64().unwrap();
+    assert!(e.msg.contains(&format!("recebeu 99999 tokens de entrada; o contrato admite {bound}")), "{}", e.msg);
+    assert!(e.msg.contains("overhead 768"), "{}", e.msg);
+    // a amostra que violou o contrato foi cobrada
+    let end_or_abort = j.last().unwrap();
+    assert_eq!(end_or_abort["kind"], "abort");
+}
+
+#[test]
+fn contract_within_bounds_runs_and_records_identity() {
+    let (out, j) = run_rollout_against(rollout_reply("openai/gpt-oss-20b", 700));
+    assert_eq!(out.unwrap(), Value::Text("concluído".into()));
+    let inf = j.iter().find(|x| x["kind"] == "infer").unwrap();
+    assert_eq!(inf["detail"]["served_model"], "openai/gpt-oss-20b");
+    assert_eq!(inf["detail"]["tok_source"], "server");
+    assert_eq!(inf["detail"]["tok_in"], 700);
+    assert!(inf["detail"]["tok_in_contract"].as_u64().unwrap() >= 700);
 }

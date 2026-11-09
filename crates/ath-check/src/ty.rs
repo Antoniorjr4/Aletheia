@@ -16,6 +16,10 @@ pub enum Ty {
     Pending,
     /// Rascunho produzido por `infer`; o `Span` identifica o nó de inferência de origem.
     Draft(Box<Ty>, Span),
+    /// Lista delimitada: tipo e refinamento dos elementos, de `lo` a `hi` elementos.
+    /// Os limites viajam no tipo (inclusive em listas aninhadas): deles o E6 tira o teto
+    /// de iterações de cada laço e o E5 prova a contenção.
+    List(Box<Ty>, Option<Refn>, u32, u32),
     /// Divergência (`return`) ou erro já relatado; unifica com qualquer tipo.
     Never,
 }
@@ -37,6 +41,10 @@ impl Ty {
             Ty::IdemKey => "IdemKey".into(),
             Ty::Pending => "Pending[k]".into(),
             Ty::Draft(t, _) => format!("Draft[{}]", t.show()),
+            Ty::List(t, r, lo, hi) => {
+                let elem = r.map(Refn::show).unwrap_or_else(|| t.show());
+                format!("List[{elem}, {lo}..{hi}]")
+            }
             Ty::Never => "!".into(),
         }
     }
@@ -54,6 +62,7 @@ pub fn same(a: &Ty, b: &Ty) -> bool {
         (Ty::Adt(x), Ty::Adt(y)) => x == y,
         (Ty::Cap(x), Ty::Cap(y)) => x == y,
         (Ty::Draft(x, _), Ty::Draft(y, _)) => same(x, y),
+        (Ty::List(x, rx, a, b), Ty::List(y, ry, c, d)) => same(x, y) && rx == ry && a == c && b == d,
         _ => false,
     }
 }
@@ -64,6 +73,8 @@ pub fn assignable(arg: &Ty, param: &Ty) -> bool {
     match (arg, param) {
         (Ty::Never, _) | (_, Ty::Never) => true,
         (Ty::Cap(have), Ty::Cap(need)) => need.is_subset(have),
+        // Estruturalmente: limites e refinamentos dos elementos são obrigações do E5.
+        (Ty::List(x, ..), Ty::List(y, ..)) => assignable(x, y),
         _ => same(arg, param),
     }
 }
@@ -71,6 +82,15 @@ pub fn assignable(arg: &Ty, param: &Ty) -> bool {
 pub fn unify(a: &Ty, b: &Ty) -> Option<Ty> {
     match (a, b) {
         (Ty::Never, t) | (t, Ty::Never) => Some(t.clone()),
+        // Envoltória: o menor intervalo de tamanhos que contém os dois ramos.
+        (Ty::List(x, rx, a, b), Ty::List(y, ry, c, d)) => {
+            let elem = unify(x, y)?;
+            let refn = match (rx, ry) {
+                (Some(p), Some(q)) => p.hull(*q),
+                _ => None,
+            };
+            Some(Ty::List(Box::new(elem), refn, *a.min(c), *b.max(d)))
+        }
         _ if same(a, b) => Some(a.clone()),
         _ => None,
     }
@@ -95,6 +115,25 @@ impl Refn {
         }
     }
 
+    /// Menor refinamento que contém os dois (`None` se de espécies diferentes ou ilimitado).
+    pub fn hull(self, other: Refn) -> Option<Refn> {
+        match (self, other) {
+            (Refn::Int { lo: a, hi: b }, Refn::Int { lo: c, hi: d }) => {
+                let lo = match (a, c) {
+                    (Some(x), Some(y)) => Some(x.min(y)),
+                    _ => None,
+                };
+                let hi = match (b, d) {
+                    (Some(x), Some(y)) => Some(x.max(y)),
+                    _ => None,
+                };
+                Some(Refn::Int { lo, hi })
+            }
+            (Refn::Text { max: a }, Refn::Text { max: b }) => Some(Refn::Text { max: a.max(b) }),
+            _ => None,
+        }
+    }
+
     pub fn admits_int(self, n: i64) -> bool {
         match self {
             Refn::Int { lo, hi } => lo.is_none_or(|l| n >= l) && hi.is_none_or(|h| n <= h),
@@ -115,6 +154,22 @@ impl Refn {
             Refn::Int { lo, hi } => format!("Int[{}..{}]", b(lo), b(hi)),
             Refn::Text { max } => format!("Text[..{max}]"),
         }
+    }
+}
+
+/// Teto de tokens que um valor do tipo ocupa num prompt (estimativa do Marco Zero:
+/// 4 por escalar, 64 por valor algébrico, `⌈n/4⌉` por `Text[..n]`). `None` = ilimitado.
+pub fn ty_tokens(ty: &Ty, refn: Option<Refn>) -> Option<u64> {
+    match ty {
+        Ty::Int | Ty::Bool => Some(4),
+        Ty::Adt(_) => Some(64),
+        Ty::Text => match refn {
+            Some(Refn::Text { max }) => Some((max as u64).div_ceil(4)),
+            _ => None,
+        },
+        Ty::List(elem, er, _, hi) => Some(2 + *hi as u64 * (ty_tokens(elem, *er)? + 1)),
+        Ty::Never => Some(0),
+        _ => None,
     }
 }
 

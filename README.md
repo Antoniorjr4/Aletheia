@@ -3,35 +3,39 @@
 [![CI](https://github.com/Antoniorjr4/Aletheia/actions/workflows/ci.yml/badge.svg)](https://github.com/Antoniorjr4/Aletheia/actions/workflows/ci.yml)
 
 Implementação executável de Aletheia: o subconjunto **Aletheia Core 0**, com o
-compilador `athc` e o runtime `ARX` em Rust. O objetivo é provar uma coisa:
+compilador `athc`, o runtime `ARX` em Rust e um segundo backend, Python sobre o
+`aletheia_runtime`, verificado contra o ARX por testes diferenciais. O objetivo é provar uma coisa:
 integridade, efeitos, capacidades, linearidade, refinamentos, orçamento e transações
 sobre o mundo podem ser verificados **juntos, antes de rodar**, num programa de agente
 real. E o tipo da saída de um modelo pode ser, ao mesmo tempo, a gramática que o modelo
 é obrigado a seguir.
 
 ```text
-$ athc check examples/remediate.ath
-✓ E0 estrutura       11 definições, todas resolvidas
-✓ E1 multiplicidade  5 chave(s) IdemKey e as obrigações Pending consumidas exatamente uma vez
+$ athc check examples/rollout.ath
+✓ E0 estrutura       12 definições, todas resolvidas
+✓ E1 multiplicidade  4 chave(s) IdemKey e as obrigações Pending consumidas exatamente uma vez
 ✓ E2 efeitos         {Cluster.Read, Cluster.Write, CompensationFailed, Infer, Page, TimeoutUnknown} cobertos por capacidades e linhas de efeito
 ✓ E2 sagas           1 saga(s); compensações: scale ↩ unscale; irrevogáveis só via commit, fora de atomic
                      TimeoutUnknown tratado; reconciliação fora do contrato Δ: ≤ 9,0 s por chave
 ✓ E3 integridade     4 exigência(s) de integridade satisfeitas, inclusive sob pc
 ✓ E5 refinamentos    5 obrigação(ões) provadas por literal, campo refinado ou saída tipada
-                     infer planner -> Action: entrada ≤ 2.053 tok · saída ≤ 686 tok (174 tok do tipo `Action` + 512 tok de raciocínio)
-✓ E6 orçamento       Remediator.alert: pior caminho 8.217 tok · US$ 0,0022 · 53,6 s
-                     ≤ [20.000 tok · US$ 0,50 · 90,0 s]
-                     caminho: logs 2,0 → infer planner ×3 26,6 → scale 1,0 → healthy 1,0 → await 20,0 → unscale↩ 1,0 → restored 1,0 → page 1,0
-✓ Codex              11 objetos BLAKE3, raiz #43947b1f669f
+                     infer planner -> List[Action, 1..3]: entrada ≤ 2.319 tok (1.551 de prompt + 768 de overhead) · saída ≤ 1.018 tok (506 tok do tipo `List[Action, 1..3]` + 512 tok de raciocínio)
+✓ Δ contrato         `planner` = groq:openai/gpt-oss-20b@2026-11-09 #7464f0bf2e24 · overhead 768 tok
+✓ E6 orçamento       Rollout.alert: pior caminho 6.674 tok · US$ 0,0010 · 74,4 s
+                     ≤ [20.000 tok · US$ 0,50 · 120,0 s]
+                     caminho: logs 2,0 → infer planner ×2 24,4 → for a ×3 ⟨scale 1,0 → healthy 1,0 → await 10,0 → unscale↩ 1,0 → restored 1,0 → for ch ×2 ⟨page 1,0⟩ 2,0⟩ 48,0
+                     3 laço(s)/quantificador(es) delimitado(s): β(laço) ⪯ teto · β(corpo), aninhados por multiplicação
+✓ Codex              12 objetos BLAKE3, raiz #9ecbfccad097
 ```
 
 ## Começar
 
-Requer Rust ≥ 1.87 (e Python ≥ 3.10 para o benchmark).
+Requer Rust ≥ 1.87 e Python ≥ 3.10 (benchmark, runtime Python e testes diferenciais).
 
 ```sh
 cargo build --release
-cargo test                                    # 50 testes: unidade, propriedade e ponta a ponta
+cargo test                                    # 76 testes, inclusive os diferenciais ARX × Python
+(cd runtimes/python && PYTHONPATH=. python3 -m unittest discover -s tests)   # runtime Python
 
 # verificar
 ./target/release/athc check examples/remediate.ath
@@ -39,6 +43,19 @@ cargo test                                    # 50 testes: unidade, propriedade 
 
 # executar no ARX (mundo simulado e modelo roteirizado em examples/fixtures)
 ./target/release/athc run examples/remediate.ath --arg '"api"'
+
+# listas delimitadas: o modelo propõe um plano `List[Action, 1..3]`, laços aninhados executam
+./target/release/athc run examples/rollout.ath --arg '"api"' --provider scripted \
+    --models examples/fixtures/models-rollout.json
+
+# o mesmo programa no backend Python: o journal sai idêntico, byte a byte
+./target/release/athc emit examples/rollout.ath --target py --out rollout.py
+PYTHONPATH=runtimes/python python3 -m aletheia_runtime run rollout.py --provider scripted \
+    --world examples/fixtures/world.json --models examples/fixtures/models-rollout.json \
+    --arg-json '"api"' --journal rollout-py.jsonl
+
+# aderência ao contrato Δ medida em journals reais, e o Δ recalibrado pela cauda observada
+./target/release/athc contract-report .arx/journal.jsonl
 
 # sagas e reconciliação: mundos com falhas injetadas
 ./target/release/athc run examples/remediate.ath --arg '"api"' --world examples/fixtures/world-saga-compensa.json
@@ -180,6 +197,107 @@ descarta. Como um 400 não traz `usage`, os tokens dessa amostra ficam como `est
 O workflow [`Fogo real (Groq)`](.github/workflows/live.yml) roda o exemplo e a M1 contra a
 Groq com a chave guardada no segredo de repositório `GROQ_API_KEY`.
 
+## Listas delimitadas e laços
+
+`List[T, a..b]` é uma lista de `a` a `b` elementos. Toda lista tem teto: é ele que limita o
+custo de qualquer iteração. Do tipo saem a gramática (`minItems`/`maxItems` no JSON Schema,
+repetição limitada na GBNF, contagem no autômato de prefixo), o teto de bytes da saída e as
+obrigações dos estratos:
+
+```text
+type Action = | Restart { deploy: Text[..32] } | Scale { deploy: Text[..32], to: Int[2..64] }
+
+policy SafePlan(p: List[Action, 1..3]) -> Bool = all a in p => SafeAction(a)
+
+let draft = infer planner -> List[Action, 1..3] { … }
+let plan  = refine draft by SafePlan retry 2 else { … }
+for a in plan {
+  …                                         -- etapa: commit restart, ou saga com scale
+  for ch in ["sre", "dev"] { commit page(oncall, ch ++ " ← " ++ r, keys.mint()) }
+}
+
+list-action-1-3 ::= "[" action ("," action){0,2} "]"
+```
+
+| Estrato | O que verifica | Erro |
+| --- | --- | --- |
+| E0 | `for`/`all`/`any` só sobre listas; elementos de um mesmo tipo; nada de capacidades, chaves ou obrigações dentro de listas | E0008 / E0011 / E0004 |
+| E1 | o corpo de um laço roda de `a` a `b` vezes: um linear de fora consumido num laço com teto ≥ 2 é consumido mais de uma vez; com teto exato 1, uma vez | E1104 / E1105 |
+| E3 | o número de iterações é decidido pela lista: iterar dado Untrusted rebaixa o `pc`, como um `match` | E0412 |
+| E5 | literais dentro dos limites; limites conhecidos contidos nos exigidos (em qualquer nível de aninhamento) e refinamentos dos elementos; `len(xs)` é um `Int[a..b]` provado; o domínio da política contém o rascunho | E0452 / E0451 / E0450 |
+| E6 | β(laço) ⪯ b · β(corpo); laços aninhados compõem por multiplicação; quem sai por `return` paga (b − 1) iterações completas mais a que sai; lista vazia custa zero | B0201 / B0207 |
+
+O caminho de pior caso mostra a multiplicação: `for a ×3 ⟨… → for ch ×2 ⟨page 1,0⟩ 2,0⟩ 48,0`.
+Os quantificadores `all`/`any` são puros e totais (podem ir em políticas) e param no primeiro
+contraexemplo.
+
+## Contrato Δ versionado
+
+O modelo é um valor com contrato: preços, janela, latência e, agora, identidade e overhead.
+
+```text
+model planner {
+  id = "openai/gpt-oss-20b"   provider = "groq"   version = "2026-11-09"
+  overhead  = 768             -- template de chat + esquema de decodificação, por amostra
+  price_in = 0.075  price_out = 0.30  ctx = 131072  max_out = 600  reasoning = 512
+  ttft = 2.0  per_tok = 0.01
+}
+```
+
+- **Identidade:** o contrato inteiro entra no hash do Codex, então mudar a versão, o provedor
+  ou o overhead é mudar de contrato. O hash e a identidade vão para cada entrada `infer` do
+  journal.
+- **Overhead no E6:** a entrada por amostra é prompt + overhead, na janela (`B0301`), no
+  orçamento e na reserva do ARX. Se o overhead declarado não cobre o esquema que o provedor
+  injeta no prompt, o erro é `B0302`.
+- **Deriva em runtime:** o ARX levanta `ContractBreach` e grava `contract_breach` no journal, com
+  o código, o `request_id` e a saída, quando:
+  - o servidor serve outro modelo (`R0704`);
+  - gera mais tokens que o teto (`R0702`);
+  - demora mais que o contrato (`R0703`);
+  - cobra mais entrada que prompt + overhead (`R0705`).
+  O consumo dessa amostra é liquidado antes do veredito.
+- **Calibração:** `athc contract-report` lê journals reais e mostra:
+  - a latência medida contra o contrato (p50, p95, máximo, maior razão);
+  - o overhead observado contra o declarado;
+  - o raciocínio e as violações.
+  Com isso, sugere o Δ recalibrado pela cauda observada.
+
+## Backend Python
+
+`athc emit --target py` emite o programa verificado para Python, e o resultado roda sobre o
+[`aletheia_runtime`](runtimes/python). O emissor não traduz sintaxe: ele produz uma **segunda
+realização da semântica do ARX**.
+
+- **Ordem de avaliação:** o código sai em forma normal administrativa, então toda subexpressão
+  com efeito vira uma instrução, na ordem de avaliação do ARX.
+- **Nomes únicos:** cada vínculo ganha um nome próprio, e o sombreamento de Aletheia nunca vira
+  reatribuição em Python.
+- **`return`:** vira uma exceção capturada na fronteira do handler.
+- **Sagas, `await` e sondas:** viram funções entregues ao coordenador transacional do runtime.
+- **Metadados:** formas de saída, tetos de bytes e hashes de contrato são calculados em Rust e
+  emitidos como dados.
+
+O runtime usa só a biblioteca padrão e tem as mesmas peças do ARX:
+
+- BLAKE3 em Python puro;
+- serialização idêntica à do `serde_json` (chaves ordenadas, floats na grafia do `ryu`);
+- `f64::round` do Rust;
+- capacidades conferidas em runtime e chaves lineares;
+- orçamento por reserva;
+- o coordenador de sagas e a reconciliação;
+- o mundo simulado e os provedores roteirizado e mascarado, com o autômato de prefixo portado.
+
+Os [testes diferenciais](crates/athc/tests/differential.rs) executam o mesmo programa, no mesmo
+mundo e com o mesmo roteiro, nos dois backends. Exigem **journals idênticos byte a byte**, logo
+a mesma cabeça de hash, além do mesmo resultado ou erro, do mesmo mundo final e do mesmo
+orçamento. São 29 casos:
+
+- os 5 mundos de `remediate.ath`, com falhas injetadas, nos dois provedores;
+- 3 caminhos de erro (`R0701`, `R0003`, saídas que não são JSON);
+- 8 planos de `rollout.ath`, inclusive sagas e reconciliação dentro de laços;
+- os 7 cenários da M1.
+
 ## Métrica M1
 
 `bench/m1` roda sete cenários no estilo do AgentDojo, com o ataque "important_instructions",
@@ -219,14 +337,16 @@ abortaram com `ContractBreach`. Método, cenários e limites estão em
 ```text
 crates/
   ath-syntax/    lexer, AST com spans, parser
-  ath-grammar/   tipo → forma → JSON Schema (full/core), GBNF, autômato de prefixo, máscara
+  ath-grammar/   tipo → forma → JSON Schema (full/core), GBNF, autômato de prefixo, máscara (inclusive listas)
   ath-check/     verificador estratificado E0 · E1 · E2 · E3 · E5 · E6, diagnósticos
   ath-codex/     forma canônica, DAG de Merkle, BLAKE3, alfa-normalização
   arx/           interpretador, sagas, reconciliação, provedores, orçamento por reserva, journal
-  athc/          CLI, renderização de diagnósticos, testes ponta a ponta
-examples/        agente de remediação, mundos com falhas, 17 variantes com erro e o gerador delas
+  ath-emit/      emissor Python (ANF, nomes únicos, metadados calculados em Rust)
+  athc/          CLI, renderização de diagnósticos, testes ponta a ponta e diferenciais
+runtimes/python/ aletheia_runtime: a semântica do ARX em Python (só biblioteca padrão) e seus testes
+examples/        remediação, plano em lista (rollout), mundos com falhas, 24 variantes com erro e o gerador
 bench/m1/        harness da métrica M1: cenários, linha de base Python, agente, orquestrador
-.github/         CI (fmt, clippy -D warnings, testes, M1) e o workflow de fogo real
+.github/         CI (fmt, clippy -D warnings, testes, diferenciais, runtime Python, M1) e o fogo real
 ```
 
 ## O que está implementado
@@ -237,14 +357,17 @@ bench/m1/        harness da métrica M1: cenários, linha de base Python, agente
 | 2.2 Linearidade (E1) | `own IdemKey` e `Pending[k]` consumidos exatamente uma vez em todos os caminhos, inclusive no `else` de `reconcile`; no runtime, a checagem T9 do journal |
 | 2.3 `refine … by policy retry n` | políticas puras; só o que a política aceita ganha `Endorsed`; saída fora do tipo é descartada |
 | 2.5 Modelos e inferência | `model` como valor com contrato Δ (inclusive raciocínio); provedor real configurado pelo ambiente, testado contra a Groq |
+| 2.4 Listas delimitadas | `List[T, a..b]` no tipo, na gramática (`minItems`/`maxItems`, repetição limitada na GBNF, autômato de prefixo) e nos estratos; `for`, `all`/`any`, `len`; laços aninhados |
 | 2.5 Compilador de gramática (`ath-grammar`) | tipo → forma → JSON Schema estrito em dois dialetos (`core`: intervalos de até 256 valores viram `enum` exato; `full`: `minimum`/`maximum`/`maxLength`), GBNF, autômato de prefixo viável, máscara de tokens e teto de bytes que entra no E6 |
 | 2.6 Capacidades e integridade | capacidades só vêm dos parâmetros do agente, com atenuação; Untrusted ⊑ Endorsed ⊑ Trusted; `pc` para fluxos implícitos; `quote` obrigatório no prompt; pós-condições ⊒ Endorsed |
-| 2.7 Orçamento | E6 estático no pior caminho sob Δ, inclusive o de falha da saga; reserva antes, liquidação depois; `ContractBreach` por latência ou tokens; obrigações sem reserva |
+| 2.5 Contrato Δ versionado | `id`/`provider`/`version` e `overhead` no `model`; o contrato inteiro no hash do Codex e no journal; overhead na janela, no orçamento e na reserva; cobertura do esquema (B0302); deriva em runtime (R0704, R0705); `athc contract-report` |
+| 2.7 Orçamento | E6 estático no pior caminho sob Δ, inclusive o de falha da saga; β(laço) ⪯ teto · β(corpo), aninhado por multiplicação; reserva antes, liquidação depois (inclusive da amostra que viola o contrato); `ContractBreach` por latência, tokens, modelo ou entrada; obrigações sem reserva |
 | 2.9–2.10 Estratos | E0, E1, E2, E3, E5 (refinamentos decidíveis) e E6, relatando só o primeiro estrato que falha |
 | 3.4 Sagas | `atomic … recover`, `await … within`, `compensable by`, `on failure`, `CompensationFailed` obrigatório, irrevogáveis só fora da saga |
 | 3.5 Efeitos remotos | `own IdemKey`, `Pending[k]` linear, `TimeoutUnknown`, `reconcile … fuel … else`, `transfer`, provedores `idempotent`/`queryable`/`opaque` |
 | 3.6 Execução durável | journal encadeado por BLAKE3; `verify-journal` detecta adulteração e chaves em aberto (T9) |
 | 5.4 Métrica M1 | harness reprodutível no CI (simulado) e contra modelo real (workflow) |
+| F1 Backend Python | `athc emit --target py` + `aletheia_runtime`; testes diferenciais traço a traço contra o ARX no CI |
 
 ### Erros que o compilador já pega
 
@@ -260,44 +383,52 @@ bench/m1/        harness da métrica M1: cenários, linha de base Python, agente
 | E0601 / E0602 / E0603 | E2 | `await` fora de saga; `return` dentro de saga; `reconcile`/`transfer` fora do tratador |
 | E0420 | E2 | política impura |
 | T0301 / T0302 / T0303 / T0305 | E2 | irrevogável sem `commit`; irrevogável na saga; `commit` em revogável; provedor opaco na saga |
-| E0451 / E0450 | E5 | literal fora do refinamento; refinamento sem prova |
+| E0451 / E0450 | E5 | literal fora do refinamento; refinamento sem prova (inclusive limites de lista e domínio da política) |
+| E0452 | E5 | lista literal fora de `List[T, a..b]` |
+| E0030 | E0 | contrato Δ incompleto ou versionado sem `id` |
 | B0110 | E6 | `Text` sem limite de tokens no prompt (use `fit(x, N)`) |
 | B0201 / B0202 / B0207 | E6 | tokens, dólares ou tempo do pior caminho acima do orçamento |
-| B0301 | E6 | prompt + saída máxima acima da janela do modelo |
+| B0301 | E6 | prompt + overhead + saída máxima acima da janela do modelo |
+| B0302 | E6 | overhead declarado não cobre o esquema de decodificação do tipo de saída |
 
 ## O que ainda não existe
 
-- **Backend:** interpretador de árvore. Não há MLIR, LLVM nem emissão para Python.
-- **E4 e E5 completo:** sem formas de tensor; refinamentos são intervalos e tetos de texto
-  provados por literal ou por contenção, sem SMT; não há listas (`List[T, a..b]`).
+- **Backends nativos:** não há MLIR nem LLVM. O ARX interpreta a árvore; o backend Python
+  roda sobre o `aletheia_runtime`, ainda sem o provedor `openai` (os testes diferenciais usam
+  os provedores roteirizado e mascarado, que são deterministas).
+- **E4 e E5 completo:** sem formas de tensor nem SMT. Refinamentos são intervalos, tetos de texto
+  e limites de listas, provados por literal ou por contenção. Laços sem teto (`while`) não
+  existem, por desenho.
 - **Prova da recuperação:** as sagas rodam, mas o invariante de recuperação é observado por uma
-  sonda, não provado em E5 a partir de contratos `restoring` sobre um estado abstrato do mundo;
-  sem `lease` nem cobertura do footprint das pós-condições; compensações em sequência, sem
-  paralelismo por comutação.
+  sonda, não provado em E5 a partir de contratos `restoring` sobre um estado abstrato do mundo.
+  Também faltam `lease` e cobertura do footprint das pós-condições. As compensações rodam em
+  sequência, sem paralelismo por comutação.
 - **Recuperação após queda:** reler o journal e reconciliar as chaves abertas depois de um
-  reinício (hoje só a checagem T9 as detecta); tratador `timeout_unknown` por agente, sem `resume`
-  explícito; recuo fixo de 2 s.
-- **Tokenizer e acréscimo do servidor:** a entrada é estimada em 4 caracteres por token quando
-  o servidor não informa. Medido na Groq, o servidor soma de 430 a 450 tokens ao prompt (template
-  de chat e esquema JSON do `response_format`), e o limite estático de entrada do E6 ainda não
-  conta esse acréscimo.
-- **Calibração do contrato Δ:** `ttft` e `per_tok` são declarados, não aprendidos. Ao vivo, 2 de
-  68 chamadas passaram do contrato de latência. Derivar Δ da cauda medida (p99 por modelo e
-  provedor) e versioná-lo junto do Codex é trabalho a fazer.
+  reinício (hoje só a checagem T9 as detecta). O tratador `timeout_unknown` é por agente, sem
+  `resume` explícito, e o recuo é fixo em 2 s.
+- **Tokenizer:** a entrada é estimada em 4 caracteres por token quando o servidor não informa.
+  O overhead declarado no contrato absorve o template e o esquema, mas não o erro de
+  tokenização de um prompt longo.
+- **Calibração automática do Δ:** o `athc contract-report` sugere a recalibração pela cauda
+  observada, mas ela ainda não volta sozinha ao contrato nem é versionada pelo CI.
 - **Mundo:** cluster simulado; cenários no estilo do AgentDojo, não as suítes do AgentDojo.
-- **Certificados:** sem `certify`, `Bounded` nem monitor de deriva.
-- **Teoremas:** nenhum está mecanizado. As garantias são testadas, não provadas.
+- **Certificados:** sem `certify`, `Bounded` nem monitor de deriva estatística.
+- **Teoremas:** nenhum está mecanizado. As garantias são testadas, não provadas. A equivalência
+  entre os backends é verificada por testes diferenciais, não demonstrada.
 
 ## Próximos marcos
 
 1. **Núcleo formal em Lean 4**: λ_Ath restrito ao que já roda, com T1 e T2, depois T3
-   (não-interferência com endosso robusto) e T6 (recuperação de sagas).
+   (não-interferência com endosso robusto), T6 (recuperação de sagas) e a correção do E6 para
+   laços (β(laço) ⪯ teto · β(corpo)).
 2. **Suítes reais do AgentDojo** pelo provedor `openai`, medindo M1 e utilidade com vários modelos.
-3. **Invariantes de recuperação provados**: contratos `restoring` sobre um estado abstrato do
+3. **Provedor `openai` no runtime Python** e testes diferenciais por replay: os dois backends
+   consumindo as mesmas respostas gravadas de um servidor real.
+4. **Invariantes de recuperação provados**: contratos `restoring` sobre um estado abstrato do
    mundo, descarregados em E5 com SMT, e cobertura de footprint nas pós-condições.
-4. **Listas na gramática e no orçamento** (`List[T, a..b]`, laços com custo multiplicado pelo teto).
 5. **Recuperação após queda** a partir do journal, e o reconciliador durável como serviço.
-6. **Emissor para Python + asyncio**, o backend da fase F1 da spec.
+6. **Calibração de Δ no ciclo de CI**: o fogo real alimenta o `contract-report`, que propõe a
+   próxima versão do contrato como mudança revisável.
 
 ## Licença
 
