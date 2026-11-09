@@ -8,6 +8,7 @@
 //! - latência observada acima da declarada é `ContractBreach`;
 //! - todo efeito e toda amostra vão para um journal encadeado por hash.
 
+pub mod cassette;
 pub mod host;
 pub mod journal;
 pub mod model;
@@ -244,6 +245,35 @@ impl<'m> Arx<'m> {
     pub fn literal_from_str(&self, src: &str, ty: &TypeExpr) -> Option<Value> {
         let e = parse_expr_str(src.trim()).ok()?;
         self.literal(&e, ty)
+    }
+
+    /// Valor de um argumento no formato de `Value::to_json` (o que journals e cassetes guardam).
+    pub fn value_from_json(&self, j: &serde_json::Value, te: &TypeExpr) -> Option<Value> {
+        if let TypeExpr::List { elem, .. } = te.unlabeled() {
+            return j
+                .as_array()?
+                .iter()
+                .map(|x| self.value_from_json(x, elem))
+                .collect::<Option<Vec<_>>>()
+                .map(Value::List);
+        }
+        match te.base_name() {
+            "Int" => j.as_i64().map(Value::Int),
+            "Bool" => j.as_bool().map(Value::Bool),
+            "Text" => j.as_str().map(|s| Value::Text(s.to_string())),
+            adt => {
+                let (variant, fields) = j.as_object()?.iter().next()?;
+                let (td, v) = self.variants.get(variant.as_str())?;
+                if td.name.name != adt {
+                    return None;
+                }
+                let mut out = Vec::new();
+                for fd in &v.fields {
+                    out.push((fd.name.name.clone(), self.value_from_json(fields.get(&fd.name.name)?, &fd.ty)?));
+                }
+                Some(Value::Adt { ty: adt.to_string(), variant: variant.clone(), fields: out })
+            }
+        }
     }
 
     fn literal(&self, e: &Expr, te: &TypeExpr) -> Option<Value> {

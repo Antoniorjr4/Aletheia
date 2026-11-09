@@ -1,0 +1,97 @@
+name: Gravação e replay (Groq)
+
+# Grava tráfego HTTP real com a Groq (ARX e runtime Python), reproduz cada cassete nos dois
+# backends e exige o mesmo journal da execução real, byte a byte. Os cassetes vão para o log
+# (tar + base64) e para o artefato; versionados em bench/replay/, o CI os reproduz a cada push.
+# A chave fica no segredo de repositório GROQ_API_KEY e nunca entra num cassete.
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: "Modelo: auto (primeiro liberado no projeto) ou um id da Groq"
+        default: "auto"
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  record:
+    name: gravar na Groq e reproduzir no ARX e no Python
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      OPENAI_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      OPENAI_BASE_URL: https://api.groq.com/openai/v1
+      MODEL_INPUT: ${{ inputs.model || 'auto' }}
+      NO_COLOR: "1"
+      PYTHONPATH: runtimes/python
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: segredo GROQ_API_KEY
+        run: |
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "::error::defina o segredo de repositório GROQ_API_KEY"
+            exit 1
+          fi
+      - name: permissões de modelo na Groq
+        run: python3 bench/m1/probe.py --pick "$MODEL_INPUT"
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: build athc
+        run: cargo build --release --bin athc
+      - name: gravar com o ARX (tráfego real)
+        run: |
+          mkdir -p rec
+          record() {  # caso programa mundo
+            ./target/release/athc run "$2" --provider openai --model "$ALETHEIA_MODEL" --world "examples/fixtures/$3.json" \
+              --arg '"api"' --record "rec/$1.arx.cassette.json" --journal "rec/$1.arx.live.jsonl" || true
+            test -s "rec/$1.arx.cassette.json"
+          }
+          record remediate-world examples/remediate.ath world
+          record remediate-saga-compensa examples/remediate.ath world-saga-compensa
+          record remediate-timeout-reconcilia examples/remediate.ath world-timeout-reconcilia
+          record rollout-world examples/rollout.ath world
+          record rollout-saga-falha examples/rollout.ath world-saga-falha
+      - name: gravar com o runtime Python (tráfego real)
+        run: |
+          record_py() {  # caso programa mundo
+            ./target/release/athc emit "$2" --target py --out "rec/$1.py"
+            python3 -m aletheia_runtime run "rec/$1.py" --provider openai --model "$ALETHEIA_MODEL" \
+              --source "$2" --world "examples/fixtures/$3.json" --arg-json '"api"' \
+              --record "rec/$1.py.cassette.json" --journal "rec/$1.py.live.jsonl" || true
+            test -s "rec/$1.py.cassette.json"
+            rm "rec/$1.py"
+          }
+          record_py remediate-world examples/remediate.ath world
+          record_py rollout-world examples/rollout.ath world
+      - name: reproduzir cada cassete nos dois backends
+        run: |
+          status=0
+          for c in rec/*.cassette.json; do
+            echo "::group::$c"
+            ./target/release/athc replay "$c" --emit-py rec/replay.py || status=1
+            python3 -m aletheia_runtime replay "$c" rec/replay.py || status=1
+            echo "::endgroup::"
+          done
+          rm -f rec/replay.py
+          exit $status
+      - name: cassetes no log (tar + base64)
+        if: always()
+        run: |
+          tar -czf cassettes.tgz rec
+          echo "===== cassettes.tgz.b64 ====="
+          base64 -w 76 cassettes.tgz
+          echo "===== fim ====="
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: replay-${{ github.run_id }}
+          path: rec

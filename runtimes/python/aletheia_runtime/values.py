@@ -44,10 +44,11 @@ class Key:
 
 
 class Draft:
-    __slots__ = ("model", "out", "shape", "max_bytes", "prompt")
+    __slots__ = ("model", "out", "shape", "max_bytes", "schema", "gbnf", "prompt")
 
-    def __init__(self, model: str, out: str, shape: dict, max_bytes, prompt: str):
-        self.model, self.out, self.shape, self.max_bytes, self.prompt = model, out, shape, max_bytes, prompt
+    def __init__(self, model: str, out: str, spec: tuple, prompt: str):
+        self.model, self.out, self.prompt = model, out, prompt
+        self.shape, self.max_bytes, self.schema, self.gbnf = spec
 
 
 class Pending:

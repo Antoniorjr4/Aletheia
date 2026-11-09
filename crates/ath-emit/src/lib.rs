@@ -22,7 +22,7 @@
 
 use ath_check::CheckResult;
 use ath_codex::Codex;
-use ath_grammar::{max_bytes, shape_of, Shape};
+use ath_grammar::{max_bytes, shape_of, to_gbnf, to_json_schema_with, Dialect, Shape};
 use ath_syntax::ast::*;
 use serde_json::{json, Value as Json};
 use std::collections::{HashMap, HashSet};
@@ -164,9 +164,12 @@ pub fn python(m: &Module, _check: &CheckResult, codex: &Codex, source: &str) -> 
     let _ = writeln!(out, "CODEX_ROOT = {}", py_str(&codex.root));
     let _ = writeln!(out, "TOOLS = {}", py(&Json::Object(tools)));
     let _ = writeln!(out, "MODELS = {}", py(&Json::Object(models)));
-    for (name, shape, bytes) in &g.shapes {
+    for (name, shape, bytes, schemas, gbnf) in &g.shapes {
         let _ = writeln!(out, "{name} = {}", py(shape));
         let _ = writeln!(out, "{name}_BYTES = {}", bytes.map(|b| b.to_string()).unwrap_or_else(|| "None".into()));
+        // a restrição que o provedor remoto recebe, calculada pelo compilador de gramática
+        let _ = writeln!(out, "{name}_SCHEMA = {}", py(schemas));
+        let _ = writeln!(out, "{name}_GBNF = {}", py_str(gbnf));
     }
     for f in funcs {
         let _ = writeln!(out, "\n");
@@ -248,7 +251,7 @@ struct Gen<'m> {
     ind: usize,
     env: Vec<Vec<(String, String)>>,
     n: usize,
-    shapes: Vec<(String, Json, Option<u64>)>,
+    shapes: Vec<(String, Json, Option<u64>, Json, String)>,
 }
 
 impl<'m> Gen<'m> {
@@ -510,11 +513,15 @@ impl<'m> Gen<'m> {
                 }
                 let shape = shape_of(self.m, out).map_err(|m| format!("forma de saída: {m}"))?;
                 let name = format!("SHAPE_{}", self.shapes.len());
-                self.shapes.push((name.clone(), shape_json(&shape), max_bytes(&shape)));
+                let schemas = json!({
+                    "core": to_json_schema_with(&shape, Dialect::Core),
+                    "full": to_json_schema_with(&shape, Dialect::Full),
+                });
+                self.shapes.push((name.clone(), shape_json(&shape), max_bytes(&shape), schemas, to_gbnf(&shape)));
                 self.assign(
                     "d",
                     format!(
-                        "R.draft({}, {}, {name}, {name}_BYTES, [{}])",
+                        "R.draft({}, {}, ({name}, {name}_BYTES, {name}_SCHEMA, {name}_GBNF), [{}])",
                         py_str(&model.name),
                         py_str(&out.display()),
                         parts.join(", ")

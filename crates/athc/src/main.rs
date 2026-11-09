@@ -1,6 +1,7 @@
+use arx::cassette::{first_divergence, Cassette};
 use arx::host::SimWorld;
 use arx::journal::Journal;
-use arx::model::{Constraint, Masked, ModelProvider, OpenAiCompat, Scripted};
+use arx::model::{Constraint, Masked, ModelProvider, OpenAiCompat, Recorder, Replay, Scripted};
 use arx::{Arx, Value};
 use ath_check::fmt;
 use ath_grammar::Dialect;
@@ -8,10 +9,12 @@ use ath_syntax::ast::{Item, TypeExpr};
 use ath_syntax::parse_module;
 use athc::{compile, render, summary, Compiled, Style};
 use serde_json::json;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::rc::Rc;
 
 const USAGE: &str = "athc — compilador de Aletheia Core 0 (Marco Zero)
 
@@ -39,6 +42,14 @@ uso:
   athc contract-report <journal.jsonl> [--journal outro.jsonl]...
       aderência ao contrato Δ medida nos journals: latência contra o contrato, overhead de entrada
       observado, raciocínio, violações; sugere o Δ recalibrado pela cauda observada
+  athc run … --provider openai --record cassete.json
+      grava cada requisição e cada resposta HTTP crua do modelo real, com o programa, o mundo,
+      os argumentos e o journal da execução
+  athc run … --replay cassete.json
+      reproduz um cassete: as requisições precisam ser idênticas às gravadas
+  athc replay <cassete.json> [--journal saída.jsonl] [--emit-py programa.py]
+      reexecuta o programa embutido no cassete contra as respostas gravadas e exige o mesmo
+      journal, byte a byte
   athc emit <arquivo.ath> --target py [--out programa.py]
       emite o programa para Python sobre o aletheia_runtime (segunda realização da semântica do ARX)";
 
@@ -109,6 +120,7 @@ fn main() -> ExitCode {
         "verify-journal" => cmd_verify(&opts, st),
         "contract-report" => cmd_contract_report(&opts, st),
         "emit" => cmd_emit(&opts, st),
+        "replay" => cmd_replay(&opts, st),
         "help" | "--help" | "-h" => {
             println!("{USAGE}");
             Ok(true)
@@ -199,14 +211,32 @@ fn cmd_run(opts: &Opts, st: Style) -> Result<bool, String> {
             .find_map(|i| if let Item::Agent(a) = i { Some(a.name.name.clone()) } else { None })
             .ok_or("o módulo não declara agentes")?,
     };
-    let world = match fixture(opts, "world", &path, "world.json") {
-        Some(p) => SimWorld::from_json(&read_json(&p)?)?,
-        None => SimWorld::default(),
+    let world_json = match fixture(opts, "world", &path, "world.json") {
+        Some(p) => read_json(&p)?,
+        None => json!({}),
     };
-    let provider = build_provider(opts, &path)?;
+    let world = SimWorld::from_json(&world_json)?;
+    let mut tape: Option<(Rc<RefCell<Vec<arx::model::Exchange>>>, serde_json::Value)> = None;
+    let provider: Box<dyn ModelProvider> = if let Some(cp) = opts.one("replay") {
+        let c = Cassette::load(Path::new(cp))?;
+        Box::new(OpenAiCompat::from_config(&c.config, Box::new(Replay::new(c.exchanges)))?)
+    } else if opts.one("record").is_some() {
+        if opts.one("provider") != Some("openai") {
+            return Err("`--record` grava o tráfego de um modelo real: use `--provider openai`".into());
+        }
+        let mut p = openai_provider(opts)?;
+        let t = Rc::new(RefCell::new(Vec::new()));
+        let inner = std::mem::replace(&mut p.transport, Box::new(Replay::new(Vec::new())));
+        p.transport = Box::new(Recorder { inner, tape: t.clone() });
+        tape = Some((t, p.config_json()));
+        Box::new(p)
+    } else {
+        build_provider(opts, &path)?
+    };
     let provider_name = provider.name();
     let mut arx = Arx::new(&c.module, Box::new(world), provider);
     arx.contracts = athc::contract_hashes(&c);
+    let args_src: Vec<String> = opts.flags.get("arg").cloned().unwrap_or_default();
     let event = match opts.one("on") {
         Some(e) => e.to_string(),
         None => c
@@ -305,6 +335,26 @@ fn cmd_run(opts: &Opts, st: Style) -> Result<bool, String> {
         &arx.journal.head[..12],
         chain
     );
+    if let (Some((t, config)), Some(out)) = (&tape, opts.one("record")) {
+        let cassette = Cassette {
+            provider: provider_name.clone(),
+            config: config.clone(),
+            manifest: json!({
+                "source_path": path,
+                "program": src,
+                "codex_root": c.codex.root,
+                "agent": agent,
+                "event": event,
+                "args": arx.journal.entries.first().map(|e| e["detail"]["args"].clone()),
+                "args_src": args_src,
+                "world": world_json,
+            }),
+            exchanges: t.borrow().clone(),
+            journal: arx.journal.to_jsonl(),
+        };
+        cassette.save(Path::new(out))?;
+        println!("  {:<9} {out} · {} troca(s) HTTP gravada(s)", "cassete", cassette.exchanges.len());
+    }
     if let Some(rp) = opts.one("report") {
         let actions: Vec<serde_json::Value> = arx
             .journal
@@ -352,22 +402,24 @@ fn build_provider(opts: &Opts, path: &str) -> Result<Box<dyn ModelProvider>, Str
     match opts.one("provider").unwrap_or("masked") {
         "masked" => Ok(Box::new(Masked { inner: Box::new(scripted()?) })),
         "scripted" => Ok(Box::new(scripted()?)),
-        "openai" => {
-            let model = opts.one("model").or(opts.one("remote-model"));
-            let mut p = OpenAiCompat::from_env(model, opts.one("base-url"))?;
-            if let Some(c) = opts.one("constraint") {
-                p.constraint = Constraint::parse(c).ok_or("--constraint deve ser json-schema, gbnf ou none")?;
-            }
-            if let Some(d) = opts.one("schema") {
-                p.dialect = Dialect::parse(d).ok_or("--schema deve ser core ou full")?;
-            }
-            if p.api_key.is_none() && !p.base_url.contains("localhost") && !p.base_url.contains("127.0.0.1") {
-                return Err(format!("sem chave para {}: defina OPENAI_API_KEY", p.base_url));
-            }
-            Ok(Box::new(p))
-        }
+        "openai" => Ok(Box::new(openai_provider(opts)?)),
         other => Err(format!("provedor desconhecido `{other}` (use masked, scripted ou openai)")),
     }
+}
+
+fn openai_provider(opts: &Opts) -> Result<OpenAiCompat, String> {
+    let model = opts.one("model").or(opts.one("remote-model"));
+    let mut p = OpenAiCompat::from_env(model, opts.one("base-url"))?;
+    if let Some(c) = opts.one("constraint") {
+        p.constraint = Constraint::parse(c).ok_or("--constraint deve ser json-schema, gbnf ou none")?;
+    }
+    if let Some(d) = opts.one("schema") {
+        p.dialect = Dialect::parse(d).ok_or("--schema deve ser core ou full")?;
+    }
+    if p.api_key.is_none() && !p.base_url.contains("localhost") && !p.base_url.contains("127.0.0.1") {
+        return Err(format!("sem chave para {}: defina OPENAI_API_KEY", p.base_url));
+    }
+    Ok(p)
 }
 
 /// Lê uma expressão de tipo (`Action`, `Int[2..64]`, `Text[..80]`) no contexto do módulo.
@@ -651,4 +703,55 @@ fn cmd_emit(opts: &Opts, st: Style) -> Result<bool, String> {
         None => print!("{py}"),
     }
     Ok(true)
+}
+
+/// Reexecuta o programa embutido num cassete contra as respostas gravadas.
+fn cmd_replay(opts: &Opts, st: Style) -> Result<bool, String> {
+    let cpath = opts.file.clone().ok_or("informe o cassete")?;
+    let cas = Cassette::load(Path::new(&cpath))?;
+    let m = &cas.manifest;
+    let src = m["program"].as_str().ok_or("cassete sem o programa embutido")?;
+    let label = m["source_path"].as_str().unwrap_or("cassete");
+    let Some(c) = compile_or_report(label, src, st) else { return Ok(false) };
+    if let Some(out) = opts.one("emit-py") {
+        let py = ath_emit::python(&c.module, &c.check, &c.codex, label).map_err(|e| format!("emissão: {e}"))?;
+        std::fs::write(out, py).map_err(|e| format!("falha ao gravar `{out}`: {e}"))?;
+    }
+    let agent = m["agent"].as_str().ok_or("manifesto sem `agent`")?;
+    let event = m["event"].as_str().ok_or("manifesto sem `event`")?;
+    let world = SimWorld::from_json(&m["world"])?;
+    let provider = OpenAiCompat::from_config(&cas.config, Box::new(Replay::new(cas.exchanges.clone())))?;
+    let mut arx = Arx::new(&c.module, Box::new(world), Box::new(provider));
+    arx.contracts = athc::contract_hashes(&c);
+    let (_, h) = arx.handler(agent, event).ok_or_else(|| format!("handler `{agent}.{event}` não encontrado"))?;
+    let raw: Vec<serde_json::Value> = m["args"].as_array().cloned().unwrap_or_default();
+    let mut args = Vec::new();
+    for (p, r) in h.params.iter().zip(&raw) {
+        args.push(arx.value_from_json(r, &p.ty).ok_or_else(|| format!("argumento `{r}` inválido no manifesto"))?);
+    }
+    let result = arx.run(agent, event, args);
+    let journal = arx.journal.to_jsonl();
+    if let Some(out) = opts.one("journal") {
+        std::fs::write(out, &journal).map_err(|e| format!("falha ao gravar o journal: {e}"))?;
+    }
+    let shown = match &result {
+        Ok(v) => v.show(),
+        Err(e) => format!("{} {}", e.code, e.msg),
+    };
+    println!("{} {label} · {} troca(s) · {} → {shown}", st.bold("replay"), cas.exchanges.len(), cas.provider);
+    match first_divergence(&cas.journal, &journal) {
+        None => {
+            println!(
+                "{} journal idêntico ao gravado: {} entradas · cabeça #{}",
+                st.green("✓"),
+                arx.journal.entries.len(),
+                &arx.journal.head[..12]
+            );
+            Ok(true)
+        }
+        Some((i, a, b)) => {
+            println!("{} journal diverge na entrada {i}\n  gravado: {a}\n  replay:  {b}", st.red("✗"));
+            Ok(false)
+        }
+    }
 }

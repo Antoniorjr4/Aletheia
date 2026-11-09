@@ -335,3 +335,263 @@ fn m1_scenarios_are_isomorphic() {
         );
     }
 }
+
+// ------------------------------------------------------------------ replay de tráfego HTTP real
+
+use arx::cassette::{first_divergence, Cassette};
+use arx::model::{Constraint, Exchange, OpenAiCompat, Recorder, Replay};
+use std::cell::RefCell;
+use std::io::{Read, Write};
+use std::net::TcpListener;
+use std::rc::Rc;
+
+/// Servidor HTTP mínimo: responde em ordem a cada conexão com (status, cabeçalhos, corpo).
+fn mock(replies: Vec<(u16, &'static str, String)>) -> (String, std::thread::JoinHandle<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://127.0.0.1:{}/v1", listener.local_addr().unwrap().port());
+    let h = std::thread::spawn(move || {
+        for (status, headers, reply) in replies {
+            let (mut sock, _) = listener.accept().unwrap();
+            let mut buf = Vec::new();
+            let mut tmp = [0u8; 8192];
+            let head_end = loop {
+                let n = sock.read(&mut tmp).unwrap();
+                buf.extend_from_slice(&tmp[..n]);
+                if let Some(i) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+                    break i + 4;
+                }
+            };
+            let head = String::from_utf8_lossy(&buf[..head_end]).to_ascii_lowercase();
+            if let Some(len) = head.lines().find_map(|l| l.strip_prefix("content-length:")) {
+                let len: usize = len.trim().parse().unwrap();
+                while buf.len() < head_end + len {
+                    let n = sock.read(&mut tmp).unwrap();
+                    buf.extend_from_slice(&tmp[..n]);
+                }
+            } else {
+                while !buf.ends_with(b"0\r\n\r\n") {
+                    let n = sock.read(&mut tmp).unwrap();
+                    buf.extend_from_slice(&tmp[..n]);
+                }
+            }
+            let resp = format!(
+                "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\n{headers}Content-Length: {}\r\nConnection: close\r\n\r\n{reply}",
+                reply.len()
+            );
+            sock.write_all(resp.as_bytes()).unwrap();
+        }
+    });
+    (url, h)
+}
+
+const PLAN_BAD: &str = r#"{"value":[{"kind":"Scale","deploy":"payments","to":0}]}"#;
+const PLAN_OK: &str = r#"{"value":[{"kind":"Restart","deploy":"api"},{"kind":"Scale","deploy":"worker","to":4}]}"#;
+
+/// Tráfego no formato da Groq: 429 com `retry-after`, 400 `json_validate_failed` com a geração
+/// fora do esquema e 200 com `usage`, raciocínio e o modelo servido.
+fn groq_like() -> Vec<(u16, &'static str, String)> {
+    vec![
+        (
+            429,
+            "retry-after: 0\r\n",
+            json!({ "error": { "message": "Rate limit reached ... Please try again in 0.2s.", "code": "rate_limit_exceeded" } })
+                .to_string(),
+        ),
+        (
+            400,
+            "x-request-id: req_mock_400\r\n",
+            json!({ "error": { "message": "Generated JSON does not match the expected schema.", "code": "json_validate_failed", "failed_generation": PLAN_BAD } })
+                .to_string(),
+        ),
+        (
+            200,
+            "",
+            json!({
+                "id": "chatcmpl-mock-1",
+                "model": "openai/gpt-oss-20b",
+                "choices": [{ "message": { "role": "assistant", "content": PLAN_OK, "reasoning": "reiniciar a api e escalar o worker" }, "finish_reason": "stop" }],
+                "usage": { "prompt_tokens": 701, "completion_tokens": 73, "completion_tokens_details": { "reasoning_tokens": 41 } },
+            })
+            .to_string(),
+        ),
+    ]
+}
+
+/// Grava uma execução do ARX contra o servidor, como faz `athc run --record`.
+fn record(program: &str, agent: &str, replies: Vec<(u16, &'static str, String)>) -> Cassette {
+    let src = read(program);
+    let c = compile(&src).unwrap();
+    let (url, server) = mock(replies);
+    let mut p = OpenAiCompat::new(&url, "openai/gpt-oss-20b", Some("chave-de-teste".into()), Constraint::JsonSchema);
+    let tape = Rc::new(RefCell::new(Vec::new()));
+    let inner = std::mem::replace(&mut p.transport, Box::new(Replay::new(Vec::new())));
+    p.transport = Box::new(Recorder { inner, tape: tape.clone() });
+    let (provider, config) = (p.name(), p.config_json());
+    let world = fixture("world");
+    let mut arx = Arx::new(&c.module, Box::new(SimWorld::from_json(&world).unwrap()), Box::new(p));
+    arx.contracts = athc::contract_hashes(&c);
+    let _ = arx.run(agent, "alert", text("api"));
+    server.join().unwrap();
+    let exchanges = tape.borrow().clone();
+    Cassette {
+        provider,
+        config,
+        manifest: json!({ "source_path": program, "program": src, "agent": agent, "event": "alert", "args": ["api"], "world": world }),
+        exchanges,
+        journal: arx.journal.to_jsonl(),
+    }
+}
+
+/// `athc replay` em processo: o programa embutido contra as respostas gravadas.
+fn replay_arx(cas: &Cassette) -> (String, Json) {
+    let c = compile(cas.manifest["program"].as_str().unwrap()).unwrap();
+    let p = OpenAiCompat::from_config(&cas.config, Box::new(Replay::new(cas.exchanges.clone()))).unwrap();
+    let mut arx = Arx::new(&c.module, Box::new(SimWorld::from_json(&cas.manifest["world"]).unwrap()), Box::new(p));
+    arx.contracts = athc::contract_hashes(&c);
+    let agent = cas.manifest["agent"].as_str().unwrap();
+    let event = cas.manifest["event"].as_str().unwrap();
+    let (_, h) = arx.handler(agent, event).unwrap();
+    let args: Vec<Value> = h
+        .params
+        .iter()
+        .zip(cas.manifest["args"].as_array().unwrap())
+        .map(|(p, j)| arx.value_from_json(j, &p.ty).unwrap())
+        .collect();
+    let out = arx.run(agent, event, args);
+    let outcome = match out {
+        Ok(v) => json!({ "result": v.to_json() }),
+        Err(e) => json!({ "error": e.code }),
+    };
+    (arx.journal.to_jsonl(), outcome)
+}
+
+/// `python -m aletheia_runtime replay` sobre o código emitido do programa embutido.
+fn replay_py(cas: &Cassette, tag: &str) -> String {
+    let dir = scratch();
+    let src = cas.manifest["program"].as_str().unwrap();
+    let c = compile(src).unwrap();
+    let py = ath_emit::python(&c.module, &c.check, &c.codex, cas.manifest["source_path"].as_str().unwrap()).unwrap();
+    let (prog, cfile, jfile) = (
+        dir.join(format!("{tag}.py")),
+        dir.join(format!("{tag}.cassette.json")),
+        dir.join(format!("{tag}.replay.jsonl")),
+    );
+    std::fs::write(&prog, py).unwrap();
+    cas.save(&cfile).unwrap();
+    let out = Command::new("python3")
+        .env("PYTHONPATH", root().join("runtimes/python"))
+        .args(["-m", "aletheia_runtime", "replay"])
+        .arg(&cfile)
+        .arg(&prog)
+        .arg("--journal")
+        .arg(&jfile)
+        .output()
+        .expect("python3");
+    assert!(jfile.exists(), "{tag}: {}", String::from_utf8_lossy(&out.stderr));
+    std::fs::read_to_string(&jfile).unwrap()
+}
+
+fn assert_same(tag: &str, a: &str, b: &str) {
+    if let Some((i, x, y)) = first_divergence(a, b) {
+        panic!("{tag}: journals diferem na entrada {i}\nARX:    {x}\nPython: {y}");
+    }
+}
+
+#[test]
+fn replay_of_recorded_http_traffic_is_isomorphic() {
+    let cas = record("examples/rollout.ath", "Rollout", groq_like());
+    assert_eq!(cas.exchanges.len(), 3, "429, 400 json_validate_failed e 200");
+    assert!(
+        !serde_json::to_string(&cas.to_json()).unwrap().contains("chave-de-teste"),
+        "a chave nunca entra no cassete"
+    );
+    let (arx_journal, outcome) = replay_arx(&cas);
+    assert_eq!(outcome, json!({ "result": "concluído" }));
+    assert_same("gravação × replay ARX", &cas.journal, &arx_journal);
+    assert_same("gravação × replay Python", &cas.journal, &replay_py(&cas, "replay-rollout"));
+    // a espera do 429 e as novas tentativas entram no journal pelos dois lados
+    assert!(cas.journal.contains(r#""queued_s":0.5"#) && cas.journal.contains(r#""retries":1"#), "{}", cas.journal);
+}
+
+#[test]
+fn replay_variants_force_every_contract_and_http_path_identically() {
+    let base = record("examples/rollout.ath", "Rollout", groq_like());
+    let mutate = |f: &dyn Fn(&mut Vec<Exchange>)| {
+        let mut c = base.clone();
+        f(&mut c.exchanges);
+        c
+    };
+    let body = |ex: &mut Exchange, edit: &dyn Fn(&mut Json)| {
+        let mut j: Json = serde_json::from_str(&ex.reply.body).unwrap();
+        edit(&mut j);
+        ex.reply.body = j.to_string();
+    };
+    let cases: Vec<(&str, Cassette, Json)> = vec![
+        ("R0703 latência", mutate(&|x| x[2].reply.latency = 9.9), json!({ "error": "R0703" })),
+        (
+            "R0704 modelo servido",
+            mutate(&|x| body(&mut x[2], &|j| j["model"] = json!("openai/gpt-oss-120b"))),
+            json!({ "error": "R0704" }),
+        ),
+        (
+            "R0705 entrada",
+            mutate(&|x| body(&mut x[2], &|j| j["usage"]["prompt_tokens"] = json!(99_999))),
+            json!({ "error": "R0705" }),
+        ),
+        (
+            "R0702 saída",
+            mutate(&|x| body(&mut x[2], &|j| j["usage"]["completion_tokens"] = json!(5_000))),
+            json!({ "error": "R0702" }),
+        ),
+        (
+            "HTTP 401",
+            mutate(&|x| {
+                x[0].reply.status = 401;
+                x[0].reply.body = r#"{"error":{"message":"Invalid API Key","code":"invalid_api_key"}}"#.into();
+            }),
+            json!({ "error": "R0621" }),
+        ),
+        (
+            "espera em ms no corpo",
+            mutate(&|x| {
+                x[0].reply.retry_after = None;
+                x[0].reply.body = r#"{"error":{"message":"Please try again in 250ms."}}"#.into();
+            }),
+            json!({ "result": "concluído" }),
+        ),
+    ];
+    for (tag, cas, expected) in cases {
+        let (arx_journal, outcome) = replay_arx(&cas);
+        assert_eq!(outcome, expected, "{tag}");
+        assert_same(tag, &arx_journal, &replay_py(&cas, &tag.replace(' ', "_")));
+    }
+}
+
+/// Cassetes gravados contra a Groq pelo workflow de fogo real (`bench/replay/`): os dois
+/// backends reproduzem exatamente o journal da execução real.
+#[test]
+fn replay_of_real_groq_traffic_reproduces_the_recorded_journal() {
+    let dir = root().join("bench/replay");
+    let mut cassettes: Vec<PathBuf> = Vec::new();
+    for d in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+        if d.path().is_dir() {
+            for f in std::fs::read_dir(d.path()).unwrap().flatten() {
+                if f.path().to_string_lossy().ends_with(".cassette.json") {
+                    cassettes.push(f.path());
+                }
+            }
+        }
+    }
+    cassettes.sort();
+    for path in cassettes {
+        let tag = path.file_name().unwrap().to_string_lossy().replace(".cassette.json", "");
+        let cas = Cassette::load(&path).unwrap();
+        let (arx_journal, _) = replay_arx(&cas);
+        assert_same(&format!("{tag}: gravação × replay ARX"), &cas.journal, &arx_journal);
+        assert_same(
+            &format!("{tag}: gravação × replay Python"),
+            &cas.journal,
+            &replay_py(&cas, &format!("real-{tag}")),
+        );
+    }
+}
