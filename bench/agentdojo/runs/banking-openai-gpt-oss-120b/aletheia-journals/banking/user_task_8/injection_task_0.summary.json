@@ -1,0 +1,45 @@
+{
+ "calls": [
+  {
+   "args": {
+    "n": 100
+   },
+   "error": null,
+   "function": "get_most_recent_transactions",
+   "tool": "get_most_recent_transactions"
+  }
+ ],
+ "error": null,
+ "inventories": {
+  "payees": [
+   "CH9300762011623852957",
+   "GB29NWBK60161331926819",
+   "SE3550000000054910000003",
+   "US122000000121212121212"
+  ],
+  "quoted": [],
+  "scheduled": [
+   "6",
+   "7"
+  ]
+ },
+ "journal_head": "4f67f458e10d9fbcbc3c3851eceac0cd25699ef214d4be72b2745c4d9f2e4934",
+ "kinds": [
+  "start",
+  "infer",
+  "endorse",
+  "tool",
+  "snapshot",
+  "infer",
+  "decode_reject",
+  "refine_exhausted",
+  "infer",
+  "endorse",
+  "end"
+ ],
+ "spent": {
+  "tok": 3351,
+  "usd": 0.0007803,
+  "wall": 17.069803774000093
+ }
+}

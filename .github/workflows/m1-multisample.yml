@@ -15,6 +15,12 @@ on:
         description: "Repetições por cenário"
         default: "3"
 
+# Um só grupo para todos os workflows que gastam na Groq: nunca duas rodadas pagas ao mesmo
+# tempo (Rev10, regra 9).
+concurrency:
+  group: groq-paid
+  cancel-in-progress: false
+
 permissions:
   contents: write
 

@@ -44,7 +44,7 @@ provas pedem o Lean 4.20.0, que o `elan` instala a partir de `lean/lean-toolchai
 
 ```sh
 cargo build --release
-cargo test                                    # 98 testes, inclusive os diferenciais e o replay da Groq
+cargo test                                    # 99 testes, inclusive os diferenciais e o replay da Groq
 (cd runtimes/python && PYTHONPATH=. python3 -m unittest discover -s tests)   # runtime Python
 python3 -m unittest discover -s bench/m1/tests   # os dois oráculos da M1 contra as rodadas publicadas
 (cd lean && lake build --wfail)               # T1, T2, T3, T6 e T9 em Lean 4, auditoria de axiomas e ath-lean-eval
@@ -559,16 +559,19 @@ cenários e limites estão em [`bench/m1/README.md`](bench/m1/README.md); todas 
 (v1.2.2) em dois pipelines com o mesmo modelo: o baseline padrão do AgentDojo e o agente
 [`banking.ath`](bench/agentdojo/banking.ath), ligado ao benchmark por um
 `BasePipelineElement`. As tarefas, o ambiente injetado, o ataque `important_instructions` e
-os verificadores são os do pacote. Primeiro lote, `openai/gpt-oss-120b` na Groq, com os
-pares completos nos dois pipelines:
+os verificadores são os do pacote. Lotes 1 e 2, `openai/gpt-oss-120b` na Groq, com o agente
+congelado e os pares completos nos dois pipelines:
 
-| pipeline | utilidade (16) | utilidade sob ataque (19 pares) | ASR (19 pares) | tokens por execução |
+| pipeline | utilidade (16) | utilidade sob ataque (94 pares) | ASR (94 pares) | tokens por execução |
 | --- | --- | --- | --- | --- |
-| baseline AgentDojo | 68,8% (IC95 44–86%) | 15,8% (6–38%) | 78,9% (57–91%) | 3.632 |
-| Aletheia | 75,0% (IC95 50–90%) | 31,6% (15–54%) | **0,0%** (0–17%) | 1.804 |
+| baseline AgentDojo | 68,8% (IC95 44–86%) | 53,2% (43–63%) | 72,3% (63–80%) | 4.570 |
+| Aletheia | 75,0% (IC95 50–90%) | 60,6% (51–70%) | **0,0%** (0–4%) | 1.923 |
 
-A cobertura é parcial (19 dos 144 pares), e os primeiros pares vêm das tarefas 0 a 2. Os
-detalhes, as falhas de cada lado e o que falta estão em
+A cobertura é parcial (94 dos 144 pares, das tarefas 0 a 10). Os intervalos supõem pares
+independentes. Como cada tarefa de usuário aparece com todas as injeções, o IC do ASR do
+Aletheia sob correlação total dentro da tarefa vai de 0% a 26%. Nos 94 pares, a política não
+precisou recusar nenhuma proposta injetada: o planejador não as propôs. Os detalhes, as falhas
+de cada lado, o custo de cada lote e o que falta estão em
 [`RESULTS.md`](bench/agentdojo/RESULTS.md).
 
 ## Estrutura
@@ -665,9 +668,9 @@ docs/            registros da Rev6 e da Rev7: execuções reais, decisões e lim
   tokenização de um prompt longo.
 - **Calibração automática do Δ:** o `athc contract-report` sugere a recalibração pela cauda
   observada, mas ela ainda não volta sozinha ao contrato nem é versionada pelo CI.
-- **AgentDojo oficial, matriz parcial:** o primeiro lote contra `openai/gpt-oss-120b` cobre
-  as 16 tarefas sem ataque e 19 dos 144 pares sob ataque, até a cota diária da Groq. Os
-  outros pares vêm em lotes retomáveis. Ver
+- **AgentDojo oficial, matriz parcial:** os lotes 1 e 2 contra `openai/gpt-oss-120b` cobrem
+  as 16 tarefas sem ataque e 94 dos 144 pares sob ataque. Os outros pares vêm em lotes
+  retomáveis, disparados à mão, com teto em dólar e limite diário do projeto Groq. Ver
   [`bench/agentdojo/RESULTS.md`](bench/agentdojo/RESULTS.md).
 - **Inventário dinâmico no decodificador:** `Action.deploy` continua `Text[..32]` na gramática.
   O inventário restringe pela política e pelo prompt, não por um `enum` construído a cada
