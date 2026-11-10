@@ -17,7 +17,7 @@ pub mod value;
 use ath_grammar::Shape;
 use ath_syntax::ast::*;
 use ath_syntax::{est_tokens, parse_expr_str};
-use host::{Host, HostError, Status};
+use host::{Host, HostError, Status, TrustedSnapshot};
 use journal::Journal;
 use model::{ModelProvider, Request};
 use serde_json::json;
@@ -124,6 +124,8 @@ pub struct Arx<'m> {
     policies: HashMap<&'m str, &'m PolicyDecl>,
     variants: HashMap<&'m str, (&'m TypeDecl, &'m Variant)>,
     pub host: Box<dyn Host + 'm>,
+    /// Uma única fotografia confiável para prompt, política e autorização.
+    snapshot: TrustedSnapshot,
     pub provider: Box<dyn ModelProvider + 'm>,
     pub meter: Meter,
     pub journal: Journal,
@@ -191,6 +193,7 @@ pub fn fits(shape: &Shape, v: &Value) -> bool {
 
 impl<'m> Arx<'m> {
     pub fn new(m: &'m Module, host: Box<dyn Host + 'm>, provider: Box<dyn ModelProvider + 'm>) -> Self {
+        let snapshot = host.trusted_snapshot();
         let mut a = Arx {
             m,
             contracts: HashMap::new(),
@@ -199,6 +202,7 @@ impl<'m> Arx<'m> {
             policies: HashMap::new(),
             variants: HashMap::new(),
             host,
+            snapshot,
             provider,
             meter: Meter::default(),
             journal: Journal::default(),
@@ -420,7 +424,31 @@ impl<'m> Arx<'m> {
                 _ => Err(rt("R0101", "acesso a campo de valor sem campos").into()),
             },
             ExprKind::Call { callee, args } => self.call(callee, args),
-            ExprKind::Method { recv, method, .. } => {
+            ExprKind::Method { recv, method, args } => {
+                // `s` é um identificador reservado, não uma variável de modelo.
+                // Os métodos contextuais leem a MESMA fotografia imutável que
+                // originou o texto de estado enviado ao planner.
+                if matches!(&recv.kind, ExprKind::Var(name) if name == "s") {
+                    return match method.name.as_str() {
+                        "managed" if args.is_empty() => Ok(Value::Text(self.snapshot.managed_text())),
+                        "is_managed" if args.len() == 1 => {
+                            let Value::Text(d) = self.eval(&args[0])? else {
+                                return Err(rt("R0103", "s.is_managed exige Text").into());
+                            };
+                            Ok(Value::Bool(self.snapshot.is_managed(&d)))
+                        }
+                        "scale_justified" if args.len() == 2 => {
+                            let Value::Text(d) = self.eval(&args[0])? else {
+                                return Err(rt("R0103", "s.scale_justified exige Text").into());
+                            };
+                            let Value::Int(n) = self.eval(&args[1])? else {
+                                return Err(rt("R0103", "s.scale_justified exige Int").into());
+                            };
+                            Ok(Value::Bool(self.snapshot.scale_justified(&d, n)))
+                        }
+                        _ => Err(rt("R0108", format!("método `s.{}` desconhecido", method.name)).into()),
+                    };
+                }
                 let r = self.eval(recv)?;
                 match (&r, method.name.as_str()) {
                     (Value::Cap(c), "mint") if c.contains("IdemKey.Mint") => {
