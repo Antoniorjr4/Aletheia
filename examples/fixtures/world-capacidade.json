@@ -21,5 +21,15 @@
       "2026-11-09T14:02:15Z INFO  api-7f9c memória 41%, pool de conexões 38/120, nenhum erro de aplicação",
       "2026-11-09T14:02:17Z WARN  api-7f9c latência p99 = 6,1 s; tráfego 3,2× o normal (campanha de vendas)"
     ]
+  },
+  "managed": [
+    "api",
+    "worker"
+  ],
+  "telemetry": {
+    "cpu_pct": {
+      "api": 95,
+      "worker": 45
+    }
   }
 }
