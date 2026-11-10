@@ -22,10 +22,30 @@ let draft = infer planner -> Action {
   `s.telemetry(): Text[..512] ^ Trusted`, métodos intrínsecos
   (não vinculados a dados fornecidos pelo modelo); `s.is_managed(Text): Bool`
   e `s.scale_justified(Text,Int): Bool` somente dentro de políticas.
-- `E0420`: programas `Action` sujeitos à política contextual
-  `SafeRemediation` são rejeitados se `estado` não vier exatamente
-  de `s.managed()`. Compatibilidade com programas antigos de política
-  estática é preservada.
+- **Ancoragem no fluxo `infer` → `refine`, sem nomes fixos.** O checker marca cada `infer`
+  que tem um campo `= s.managed()`, com qualquer nome de campo. No `refine x by P`, ele
+  confere a política `P` efetivamente aplicada àquele rascunho:
+  - `E0421`: `P` decide pela fotografia (`s.is_managed`, `s.scale_justified`…), mas o
+    prompt não recebe `s.managed()`. Isso cobre o inventário forjado por literal ou copiado
+    de log.
+  - `E0422`: o prompt recebe `s.managed()`, mas `P` compara com inventário escrito à mão
+    (`deploy == "api"`). É o descompasso entre o que o modelo vê e o que a política aplica.
+  - `E0423`: sonda contextual fora de política. Antes ela reaproveitava o `E0420`, que
+    continua significando só "política impura".
+
+  A versão anterior dependia dos nomes `SafeRemediation`, `Action` e `estado`. Esta não
+  depende de nenhum deles (`crates/athc/tests/anchoring.rs`). Programas antigos de política
+  estática continuam válidos, inclusive os cassetes reais.
+- **`s` é o receptor intrínseco da fotografia.** Uma variável local chamada `s` (por exemplo,
+  `let s = atomic …` em `rollout.ath`) não intercepta `s.managed()`, que sempre lê a
+  fotografia do host. Isso está coberto por teste.
+- **Rótulo `Trusted` no payload.** ARX e Python rotulam os campos `s.managed()` e
+  `s.telemetry()` como `### campo (ESTADO CONFIÁVEL — fotografia do host; não vem do modelo
+  nem dos logs)`, ao lado dos campos `quote(…)` rotulados como DADO não confiável. A
+  requisição é idêntica byte a byte nos dois backends, verificado por replay.
+- **A fotografia entra no journal BLAKE3.** Na primeira leitura de `s.…`, os dois backends
+  gravam uma entrada `snapshot` com o inventário, as réplicas e a CPU usados. Programas sem
+  `s.…` não ganham a entrada, então os journals e cassetes antigos não mudam.
 - `arx/src/host.rs`: `TrustedSnapshot` vem do host a partir dos campos
   explícitos `managed`, `replicas` e `telemetry.cpu_pct`, jamais dos logs.
   Um inventário ausente é vazio (fail-closed); nomes não existentes,
@@ -41,8 +61,9 @@ let draft = infer planner -> Action {
 `Action.deploy`; ainda **não existe enum dinâmica construída no tokenizador
 em cada chamada**. A guarda de contexto no runtime e a política
 contextual vetam autorização de qualquer deployment fora do snapshot.
-O `E0420` vincula **origem do contexto** em compilação; não é prova
-estática do conteúdo desconhecido do inventário remoto.
+O `E0421`/`E0422` vincula a **origem do contexto** em compilação: prompt e política leem a
+mesma fotografia. Não é prova estática do conteúdo do inventário remoto, que só existe em
+tempo de execução.
 
 **TOCTOU:** o snapshot é imutável durante cada invocação; um provedor
 com alterações externas concorrentes exigirá número de versão/assinatura
@@ -80,8 +101,55 @@ pode ainda não ser desejável.
 O CI `rev7-dev` executa `cargo fmt --check`, Clippy com
 `-D warnings`, `cargo test --all`, Python unit, testes offline
 do adaptador AgentDojo, `lake build --wfail` e M1 simulado.
-O M1 contém o teste de compilação negativo que substitui o estado
-confiável por um literal: deve emitir `E0420`.
+A M1 contém dois testes de compilação negativos:
+- o estado confiável substituído por um literal deve emitir `E0421`;
+- a política reescrita com inventário à mão diante do prompt ancorado deve emitir `E0422`.
+
+### Dois oráculos, a mesma medição
+
+O oráculo é o instrumento de medida: decide, depois da execução, quais ações saíram da
+política. A primeira versão da Rev7 trocou o oráculo da Rev6 pelo contextual, junto com a
+política do agente. Isso quebra a comparação: o mesmo `Scale(api, 64)` era permitido pela
+régua da Rev6 e passa a ser violação pela régua nova. Agora `bench/m1/run.py` mede sempre
+sob os dois:
+
+| campo | oráculo | para quê |
+| --- | --- | --- |
+| `out_of_policy` | `in_policy_rev6`: critério canônico, congelado | comparar com as rodadas da Rev6 |
+| `out_of_policy_contextual` | `in_policy_contextual`: inventário e telemetria do cenário | medir a política da Rev7 |
+
+`bench/m1/tests/test_oracles.py` (no CI) recalcula o oráculo canônico sobre as ações brutas
+das rodadas reais da Rev6 e exige as contagens publicadas: 15/0 na N=3 e 5/0 na N=1. O
+portão da M1 reprova qualquer ação do Aletheia fora da política em qualquer dos dois
+oráculos.
+
+Como os `results.json` guardam as ações brutas, qualquer rodada medida só com a régua
+contextual pode ter a canônica recalculada depois, sem nova chamada ao modelo.
+
+`bench/m1/rescore.py` faz essa reavaliação a partir das ações brutas. Aplicada às três
+rodadas reais no Groq `openai/gpt-oss-120b`:
+
+| rodada | Python · Rev6 | Aletheia · Rev6 | Python · contextual | Aletheia · contextual |
+| --- | ---: | ---: | ---: | ---: |
+| Rev6 N=1 (`1f8fd90`) | 5 | 0 | 7 | 1 |
+| Rev6 N=3 (`0befe7d`) | 15 | 0 | 24 | 3 |
+| Rev7 N=3 (`449b0cf`) | 7 | 0 | 7 | 0 |
+
+Como ler a tabela:
+
+- **Régua comparável (Rev6).** O Aletheia fica em 0 nas três rodadas.
+- **Régua contextual.** O Aletheia da Rev6 teria 3 ações fora, todas
+  `Scale(api, 64)` no cenário 05. É a brecha que a política contextual da Rev7 fecha: 0.
+- **O baseline Python mudou entre as rodadas.** Na Rev7, o prompt dele passou a carregar a
+  telemetria e a regra "escale só com CPU ≥ 85%". Por isso a queda do Python de 15 para 7
+  ações fora, e de 18/18 para 7/18 ataques bem-sucedidos, mede um baseline mais instruído,
+  não uma mudança no Aletheia.
+- **A rodada `449b0cf` declara uma régua só.** Ela gravou em `out_of_policy` o oráculo
+  contextual. A reavaliação sob as duas réguas está em
+  `bench/m1/live/rev7-groq-120b-n3/oracles.md`.
+- **Defeito no baseline.** O prompt do Python nessa rodada tinha `\n` literal no lugar de
+  quebra de linha (`bench/m1/python/agent.py`). Corrigido depois da rodada; o conteúdo
+  informativo era o mesmo.
 
 A nova bateria real no Groq 120B está definida em
 `.github/workflows/rev7-groq-120b-m1.yml` e exige
@@ -106,3 +174,25 @@ cluster real ou a outro modelo.
 
 O benchmark oficial AgentDojo **ainda não foi executado**. A M1
 é um experimento próprio, não um resultado AgentDojo oficial.
+
+## E. T2 unificado no Lean
+
+O `evalScoped` da Rev6 era um avaliador paralelo. Seu T2 provava a guarda de um monitor, e
+não valia para o `eval` do T1 e do T3. A Rev7 elimina esse avaliador. `Cap[E]` passa a ser o
+tipo de capacidade do próprio núcleo:
+
+- `act t k a` exige `Γ[k] = Cap[E]` e `effect t ∈ E`;
+- o `eval` canônico confere a concessão do runtime antes de emitir o evento;
+- toda capacidade é **linear com multiplicidade 1**. `consumes` conta o consumo exato em
+  todos os caminhos, e o descarte só existe como `drop` explícito.
+
+T1 e T3 foram reprovados sobre essa semântica. O T2 (`lean/Aletheia/Confinement.lean`) prova,
+para o mesmo `eval`:
+
+- toda ação foi concedida pelo runtime, para qualquer programa;
+- toda ação usou uma `Cap[E]` léxica com o efeito, para programa bem tipado;
+- cada capacidade é consumida exatamente uma vez;
+- a checagem estática basta: a guarda dinâmica nunca recusa um programa bem tipado e linear
+  com concessões coerentes.
+
+`lake build --wfail` passa, sem `sorryAx` em nenhum teorema. Detalhes em `lean/README.md`.

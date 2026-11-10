@@ -458,6 +458,9 @@ bench/replay/    cassetes de tráfego real da Groq, reproduzidos nos dois backen
 | E0503 / E0505 | E2 | efeito sem tratador; compensador inválido |
 | E0601 / E0602 / E0603 | E2 | `await` fora de saga; `return` dentro de saga; `reconcile`/`transfer` fora do tratador |
 | E0420 | E2 | política impura |
+| E0421 | E3 | a política decide pela fotografia confiável (`s.…`), mas o prompt do `infer` não recebe `s.managed()` |
+| E0422 | E3 | descompasso: o prompt recebe `s.managed()`, mas a política compara com inventário escrito à mão |
+| E0423 | E2 | sonda contextual (`s.is_managed`, `s.scale_justified`) fora de política |
 | T0301 / T0302 / T0303 / T0305 | E2 | irrevogável sem `commit`; irrevogável na saga; `commit` em revogável; provedor opaco na saga |
 | E0451 / E0450 | E5 | literal fora do refinamento; refinamento sem prova (inclusive limites de lista e domínio da política) |
 | E0452 | E5 | lista literal fora de `List[T, a..b]` |
