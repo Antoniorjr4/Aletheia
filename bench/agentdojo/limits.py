@@ -41,6 +41,9 @@ def main() -> int:
     if summary:
         with open(summary, "a") as f:
             f.write(f"### Limites da Groq para `{model}`\n\nHTTP {status}\n\n{table}\n\n")
+    if status == 401:
+        print("::error::a Groq recusou a chave (HTTP 401): crie uma chave nova e grave-a no segredo GROQ_API_KEY")
+        return 3
     return 0
 
 

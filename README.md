@@ -9,7 +9,9 @@ tráfego real da Groq. Há também um núcleo formal em Lean 4, com a solidez de
 efeitos com capacidades lineares `Cap[E]` (T2) e a não-interferência com endosso robusto (T3)
 provados sem `sorry` sobre o mesmo avaliador. Esse avaliador também roda compilado
 (`ath-lean-eval`): é o terceiro backend de um tripé diferencial em que o Lean, o ARX e o
-Python produzem o mesmo journal encadeado, byte a byte. O objetivo é provar uma coisa:
+Python produzem o mesmo journal encadeado, byte a byte. Para a suíte oficial `banking` do
+AgentDojo, o agente bancário é um programa Aletheia ligado ao benchmark por um
+`BasePipelineElement`. O objetivo é provar uma coisa:
 integridade, efeitos, capacidades, linearidade, refinamentos, orçamento e transações
 sobre o mundo podem ser verificados **juntos, antes de rodar**, num programa de agente
 real. E o tipo da saída de um modelo pode ser, ao mesmo tempo, a gramática que o modelo
@@ -40,7 +42,7 @@ provas pedem o Lean 4.20.0, que o `elan` instala a partir de `lean/lean-toolchai
 
 ```sh
 cargo build --release
-cargo test                                    # 93 testes, inclusive os diferenciais e o replay da Groq
+cargo test                                    # 98 testes, inclusive os diferenciais e o replay da Groq
 (cd runtimes/python && PYTHONPATH=. python3 -m unittest discover -s tests)   # runtime Python
 python3 -m unittest discover -s bench/m1/tests   # os dois oráculos da M1 contra as rodadas publicadas
 (cd lean && lake build --wfail)               # T1, T2 e T3 em Lean 4, auditoria de axiomas e ath-lean-eval
@@ -403,6 +405,14 @@ let draft = infer planner -> Action {
 - **Escala justificada.** `s.scale_justified(d, to)` exige CPU observada entre 85% e 100% e um
   aumento até o dobro das réplicas atuais. Sem telemetria, a resposta é não.
 
+**Inventários nomeados.** A fotografia também carrega inventários confiáveis com nome, para
+hosts que não são clusters. `s.inventory("k")` entrega o inventário `k` ao prompt
+(`Text ^ Trusted`, com o rótulo de estado confiável) e `s.member("k", x)` decide dentro da
+política. A ancoragem vale por nome: o `E0421` acusa uma política que decide por um
+inventário que o prompt não recebeu, e o `E0424` acusa um nome que não é literal. O agente
+do AgentDojo usa três: `payees`, `scheduled` e `quoted`
+([`bench/agentdojo/`](bench/agentdojo/README.md)).
+
 ## Núcleo formal (Lean 4)
 
 [`lean/`](lean/README.md) mecaniza o núcleo λ_Ath que o `athc` verifica e o ARX executa:
@@ -532,7 +542,7 @@ lean/            núcleo λ_Ath em Lean 4: sintaxe, tipagem, avaliador, T1, T2 e
 examples/        remediação, plano em lista (rollout), mundos com falhas, 24 variantes com erro e o gerador
 bench/m1/        harness da métrica M1: cenários, linha de base Python, agente, dois oráculos, reavaliação
 bench/replay/    cassetes de tráfego real da Groq (20B e 120B), reproduzidos nos dois backends a cada push
-bench/agentdojo/ preparação para as suítes oficiais do AgentDojo: descoberta de metadados e mapeamento fail-closed (sem execução)
+bench/agentdojo/ a suíte oficial do AgentDojo: ponte BasePipelineElement, agente banking.ath, executor pareado e matriz
 docs/            registros da Rev6 e da Rev7: execuções reais, decisões e limites
 .github/         CI (fmt, clippy -D warnings, testes, diferenciais, replay, runtime Python, oráculos, Lean, tripé, M1), fogo real, M1 multiamostra e gravação
 ```
@@ -548,7 +558,8 @@ docs/            registros da Rev6 e da Rev7: execuções reais, decisões e lim
 | 2.4 Listas delimitadas | `List[T, a..b]` no tipo, na gramática (`minItems`/`maxItems`, repetição limitada na GBNF, autômato de prefixo) e nos estratos; `for`, `all`/`any`, `len`; laços aninhados |
 | 2.5 Compilador de gramática (`ath-grammar`) | tipo → forma → JSON Schema estrito em dois dialetos (`core`: intervalos de até 256 valores viram `enum` exato; `full`: `minimum`/`maximum`/`maxLength`), GBNF, autômato de prefixo viável, máscara de tokens e teto de bytes que entra no E6 |
 | 2.6 Capacidades e integridade | capacidades só vêm dos parâmetros do agente, com atenuação; Untrusted ⊑ Endorsed ⊑ Trusted; `pc` para fluxos implícitos; `quote` obrigatório no prompt; pós-condições ⊒ Endorsed |
-| Estado confiável do host | `s.managed()`/`s.telemetry()` `^ Trusted` de uma fotografia única por execução; política contextual (`s.is_managed`, `s.scale_justified`); rótulo Trusted no payload; fotografia no journal; vetos E0421/E0422/E0423 pelo fluxo `infer` → `refine` |
+| Estado confiável do host | `s.managed()`/`s.telemetry()` `^ Trusted` de uma fotografia única por execução; inventários nomeados (`s.inventory("k")`, `s.member("k", x)`); política contextual (`s.is_managed`, `s.scale_justified`); rótulo Trusted no payload; fotografia no journal; vetos E0421/E0422/E0423/E0424 pelo fluxo `infer` → `refine` |
+| AgentDojo oficial | `AletheiaAgent` (`BasePipelineElement`) sobre o pacote `agentdojo` (v1.2.2): agente `banking.ath`, host ligado às funções oficiais, executor pareado e retomável (baseline padrão × Aletheia), matriz de utilidade, utilidade sob ataque e ASR com IC de Wilson; testado offline na CI |
 | 2.5 Contrato Δ versionado | `id`/`provider`/`version` e `overhead` no `model`; o contrato inteiro no hash do Codex e no journal; overhead na janela, no orçamento e na reserva; cobertura do esquema (B0302); deriva em runtime (R0704, R0705); `athc contract-report` |
 | 2.7 Orçamento | E6 estático no pior caminho sob Δ, inclusive o de falha da saga; β(laço) ⪯ teto · β(corpo), aninhado por multiplicação; reserva antes, liquidação depois (inclusive da amostra que viola o contrato); `ContractBreach` por latência, tokens, modelo ou entrada; obrigações sem reserva |
 | 2.9–2.10 Estratos | E0, E1, E2, E3, E5 (refinamentos decidíveis) e E6, relatando só o primeiro estrato que falha |
@@ -574,9 +585,10 @@ docs/            registros da Rev6 e da Rev7: execuções reais, decisões e lim
 | E0503 / E0505 | E2 | efeito sem tratador; compensador inválido |
 | E0601 / E0602 / E0603 | E2 | `await` fora de saga; `return` dentro de saga; `reconcile`/`transfer` fora do tratador |
 | E0420 | E2 | política impura |
-| E0421 | E3 | a política decide pela fotografia confiável (`s.…`), mas o prompt do `infer` não recebe `s.managed()` |
+| E0421 | E3 | a política decide pela fotografia confiável (`s.…`), mas o prompt do `infer` não recebe o inventário em que ela decide (`s.managed()`, `s.inventory("k")`) |
 | E0422 | E3 | descompasso: o prompt recebe `s.managed()`, mas a política compara com inventário escrito à mão |
-| E0423 | E2 | sonda contextual (`s.is_managed`, `s.scale_justified`) fora de política |
+| E0423 | E2 | sonda contextual (`s.is_managed`, `s.scale_justified`, `s.member`) fora de política |
+| E0424 | E3 | nome de inventário (`s.inventory`, `s.member`) que não é literal de texto |
 | T0301 / T0302 / T0303 / T0305 | E2 | irrevogável sem `commit`; irrevogável na saga; `commit` em revogável; provedor opaco na saga |
 | E0451 / E0450 | E5 | literal fora do refinamento; refinamento sem prova (inclusive limites de lista e domínio da política) |
 | E0452 | E5 | lista literal fora de `List[T, a..b]` |
@@ -606,9 +618,11 @@ docs/            registros da Rev6 e da Rev7: execuções reais, decisões e lim
   tokenização de um prompt longo.
 - **Calibração automática do Δ:** o `athc contract-report` sugere a recalibração pela cauda
   observada, mas ela ainda não volta sozinha ao contrato nem é versionada pelo CI.
-- **Mundo:** cluster simulado; cenários no estilo do AgentDojo, não as suítes do AgentDojo.
-  `bench/agentdojo/` só descobre os metadados das suítes oficiais e mapeia ferramentas de forma
-  fail-closed: nenhuma tarefa oficial foi executada.
+- **AgentDojo oficial:** a ponte `BasePipelineElement` e o agente `banking.ath` rodam a suíte
+  oficial `banking` (v1.2.2) com os verificadores do pacote. Offline, a CI testa a ponte com
+  o pacote oficial, um modelo roteirizado e uma API compatível local. A primeira rodada com a
+  Groq ainda não aconteceu: a chave gravada em `GROQ_API_KEY` passou a ser recusada (HTTP
+  401) antes da primeira chamada. Ver [`bench/agentdojo/RESULTS.md`](bench/agentdojo/RESULTS.md).
 - **Inventário dinâmico no decodificador:** `Action.deploy` continua `Text[..32]` na gramática.
   O inventário restringe pela política e pelo prompt, não por um `enum` construído a cada
   chamada. A fotografia é imutável por execução, mas um host real ainda precisa de versão ou
@@ -626,9 +640,8 @@ docs/            registros da Rev6 e da Rev7: execuções reais, decisões e lim
 
 1. **Sagas no Lean**: `atomic … recover`, compensação e `reconcile` no núcleo, com T6
    (recuperação de sagas) sobre um estado abstrato do mundo, ligado ao mesmo `eval`.
-2. **Suítes reais do AgentDojo** pelo provedor `openai`: a ponte `BasePipelineElement` sobre o
-   adaptador fail-closed de `bench/agentdojo/`, medindo utilidade e ataques com vários
-   modelos, cada execução gravada como cassete.
+2. **A matriz oficial do AgentDojo**: completar a rodada `banking` (16 tarefas e 144 pares
+   sob ataque, baseline × Aletheia) e estender a ponte à suíte `workspace`.
 3. **Invariantes de recuperação provados**: contratos `restoring` sobre um estado abstrato do
    mundo, descarregados em E5 com SMT, e cobertura de footprint nas pós-condições.
 4. **Recuperação após queda** a partir do journal, e o reconciliador durável como serviço.

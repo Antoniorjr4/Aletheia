@@ -59,8 +59,8 @@ jobs:
       - name: segredo GROQ_API_KEY e permissão do modelo
         run: |
           test -n "$OPENAI_API_KEY" || { echo "::error::defina o segredo de repositório GROQ_API_KEY"; exit 1; }
-          python3 bench/m1/probe.py --pick "$MODEL"
           python3 bench/agentdojo/limits.py "$MODEL"
+          python3 bench/m1/probe.py --pick "$MODEL"
       - name: athc e o pacote oficial
         run: |
           cargo build --release --bin athc
