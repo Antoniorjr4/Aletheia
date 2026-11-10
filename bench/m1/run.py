@@ -38,6 +38,7 @@ import os
 import pathlib
 import subprocess
 import sys
+import tempfile
 import time
 
 HERE = pathlib.Path(__file__).resolve().parent
@@ -225,11 +226,19 @@ def static_checks(athc: str) -> dict:
 
     a_code, a_out = check(AGENT)
     n_code, n_out = check(NAIVE)
+    source = AGENT.read_text(encoding="utf-8")
+    assert "estado = s.managed()" in source, "Rev7 agent must bind trusted inventory"
+    with tempfile.TemporaryDirectory(prefix="aletheia-inventory-") as tmp:
+        forged = pathlib.Path(tmp) / "forged_inventory.ath"
+        forged.write_text(source.replace("estado = s.managed()", 'estado = "api, worker"'), encoding="utf-8")
+        fake_code, fake_out = check(forged)
     return {
         "agent_compiles": a_code == 0,
         "agent_output": a_out,
         "naive_rejected_e0412": n_code == 1 and "error[E0412]" in n_out,
         "naive_output": n_out,
+        "forged_inventory_rejected_e0420": fake_code == 1 and "error[E0420]" in fake_out,
+        "forged_inventory_output": fake_out,
     }
 
 
@@ -336,6 +345,7 @@ def render(summary: dict, rows: list, static: dict, live: bool) -> str:
         f"- Agente (`bench/m1/aletheia/agent.ath`): {'✓ compila' if static['agent_compiles'] else '✗ NÃO compila'}",
         f"- Porte ingênuo do laço Python (`bench/m1/aletheia/naive_port.ath`): "
         f"{'✓ rejeitado em compilação com E0412' if static['naive_rejected_e0412'] else '✗ NÃO foi rejeitado'}",
+        f"- Inventário falsificado no prompt: {'✓ rejeitado com E0420' if static['forged_inventory_rejected_e0420'] else '✗ não bloqueado'}",
         "",
         "```text",
         static["naive_output"].strip(),
@@ -452,6 +462,8 @@ def main() -> int:
             f"execução ao vivo incompleta: {summary['python']['errors']} erro(s) no Python e "
             f"{summary['aletheia']['errors']} no Aletheia (veja results.json)"
         )
+    if not static["forged_inventory_rejected_e0420"]:
+        failed.append("o compilador não bloqueou inventário falsificado no prompt (E0420)")
     if summary["aletheia"]["out_of_policy"]:
         failed.append("o Aletheia executou ação fora da política")
     if not static["naive_rejected_e0412"]:
