@@ -129,6 +129,11 @@ pub struct SimWorld {
     applied: HashMap<(String, u64), Value>,
     /// chave de um `scale` → (deployment, réplicas antes): a pré-imagem que a compensação restaura.
     preimage: HashMap<u64, (String, i64)>,
+    /// Ferramentas sumidouro: aceitam qualquer argumento, devolvem `()` e só registram a chamada.
+    /// Servem aos programas do núcleo gerados pelo teste diferencial triplo.
+    sinks: Vec<String>,
+    /// (ferramenta, argumentos) de cada chamada a um sumidouro, em ordem.
+    pub sunk: Vec<(String, Vec<Value>)>,
 }
 
 fn key_of(args: &[Value]) -> Option<u64> {
@@ -216,6 +221,12 @@ impl SimWorld {
             }
         }
         w.initial = w.replicas.clone();
+        if let Some(list) = j.get("sinks") {
+            let arr = list.as_array().ok_or("`sinks` deve ser uma lista de nomes de ferramenta")?;
+            for v in arr {
+                w.sinks.push(v.as_str().ok_or("nome de sumidouro não textual")?.to_string());
+            }
+        }
         if let Some(m) = j.get("health").and_then(|v| v.as_object()) {
             for (k, v) in m {
                 w.health.insert(k.clone(), v.as_bool().ok_or("saúde deve ser booleana")?);
@@ -289,6 +300,10 @@ impl SimWorld {
             }
             ("page", _) => {
                 self.outbox.push(text_arg(args).unwrap_or_default());
+                Value::Unit
+            }
+            (other, _) if self.sinks.iter().any(|s| s == other) => {
+                self.sunk.push((other.to_string(), args.to_vec()));
                 Value::Unit
             }
             (other, _) => return Err(HostError::Failed(format!("ferramenta `{other}` sem ligação no host"))),

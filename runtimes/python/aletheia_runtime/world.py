@@ -68,6 +68,10 @@ class SimWorld:
         self.calls: dict = {}
         self.applied: dict = {}
         self.preimage: dict = {}
+        # Ferramentas sumidouro: aceitam qualquer argumento, devolvem () e só registram a chamada.
+        # Servem aos programas do núcleo gerados pelo teste diferencial triplo.
+        self.sinks = [str(s) for s in spec.get("sinks", [])]
+        self.sunk: list = []
 
     def lat(self, tool: str) -> float:
         return self.latency.get(tool, 0.5)
@@ -118,6 +122,9 @@ class SimWorld:
             return self.replicas.get(d) == self.initial.get(d)
         if tool == "page":
             self.outbox.append(next((a for a in args if isinstance(a, str)), ""))
+            return None
+        if tool in self.sinks:
+            self.sunk.append((tool, list(args)))
             return None
         raise HostFailed(f"ferramenta `{tool}` sem ligação no host")
 

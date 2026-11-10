@@ -1,6 +1,6 @@
 name = "aletheia"
 version = "0.1.0"
-defaultTargets = ["Aletheia", "Audit"]
+defaultTargets = ["Aletheia", "Audit", "ath-lean-eval"]
 
 [[lean_lib]]
 name = "Aletheia"
@@ -9,3 +9,8 @@ name = "Aletheia"
 [[lean_lib]]
 name = "Audit"
 roots = ["Aletheia.Axioms"]
+
+# o avaliador formal como 3º backend executável dos testes diferenciais
+[[lean_exe]]
+name = "ath-lean-eval"
+root = "Main"

@@ -21,3 +21,5 @@ serde_json.workspace = true
 
 [dev-dependencies]
 ath-grammar.workspace = true
+# o tripé diferencial confere o BLAKE3 do avaliador do Lean contra o crate de referência
+blake3.workspace = true

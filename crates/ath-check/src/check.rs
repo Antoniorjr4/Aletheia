@@ -2073,11 +2073,11 @@ impl<'m> Ctx<'m> {
         if fields.iter().any(|(_, v)| is_inventory_anchor(v)) {
             self.anchored.insert(e.span);
         }
-        if !matches!(oty, Ty::Adt(_) | Ty::Text | Ty::List(..) | Ty::Never) {
+        if !matches!(oty, Ty::Adt(_) | Ty::Text | Ty::List(..) | Ty::Int | Ty::Bool | Ty::Never) {
             self.push(Diag::new(
                 E0,
                 "E0021",
-                "a saída de `infer` deve ser um tipo algébrico, `Text` ou uma lista delimitada",
+                "a saída de `infer` deve ser um tipo algébrico, `Int`, `Bool`, `Text` ou uma lista delimitada",
                 out.span(),
                 format!("encontrado `{}`", oty.show()),
             ));

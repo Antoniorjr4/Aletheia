@@ -74,6 +74,7 @@ dependencies = [
  "ath-emit",
  "ath-grammar",
  "ath-syntax",
+ "blake3",
  "serde_json",
 ]
 

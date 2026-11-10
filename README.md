@@ -7,7 +7,9 @@ compilador `athc`, o runtime `ARX` em Rust e um segundo backend, Python sobre o
 `aletheia_runtime`, verificado contra o ARX por testes diferenciais, inclusive por replay de
 tráfego real da Groq. Há também um núcleo formal em Lean 4, com a solidez de tipos (T1), os
 efeitos com capacidades lineares `Cap[E]` (T2) e a não-interferência com endosso robusto (T3)
-provados sem `sorry` sobre o mesmo avaliador. O objetivo é provar uma coisa:
+provados sem `sorry` sobre o mesmo avaliador. Esse avaliador também roda compilado
+(`ath-lean-eval`): é o terceiro backend de um tripé diferencial em que o Lean, o ARX e o
+Python produzem o mesmo journal encadeado, byte a byte. O objetivo é provar uma coisa:
 integridade, efeitos, capacidades, linearidade, refinamentos, orçamento e transações
 sobre o mundo podem ser verificados **juntos, antes de rodar**, num programa de agente
 real. E o tipo da saída de um modelo pode ser, ao mesmo tempo, a gramática que o modelo
@@ -38,10 +40,11 @@ provas pedem o Lean 4.20.0, que o `elan` instala a partir de `lean/lean-toolchai
 
 ```sh
 cargo build --release
-cargo test                                    # 88 testes, inclusive os diferenciais e o replay da Groq
+cargo test                                    # 93 testes, inclusive os diferenciais e o replay da Groq
 (cd runtimes/python && PYTHONPATH=. python3 -m unittest discover -s tests)   # runtime Python
 python3 -m unittest discover -s bench/m1/tests   # os dois oráculos da M1 contra as rodadas publicadas
-(cd lean && lake build --wfail)               # T1, T2 e T3 em Lean 4, com auditoria de axiomas
+(cd lean && lake build --wfail)               # T1, T2 e T3 em Lean 4, auditoria de axiomas e ath-lean-eval
+cargo test -p athc --test differential        # com o binário do Lean presente: o tripé Lean × ARX × Python
 
 # reproduzir tráfego real gravado na Groq, nos dois backends
 ./target/release/athc replay bench/replay/2026-11-09-groq-gpt-oss-20b-capacidade/remediate-capacidade-compensa.arx.cassette.json \
@@ -310,6 +313,20 @@ orçamento. São 29 casos:
 - 8 planos de `rollout.ath`, inclusive sagas e reconciliação dentro de laços;
 - os 7 cenários da M1.
 
+No mesmo arquivo está o **tripé**. O avaliador formal do Lean (`ath-lean-eval`, o `eval`
+sobre o qual T1–T3 estão provados) entra como terceiro backend. Para programas do núcleo
+λ_Ath, os três backends precisam produzir o mesmo **journal do núcleo** (`act`, `endorse`,
+`end`), byte a byte:
+
+- **o Lean** escreve o journal a partir do traço do seu avaliador;
+- **o ARX e o Python** o derivam dos seus journals completos (`athc run --core-journal`), cada
+  um com o seu BLAKE3.
+
+O corpus tem 160 programas gerados por semente: bem tipados e lineares, conferidos por uma
+reimplementação das regras de `Typing.lean`. Inclui ainda a injeção da Groq de
+`Examples.lean` e o BLAKE3 do Lean contra o crate de referência. Detalhes em
+[`lean/README.md`](lean/README.md#o-tripé-diferencial-ath-lean-eval).
+
 ## Replay de tráfego real
 
 Os dois backends têm o provedor `openai`, com a mesma requisição byte a byte: corpo, esquema,
@@ -412,7 +429,9 @@ efeito sem capacidade, reuso de capacidade linear, estouro de orçamento antes d
   sob `pc ⊒ Endorsed`.
 
 O CI roda `lake build --wfail`, e um alvo de auditoria fixa o conjunto de axiomas de cada
-teorema: só `propext`, `Quot.sound` e `Classical.choice`. No cálculo, toda capacidade é
+teorema: só `propext`, `Quot.sound` e `Classical.choice`. O mesmo build compila o avaliador no
+binário `ath-lean-eval`, e o job `tripod` da CI o executa contra o ARX e o Python sobre 400
+programas gerados (o [tripé diferencial](#backend-python)). No cálculo, toda capacidade é
 linear; no ARX, as capacidades de ferramenta são reutilizáveis e a linearidade vale para
 `IdemKey` e `Pending`. Aproximar as duas disciplinas faz parte da prova de refinamento, que
 ainda não existe.
@@ -509,13 +528,13 @@ crates/
   ath-emit/      emissor Python (ANF, nomes únicos, metadados calculados em Rust)
   athc/          CLI, renderização de diagnósticos, testes ponta a ponta e diferenciais
 runtimes/python/ aletheia_runtime: a semântica do ARX em Python (só biblioteca padrão), provedor openai, gravação e replay
-lean/            núcleo λ_Ath em Lean 4: sintaxe, tipagem, avaliador, T1, T2 e T3, exemplos e auditoria de axiomas
+lean/            núcleo λ_Ath em Lean 4: sintaxe, tipagem, avaliador, T1, T2 e T3, exemplos, auditoria de axiomas e o binário ath-lean-eval (BLAKE3 em Lean)
 examples/        remediação, plano em lista (rollout), mundos com falhas, 24 variantes com erro e o gerador
 bench/m1/        harness da métrica M1: cenários, linha de base Python, agente, dois oráculos, reavaliação
 bench/replay/    cassetes de tráfego real da Groq (20B e 120B), reproduzidos nos dois backends a cada push
 bench/agentdojo/ preparação para as suítes oficiais do AgentDojo: descoberta de metadados e mapeamento fail-closed (sem execução)
 docs/            registros da Rev6 e da Rev7: execuções reais, decisões e limites
-.github/         CI (fmt, clippy -D warnings, testes, diferenciais, replay, runtime Python, oráculos, Lean, M1), fogo real, M1 multiamostra e gravação
+.github/         CI (fmt, clippy -D warnings, testes, diferenciais, replay, runtime Python, oráculos, Lean, tripé, M1), fogo real, M1 multiamostra e gravação
 ```
 
 ## O que está implementado
@@ -539,6 +558,7 @@ docs/            registros da Rev6 e da Rev7: execuções reais, decisões e lim
 | 5.4 Métrica M1 | harness reprodutível no CI (simulado) e contra modelo real (workflows); dois oráculos versionados; rodadas N=3 no 120B (Rev6, Rev7) com reavaliação offline |
 | F1 Backend Python | `athc emit --target py` + `aletheia_runtime`; testes diferenciais traço a traço contra o ARX no CI |
 | F1 Replay | provedor `openai` nos dois backends; `--record`/`replay` no nível HTTP; 22 cassetes reais da Groq (20B e 120B) reproduzidos no CI com o mesmo journal, a mesma árvore de compensação e o mesmo balanço |
+| Tripé diferencial | `ath-lean-eval` (o `eval` provado, compilado) × ARX × Python: o mesmo journal do núcleo, byte a byte, em programas gerados bem tipados e lineares e na injeção da Groq; job `tripod` na CI |
 | 4 Metateoria (T1, T2, T3) | `lean/`: núcleo λ_Ath em Lean 4, com um só julgamento e um só avaliador: solidez (progresso, preservação, orçamento graduado), efeitos com `Cap[E]` linear (multiplicidade 1, `drop` explícito, concessão do runtime) e não-interferência com endosso robusto; sem `sorry`, axiomas auditados no build |
 
 ### Erros que o compilador já pega
@@ -598,21 +618,21 @@ docs/            registros da Rev6 e da Rev7: execuções reais, decisões e lim
   registros, variantes e `match`, `Text`, `mint` e atenuação, `retry`, sagas e reconciliação
   (T6, T9: `Recovery.lean` é só um modelo abstrato), graus de certeza, localizações e T4/T5. A
   prova é do cálculo. Entre o cálculo e o ARX, e entre o ARX e o Python, a correspondência é
-  verificada por construção e por testes diferenciais, não demonstrada.
+  verificada por construção e por testes diferenciais (o tripé executa o próprio avaliador
+  provado), não demonstrada. O tripé cobre o fragmento linear do núcleo, sem `drop` na
+  superfície.
 
 ## Próximos marcos
 
 1. **Sagas no Lean**: `atomic … recover`, compensação e `reconcile` no núcleo, com T6
    (recuperação de sagas) sobre um estado abstrato do mundo, ligado ao mesmo `eval`.
-2. **O avaliador do Lean como terceiro backend**: compilar o avaliador mecanizado e rodá-lo
-   nos testes diferenciais do núcleo, ligando o journal do ARX ao traço do cálculo.
-3. **Suítes reais do AgentDojo** pelo provedor `openai`: a ponte `BasePipelineElement` sobre o
+2. **Suítes reais do AgentDojo** pelo provedor `openai`: a ponte `BasePipelineElement` sobre o
    adaptador fail-closed de `bench/agentdojo/`, medindo utilidade e ataques com vários
    modelos, cada execução gravada como cassete.
-4. **Invariantes de recuperação provados**: contratos `restoring` sobre um estado abstrato do
+3. **Invariantes de recuperação provados**: contratos `restoring` sobre um estado abstrato do
    mundo, descarregados em E5 com SMT, e cobertura de footprint nas pós-condições.
-5. **Recuperação após queda** a partir do journal, e o reconciliador durável como serviço.
-6. **Calibração de Δ no ciclo de CI**: o fogo real alimenta o `contract-report`, que propõe a
+4. **Recuperação após queda** a partir do journal, e o reconciliador durável como serviço.
+5. **Calibração de Δ no ciclo de CI**: o fogo real alimenta o `contract-report`, que propõe a
    próxima versão do contrato como mudança revisável.
 
 ## Licença

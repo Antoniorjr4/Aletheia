@@ -24,6 +24,7 @@ uso:
   athc run <arquivo.ath> [--agent A] [--on evento] [--arg literal]...
                          [--world mundo.json] [--models modelos.json] [--journal saída.jsonl]
                          [--provider masked|scripted|openai] [--report relatório.json]
+                         [--core-journal núcleo.jsonl]
       verifica e executa um handler no runtime ARX
       (sem --world/--models, usa fixtures/world.json e fixtures/models.json ao lado do arquivo)
       provedores:
@@ -335,6 +336,16 @@ fn cmd_run(opts: &Opts, st: Style) -> Result<bool, String> {
         &arx.journal.head[..12],
         chain
     );
+    if let Some(cp) = opts.one("core-journal") {
+        let core = Journal::core_view(&arx.journal.entries);
+        std::fs::write(cp, core.to_jsonl()).map_err(|e| format!("falha ao gravar o journal do núcleo: {e}"))?;
+        println!(
+            "  {:<9} {cp} · {} entradas · cabeça #{} (vista do núcleo λ_Ath)",
+            "núcleo",
+            core.entries.len(),
+            &core.head[..12]
+        );
+    }
     if let (Some((t, config)), Some(out)) = (&tape, opts.one("record")) {
         let cassette = Cassette {
             provider: provider_name.clone(),

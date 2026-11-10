@@ -18,7 +18,12 @@ qualquer aviso, inclusive `declaration uses 'sorry'`.
 ```bash
 cd lean
 lake build --wfail          # toolchain fixado em lean-toolchain (Lean 4.20.0)
+                            # provas, auditoria de axiomas e o binário ath-lean-eval
 ```
+
+O mesmo avaliador sobre o qual os teoremas estão provados também roda como programa: o
+binário `ath-lean-eval` é o terceiro backend dos testes diferenciais, ao lado do ARX (Rust) e
+do `aletheia_runtime` (Python). Ver [o tripé diferencial](#o-tripé-diferencial-ath-lean-eval).
 
 ## O que está modelado
 
@@ -186,10 +191,61 @@ endosso aceito satisfaz a sua política auditada.
 
   Os dois divergem exatamente na decisão de endosso.
 
+## O tripé diferencial (`ath-lean-eval`)
+
+| arquivo | conteúdo |
+|---|---|
+| `Exec.lean` | leitura do programa do núcleo em JSON, a assinatura Σ, o oráculo roteirizado e a configuração; `Prog.run` **é** `eval` (`Prog.run_eq : … := rfl`); o journal do núcleo como função pura do traço |
+| `Blake3.lean` | BLAKE3 executável (compressão, chunks, árvore), com os vetores da especificação conferidos no build por `#guard` |
+| `Main.lean` | o binário: `ath-lean-eval run programa.json` escreve o journal do núcleo; `ath-lean-eval hash arquivo` imprime o BLAKE3 |
+
+O **journal do núcleo** contém só o que a semântica formal observa. Há um evento por elemento
+do traço `Out.tr` e um `end` com o valor final:
+
+- `act {args, cap, tool}`, em que `cap` é o conjunto de efeitos concedidos à capacidade;
+- `endorse {accepted, policy, value}`;
+- `end {value}`.
+
+Cada entrada é encadeada por BLAKE3, com a serialização canônica do ARX (chaves ordenadas,
+sem espaços, sem carimbo de tempo). O ARX e o runtime Python produzem a mesma vista a partir
+dos seus journals completos. O ARX usa `Journal::core_view` (e `athc run --core-journal`); o
+runtime Python usa `journal.core_view` (e `--core-journal`). Cada implementação recalcula os
+hashes com o seu próprio BLAKE3.
+
+Os testes em [`crates/athc/tests/differential.rs`](../crates/athc/tests/differential.rs)
+exigem que os três journals coincidam **byte a byte**, logo com a mesma cabeça de hash:
+
+- **Programas gerados.** Um gerador dirigido por tipo
+  ([`lambda_ath/mod.rs`](../crates/athc/tests/lambda_ath/mod.rs)) produz programas do núcleo.
+  Uma reimplementação das regras de `Typing.lean` e da contagem `consumes` confere cada um
+  deles: só entram programas bem tipados e lineares, o domínio do T1–T3. Os programas cobrem
+  ramos que consomem capacidades, laços aninhados com endossos e endossos aceitos e recusados.
+  Metade das respostas do oráculo cai na fronteira de alguma política. Cada programa é
+  traduzido para a superfície em forma A-normal, na ordem de avaliação de `eval`, e precisa
+  passar pelo `athc check`. São 160 sementes no `cargo test` e 400 no job `tripod` da CI.
+- **A injeção da Groq** (`Examples.remediate`): as duas execuções dos `example` do Lean (o
+  modelo responde 0 e 5) viram dois journals idênticos nos três backends, e as cabeças
+  divergem.
+- **O BLAKE3 do Lean contra o crate `blake3`**, de 0 a 100 KB, cruzando as fronteiras de bloco
+  (64 bytes), de chunk (1 KiB) e da árvore.
+
+Um teste de mutação mostra que o tripé não é vácuo. Trocar `≤` por `<` na política do
+`ath-lean-eval` derruba o diferencial já na 22ª semente.
+
+O tripé não é uma prova de refinamento. Ele mostra que, no corpus gerado, o ARX e o Python
+produzem exatamente os eventos do avaliador provado. Duas diferenças da superfície ficam
+explícitas na tradução:
+
+- **`drop`:** a superfície ainda não tem `drop`, e o descarte explícito do núcleo, que não
+  emite evento, vira ausência de chamada;
+- **capacidades:** a superfície ainda trata `Cap` como reutilizável, então o gerador só produz
+  o fragmento linear.
+
 ## Fora deste núcleo, por ora
 
 A prova é do cálculo, não do código Rust ou Python. A correspondência com o ARX vem da
-construção e dos testes diferenciais, não de uma prova de refinamento. Por construção, o
+construção e do tripé diferencial (o avaliador provado, executado, contra os dois runtimes),
+não de uma prova de refinamento. Por construção, o
 ARX tem os mesmos erros, a reserva antes do efeito e a mesma contagem do E1 e do E6.
 
 Uma diferença deliberada: o E1 do `athc` aplica multiplicidade 1 às obrigações lineares

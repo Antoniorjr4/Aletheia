@@ -11,6 +11,8 @@
   --agent A --on evento     (padrão: o primeiro agente e o primeiro handler)
   --arg-json JSON           argumento do evento no formato `Value::to_json` (repetível)
   --journal saída.jsonl     journal encadeado
+  --core-journal saída.jsonl
+                            a vista do núcleo λ_Ath do journal (act, endorse, end), reencadeada
   --report relatório.json   resultado, erro, mundo, orçamento e cabeça do journal
 
 `python -m aletheia_runtime replay cassete.json programa.py [--journal saída.jsonl]`
@@ -27,6 +29,7 @@ import sys
 
 from .canon import dumps
 from .cassette import Cassette, first_divergence
+from .journal import core_view
 from .providers import Masked, OpenAiCompat, Recorder, Replay, Scripted
 from .runtime import RtErr, Runtime
 from .shape import from_arg
@@ -122,6 +125,9 @@ def main(argv: list) -> int:
     if one("journal"):
         with open(one("journal"), "w", encoding="utf-8", newline="\n") as f:
             f.write(rt.journal.to_jsonl())
+    if one("core-journal"):
+        with open(one("core-journal"), "w", encoding="utf-8", newline="\n") as f:
+            f.write(core_view(rt.journal.entries).to_jsonl())
     if recorder is not None:
         manifest = {"source_path": one("source") or path, "agent": agent, "event": event, "args": raw,
                     "world": json.load(open(one("world"), encoding="utf-8")) if one("world") else {}}

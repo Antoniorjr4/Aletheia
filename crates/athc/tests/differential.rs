@@ -5,6 +5,10 @@
 //! mesmo orçamento gasto. Isso cobre o grafo de eventos (ordem e conteúdo de cada entrada), as
 //! decisões de política (`endorse`/`policy_reject`) e os estados de recuperação (sagas,
 //! compensações, `TimeoutUnknown`, reconciliação, transferência).
+//!
+//! No fim do arquivo está o **tripé**: o avaliador formal do Lean (`ath-lean-eval`, o mesmo
+//! `eval` dos teoremas T1–T3) entra como terceiro backend. Para programas do núcleo λ_Ath, as
+//! três realizações precisam produzir o mesmo journal do núcleo, byte a byte.
 
 use arx::host::SimWorld;
 use arx::model::{Masked, ModelProvider, Scripted};
@@ -13,6 +17,8 @@ use athc::{compile, Compiled};
 use serde_json::{json, Value as Json};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+mod lambda_ath;
 
 fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap()
@@ -706,4 +712,264 @@ fn trusted_snapshot_is_labelled_in_the_payload_and_journaled_identically() {
     let py_journal = replay_py(&cas, "trusted-snapshot");
     assert_same("Trusted: gravação × replay ARX", &cas.journal, &arx_journal);
     assert_same("Trusted: gravação × replay Python", &cas.journal, &py_journal);
+}
+
+// ------------------------------------------------------------------ o tripé: Lean × ARX × Python
+
+/// O binário do avaliador formal: `ATH_LEAN_EVAL` ou `lean/.lake/build/bin/ath-lean-eval`
+/// (construído por `lake build` em `lean/`). Sem ele, os testes do tripé conferem só ARX ×
+/// Python e avisam; com `ATH_REQUIRE_LEAN=1` (o job `tripé` da CI), a ausência é falha.
+fn lean_eval() -> Option<PathBuf> {
+    let p = std::env::var_os("ATH_LEAN_EVAL")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| root().join("lean/.lake/build/bin/ath-lean-eval"));
+    if p.is_file() {
+        return Some(p);
+    }
+    assert!(
+        std::env::var_os("ATH_REQUIRE_LEAN").is_none(),
+        "ATH_REQUIRE_LEAN: o avaliador do Lean não está em {}",
+        p.display()
+    );
+    eprintln!("aviso: {} ausente; o tripé roda só ARX × Python (construa com `lake build` em lean/)", p.display());
+    None
+}
+
+fn first_diff(tag: &str, what: &str, a: &str, b: &str) {
+    if a == b {
+        return;
+    }
+    let (la, lb): (Vec<&str>, Vec<&str>) = (a.lines().collect(), b.lines().collect());
+    let i = la.iter().zip(&lb).position(|(x, y)| x != y).unwrap_or(la.len().min(lb.len()));
+    panic!(
+        "{tag}: {what} diferem na entrada {i} ({} × {} entradas)\n  {}\n  {}",
+        la.len(),
+        lb.len(),
+        la.get(i).unwrap_or(&"<fim>"),
+        lb.get(i).unwrap_or(&"<fim>")
+    );
+}
+
+/// O BLAKE3 escrito em Lean (`lean/Aletheia/Blake3.lean`) contra o crate de referência, nas
+/// fronteiras de bloco (64 bytes), de chunk (1024 bytes) e da árvore (2ⁿ chunks).
+#[test]
+fn lean_blake3_matches_the_reference_crate() {
+    let Some(lean) = lean_eval() else { return };
+    let dir = scratch();
+    for n in [0usize, 1, 63, 64, 65, 1023, 1024, 1025, 2047, 2048, 2049, 3072, 4097, 8192, 16_385, 65_536, 100_003] {
+        let data: Vec<u8> = (0..n).map(|i| (i * 31 % 251) as u8).collect();
+        let f = dir.join(format!("b3-{n}.bin"));
+        std::fs::write(&f, &data).unwrap();
+        let out = Command::new(&lean).arg("hash").arg(&f).output().unwrap();
+        assert!(out.status.success(), "ath-lean-eval hash: {}", String::from_utf8_lossy(&out.stderr));
+        let got = String::from_utf8(out.stdout).unwrap();
+        assert_eq!(got.trim(), blake3::hash(&data).to_hex().as_str(), "BLAKE3 de {n} bytes");
+    }
+}
+
+struct Tripod {
+    /// a vista do núcleo do journal de cada backend
+    lean: Option<String>,
+    arx: String,
+    py: String,
+}
+
+/// Executa um programa do núcleo nos três backends. `src` é a tradução de superfície, `core`
+/// o mesmo programa no formato do `ath-lean-eval`.
+fn tripod(tag: &str, src: &str, core: &Json, world: &Json, models: &Json, args: Vec<Value>) -> Tripod {
+    let c = compile(src).unwrap_or_else(|d| {
+        panic!("{tag}: o athc recusou a tradução\n{src}\n{:?}", d.iter().map(|x| (&x.code, &x.msg)).collect::<Vec<_>>())
+    });
+    // ARX
+    let provider = Box::new(Scripted::from_json(models).unwrap());
+    let mut arx = Arx::new(&c.module, Box::new(SimWorld::from_json(world).unwrap()), provider);
+    arx.contracts = athc::contract_hashes(&c);
+    if let Err(e) = arx.run("A", "go", args.clone()) {
+        panic!("{tag}: o ARX abortou ({} {})\n{src}", e.code, e.msg);
+    }
+    let arx_core = arx::journal::Journal::core_view(&arx.journal.entries).to_jsonl();
+    // Python, sobre o código emitido
+    let dir = scratch();
+    let file = tag.replace(|ch: char| !ch.is_ascii_alphanumeric(), "_");
+    let py = ath_emit::python(&c.module, &c.check, &c.codex, &format!("{file}.ath")).expect("emissão");
+    let (pp, w, m, j, cj, r) = (
+        dir.join(format!("{file}.py")),
+        dir.join(format!("{file}.world.json")),
+        dir.join(format!("{file}.models.json")),
+        dir.join(format!("{file}.journal.jsonl")),
+        dir.join(format!("{file}.core.jsonl")),
+        dir.join(format!("{file}.report.json")),
+    );
+    std::fs::write(&pp, py).unwrap();
+    std::fs::write(dir.join(format!("{file}.ath")), src).unwrap();
+    std::fs::write(&w, world.to_string()).unwrap();
+    std::fs::write(&m, models.to_string()).unwrap();
+    let mut cmd = Command::new("python3");
+    cmd.env("PYTHONPATH", root().join("runtimes/python"))
+        .args(["-m", "aletheia_runtime", "run"])
+        .arg(&pp)
+        .args(["--world"])
+        .arg(&w)
+        .args(["--models"])
+        .arg(&m)
+        .args(["--provider", "scripted", "--agent", "A", "--on", "go", "--journal"])
+        .arg(&j)
+        .arg("--core-journal")
+        .arg(&cj)
+        .arg("--report")
+        .arg(&r);
+    for a in &args {
+        cmd.arg("--arg-json").arg(a.to_json().to_string());
+    }
+    let out = cmd.output().expect("python3 é necessário para o tripé");
+    assert!(out.status.success(), "{tag}: o runtime Python falhou\n{}", String::from_utf8_lossy(&out.stderr));
+    let py_core = std::fs::read_to_string(&cj).unwrap();
+    // Lean: o avaliador canônico
+    let lean = lean_eval().map(|bin| {
+        let pj = dir.join(format!("{file}.core.json"));
+        std::fs::write(&pj, core.to_string()).unwrap();
+        let out = Command::new(bin).arg("run").arg(&pj).output().unwrap();
+        assert!(
+            out.status.success(),
+            "{tag}: o avaliador do Lean falhou\n{}\n{src}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8(out.stdout).unwrap()
+    });
+    Tripod { lean, arx: arx_core, py: py_core }
+}
+
+fn assert_tripod(tag: &str, t: &Tripod) {
+    first_diff(tag, "ARX × Python (vista do núcleo)", &t.arx, &t.py);
+    if let Some(lean) = &t.lean {
+        first_diff(tag, "Lean × ARX (journal do núcleo)", lean, &t.arx);
+    }
+    let core: Vec<Json> = t.arx.lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+    assert_eq!(arx::journal::Journal::verify(&core), Ok(()), "{tag}: cadeia do núcleo");
+}
+
+/// A injeção da Groq no núcleo: `Examples.remediate` de `lean/Aletheia/Examples.lean`, com o
+/// modelo respondendo 0 (seguindo a injeção: o endosso recusa e o agente escala para 3) e 5
+/// (o endosso aceita). Os traços são os dos dois `example` do Lean, agora em journal.
+#[test]
+fn groq_injection_in_the_core_is_the_same_on_the_three_backends() {
+    let src = "module core.remediate
+
+model planner { price_in = 0.0  price_out = 0.0  ctx = 8192  max_out = 64  reasoning = 0  ttft = 0.0  per_tok = 0.0 }
+
+tool scale_to(cluster: Cap[Cluster.Write], n: Int ^ Endorsed) -> Unit ! { Cluster.Write } reversible latency 0.0
+
+policy SafeScale(n: Int[0..100]) -> Bool = 2 <= n && n <= 64
+
+agent A(cluster: Cap[Cluster.Write]) budget [tok <= 100000, usd <= 1.0, wall <= 100.0] {
+  on go(alerta: Int) -> Unit ! { Infer, Cluster.Write } {
+    let plan = infer planner -> Int[0..100] { alerta = alerta }
+    let n = refine plan by SafeScale retry 1 else { 3 }
+    scale_to(cluster, n)
+  }
+}
+";
+    let world = json!({ "sinks": ["scale_to"], "latency": { "scale_to": 0.0 } });
+    let mut heads = Vec::new();
+    for (answer, accepted, scaled) in [(0, false, 3), (5, true, 5)] {
+        // ρ₀ = [alerta = 42, cluster = cap 7]; a capacidade 7 concede `Cluster.Write`
+        let core = json!({
+            "effects": ["Cluster.Write"],
+            "tools": [{ "name": "scale_to", "effect": 0, "arg": "int" }],
+            "policies": [{ "name": "SafeScale", "lo": 2, "hi": 64 }],
+            "grants": [[], [], [], [], [], [], [], [0]],
+            "env": [{ "int": 42 }, { "cap": 7 }],
+            "oracle": [answer],
+            "exp": { "let": [
+                { "infer": [0, "int", { "var": 0 }] },
+                { "let": [
+                    { "endorse": [0, { "var": 0 }, { "val": { "int": 3 } }] },
+                    { "act": [0, 3, { "var": 0 }] }
+                ] }
+            ] }
+        });
+        let tag = format!("remediate/{answer}");
+        let t = tripod(&tag, src, &core, &world, &json!({ "planner": [answer] }), vec![Value::Int(42)]);
+        assert_tripod(&tag, &t);
+        let lines: Vec<Json> = t.arx.lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+        assert_eq!(lines.len(), 3, "{tag}: endorse, act, end");
+        assert_eq!(lines[0]["detail"]["accepted"], json!(accepted));
+        assert_eq!(lines[1]["detail"]["args"], json!([scaled]));
+        assert_eq!(lines[1]["detail"]["cap"], json!(["Cluster.Write"]));
+        heads.push(lines[2]["hash"].clone());
+    }
+    assert_ne!(heads[0], heads[1], "os dois traços divergem na decisão de endosso");
+}
+
+/// O tripé sobre programas gerados: para cada semente, um programa do núcleo bem tipado e
+/// linear (conferido por uma reimplementação das regras de `Typing.lean`), traduzido para a
+/// superfície e aceito pelo `athc`. O journal do núcleo do avaliador do Lean, a vista do
+/// núcleo do journal do ARX e a do runtime Python precisam coincidir byte a byte.
+/// `ATH_TRIPOD_N` muda o número de sementes (padrão 160).
+#[test]
+fn core_tripod_lean_arx_python_agree_on_generated_programs() {
+    let n: u64 = std::env::var("ATH_TRIPOD_N").ok().and_then(|v| v.parse().ok()).unwrap_or(160);
+    let mut seen = std::collections::BTreeMap::<&str, usize>::new();
+    let mut heads = std::collections::BTreeSet::new();
+    let mut with_lean = 0;
+    for seed in 0..n {
+        let p = lambda_ath::generate(seed);
+        p.check().unwrap_or_else(|e| panic!("semente {seed}: {e}"));
+        let tag = format!("core/{seed}");
+        let t = tripod(&tag, &p.to_ath(), &p.to_json(), &p.world(), &p.models(), vec![]);
+        assert_tripod(&tag, &t);
+        with_lean += usize::from(t.lean.is_some());
+        for l in t.arx.lines() {
+            let e: Json = serde_json::from_str(l).unwrap();
+            let k = match (e["kind"].as_str().unwrap(), e["detail"]["accepted"].as_bool()) {
+                ("endorse", Some(true)) => "endosso aceito",
+                ("endorse", _) => "endosso recusado",
+                ("act", _) => "ação",
+                _ => "fim",
+            };
+            *seen.entry(k).or_default() += 1;
+            heads.insert(e["hash"].as_str().unwrap().to_string());
+        }
+        let src = p.to_ath();
+        for (needle, k) in [("for ", "laço"), ("if ", "ramo"), (" retry 1 else ", "refine")] {
+            if src.contains(needle) {
+                *seen.entry(k).or_default() += 1;
+            }
+        }
+    }
+    eprintln!("tripé: {n} programas ({with_lean} com o Lean) · cobertura {seen:?}");
+    for k in ["endosso aceito", "endosso recusado", "ação", "laço", "ramo"] {
+        assert!(seen.get(k).copied().unwrap_or(0) * 10 >= n as usize, "cobertura fraca de `{k}`: {seen:?}");
+    }
+    assert!(heads.len() as u64 > n, "os programas exercitam traços distintos");
+}
+
+/// O núcleo pede inteiros ao modelo (`infer m -> Int`): a superfície aceita saídas escalares
+/// `Int` e `Bool` (o esquema e a máscara derivam do tipo, como para ADTs) e ainda recusa `()`.
+#[test]
+fn scalar_infer_outputs_are_accepted_and_unit_is_still_e0021() {
+    let program = |out: &str, default: &str| {
+        format!(
+            "module core.scalar
+model m0 {{ price_in = 0.0  price_out = 0.0  ctx = 8192  max_out = 64  reasoning = 0  ttft = 0.0  per_tok = 0.0 }}
+policy P(x: {out}) -> Bool = true
+agent A() budget [tok <= 100000, usd <= 1.0, wall <= 100.0] {{
+  on go() -> Int ! {{ Infer }} {{
+    let d = infer m0 -> {out} {{ q = 1 }}
+    let v = refine d by P else {{ {default} }}
+    1
+  }}
+}}
+"
+        )
+    };
+    let codes = |src: &str| match compile(src) {
+        Ok(_) => Vec::new(),
+        Err(d) => d.into_iter().map(|x| x.code).collect::<Vec<_>>(),
+    };
+    for (out, default) in [("Int[0..100]", "3"), ("Int", "3"), ("Bool", "false")] {
+        let src = program(out, default);
+        assert!(codes(&src).is_empty(), "`infer -> {out}`: {:?}", codes(&src));
+    }
+    assert!(codes(&program("Unit", "")).contains(&"E0021".to_string()));
 }

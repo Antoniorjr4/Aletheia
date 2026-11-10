@@ -45,6 +45,59 @@ impl Journal {
         s
     }
 
+    /// Acrescenta uma entrada sem carimbo de tempo: o formato do journal do núcleo.
+    fn push_untimed(&mut self, kind: &str, detail: Value) {
+        let body = json!({ "seq": self.entries.len(), "kind": kind, "detail": detail, "prev": self.head });
+        let h = entry_hash(&body);
+        let mut entry = body;
+        entry["hash"] = json!(h);
+        self.head = h;
+        self.entries.push(entry);
+    }
+
+    /// A vista do núcleo λ_Ath de um journal do ARX: só os eventos observáveis que a semântica
+    /// formal (`lean/Aletheia/Eval.lean`) define, encadeados de novo por BLAKE3, sem tempo.
+    ///
+    /// * `tool` → `act {args, cap, tool}`: `cap` é o conjunto de efeitos da capacidade que deu
+    ///   autoridade à chamada, `args` os demais argumentos;
+    /// * `endorse` → `endorse {accepted: true, policy, value}`;
+    /// * `refine_exhausted` → `endorse {accepted: false, policy, value: null}`;
+    /// * `end` → `end {value}`.
+    ///
+    /// O resto (início, inferências, rejeições intermediárias, snapshot, sagas) não é evento do
+    /// núcleo e fica de fora. O avaliador do Lean (`ath-lean-eval`) e o runtime Python
+    /// (`aletheia_runtime.journal.core_view`) produzem esta mesma vista, byte a byte.
+    pub fn core_view(entries: &[Value]) -> Journal {
+        let mut j = Journal::default();
+        for e in entries {
+            let d = &e["detail"];
+            match e["kind"].as_str() {
+                Some("tool") => {
+                    let mut cap = Value::Null;
+                    let mut args = Vec::new();
+                    for a in d["args"].as_array().into_iter().flatten() {
+                        match a.get("cap") {
+                            Some(c) if cap.is_null() && c.is_array() && a.as_object().is_some_and(|o| o.len() == 1) => {
+                                cap = c.clone()
+                            }
+                            _ => args.push(a.clone()),
+                        }
+                    }
+                    j.push_untimed("act", json!({ "args": args, "cap": cap, "tool": d["tool"] }));
+                }
+                Some("endorse") => {
+                    j.push_untimed("endorse", json!({ "accepted": true, "policy": d["policy"], "value": d["value"] }))
+                }
+                Some("refine_exhausted") => {
+                    j.push_untimed("endorse", json!({ "accepted": false, "policy": d["policy"], "value": null }))
+                }
+                Some("end") => j.push_untimed("end", json!({ "value": d["result"] })),
+                _ => {}
+            }
+        }
+        j
+    }
+
     /// Recalcula a cadeia; devolve o índice da primeira entrada adulterada.
     pub fn verify(entries: &[Value]) -> Result<(), usize> {
         let mut prev = GENESIS.to_string();
@@ -79,6 +132,32 @@ mod tests {
         j.push(3.31, "end", json!({"spent": {"tok": 516, "usd": 9.630000000000001e-05, "wall": 3.3098843550000003}}));
         let reread: Vec<Value> = j.to_jsonl().lines().map(|l| serde_json::from_str(l).expect("linha JSON")).collect();
         assert_eq!(Journal::verify(&reread), Ok(()));
+    }
+
+    /// A vista do núcleo: só `act`/`endorse`/`end`, a capacidade separada dos argumentos (um
+    /// ADT com campo chamado `cap` não é capacidade) e a cadeia refeita sem tempo.
+    #[test]
+    fn vista_do_nucleo() {
+        let mut j = Journal::default();
+        j.push(0.0, "start", json!({ "agent": "A" }));
+        j.push(0.1, "infer", json!({ "model": "m0" }));
+        j.push(0.1, "policy_reject", json!({ "policy": "P", "value": 1, "attempt": 1 }));
+        j.push(0.1, "refine_exhausted", json!({ "policy": "P", "attempts": 1 }));
+        j.push(0.2, "endorse", json!({ "policy": "P", "value": 5, "attempt": 1 }));
+        j.push(
+            0.3,
+            "tool",
+            json!({ "tool": "t", "args": [{ "Scale": { "cap": 1 } }, { "cap": ["E.B", "E.A"] }, 5], "latency": 0.1 }),
+        );
+        j.push(0.4, "end", json!({ "result": 6, "spent": {} }));
+        let core = Journal::core_view(&j.entries);
+        let kinds: Vec<_> = core.entries.iter().map(|e| e["kind"].as_str().unwrap()).collect();
+        assert_eq!(kinds, ["endorse", "endorse", "act", "end"]);
+        assert_eq!(core.entries[0]["detail"], json!({ "accepted": false, "policy": "P", "value": null }));
+        assert_eq!(core.entries[2]["detail"]["cap"], json!(["E.B", "E.A"]));
+        assert_eq!(core.entries[2]["detail"]["args"], json!([{ "Scale": { "cap": 1 } }, 5]));
+        assert!(core.entries.iter().all(|e| e.get("t").is_none()));
+        assert_eq!(Journal::verify(&core.entries), Ok(()));
     }
 
     /// A grafia dos floats no journal é parte do hash: o runtime Python
