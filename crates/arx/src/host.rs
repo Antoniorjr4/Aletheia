@@ -20,6 +20,14 @@ impl TrustedSnapshot {
         self.managed.join(", ")
     }
 
+    pub fn telemetry_text(&self) -> String {
+        self.managed.iter().map(|d| {
+            let cpu = self.cpu_pct.get(d).map(|n| n.to_string()).unwrap_or_else(|| "n/d".into());
+            let n = self.replicas.get(d).copied().unwrap_or(0);
+            format!("{d}: cpu_pct={cpu}, replicas={n}")
+        }).collect::<Vec<_>>().join("; ")
+    }
+
     pub fn is_managed(&self, name: &str) -> bool {
         self.managed.iter().any(|s| s == name)
     }
