@@ -6,6 +6,38 @@ use crate::value::Value;
 use serde_json::Value as Json;
 use std::collections::{BTreeMap, HashMap};
 
+/// Fotografia imutável e confiável do inventário/telemetria, produzida pelo host,
+/// jamais pelos logs nem pelo modelo. Uma fotografia vazia falha fechado.
+#[derive(Clone, Debug, Default)]
+pub struct TrustedSnapshot {
+    pub managed: Vec<String>,
+    pub replicas: BTreeMap<String, i64>,
+    pub cpu_pct: BTreeMap<String, i64>,
+}
+
+impl TrustedSnapshot {
+    pub fn managed_text(&self) -> String {
+        self.managed.join(", ")
+    }
+
+    pub fn is_managed(&self, name: &str) -> bool {
+        self.managed.iter().any(|s| s == name)
+    }
+
+    /// Escalonamento exige telemetria independente, CPU alta e aumento limitado
+    /// ao dobro da capacidade observada. Sem CPU observada: negar.
+    pub fn scale_justified(&self, name: &str, to: i64) -> bool {
+        if !self.is_managed(name) { return false; }
+        match (self.replicas.get(name), self.cpu_pct.get(name)) {
+            (Some(&current), Some(&cpu)) => {
+                (0..=100).contains(&cpu) && cpu >= 85 &&
+                current > 0 && to > current && to <= current.saturating_mul(2) && to <= 64
+            }
+            _ => false,
+        }
+    }
+}
+
 /// Falha de uma chamada remota.
 #[derive(Clone, Debug, PartialEq)]
 pub enum HostError {
@@ -35,6 +67,10 @@ pub trait Host {
     fn state(&self) -> Json {
         Json::Null
     }
+    /// Origem da autoridade usada tanto no prompt quanto na política.
+    fn trusted_snapshot(&self) -> TrustedSnapshot {
+        TrustedSnapshot::default()
+    }
 }
 
 /// Falha injetada: na `nth`-ésima chamada a `tool` (ou em todas, sem `nth`).
@@ -62,6 +98,8 @@ pub struct SimWorld {
     latency: HashMap<String, f64>,
     logs: HashMap<String, String>,
     pub replicas: BTreeMap<String, i64>,
+    managed: Vec<String>,
+    cpu_pct: BTreeMap<String, i64>,
     initial: BTreeMap<String, i64>,
     pub health: BTreeMap<String, bool>,
     pub restarts: BTreeMap<String, u32>,
@@ -125,6 +163,38 @@ impl SimWorld {
         if let Some(m) = j.get("replicas").and_then(|v| v.as_object()) {
             for (k, v) in m {
                 w.replicas.insert(k.clone(), v.as_i64().ok_or("réplicas devem ser inteiros")?);
+            }
+        }
+        // Somente campo explícito e confiável de configuração fornece o inventário.
+        // Não inferir autorização de replicas nem do conteúdo de logs.
+        if let Some(names) = j.get("managed") {
+            let arr = names.as_array().ok_or("`managed` deve ser uma lista de nomes")?;
+            let mut managed = Vec::new();
+            for value in arr {
+                let name = value.as_str().ok_or("nome de `managed` não textual")?;
+                if name.is_empty() || name.chars().count() > 32 {
+                    return Err("nome de `managed` vazio ou longo demais".into());
+                }
+                if !w.replicas.contains_key(name) {
+                    return Err(format!("deployment gerenciado `{name}` não existe no estado"));
+                }
+                managed.push(name.to_string());
+            }
+            managed.sort();
+            managed.dedup();
+            if managed.join(", ").chars().count() > 256 {
+                return Err("inventário ultrapassa o limite de 256 caracteres".into());
+            }
+            w.managed = managed;
+        }
+        if let Some(cpu) = j.get("telemetry").and_then(|v| v.get("cpu_pct")) {
+            let obj = cpu.as_object().ok_or("`telemetry.cpu_pct` deve ser um objeto")?;
+            for (name, val) in obj {
+                let pct = val.as_i64().ok_or("cpu_pct deve ser inteiro")?;
+                if !(0..=100).contains(&pct) {
+                    return Err(format!("cpu_pct inválido para `{name}`"));
+                }
+                w.cpu_pct.insert(name.clone(), pct);
             }
         }
         w.initial = w.replicas.clone();
@@ -209,6 +279,14 @@ impl SimWorld {
 }
 
 impl Host for SimWorld {
+    fn trusted_snapshot(&self) -> TrustedSnapshot {
+        TrustedSnapshot {
+            managed: self.managed.clone(),
+            replicas: self.replicas.clone(),
+            cpu_pct: self.cpu_pct.clone(),
+        }
+    }
+
     fn call(&mut self, tool: &str, args: &[Value]) -> Result<(Value, f64), HostError> {
         let lat = self.lat(tool);
         let key = key_of(args);
