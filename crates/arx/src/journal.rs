@@ -58,17 +58,27 @@ impl Journal {
     /// A vista do núcleo λ_Ath de um journal do ARX: só os eventos observáveis que a semântica
     /// formal (`lean/Aletheia/Eval.lean`) define, encadeados de novo por BLAKE3, sem tempo.
     ///
-    /// * `tool` → `act {args, cap, tool}`: `cap` é o conjunto de efeitos da capacidade que deu
-    ///   autoridade à chamada, `args` os demais argumentos;
+    /// * `tool` com capacidade → `act {args, cap, tool}`: `cap` é o conjunto de efeitos da
+    ///   capacidade que deu autoridade à chamada, `args` os demais argumentos. Uma chamada sem
+    ///   capacidade é uma sonda do mundo (`await`, `recover`): não é evento do núcleo;
     /// * `endorse` → `endorse {accepted: true, policy, value}`;
     /// * `refine_exhausted` → `endorse {accepted: false, policy, value: null}`;
+    /// * `await_timeout` → `fail {probe}`, com a sonda que não observou a pós-condição;
+    /// * `compensate` → `undo {args, ok, tool}`, com a ferramenta e os argumentos da operação
+    ///   compensada (o topo do registro da saga);
+    /// * `saga_recovered` e `compensation_failed` → `recover {ok, probe}`, com o que a sonda
+    ///   de recuperação observou;
     /// * `end` → `end {value}`.
     ///
-    /// O resto (início, inferências, rejeições intermediárias, snapshot, sagas) não é evento do
-    /// núcleo e fica de fora. O avaliador do Lean (`ath-lean-eval`) e o runtime Python
+    /// O registro da saga é reconstruído como no ARX: cada `tool` `compensable` empilha a
+    /// operação, `saga_commit` descarta as `compensable_ops` do topo e cada `compensate`
+    /// desempilha uma. O resto (início, inferências, rejeições intermediárias, snapshot) não é
+    /// evento do núcleo. O avaliador do Lean (`ath-lean-eval`) e o runtime Python
     /// (`aletheia_runtime.journal.core_view`) produzem esta mesma vista, byte a byte.
     pub fn core_view(entries: &[Value]) -> Journal {
         let mut j = Journal::default();
+        let mut comp: Vec<Vec<Value>> = Vec::new();
+        let mut probe = (Value::Null, Value::Null);
         for e in entries {
             let d = &e["detail"];
             match e["kind"].as_str() {
@@ -83,6 +93,13 @@ impl Journal {
                             _ => args.push(a.clone()),
                         }
                     }
+                    if cap.is_null() {
+                        probe = (d["tool"].clone(), d["result"].clone());
+                        continue;
+                    }
+                    if d["class"] == "compensable" {
+                        comp.push(args.clone());
+                    }
                     j.push_untimed("act", json!({ "args": args, "cap": cap, "tool": d["tool"] }));
                 }
                 Some("endorse") => {
@@ -90,6 +107,18 @@ impl Journal {
                 }
                 Some("refine_exhausted") => {
                     j.push_untimed("endorse", json!({ "accepted": false, "policy": d["policy"], "value": null }))
+                }
+                Some("await_timeout") => j.push_untimed("fail", json!({ "probe": probe.0 })),
+                Some("saga_commit") => {
+                    let n = d["compensable_ops"].as_u64().unwrap_or(0) as usize;
+                    comp.truncate(comp.len().saturating_sub(n));
+                }
+                Some("compensate") => {
+                    let args = comp.pop().unwrap_or_default();
+                    j.push_untimed("undo", json!({ "args": args, "ok": d["ok"], "tool": d["of"] }));
+                }
+                Some("saga_recovered") | Some("compensation_failed") => {
+                    j.push_untimed("recover", json!({ "ok": probe.1, "probe": probe.0 }))
                 }
                 Some("end") => j.push_untimed("end", json!({ "value": d["result"] })),
                 _ => {}

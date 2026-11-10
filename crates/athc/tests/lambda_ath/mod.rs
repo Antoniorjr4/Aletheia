@@ -2,8 +2,8 @@
 //! e a tradução de cada um para Aletheia de superfície.
 //!
 //! O gerador é dirigido por tipo e produz só programas do domínio dos teoremas do Lean: bem
-//! tipados (`HasType`) e lineares (`Linear`: cada `Cap[E]` consumida exatamente uma vez em todo
-//! caminho). Isso não é só intenção: [`Prog::check`] reimplementa as regras de `Typing.lean`
+//! tipados (`HasType`), lineares (`Linear`: cada `Cap[E]` consumida exatamente uma vez em todo
+//! caminho) e, com sagas, `Guarded` (todo `await` dentro de um corpo de `atomic`). Isso não é só intenção: [`Prog::check`] reimplementa as regras de `Typing.lean`
 //! (o julgamento sem o orçamento, que o diferencial não compara) e a contagem `consumes`, e
 //! recusa qualquer programa fora do fragmento.
 //!
@@ -129,6 +129,11 @@ pub enum E {
     Drop(usize),
     For(usize, Box<E>, Box<E>),
     Infer(usize, Ty, Box<E>),
+    /// `await q`: a sonda `q` precisa observar a pós-condição
+    Await(usize),
+    /// `atomic corpo r f g`: a saga, com a sonda de recuperação `r`, o tratador `f` (on
+    /// failure) e `g` (on compensation_failed)
+    Atomic(Box<E>, usize, Box<E>, Box<E>),
 }
 
 #[derive(Clone, Debug)]
@@ -140,6 +145,19 @@ pub enum Bind {
 pub struct Tool {
     pub effect: usize,
     pub arg: Ty,
+    /// a célula do mundo que a ferramenta altera (`w[cell] += v`)
+    pub cell: Option<usize>,
+    /// `compensable by u<i>`: entra no registro da saga
+    pub compensable: bool,
+    /// o provedor recusa a compensação
+    pub undo_fails: bool,
+}
+
+/// Sonda de célula: `lo ≤ w[cell] ≤ hi`.
+pub struct Probe {
+    pub cell: usize,
+    pub lo: i64,
+    pub hi: i64,
 }
 
 pub struct Policy {
@@ -158,6 +176,7 @@ pub struct Prog {
     pub oracle: Vec<i64>,
     pub exp: E,
     pub ret: Ty,
+    pub probes: Vec<Probe>,
 }
 
 impl Prog {
@@ -266,7 +285,38 @@ fn has_type(p: &Prog, ctx: &mut Vec<Bind>, pc: Lab, e: &E) -> Option<(Ty, Lab)> 
             has_type(p, ctx, pc, a)?;
             (t.clone(), Lab::U)
         }
+        E::Await(q) => {
+            if !pc.low() || *q >= p.probes.len() {
+                return None;
+            }
+            (Ty::Unit, Lab::T)
+        }
+        E::Atomic(body, r, f, g) => {
+            if !pc.low() || *r >= p.probes.len() {
+                return None;
+            }
+            let (tb, lb) = has_type(p, ctx, pc, body)?;
+            let (tf, lf) = has_type(p, ctx, pc, f)?;
+            let (tg, lg) = has_type(p, ctx, pc, g)?;
+            if tb != tf || tb != tg {
+                return None;
+            }
+            (tb, lb.meet(lf.meet(lg)))
+        }
     })
+}
+
+/// `guarded` de `Eval.lean`: todo `await` dentro de um corpo de saga.
+fn guarded(sg: bool, e: &E) -> bool {
+    match e {
+        E::Val(_) | E::Var(_) | E::Drop(_) => true,
+        E::Let(a, b) | E::Prim(_, a, b) | E::Endorse(_, a, b) => guarded(sg, a) && guarded(sg, b),
+        E::Ite(c, t, f) => guarded(sg, c) && guarded(sg, t) && guarded(sg, f),
+        E::Act(_, _, a) | E::Infer(_, _, a) => guarded(sg, a),
+        E::For(_, xs, body) => guarded(sg, xs) && guarded(sg, body),
+        E::Await(_) => sg,
+        E::Atomic(body, _, f, g) => guarded(true, body) && guarded(sg, f) && guarded(sg, g),
+    }
 }
 
 fn add(a: Option<usize>, b: Option<usize>) -> Option<usize> {
@@ -297,6 +347,8 @@ fn consumes(e: &E, k: usize) -> Option<usize> {
         E::Drop(j) => Some(usize::from(*j == k)),
         E::For(_, xs, body) => add(consumes(xs, k), zero(consumes(body, k + 1))),
         E::Infer(_, _, a) => consumes(a, k),
+        E::Await(_) => Some(0),
+        E::Atomic(body, _, f, g) => add(consumes(body, k), same(consumes(f, k), consumes(g, k))),
     }
 }
 
@@ -314,6 +366,9 @@ impl Prog {
                 return Err(format!("capacidade no índice {k} não é consumida exatamente uma vez"));
             }
         }
+        if !guarded(false, &self.exp) {
+            return Err("`await` fora de saga (não Guarded)".into());
+        }
         Ok(())
     }
 }
@@ -326,6 +381,12 @@ struct Gen<'a> {
     npol: usize,
     /// Γ corrente, em ordem de ligação (o último é o índice 0).
     ctx: Vec<Bind>,
+    /// número de sondas (0: sem sagas)
+    nprobes: usize,
+    /// dentro do corpo de uma saga: `await` permitido
+    saga: bool,
+    /// o próximo bloco é o corpo de uma saga: termina com um `await` (às vezes)
+    tail: bool,
 }
 
 impl Gen<'_> {
@@ -378,9 +439,16 @@ impl Gen<'_> {
     }
 
     fn consume(&mut self, pos: usize, prefer_act: bool) -> E {
-        let ts = self.tools_for(pos);
+        let mut ts = self.tools_for(pos);
+        // no corpo de uma saga, de preferência uma ação compensável
+        if self.saga && self.rng.chance(3, 4) {
+            let comp: Vec<usize> = ts.iter().copied().filter(|&t| self.tools[t].compensable).collect();
+            if !comp.is_empty() {
+                ts = comp;
+            }
+        }
         let k = self.index(pos);
-        if ts.is_empty() || !prefer_act {
+        if ts.is_empty() || !(prefer_act || self.saga) {
             return E::Drop(k);
         }
         let t = ts[self.rng.below(ts.len())];
@@ -392,10 +460,11 @@ impl Gen<'_> {
     /// capacidades `live` (posições absolutas em `ctx`) em todo caminho.
     fn block(&mut self, mut live: Vec<usize>, depth: usize, want: &Ty) -> E {
         let base = self.ctx.len();
+        let tail = std::mem::take(&mut self.tail);
         let mut stmts = Vec::new();
         let n = self.rng.below(4) + usize::from(depth == 0) * 2;
         for _ in 0..n {
-            let roll = self.rng.below(10);
+            let roll = self.rng.below(if self.nprobes > 0 { 13 } else { 10 });
             let (s, b) = match roll {
                 0..=2 if self.npol > 0 => {
                     let prompt = self.atom(&Ty::Int);
@@ -455,6 +524,32 @@ impl Gen<'_> {
                     self.ctx.pop();
                     (E::For(len, Box::new(E::Val(V::List(xs))), Box::new(body)), Bind::Data(Ty::Unit, Lab::T))
                 }
+                10 if self.saga => (E::Await(self.rng.below(self.nprobes)), Bind::Data(Ty::Unit, Lab::T)),
+                11 | 12 if depth < 2 => {
+                    // a saga: o corpo consome uma parte das capacidades; os dois tratadores
+                    // consomem outra, a mesma (a saída revoga o que o caminho não usou)
+                    let (mut body, mut handlers) = (Vec::new(), Vec::new());
+                    live.retain(|&p| match self.rng.below(4) {
+                        0 | 1 => {
+                            body.push(p);
+                            false
+                        }
+                        2 => {
+                            handlers.push(p);
+                            false
+                        }
+                        _ => true,
+                    });
+                    let t = self.any_ty();
+                    let outer = std::mem::replace(&mut self.saga, true);
+                    self.tail = true;
+                    let b = self.block(body, depth + 1, &t);
+                    self.saga = outer;
+                    let f = self.block(handlers.clone(), depth + 1, &t);
+                    let g = self.block(handlers, depth + 1, &t);
+                    let r = self.rng.below(self.nprobes);
+                    (E::Atomic(Box::new(b), r, Box::new(f), Box::new(g)), Bind::Data(t, Lab::E))
+                }
                 _ => continue,
             };
             stmts.push(s);
@@ -465,6 +560,11 @@ impl Gen<'_> {
             let pos = live.remove(self.rng.below(live.len()));
             let prefer = self.rng.chance(3, 4);
             stmts.push(self.consume(pos, prefer));
+            self.ctx.push(Bind::Data(Ty::Unit, Lab::T));
+        }
+        // o corpo de uma saga termina, em geral, observando uma pós-condição
+        if tail && self.rng.chance(3, 4) {
+            stmts.push(E::Await(self.rng.below(self.nprobes)));
             self.ctx.push(Bind::Data(Ty::Unit, Lab::T));
         }
         let mut e = self.result(want);
@@ -486,13 +586,25 @@ fn calls(e: &E) -> usize {
         E::Act(_, _, a) => calls(a),
         E::For(n, xs, body) => calls(xs) + n * calls(body),
         E::Infer(_, _, a) => 1 + calls(a),
+        E::Await(_) => 0,
+        E::Atomic(body, _, f, g) => calls(body) + calls(f).max(calls(g)),
     }
 }
 
-/// O programa da semente `seed`.
+/// O programa da semente `seed`, no fragmento sem sagas.
 pub fn generate(seed: u64) -> Prog {
+    generate_with(seed, false)
+}
+
+/// O programa da semente `seed`, com sagas: ferramentas de célula (algumas `compensable`,
+/// algumas com compensação recusada), sondas de intervalo, `atomic` e `await`.
+pub fn generate_saga(seed: u64) -> Prog {
+    generate_with(seed, true)
+}
+
+fn generate_with(seed: u64, sagas: bool) -> Prog {
     let mut rng = Rng::new(seed);
-    let ncaps = 1 + rng.below(3);
+    let ncaps = 1 + rng.below(3) + usize::from(sagas && rng.chance(1, 2));
     let effects = ncaps + rng.below(2);
     let caps: Vec<Vec<usize>> = (0..ncaps)
         .map(|i| {
@@ -502,9 +614,45 @@ pub fn generate(seed: u64) -> Prog {
         })
         .collect();
     let ntools = 1 + rng.below(4);
+    let ncells = 1 + rng.below(2);
     let tools: Vec<Tool> = (0..ntools)
-        .map(|_| Tool { effect: rng.below(effects), arg: if rng.chance(3, 4) { Ty::Int } else { Ty::Bool } })
+        .map(|_| {
+            let effect = rng.below(effects);
+            let arg = if rng.chance(3, 4) { Ty::Int } else { Ty::Bool };
+            let mut t = Tool { effect, arg, cell: None, compensable: false, undo_fails: false };
+            if sagas && t.arg == Ty::Int && rng.chance(3, 4) {
+                t.cell = Some(rng.below(ncells));
+                t.compensable = rng.chance(4, 5);
+                t.undo_fails = t.compensable && rng.chance(1, 3);
+            }
+            t
+        })
         .collect();
+    let mut tools = tools;
+    if sagas {
+        // toda capacidade autoriza ao menos uma ferramenta compensável: o efeito `i` está
+        // sempre em `caps[i]`
+        for e in 0..ncaps {
+            let cell = Some(rng.below(ncells));
+            tools.push(Tool { effect: e, arg: Ty::Int, cell, compensable: true, undo_fails: rng.chance(1, 3) });
+        }
+    }
+    let probes: Vec<Probe> = if sagas {
+        (0..1 + rng.below(3))
+            .map(|_| {
+                let cell = rng.below(ncells);
+                if rng.chance(1, 3) {
+                    // a recuperação típica: a célula voltou a zero
+                    Probe { cell, lo: 0, hi: 0 }
+                } else {
+                    let lo = rng.int(0, 80);
+                    Probe { cell, lo, hi: rng.int(lo, 160) }
+                }
+            })
+            .collect()
+    } else {
+        vec![]
+    };
     let npol = 1 + rng.below(3);
     let policies: Vec<Policy> = (0..npol)
         .map(|_| {
@@ -513,7 +661,15 @@ pub fn generate(seed: u64) -> Prog {
         })
         .collect();
     let ret = [Ty::Int, Ty::Bool, Ty::Unit][rng.below(3)].clone();
-    let mut g = Gen { rng: &mut rng, tools: &tools, npol, ctx: caps.iter().map(|e| Bind::Cap(e.clone())).collect() };
+    let mut g = Gen {
+        rng: &mut rng,
+        tools: &tools,
+        npol,
+        ctx: caps.iter().map(|e| Bind::Cap(e.clone())).collect(),
+        nprobes: probes.len(),
+        saga: false,
+        tail: false,
+    };
     let live: Vec<usize> = (0..ncaps).collect();
     let exp = g.block(live, 0, &ret);
     // metade das respostas cai na fronteira de alguma política (lo − 1, lo, hi, hi + 1): é ali
@@ -528,7 +684,7 @@ pub fn generate(seed: u64) -> Prog {
             }
         })
         .collect();
-    Prog { seed, effects, tools, policies, caps, oracle, exp, ret }
+    Prog { seed, effects, tools, policies, caps, oracle, exp, ret, probes }
 }
 
 // ------------------------------------------------------------------ JSON para o `ath-lean-eval`
@@ -563,6 +719,8 @@ fn exp_json(e: &E) -> Json {
         E::Drop(k) => json!({ "drop": k }),
         E::For(n, xs, b) => json!({ "for": [n, exp_json(xs), exp_json(b)] }),
         E::Infer(m, t, a) => json!({ "infer": [m, ty_json(t), exp_json(a)] }),
+        E::Await(q) => json!({ "await": q }),
+        E::Atomic(b, r, f, g) => json!({ "atomic": [exp_json(b), r, exp_json(f), exp_json(g)] }),
     }
 }
 
@@ -579,7 +737,11 @@ impl Prog {
     pub fn to_json(&self) -> Json {
         json!({
             "effects": (0..self.effects).map(Prog::effect_name).collect::<Vec<_>>(),
-            "tools": self.tools.iter().enumerate().map(|(i, t)| json!({ "name": format!("t{i}"), "effect": t.effect, "arg": ty_json(&t.arg) })).collect::<Vec<_>>(),
+            "tools": self.tools.iter().enumerate().map(|(i, t)| json!({
+                "name": format!("t{i}"), "effect": t.effect, "arg": ty_json(&t.arg),
+                "cell": t.cell, "compensable": t.compensable, "undo_fails": t.undo_fails,
+            })).collect::<Vec<_>>(),
+            "probes": self.probes.iter().enumerate().map(|(i, p)| json!({ "name": format!("p{i}"), "cell": p.cell, "lo": p.lo, "hi": p.hi })).collect::<Vec<_>>(),
             "policies": self.policies.iter().enumerate().map(|(i, p)| json!({ "name": format!("P{i}"), "lo": p.lo, "hi": p.hi })).collect::<Vec<_>>(),
             "grants": self.caps,
             // ρ inicial em ordem de de Bruijn: o índice 0 é a última capacidade
@@ -589,13 +751,51 @@ impl Prog {
         })
     }
 
-    /// O mundo dos runtimes: cada ferramenta é um sumidouro de latência zero.
+    /// O mundo dos runtimes, de latência zero: cada ferramenta sem célula é um sumidouro; as
+    /// de célula somam o argumento, as compensações `u<i>` subtraem (ou são recusadas) e as
+    /// sondas `p<q>` observam um intervalo.
     pub fn world(&self) -> Json {
         let names = self.tool_names();
-        json!({
-            "sinks": names,
-            "latency": names.iter().map(|n| (n.clone(), json!(0.0))).collect::<serde_json::Map<_, _>>(),
-        })
+        let mut tools = serde_json::Map::new();
+        let mut lat = serde_json::Map::new();
+        let mut sinks = Vec::new();
+        for (i, t) in self.tools.iter().enumerate() {
+            lat.insert(names[i].clone(), json!(0.0));
+            match t.cell {
+                Some(c) => {
+                    tools.insert(names[i].clone(), json!({ "cell": c, "sign": 1 }));
+                    if t.compensable {
+                        tools.insert(format!("u{i}"), json!({ "cell": c, "sign": -1, "fails": t.undo_fails }));
+                        lat.insert(format!("u{i}"), json!(0.0));
+                    }
+                }
+                None => sinks.push(names[i].clone()),
+            }
+        }
+        let probes: serde_json::Map<_, _> = self
+            .probes
+            .iter()
+            .enumerate()
+            .map(|(i, p)| (format!("p{i}"), json!({ "cell": p.cell, "lo": p.lo, "hi": p.hi })))
+            .collect();
+        for i in 0..self.probes.len() {
+            lat.insert(format!("p{i}"), json!(0.0));
+        }
+        json!({ "sinks": sinks, "latency": lat, "cells": { "tools": tools, "probes": probes } })
+    }
+
+    pub fn has_saga(&self) -> bool {
+        fn go(e: &E) -> bool {
+            match e {
+                E::Atomic(..) => true,
+                E::Val(_) | E::Var(_) | E::Drop(_) | E::Await(_) => false,
+                E::Let(a, b) | E::Prim(_, a, b) | E::Endorse(_, a, b) => go(a) || go(b),
+                E::Ite(c, t, f) => go(c) || go(t) || go(f),
+                E::Act(_, _, a) | E::Infer(_, _, a) => go(a),
+                E::For(_, xs, b) => go(xs) || go(b),
+            }
+        }
+        go(&self.exp)
     }
 
     pub fn models(&self) -> Json {
@@ -738,6 +938,25 @@ impl Tr {
                 out.push(format!("{pad}for {x} in {it} {b}"));
                 None
             }
+            E::Await(q) => {
+                out.push(format!("{pad}await p{q}() within 0.0"));
+                None
+            }
+            E::Atomic(body, r, f, g) => {
+                let (bb, unit) = self.braces(body, ind);
+                let (bf, _) = self.braces(f, ind);
+                let (bg, _) = self.braces(g, ind);
+                let (e, cf) = (self.fresh(), self.fresh());
+                let saga = format!("atomic recover p{r}() {bb} on failure({e}) {bf} on compensation_failed({cf}) {bg}");
+                if unit {
+                    out.push(format!("{pad}{saga}"));
+                    None
+                } else {
+                    let x = self.fresh();
+                    out.push(format!("{pad}let {x} = {saga}"));
+                    Some(x)
+                }
+            }
             E::Val(V::Unit) => None,
             E::Val(_) | E::Var(_) => {
                 let v = self.name_or_lit(e)?;
@@ -757,10 +976,22 @@ impl Prog {
         s.push_str("model m0 { price_in = 0.0  price_out = 0.0  ctx = 8192  max_out = 64  reasoning = 0  ttft = 0.0  per_tok = 0.0 }\n\n");
         for (i, t) in self.tools.iter().enumerate() {
             let e = Prog::effect_name(t.effect);
-            s.push_str(&format!(
-                "tool t{i}(c: Cap[{e}], v: {} ^ Endorsed) -> Unit ! {{ {e} }} reversible latency 0.0\n",
-                surface_ty(&t.arg)
-            ));
+            let a = surface_ty(&t.arg);
+            if t.compensable {
+                s.push_str(&format!(
+                    "tool t{i}(c: Cap[{e}], v: {a} ^ Endorsed) -> Unit ! {{ {e} }} compensable by u{i} latency 0.0\n"
+                ));
+                s.push_str(&format!(
+                    "tool u{i}(c: Cap[{e}], v: {a} ^ Endorsed) -> Unit ! {{ {e} }} reversible latency 0.0\n"
+                ));
+            } else {
+                s.push_str(&format!(
+                    "tool t{i}(c: Cap[{e}], v: {a} ^ Endorsed) -> Unit ! {{ {e} }} reversible latency 0.0\n"
+                ));
+            }
+        }
+        for q in 0..self.probes.len() {
+            s.push_str(&format!("tool p{q}() -> Bool ! {{ }} reversible latency 0.0\n"));
         }
         s.push('\n');
         for (i, p) in self.policies.iter().enumerate() {
@@ -773,6 +1004,9 @@ impl Prog {
         effs.sort();
         effs.dedup();
         row.extend(effs.into_iter().map(Prog::effect_name));
+        if self.has_saga() {
+            row.push("CompensationFailed".into());
+        }
         s.push_str(&format!(
             "\nagent A({}) budget [tok <= 100000000, usd <= 1.0, wall <= 1000.0] {{\n  on go() -> {} ! {{ {} }} ",
             params.join(", "),

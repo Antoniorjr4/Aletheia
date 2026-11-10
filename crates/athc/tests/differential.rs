@@ -7,8 +7,8 @@
 //! compensações, `TimeoutUnknown`, reconciliação, transferência).
 //!
 //! No fim do arquivo está o **tripé**: o avaliador formal do Lean (`ath-lean-eval`, o mesmo
-//! `eval` dos teoremas T1–T3) entra como terceiro backend. Para programas do núcleo λ_Ath, as
-//! três realizações precisam produzir o mesmo journal do núcleo, byte a byte.
+//! `eval` dos teoremas T1–T3 e T6) entra como terceiro backend. Para programas do núcleo λ_Ath,
+//! com e sem sagas, as três realizações precisam produzir o mesmo journal do núcleo, byte a byte.
 
 use arx::host::SimWorld;
 use arx::model::{Masked, ModelProvider, Scripted};
@@ -772,6 +772,8 @@ struct Tripod {
     lean: Option<String>,
     arx: String,
     py: String,
+    /// o journal completo do ARX (para contar os desfechos das sagas)
+    full: String,
 }
 
 /// Executa um programa do núcleo nos três backends. `src` é a tradução de superfície, `core`
@@ -788,6 +790,7 @@ fn tripod(tag: &str, src: &str, core: &Json, world: &Json, models: &Json, args: 
         panic!("{tag}: o ARX abortou ({} {})\n{src}", e.code, e.msg);
     }
     let arx_core = arx::journal::Journal::core_view(&arx.journal.entries).to_jsonl();
+    let arx_full = arx.journal.to_jsonl();
     // Python, sobre o código emitido
     let dir = scratch();
     let file = tag.replace(|ch: char| !ch.is_ascii_alphanumeric(), "_");
@@ -836,7 +839,7 @@ fn tripod(tag: &str, src: &str, core: &Json, world: &Json, models: &Json, args: 
         );
         String::from_utf8(out.stdout).unwrap()
     });
-    Tripod { lean, arx: arx_core, py: py_core }
+    Tripod { lean, arx: arx_core, py: py_core, full: arx_full }
 }
 
 fn assert_tripod(tag: &str, t: &Tripod) {
@@ -940,6 +943,67 @@ fn core_tripod_lean_arx_python_agree_on_generated_programs() {
     eprintln!("tripé: {n} programas ({with_lean} com o Lean) · cobertura {seen:?}");
     for k in ["endosso aceito", "endosso recusado", "ação", "laço", "ramo"] {
         assert!(seen.get(k).copied().unwrap_or(0) * 10 >= n as usize, "cobertura fraca de `{k}`: {seen:?}");
+    }
+    assert!(heads.len() as u64 > n, "os programas exercitam traços distintos");
+}
+
+/// O tripé com sagas: programas gerados com ferramentas de célula (algumas `compensable`,
+/// algumas com a compensação recusada pelo provedor), sondas de intervalo, `atomic` e
+/// `await`. Cada programa é bem tipado, linear e `Guarded` (todo `await` dentro de uma saga),
+/// o domínio do T1–T3 com sagas. O Lean, o ARX e o Python precisam produzir o mesmo journal do
+/// núcleo, agora com `fail`, `undo` e `recover`. A cobertura exige sagas que confirmam, que
+/// compensam e recuperam, e que terminam em `CompensationFailed`, por compensação recusada e
+/// por sonda que não observa a recuperação. `ATH_SAGA_N` muda o número de sementes (padrão 200).
+#[test]
+fn saga_tripod_lean_arx_python_agree_on_generated_programs() {
+    let n: u64 = std::env::var("ATH_SAGA_N").ok().and_then(|v| v.parse().ok()).unwrap_or(200);
+    let mut seen = std::collections::BTreeMap::<&str, usize>::new();
+    let mut heads = std::collections::BTreeSet::new();
+    let mut with_lean = 0;
+    for seed in 0..n {
+        let p = lambda_ath::generate_saga(seed);
+        p.check().unwrap_or_else(|e| panic!("semente {seed}: {e}"));
+        let tag = format!("saga/{seed}");
+        let t = tripod(&tag, &p.to_ath(), &p.to_json(), &p.world(), &p.models(), vec![]);
+        assert_tripod(&tag, &t);
+        with_lean += usize::from(t.lean.is_some());
+        for l in t.full.lines() {
+            let e: Json = serde_json::from_str(l).unwrap();
+            let k = match e["kind"].as_str().unwrap() {
+                "saga_commit" => "saga confirmada",
+                "saga_recovered" => "saga recuperada",
+                "compensation_failed" => "CompensationFailed",
+                "await_ok" => "pós-condição observada",
+                "await_timeout" => "pós-condição falhou",
+                _ => continue,
+            };
+            *seen.entry(k).or_default() += 1;
+        }
+        for l in t.arx.lines() {
+            let e: Json = serde_json::from_str(l).unwrap();
+            let k = match (e["kind"].as_str().unwrap(), e["detail"]["ok"].as_bool()) {
+                ("undo", Some(true)) => "compensação aplicada",
+                ("undo", _) => "compensação recusada",
+                ("recover", Some(false)) => "sonda de recuperação falsa",
+                ("act", _) => "ação",
+                _ => continue,
+            };
+            *seen.entry(k).or_default() += 1;
+            heads.insert(e["hash"].as_str().unwrap().to_string());
+        }
+    }
+    eprintln!("tripé com sagas: {n} programas ({with_lean} com o Lean) · cobertura {seen:?}");
+    for k in [
+        "saga confirmada",
+        "saga recuperada",
+        "CompensationFailed",
+        "pós-condição observada",
+        "pós-condição falhou",
+        "compensação aplicada",
+        "compensação recusada",
+        "sonda de recuperação falsa",
+    ] {
+        assert!(seen.get(k).copied().unwrap_or(0) * 20 >= n as usize, "cobertura fraca de `{k}`: {seen:?}");
     }
     assert!(heads.len() as u64 > n, "os programas exercitam traços distintos");
 }

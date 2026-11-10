@@ -24,12 +24,18 @@ pura do traço `Out.tr` e do valor `Out.v` que ela devolve.
   "grants":   [[0, 1], [1], ...],                      // efeitos concedidos à capacidade id
   "env":      [{"cap": 1}, {"cap": 0}],                // ρ inicial; índice 0 = mais recente
   "oracle":   [5, 1, 70, ...],                         // respostas do modelo, na ordem das chamadas
+  "probes":   [{"name": "p0", "cell": 0, "lo": 1, "hi": 50}, ...],  // sondas: lo ≤ w[cell] ≤ hi
   "exp":      ... }
 ```
 
+O mundo é `World := Nat → Int`, zerado no início. Uma ferramenta com `"cell": i` soma o
+argumento à célula `i`; com `"compensable": true` ela entra no registro da saga, e a
+compensação subtrai o argumento, ou é recusada se `"undo_fails": true`.
+
 Expressões: `{"val": V}`, `{"var": k}`, `{"let": [e₁, e₂]}`, `{"ite": [c, t, f]}`,
 `{"prim": ["add"|"sub"|"le"|"eq", a, b]}`, `{"endorse": [p, e, d]}`, `{"act": [t, k, a]}`,
-`{"drop": k}`, `{"for": [n, xs, body]}`, `{"infer": [m, T, a]}`. Valores: `{"int": n}`,
+`{"drop": k}`, `{"for": [n, xs, body]}`, `{"infer": [m, T, a]}`, `{"await": q}`,
+`{"atomic": [corpo, r, f, g]}`. Valores: `{"int": n}`,
 `{"bool": b}`, `"unit"`, `{"list": [V, ...]}`. Tipos: `"int"`, `"bool"`, `"unit"`,
 `{"list": [T, n]}`.
 
@@ -40,6 +46,7 @@ corpo serializado com chaves ordenadas e sem espaços, como o `serde_json` do AR
 
 * `act {args: [v], cap: [efeitos concedidos], tool}`;
 * `endorse {accepted: true, policy, value: v}` ou `{accepted: false, policy, value: null}`;
+* `fail {probe}`, `undo {args: [v], ok, tool}` e `recover {ok, probe}`, os eventos de saga;
 * `end {value}`.
 -/
 
@@ -100,6 +107,19 @@ structure Tool where
   name : String
   effect : Nat
   arg : Ty
+  /-- a célula do mundo que a ferramenta altera (`w[cell] += v`), se alguma -/
+  cell : Option Nat := none
+  /-- entra no registro de compensação da saga (`compensable by …`) -/
+  compensable : Bool := false
+  /-- o provedor recusa a compensação -/
+  undoFails : Bool := false
+
+/-- Sonda de célula: `lo ≤ w[cell] ≤ hi`. -/
+structure Probe where
+  name : String
+  cell : Nat
+  lo : Int
+  hi : Int
 
 structure Policy where
   name : String
@@ -114,6 +134,7 @@ structure Prog where
   env : List Val
   oracle : Array Int
   exp : Exp
+  probes : Array Probe := #[]
 
 abbrev P := Except String
 
@@ -184,18 +205,36 @@ partial def exp (j : Json) : P Exp := do
   | "drop" => return .drop (← nat v)
   | "for" => let a ← args v 3; return .for_ (← nat a[0]!) (← exp a[1]!) (← exp a[2]!)
   | "infer" => let a ← args v 3; return .infer (← nat a[0]!) (← ty a[1]!) (← exp a[2]!)
+  | "await" => return .await (← nat v)
+  | "atomic" =>
+    let a ← args v 4; return .atomic (← exp a[0]!) (← nat a[1]!) (← exp a[2]!) (← exp a[3]!)
   | _ => throw s!"expressão inválida: {k}"
 
 def prog (j : Json) : P Prog := do
   let effects ← (← arr (← field j "effects")).mapM str
+  let flag (t : Json) (k : String) : Bool :=
+    match t.getObjVal? k with
+    | .ok (.bool b) => b
+    | _ => false
   let tools ← (← arr (← field j "tools")).mapM fun t => do
-    return { name := ← str (← field t "name"), effect := ← nat (← field t "effect"), arg := ← ty (← field t "arg") }
+    let cell := match t.getObjVal? "cell" with
+      | .ok c => (c.getNat?).toOption
+      | .error _ => none
+    return { name := ← str (← field t "name"), effect := ← nat (← field t "effect"),
+             arg := ← ty (← field t "arg"), cell, compensable := flag t "compensable",
+             undoFails := flag t "undo_fails" : Tool }
+  let probes ← match j.getObjVal? "probes" with
+    | .ok ps => (← arr ps).mapM fun q => do
+        return { name := ← str (← field q "name"), cell := ← nat (← field q "cell"),
+                 lo := ← int (← field q "lo"), hi := ← int (← field q "hi") : Probe }
+    | .error _ => pure #[]
   let policies ← (← arr (← field j "policies")).mapM fun p => do
     return { name := ← str (← field p "name"), lo := ← int (← field p "lo"), hi := ← int (← field p "hi") }
   let grants ← (← arr (← field j "grants")).mapM fun g => do return (← (← arr g).mapM nat).toList
   let env ← (← arr (← field j "env")).mapM val
   let oracle ← (← arr (← field j "oracle")).mapM int
-  return { effects, tools, policies, grants, env := env.toList, oracle, exp := ← exp (← field j "exp") }
+  return { effects, tools, policies, grants, env := env.toList, oracle, exp := ← exp (← field j "exp"),
+           probes }
 
 /-! ## A assinatura, o oráculo e a configuração -/
 
@@ -210,6 +249,24 @@ def Prog.sig (p : Prog) : Sig where
     match p.policies[i]?, v with
     | some q, .int n => decide (q.lo ≤ n ∧ n ≤ q.hi)
     | _, _ => false
+  step := fun t v w =>
+    match (p.tools[t]?).bind (·.cell), v with
+    | some i, .int n => fun j => if j = i then w j + n else w j
+    | _, _ => w
+  compensable := fun t => (p.tools[t]?.map (·.compensable)).getD false
+  undo := fun t v w =>
+    match p.tools[t]? with
+    | some tl =>
+      if tl.undoFails then none
+      else
+        match tl.cell, v with
+        | some i, .int n => some fun j => if j = i then w j - n else w j
+        | _, _ => some w
+    | none => some w
+  probe := fun q w =>
+    match p.probes[q]? with
+    | some pr => decide (pr.lo ≤ w pr.cell ∧ w pr.cell ≤ pr.hi)
+    | none => false
 
 /-- O oráculo roteirizado: a `i`-ésima chamada recebe a `i`-ésima resposta, no tipo pedido. -/
 def Prog.oracle' (p : Prog) : Oracle := fun i _ t _ =>
@@ -261,12 +318,11 @@ def Prog.event (p : Prog) : Ev → String × J
   | .endorse q o =>
     ("endorse", .obj [("accepted", .bool o.isSome), ("policy", Prog.name (p.policies.map (·.name)) q),
       ("value", (o.map valJson).getD .null)])
-  -- eventos de saga: o formato do programa ainda não declara o mundo, então o tripé cobre o
-  -- fragmento sem `atomic`; estes ramos só dão nome aos eventos
-  | .fail q => ("fail", .obj [("probe", .int q)])
+  -- os eventos de saga, como a vista do núcleo do ARX os projeta
+  | .fail q => ("fail", .obj [("probe", Prog.name (p.probes.map (·.name)) q)])
   | .undo t v ok =>
     ("undo", .obj [("args", .arr [valJson v]), ("ok", .bool ok), ("tool", Prog.name (p.tools.map (·.name)) t)])
-  | .recover r ok => ("recover", .obj [("ok", .bool ok), ("probe", .int r)])
+  | .recover r ok => ("recover", .obj [("ok", .bool ok), ("probe", Prog.name (p.probes.map (·.name)) r)])
 
 def GENESIS : String := "".pushn '0' 64
 

@@ -81,6 +81,13 @@ class SimWorld:
                 vals.append(x if isinstance(x, str) else str(x))
             self.inventories[k] = sorted(set(vals))
         self.sunk: list = []
+        # O mundo de células do núcleo (`World := Nat → Int` no Lean), como no ARX.
+        cells = spec.get("cells") or {}
+        self.cells: dict = {}
+        self.cell_tools = {k: (int(v["cell"]), int(v.get("sign", 1)), bool(v.get("fails", False)))
+                           for k, v in (cells.get("tools") or {}).items()}
+        self.probes = {k: (int(v["cell"]), int(v["lo"]), int(v["hi"]))
+                       for k, v in (cells.get("probes") or {}).items()}
 
     def lat(self, tool: str) -> float:
         return self.latency.get(tool, 0.5)
@@ -132,6 +139,17 @@ class SimWorld:
         if tool == "page":
             self.outbox.append(next((a for a in args if isinstance(a, str)), ""))
             return None
+        if tool in self.cell_tools:
+            cell, sign, fails = self.cell_tools[tool]
+            if fails:
+                raise HostFailed(f"`{tool}` recusada pelo provedor")
+            v = next((a for a in args if is_int(a)), 0)
+            self.cells[cell] = self.cells.get(cell, 0) + sign * v
+            return None
+        if tool in self.probes:
+            cell, lo, hi = self.probes[tool]
+            v = self.cells.get(cell, 0)
+            return lo <= v <= hi
         if tool in self.sinks:
             self.sunk.append((tool, list(args)))
             return None

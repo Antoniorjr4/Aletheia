@@ -146,6 +146,26 @@ pub struct SimWorld {
     /// (ferramenta, argumentos) de cada chamada a um sumidouro, em ordem.
     pub sunk: Vec<(String, Vec<Value>)>,
     inventories: BTreeMap<String, Vec<String>>,
+    /// O mundo de células do núcleo (`World := Nat → Int` no Lean): o valor de cada célula.
+    pub cells: BTreeMap<u64, i64>,
+    /// Ferramentas de célula: somam `sign · v` à célula; uma compensação pode recusar.
+    cell_tools: HashMap<String, CellTool>,
+    /// Sondas de célula: `lo ≤ célula ≤ hi`, sem argumento e sem efeito.
+    probes: HashMap<String, CellProbe>,
+}
+
+#[derive(Clone, Debug)]
+struct CellTool {
+    cell: u64,
+    sign: i64,
+    fails: bool,
+}
+
+#[derive(Clone, Debug)]
+struct CellProbe {
+    cell: u64,
+    lo: i64,
+    hi: i64,
 }
 
 fn key_of(args: &[Value]) -> Option<u64> {
@@ -255,6 +275,19 @@ impl SimWorld {
                 w.sinks.push(v.as_str().ok_or("nome de sumidouro não textual")?.to_string());
             }
         }
+        if let Some(c) = j.get("cells") {
+            let cell = |v: &Json| v.get("cell").and_then(|x| x.as_u64()).ok_or("célula sem índice");
+            for (k, v) in c.get("tools").and_then(|x| x.as_object()).into_iter().flatten() {
+                let sign = v.get("sign").and_then(|x| x.as_i64()).unwrap_or(1);
+                let fails = v.get("fails").and_then(|x| x.as_bool()).unwrap_or(false);
+                w.cell_tools.insert(k.clone(), CellTool { cell: cell(v)?, sign, fails });
+            }
+            for (k, v) in c.get("probes").and_then(|x| x.as_object()).into_iter().flatten() {
+                let lo = v.get("lo").and_then(|x| x.as_i64()).ok_or("sonda sem `lo`")?;
+                let hi = v.get("hi").and_then(|x| x.as_i64()).ok_or("sonda sem `hi`")?;
+                w.probes.insert(k.clone(), CellProbe { cell: cell(v)?, lo, hi });
+            }
+        }
         if let Some(m) = j.get("health").and_then(|v| v.as_object()) {
             for (k, v) in m {
                 w.health.insert(k.clone(), v.as_bool().ok_or("saúde deve ser booleana")?);
@@ -329,6 +362,19 @@ impl SimWorld {
             ("page", _) => {
                 self.outbox.push(text_arg(args).unwrap_or_default());
                 Value::Unit
+            }
+            (other, _) if self.cell_tools.contains_key(other) => {
+                let ct = self.cell_tools[other].clone();
+                if ct.fails {
+                    return Err(HostError::Failed(format!("`{other}` recusada pelo provedor")));
+                }
+                *self.cells.entry(ct.cell).or_default() += ct.sign * int_arg(args).unwrap_or(0);
+                Value::Unit
+            }
+            (other, _) if self.probes.contains_key(other) => {
+                let p = &self.probes[other];
+                let v = self.cells.get(&p.cell).copied().unwrap_or(0);
+                Value::Bool(p.lo <= v && v <= p.hi)
             }
             (other, _) if self.sinks.iter().any(|s| s == other) => {
                 self.sunk.push((other.to_string(), args.to_vec()));
