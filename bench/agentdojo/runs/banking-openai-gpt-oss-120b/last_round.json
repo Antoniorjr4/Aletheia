@@ -1,12 +1,12 @@
 {
- "reason": "completa",
- "executed": 1,
+ "reason": "or\u00e7amento: gasto US$ 0.0914 na rodada e US$ 0.0918 acumulado; a pr\u00f3xima tarefa reserva US$ 0.0094",
+ "executed": 132,
  "spend": {
-  "usd_round_server": 0.000401,
+  "usd_round_server": 0.091438,
   "usd_round_estimate": 0.0,
-  "usd_round": 0.000401,
-  "usd_total": 0.000401,
-  "max_usd_round": 0.02,
+  "usd_round": 0.091438,
+  "usd_total": 0.091839,
+  "max_usd_round": 0.1,
   "max_usd_total": 1.0,
   "price_per_mtok": [
    0.15,
