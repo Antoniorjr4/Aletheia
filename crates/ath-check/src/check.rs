@@ -1358,6 +1358,12 @@ impl<'m> Ctx<'m> {
                     return LTy::declared(Ty::Text, Label::Trusted,
                         Some(Refn::Text { max: 256 }), Vec::new());
                 }
+                "telemetry" => {
+                    check_args(self, 0);
+                    for a in args { self.expr(a); }
+                    return LTy::declared(Ty::Text, Label::Trusted,
+                        Some(Refn::Text { max: 512 }), Vec::new());
+                }
                 "is_managed" | "scale_justified" => {
                     check_args(self, if method.name == "is_managed" { 1 } else { 2 });
                     if !self.in_policy {
