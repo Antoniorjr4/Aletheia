@@ -33,5 +33,15 @@
       "kind": "unknown_status",
       "times": 5
     }
-  ]
+  ],
+  "managed": [
+    "api",
+    "worker"
+  ],
+  "telemetry": {
+    "cpu_pct": {
+      "api": 95,
+      "worker": 45
+    }
+  }
 }
