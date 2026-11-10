@@ -1340,6 +1340,47 @@ impl<'m> Ctx<'m> {
     }
 
     fn method(&mut self, recv: &Expr, method: &Ident, args: &[Expr]) -> LTy {
+        // `s` é uma referência intrínseca à fotografia confiável do host.
+        // Não é variável de usuário, não vem de inferência e não pode ser forjada
+        // por `quote` ou por uma ferramenta que devolva Trusted.
+        if matches!(&recv.kind, ExprKind::Var(name) if name == "s") {
+            let check_args = |this: &mut Self, expected: usize| {
+                if args.len() != expected {
+                    this.push(Diag::new(E0, "E0007",
+                        format!("s.{} exige {expected} argumento(s)", method.name),
+                        method.span, "aridade"));
+                }
+            };
+            match method.name.as_str() {
+                "managed" => {
+                    check_args(self, 0);
+                    for a in args { self.expr(a); }
+                    return LTy::declared(Ty::Text, Label::Trusted,
+                        Some(Refn::Text { max: 256 }), Vec::new());
+                }
+                "is_managed" | "scale_justified" => {
+                    check_args(self, if method.name == "is_managed" { 1 } else { 2 });
+                    if !self.in_policy {
+                        self.impure(method.span, "sonda contextual fora de política");
+                    }
+                    for (i, arg) in args.iter().enumerate() {
+                        let t = self.expr(arg);
+                        let expected = if i == 0 { &Ty::Text } else { &Ty::Int };
+                        if !assignable(&t.ty, expected) {
+                            self.mismatch(arg.span, expected, &t.ty);
+                        }
+                    }
+                    return LTy::trusted(Ty::Bool);
+                }
+                _ => {
+                    self.push(Diag::new(E0, "E0003",
+                        format!("método de estado desconhecido `s.{}`", method.name),
+                        method.span, "método não reconhecido"));
+                    for a in args { self.expr(a); }
+                    return LTy::never();
+                }
+            }
+        }
         let r = self.expr(recv);
         if method.name != "mint" {
             self.push(Diag::new(
@@ -1926,6 +1967,26 @@ impl<'m> Ctx<'m> {
             return LTy::never();
         };
         let (oty, _) = self.resolve(out);
+        // Em fluxos com política contextual, `Action` só pode ser decodificado
+        // com o inventário do snapshot confiável explicitamente no estado.
+        // O compilador vincula a origem; o runtime verifica cada ação contra
+        // a mesma fotografia no momento da decisão.
+        if matches!(&oty, Ty::Adt(name) if name == "Action")
+            && self.policies.contains_key("SafeRemediation")
+        {
+            let trusted_field = fields.iter().any(|(key, value)| {
+                key.name == "estado" && matches!(&value.kind,
+                    ExprKind::Method { recv, method, args }
+                    if matches!(&recv.kind, ExprKind::Var(name) if name == "s")
+                       && method.name == "managed" && args.is_empty())
+            });
+            if !trusted_field {
+                self.push(Diag::new(E3, "E0420",
+                    "inventário do planner sem vínculo com estado confiável",
+                    e.span, "ausente `estado = s.managed()`")
+                    .help("o inventário não pode ser copiado de literal, log ou mensagem do modelo"));
+            }
+        }
         if !matches!(oty, Ty::Adt(_) | Ty::Text | Ty::List(..) | Ty::Never) {
             self.push(Diag::new(
                 E0,
