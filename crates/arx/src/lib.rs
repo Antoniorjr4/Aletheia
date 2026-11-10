@@ -431,6 +431,7 @@ impl<'m> Arx<'m> {
                 if matches!(&recv.kind, ExprKind::Var(name) if name == "s") {
                     return match method.name.as_str() {
                         "managed" if args.is_empty() => Ok(Value::Text(self.snapshot.managed_text())),
+                        "telemetry" if args.is_empty() => Ok(Value::Text(self.snapshot.telemetry_text())),
                         "is_managed" if args.len() == 1 => {
                             let Value::Text(d) = self.eval(&args[0])? else {
                                 return Err(rt("R0103", "s.is_managed exige Text").into());
