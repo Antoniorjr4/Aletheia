@@ -224,6 +224,14 @@ class Runtime:
     def managed(self) -> str:
         return ", ".join(self.snapshot["managed"])
 
+    def telemetry(self) -> str:
+        out = []
+        for name in self.snapshot["managed"]:
+            cpu = self.snapshot["cpu_pct"].get(name, "n/d")
+            replicas = self.snapshot["replicas"].get(name, 0)
+            out.append(f"{name}: cpu_pct={cpu}, replicas={replicas}")
+        return "; ".join(out)
+
     def is_managed(self, deploy: str) -> bool:
         return type(deploy) is str and deploy in self.snapshot["managed"]
 
