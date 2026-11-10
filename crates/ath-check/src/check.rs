@@ -8,6 +8,25 @@ use ath_syntax::ast::*;
 use ath_syntax::{est_tokens, Span};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
+/// Identifica políticas que dependem explicitamente do estado confiável.
+//// Os cassetes Rev5/Rev6 legados continuam compiláveis: exigir s.managed()
+//// só para políticas que realmente leem a fotografia dinâmica.
+fn policy_reads_snapshot(e: &Expr) -> bool {
+    match &e.kind {
+        ExprKind::Method { recv, method, args } => {
+            (matches!(&recv.kind, ExprKind::Var(name) if name == "s")
+                && matches!(method.name.as_str(), "is_managed" | "scale_justified"))
+                || args.iter().any(policy_reads_snapshot)
+        }
+        ExprKind::Match { scrut, arms } => {
+            policy_reads_snapshot(scrut) || arms.iter().any(|a| policy_reads_snapshot(&a.body))
+        }
+        ExprKind::Binary(_, left, right) => policy_reads_snapshot(left) || policy_reads_snapshot(right),
+        ExprKind::Unary(_, x) | ExprKind::Field(x, _) => policy_reads_snapshot(x),
+        _ => false,
+    }
+}
+
 /// Custo de uma amostra de um nó `infer`, sob o contrato Δ do modelo.
 #[derive(Clone, Debug)]
 pub struct InferCost {
@@ -1989,7 +2008,9 @@ impl<'m> Ctx<'m> {
         // com o inventário do snapshot confiável explicitamente no estado.
         // O compilador vincula a origem; o runtime verifica cada ação contra
         // a mesma fotografia no momento da decisão.
-        if matches!(&oty, Ty::Adt(name) if name == "Action") && self.policies.contains_key("SafeRemediation") {
+        if matches!(&oty, Ty::Adt(name) if name == "Action")
+            && self.policies.get("SafeRemediation").is_some_and(|p| policy_reads_snapshot(&p.body))
+        {
             let trusted_field = fields.iter().any(|(key, value)| {
                 key.name == "estado"
                     && matches!(&value.kind,
