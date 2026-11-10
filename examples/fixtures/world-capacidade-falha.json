@@ -30,5 +30,15 @@
       "tool": "unscale",
       "kind": "error"
     }
-  ]
+  ],
+  "managed": [
+    "api",
+    "worker"
+  ],
+  "telemetry": {
+    "cpu_pct": {
+      "api": 95,
+      "worker": 45
+    }
+  }
 }
