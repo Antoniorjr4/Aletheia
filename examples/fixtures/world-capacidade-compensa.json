@@ -24,5 +24,15 @@
   },
   "health": {
     "api": false
+  },
+  "managed": [
+    "api",
+    "worker"
+  ],
+  "telemetry": {
+    "cpu_pct": {
+      "api": 95,
+      "worker": 45
+    }
   }
 }
