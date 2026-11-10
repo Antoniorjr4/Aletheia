@@ -329,20 +329,20 @@ theorem noninterference {c₁ c₂ : Cfg} {Γ : List Bind} {pc : Lab} {e : Exp} 
         · exact .inr ⟨e₁.tr, p, some e₁.v, some e₂.v, [], [], by simpa using hv, rfl, by simp [htr]⟩
       · exact .inr (hd.append _ _)
     · -- só o primeiro aceita
-      obtain ⟨x₂, _, h₂⟩ := bnd_eq_ok.mp h₂
+      obtain ⟨x₂, _, h₂⟩ := bnd_eq_ok.mp (pre_eq_ok.mp h₂)
       cases h₁; cases h₂
       rcases hE with htr | hd
       · exact .inr ⟨e₁.tr, p, some e₁.v, none, [], x₂.tr, by simp, rfl, by simp [htr]⟩
       · exact .inr (hd.append _ _)
     · -- só o segundo aceita
-      obtain ⟨x₁, _, h₁⟩ := bnd_eq_ok.mp h₁
+      obtain ⟨x₁, _, h₁⟩ := bnd_eq_ok.mp (pre_eq_ok.mp h₁)
       cases h₁; cases h₂
       rcases hE with htr | hd
       · exact .inr ⟨e₁.tr, p, none, some e₂.v, x₁.tr, [], by simp, rfl, by simp [htr]⟩
       · exact .inr (hd.append _ _)
     · -- os dois recusam: as duas execuções seguem pelo ramo `else`
-      obtain ⟨x₁, hx₁, h₁⟩ := bnd_eq_ok.mp h₁
-      obtain ⟨x₂, hx₂, h₂⟩ := bnd_eq_ok.mp h₂
+      obtain ⟨x₁, hx₁, h₁⟩ := bnd_eq_ok.mp (pre_eq_ok.mp h₁)
+      obtain ⟨x₂, hx₂, h₂⟩ := bnd_eq_ok.mp (pre_eq_ok.mp h₂)
       cases h₁; cases h₂
       have := seq_agree (a₁ := e₁.tr ++ [Ev.endorse p none]) (b₁ := e₂.tr ++ [Ev.endorse p none])
         (P := low (Lab.E ⊓ ιd) → x₁.v = x₂.v)
@@ -501,78 +501,33 @@ theorem loop_policy {f : Val → St → Except Err Out}
     cases h
     exact (hf v s o ho).append (loop_policy hf vs o.st r' hr')
 
+/-- Endossos pela política valem nos dois desfechos, inclusive no traço de uma saga que
+falha (as compensações e as sondas não são endossos). -/
+theorem policy_preserves : Preserves S c True (fun _ _ tr => PolicyOk S tr) where
+  refl _ := PolicyOk.nil
+  trans h₁ h₂ := h₁.append h₂
+  endorse hp := by intro p' v hv; simp at hv; obtain ⟨rfl, rfl⟩ := hv; exact hp
+  reject := fun p' v hv => by rcases List.mem_singleton.mp hv with ⟨⟩
+  act _ _ := by intro p v hv; rcases List.mem_singleton.mp hv with ⟨⟩
+  drop _ := PolicyOk.nil
+  infer := PolicyOk.nil
+  commit _ := fun h => h
+  abort _ := fun q r p h => by
+    rw [List.append_assoc]
+    refine h.append ?_
+    intro p' v hv
+    simp only [List.cons_append, List.mem_cons, List.mem_append, List.mem_singleton, reduceCtorEq,
+      false_or, or_false] at hv
+    rcases hv with hv | hv
+    · obtain ⟨_, _, _, hu⟩ := compensate_undo S _ _ _ hv
+      cases hu
+    · simp at hv
+
 /-- **T3, solidez do endosso.** Em qualquer execução, de qualquer programa, todo valor aceito
 por `refine … by p` satisfaz `p`. -/
-theorem endorsed_sound : ∀ (e : Exp) {ρ : List Val} {s : St} {o : Out},
-    eval S c e ρ s = .ok o → PolicyOk S o.tr
-  | .val _, ρ, s, o, h => by simp [eval] at h; subst h; exact PolicyOk.nil
-  | .var k, ρ, s, o, h => by
-    simp only [eval] at h
-    split at h
-    · cases h; exact PolicyOk.nil
-    · cases h
-  | .let_ e₁ e₂, ρ, s, o, h => by
-    simp only [eval, bnd_eq_ok] at h
-    obtain ⟨o₁, h₁, o₂, h₂, h⟩ := h
-    cases h
-    exact (endorsed_sound e₁ h₁).append (endorsed_sound e₂ h₂)
-  | .ite cnd t f, ρ, s, o, h => by
-    simp only [eval, bnd_eq_ok] at h
-    obtain ⟨oc, hc, h⟩ := h
-    split at h
-    · obtain ⟨o', h', h⟩ := bnd_eq_ok.mp h
-      cases h
-      rcases cond_ok h' with ⟨_, h'⟩ | ⟨_, h'⟩
-      · exact (endorsed_sound cnd hc).append (endorsed_sound t h')
-      · exact (endorsed_sound cnd hc).append (endorsed_sound f h')
-    · cases h
-  | .prim op a b, ρ, s, o, h => by
-    simp only [eval, bnd_eq_ok] at h
-    obtain ⟨o₁, h₁, o₂, h₂, h⟩ := h
-    split at h
-    · cases h; exact (endorsed_sound a h₁).append (endorsed_sound b h₂)
-    · cases h
-  | .endorse p e d, ρ, s, o, h => by
-    simp only [eval, bnd_eq_ok] at h
-    obtain ⟨oe, he, h⟩ := h
-    split at h
-    · rename_i hp
-      cases h
-      refine (endorsed_sound e he).append ?_
-      intro p' v hv
-      simp at hv
-      obtain ⟨rfl, rfl⟩ := hv
-      exact hp
-    · obtain ⟨od, hd, h⟩ := bnd_eq_ok.mp h
-      cases h
-      refine (endorsed_sound e he).append ?_
-      intro p' v hv
-      simp at hv
-      exact endorsed_sound d hd p' v hv
-  | .act t k a, ρ, s, o, h => by
-    simp only [eval, bnd_eq_ok] at h
-    obtain ⟨oa, ha, h⟩ := h
-    obtain ⟨id, _, _, _, _, rfl⟩ := doAct_ok h
-    refine (endorsed_sound a ha).append ?_
-    intro p v hv; simp at hv
-  | .drop k, ρ, s, o, h => by
-    simp only [eval] at h
-    obtain ⟨_, _, _, rfl⟩ := doDrop_ok h
-    exact PolicyOk.nil
-  | .for_ n xs body, ρ, s, o, h => by
-    simp only [eval, bnd_eq_ok] at h
-    obtain ⟨ox, hx, h⟩ := h
-    split at h
-    · obtain ⟨r, hr, h⟩ := bnd_eq_ok.mp h
-      cases h
-      exact (endorsed_sound xs hx).append
-        (loop_policy (fun v s o ho => endorsed_sound body ho) _ _ r hr)
-    · cases h
-  | .infer m t a, ρ, s, o, h => by
-    simp only [eval, bnd_eq_ok] at h
-    obtain ⟨oa, ha, h⟩ := h
-    obtain ⟨_, rfl⟩ := doInfer_ok h
-    have := endorsed_sound a ha; exact this
+theorem endorsed_sound (e : Exp) {ρ : List Val} {s : St} {o : Out}
+    (h : eval S c e ρ s = .ok o) : PolicyOk S o.tr :=
+  (eval_preserves policy_preserves e (.inl trivial)).1 h
 
 end
 

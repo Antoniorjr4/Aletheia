@@ -99,71 +99,32 @@ theorem loop_all {f : Val → St → Except Err Out} {P : List Ev → Prop}
 
 /-! ## 1. A guarda dinâmica é correta, para qualquer programa -/
 
-theorem effects_granted (c : Cfg) : ∀ (e : Exp) {ρ : List Val} {s : St} {o : Out},
-    eval S c e ρ s = .ok o → Granted' S c.grants o.tr
-  | .val _, ρ, s, o, h => by simp [eval] at h; subst h; exact Granted'.nil _
-  | .var k, ρ, s, o, h => by
-    simp only [eval] at h
-    split at h
-    · cases h; exact Granted'.nil _
-    · cases h
-  | .let_ e₁ e₂, ρ, s, o, h => by
-    simp only [eval, bnd_eq_ok] at h
-    obtain ⟨o₁, h₁, o₂, h₂, h⟩ := h
-    cases h
-    exact (effects_granted c e₁ h₁).append (effects_granted c e₂ h₂)
-  | .ite cnd t f, ρ, s, o, h => by
-    simp only [eval, bnd_eq_ok] at h
-    obtain ⟨oc, hc, h⟩ := h
-    split at h
-    · obtain ⟨o', h', h⟩ := bnd_eq_ok.mp h
-      cases h
-      rcases cond_ok h' with ⟨_, h'⟩ | ⟨_, h'⟩
-      · exact (effects_granted c cnd hc).append (effects_granted c t h')
-      · exact (effects_granted c cnd hc).append (effects_granted c f h')
-    · cases h
-  | .prim op a b, ρ, s, o, h => by
-    simp only [eval, bnd_eq_ok] at h
-    obtain ⟨o₁, h₁, o₂, h₂, h⟩ := h
-    split at h
-    · cases h; exact (effects_granted c a h₁).append (effects_granted c b h₂)
-    · cases h
-  | .endorse p e d, ρ, s, o, h => by
-    simp only [eval, bnd_eq_ok] at h
-    obtain ⟨oe, he, h⟩ := h
-    split at h
-    · cases h
-      exact (effects_granted c e he).append (Granted'.endorse _ p _ [] (Granted'.nil _))
-    · obtain ⟨od, hd, h⟩ := bnd_eq_ok.mp h
-      cases h
-      exact (effects_granted c e he).append (Granted'.endorse _ p none _ (effects_granted c d hd))
-  | .act t k a, ρ, s, o, h => by
-    simp only [eval, bnd_eq_ok] at h
-    obtain ⟨oa, ha, h⟩ := h
-    obtain ⟨id, _, hg, _, _, rfl⟩ := doAct_ok h
-    refine (effects_granted c a ha).append fun t' id' v' hm => ?_
-    simp at hm
-    obtain ⟨rfl, rfl, rfl⟩ := hm
+/-- Toda ação do traço foi concedida, nos dois desfechos (as compensações e as sondas de uma
+saga não são ações). -/
+theorem granted_preserves (c : Cfg) : Preserves S c True (fun _ _ tr => Granted' S c.grants tr) where
+  refl _ := Granted'.nil _
+  trans h₁ h₂ := h₁.append h₂
+  endorse _ := Granted'.endorse _ _ _ [] (Granted'.nil _)
+  reject := Granted'.endorse _ _ _ [] (Granted'.nil _)
+  act hg _ := fun t' id' v' hm => by
+    rcases List.mem_singleton.mp hm with ⟨⟩
     exact hg
-  | .drop k, ρ, s, o, h => by
-    simp only [eval] at h
-    obtain ⟨_, _, _, rfl⟩ := doDrop_ok h
-    exact Granted'.nil _
-  | .for_ n xs body, ρ, s, o, h => by
-    simp only [eval, bnd_eq_ok] at h
-    obtain ⟨ox, hx, h⟩ := h
-    split at h
-    · obtain ⟨r, hr, h⟩ := bnd_eq_ok.mp h
-      cases h
-      exact (effects_granted c xs hx).append
-        (loop_all (Granted'.nil _) (fun _ _ ha hb => ha.append hb)
-          (fun v s o ho => effects_granted c body ho) _ _ r hr)
-    · cases h
-  | .infer m t a, ρ, s, o, h => by
-    simp only [eval, bnd_eq_ok] at h
-    obtain ⟨oa, ha, h⟩ := h
-    obtain ⟨_, rfl⟩ := doInfer_ok h
-    have := effects_granted c a ha; exact this
+  drop _ := Granted'.nil _
+  infer := Granted'.nil _
+  commit _ := fun h => h
+  abort _ := fun q r p h => by
+    rw [List.append_assoc]
+    refine h.append fun t id v hv => ?_
+    simp only [List.cons_append, List.mem_cons, List.mem_append, List.mem_singleton, reduceCtorEq,
+      false_or, or_false] at hv
+    rcases hv with hv | hv
+    · obtain ⟨_, _, _, hu⟩ := compensate_undo S _ _ _ hv
+      cases hu
+    · simp at hv
+
+theorem effects_granted (c : Cfg) (e : Exp) {ρ : List Val} {s : St} {o : Out}
+    (h : eval S c e ρ s = .ok o) : Granted' S c.grants o.tr :=
+  (eval_preserves (granted_preserves c) e (.inl trivial)).1 h
 
 /-! ## 2. Toda ação usa uma `Cap[E]` léxica que contém o efeito -/
 
@@ -208,7 +169,7 @@ theorem effects_lexical (c : Cfg) {Γ : List Bind} {pc : Lab} {e : Exp} {τ : Ty
     obtain ⟨oe, h₁, he⟩ := he
     split at he
     · cases he; exact (ihe h₁).append (Lexical.endorse p _ [] (Lexical.nil _ _))
-    · obtain ⟨od, h₂, he⟩ := bnd_eq_ok.mp he
+    · obtain ⟨od, h₂, he⟩ := bnd_eq_ok.mp (pre_eq_ok.mp he)
       cases he
       exact (ihe h₁).append (Lexical.endorse p none _ (ihd h₂))
   | @act Γ pc t k a ιa βa E _ hk heff _ _ iha =>

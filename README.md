@@ -7,7 +7,8 @@ compilador `athc`, o runtime `ARX` em Rust e um segundo backend, Python sobre o
 `aletheia_runtime`, verificado contra o ARX por testes diferenciais, inclusive por replay de
 tráfego real da Groq. Há também um núcleo formal em Lean 4, com a solidez de tipos (T1), os
 efeitos com capacidades lineares `Cap[E]` (T2) e a não-interferência com endosso robusto (T3)
-provados sem `sorry` sobre o mesmo avaliador. Esse avaliador também roda compilado
+provados sem `sorry` sobre o mesmo avaliador, que também tem sagas, com a recuperação (T6)
+provada. Esse avaliador também roda compilado
 (`ath-lean-eval`): é o terceiro backend de um tripé diferencial em que o Lean, o ARX e o
 Python produzem o mesmo journal encadeado, byte a byte. Para a suíte oficial `banking` do
 AgentDojo, o agente bancário é um programa Aletheia ligado ao benchmark por um
@@ -45,7 +46,7 @@ cargo build --release
 cargo test                                    # 98 testes, inclusive os diferenciais e o replay da Groq
 (cd runtimes/python && PYTHONPATH=. python3 -m unittest discover -s tests)   # runtime Python
 python3 -m unittest discover -s bench/m1/tests   # os dois oráculos da M1 contra as rodadas publicadas
-(cd lean && lake build --wfail)               # T1, T2 e T3 em Lean 4, auditoria de axiomas e ath-lean-eval
+(cd lean && lake build --wfail)               # T1, T2, T3 e T6 em Lean 4, auditoria de axiomas e ath-lean-eval
 cargo test -p athc --test differential        # com o binário do Lean presente: o tripé Lean × ARX × Python
 
 # reproduzir tráfego real gravado na Groq, nos dois backends
@@ -438,6 +439,15 @@ efeito sem capacidade, reuso de capacidade linear, estouro de orçamento antes d
   argumentos são idênticos. Todo valor endossado satisfaz a sua política, e o endosso só ocorre
   sob `pc ⊒ Endorsed`.
 
+- **T6, recuperação de sagas** (`T6_no_masking`, `T6_recovered`, `T6`, `T6_saga`): `await` e
+  `atomic … recover` estão no mesmo avaliador, sobre um mundo abstrato em que ferramentas,
+  compensações (que podem ser recusadas) e sondas são funções arbitrárias. `on failure` só
+  roda se todas as compensações deram certo e a sonda confirmou: falha nunca vira sucesso em
+  silêncio. Sob contratos `restoring`, uma saga que falha compensa exatamente as ações que o
+  corpo executou, uma vez cada e na ordem reversa, e devolve o mundo ao invariante de antes da
+  saga. Isso vale para corpos sem saga aninhada, porque no ARX uma saga interna confirmada
+  descarta o seu registro. `await` e `atomic` ainda não estão no julgamento de tipos.
+
 O CI roda `lake build --wfail`, e um alvo de auditoria fixa o conjunto de axiomas de cada
 teorema: só `propext`, `Quot.sound` e `Classical.choice`. O mesmo build compila o avaliador no
 binário `ath-lean-eval`, e o job `tripod` da CI o executa contra o ARX e o Python sobre 400
@@ -526,6 +536,24 @@ cenários e limites estão em [`bench/m1/README.md`](bench/m1/README.md); todas 
 [`bench/m1/live/`](bench/m1/live/README.md); os registros da Rev6 e da Rev7, em
 [`docs/`](docs/README.md).
 
+## AgentDojo oficial
+
+[`bench/agentdojo/`](bench/agentdojo/README.md) roda a suíte oficial `banking` do AgentDojo
+(v1.2.2) em dois pipelines com o mesmo modelo: o baseline padrão do AgentDojo e o agente
+[`banking.ath`](bench/agentdojo/banking.ath), ligado ao benchmark por um
+`BasePipelineElement`. As tarefas, o ambiente injetado, o ataque `important_instructions` e
+os verificadores são os do pacote. Primeiro lote, `openai/gpt-oss-120b` na Groq, com os
+pares completos nos dois pipelines:
+
+| pipeline | utilidade (16) | utilidade sob ataque (19 pares) | ASR (19 pares) | tokens por execução |
+| --- | --- | --- | --- | --- |
+| baseline AgentDojo | 68,8% (IC95 44–86%) | 15,8% (6–38%) | 78,9% (57–91%) | 3.632 |
+| Aletheia | 75,0% (IC95 50–90%) | 31,6% (15–54%) | **0,0%** (0–17%) | 1.804 |
+
+A cobertura é parcial (19 dos 144 pares), e os primeiros pares vêm das tarefas 0 a 2. Os
+detalhes, as falhas de cada lado e o que falta estão em
+[`RESULTS.md`](bench/agentdojo/RESULTS.md).
+
 ## Estrutura
 
 ```text
@@ -538,7 +566,7 @@ crates/
   ath-emit/      emissor Python (ANF, nomes únicos, metadados calculados em Rust)
   athc/          CLI, renderização de diagnósticos, testes ponta a ponta e diferenciais
 runtimes/python/ aletheia_runtime: a semântica do ARX em Python (só biblioteca padrão), provedor openai, gravação e replay
-lean/            núcleo λ_Ath em Lean 4: sintaxe, tipagem, avaliador, T1, T2 e T3, exemplos, auditoria de axiomas e o binário ath-lean-eval (BLAKE3 em Lean)
+lean/            núcleo λ_Ath em Lean 4: sintaxe, tipagem, avaliador com sagas, T1, T2, T3 e T6, exemplos, auditoria de axiomas e o binário ath-lean-eval (BLAKE3 em Lean)
 examples/        remediação, plano em lista (rollout), mundos com falhas, 24 variantes com erro e o gerador
 bench/m1/        harness da métrica M1: cenários, linha de base Python, agente, dois oráculos, reavaliação
 bench/replay/    cassetes de tráfego real da Groq (20B e 120B), reproduzidos nos dois backends a cada push
@@ -570,6 +598,7 @@ docs/            registros da Rev6 e da Rev7: execuções reais, decisões e lim
 | F1 Backend Python | `athc emit --target py` + `aletheia_runtime`; testes diferenciais traço a traço contra o ARX no CI |
 | F1 Replay | provedor `openai` nos dois backends; `--record`/`replay` no nível HTTP; 22 cassetes reais da Groq (20B e 120B) reproduzidos no CI com o mesmo journal, a mesma árvore de compensação e o mesmo balanço |
 | Tripé diferencial | `ath-lean-eval` (o `eval` provado, compilado) × ARX × Python: o mesmo journal do núcleo, byte a byte, em programas gerados bem tipados e lineares e na injeção da Groq; job `tripod` na CI |
+| 4 Metateoria (T6) | sagas no avaliador canônico: mundo abstrato, `await`, `atomic … recover`, compensação LIFO como obrigação, `CompensationFailed`; sem mascaramento e restauração sob contratos `restoring`, sem `sorry` |
 | 4 Metateoria (T1, T2, T3) | `lean/`: núcleo λ_Ath em Lean 4, com um só julgamento e um só avaliador: solidez (progresso, preservação, orçamento graduado), efeitos com `Cap[E]` linear (multiplicidade 1, `drop` explícito, concessão do runtime) e não-interferência com endosso robusto; sem `sorry`, axiomas auditados no build |
 
 ### Erros que o compilador já pega
@@ -618,28 +647,29 @@ docs/            registros da Rev6 e da Rev7: execuções reais, decisões e lim
   tokenização de um prompt longo.
 - **Calibração automática do Δ:** o `athc contract-report` sugere a recalibração pela cauda
   observada, mas ela ainda não volta sozinha ao contrato nem é versionada pelo CI.
-- **AgentDojo oficial:** a ponte `BasePipelineElement` e o agente `banking.ath` rodam a suíte
-  oficial `banking` (v1.2.2) com os verificadores do pacote. Offline, a CI testa a ponte com
-  o pacote oficial, um modelo roteirizado e uma API compatível local. A primeira rodada com a
-  Groq ainda não aconteceu: a chave gravada em `GROQ_API_KEY` passou a ser recusada (HTTP
-  401) antes da primeira chamada. Ver [`bench/agentdojo/RESULTS.md`](bench/agentdojo/RESULTS.md).
+- **AgentDojo oficial, matriz parcial:** o primeiro lote contra `openai/gpt-oss-120b` cobre
+  as 16 tarefas sem ataque e 19 dos 144 pares sob ataque, até a cota diária da Groq. Os
+  outros pares vêm em lotes retomáveis. Ver
+  [`bench/agentdojo/RESULTS.md`](bench/agentdojo/RESULTS.md).
 - **Inventário dinâmico no decodificador:** `Action.deploy` continua `Text[..32]` na gramática.
   O inventário restringe pela política e pelo prompt, não por um `enum` construído a cada
   chamada. A fotografia é imutável por execução, mas um host real ainda precisa de versão ou
   assinatura e de revalidação no commit (TOCTOU).
 - **Certificados:** sem `certify`, `Bounded` nem monitor de deriva estatística.
 - **Teoremas:** T1, T2 e T3 estão provados para o núcleo λ_Ath, e só para ele. Ficam de fora
-  registros, variantes e `match`, `Text`, `mint` e atenuação, `retry`, sagas e reconciliação
-  (T6, T9: `Recovery.lean` é só um modelo abstrato), graus de certeza, localizações e T4/T5. A
+  registros, variantes e `match`, `Text`, `mint` e atenuação, `retry`, a reconciliação de
+  chaves (T9: `Recovery.lean` é um modelo abstrato), graus de certeza, localizações e T4/T5.
+  As sagas estão no avaliador e têm o T6, mas ainda não estão no julgamento de tipos. A
   prova é do cálculo. Entre o cálculo e o ARX, e entre o ARX e o Python, a correspondência é
   verificada por construção e por testes diferenciais (o tripé executa o próprio avaliador
   provado), não demonstrada. O tripé cobre o fragmento linear do núcleo, sem `drop` na
-  superfície.
+  superfície e sem sagas.
 
 ## Próximos marcos
 
-1. **Sagas no Lean**: `atomic … recover`, compensação e `reconcile` no núcleo, com T6
-   (recuperação de sagas) sobre um estado abstrato do mundo, ligado ao mesmo `eval`.
+1. **Sagas no julgamento de tipos**: estender `HasType` e a contagem linear a `await` e
+   `atomic`, levando T1–T3 às sagas; `reconcile` e `Pending` no avaliador (T9); sagas no
+   tripé diferencial.
 2. **A matriz oficial do AgentDojo**: completar a rodada `banking` (16 tarefas e 144 pares
    sob ataque, baseline × Aletheia) e estender a ponte à suíte `workspace`.
 3. **Invariantes de recuperação provados**: contratos `restoring` sobre um estado abstrato do

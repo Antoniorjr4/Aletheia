@@ -33,11 +33,12 @@ do `aletheia_runtime` (Python). Ver [o tripé diferencial](#o-tripé-diferencial
 | `Budget.lean` | β sobre seis dimensões (tok, usd, wall, energy, bytes, risk), `+`, `⊔`, `n • β` | E6, contrato Δ |
 | `Syntax.lean` | tipos `Int`/`Bool`/`Unit`/`List[T, 0..n]`, valores, `Cap[E]`, eventos, assinatura Σ (custos, tipos de argumento, efeito de cada ferramenta, políticas), oráculo, tabela de concessões do runtime | AST, Codex, linhas de efeito |
 | `Typing.lean` | Γ; pc ⊢ e : τ ^ ι ▷ β, contagem exata `consumes`, `Linear` (multiplicidade 1), `Granted` | E1, E2, E3, E5 (políticas), E6 |
-| `Eval.lean` | avaliador total de passo grande com quatro erros verificados em tempo de execução | ARX |
+| `Eval.lean` | avaliador total de passo grande: quatro erros de tipo verificados em tempo de execução, o mundo abstrato, `await`, sagas e compensação; `eval_preserves`, o invariante nos dois desfechos (sucesso e `timeout`) | ARX |
 | `Soundness.lean` | T1 e o consumo exato | |
 | `Noninterference.lean` | T3 | |
 | `Confinement.lean` | T2, sobre o mesmo `eval` e o mesmo `HasType` | E2, E1 |
-| `Recovery.lean` | primeira modelagem abstrata da recuperação de sagas | T6 / T9 parcial |
+| `Saga.lean` | T6 sobre o avaliador canônico: sem mascaramento e restauração sob contratos `restoring`; a remediação como saga | `atomic … recover`, `compensable by`, `CompensationFailed` |
+| `Recovery.lean` | modelo abstrato da reconciliação com combustível (T9): sucesso só com evidência | `reconcile … fuel … else` |
 | `Examples.lean` | o padrão de remediação: tipado, executado, com as variantes perigosas recusadas | `examples/remediate.ath` |
 
 As expressões são estas, com índices de de Bruijn:
@@ -49,6 +50,8 @@ e ::= v | x | let x = e in e | if e then e else e | e ⊕ e
     | drop k                      -- descarte explícito da capacidade no índice k
     | for (n) x in e { e }        -- laço sobre List[T, 0..n]
     | infer m -> T { e }          -- saída do modelo: sempre Untrusted
+    | await q                     -- pós-condição observada pela sonda confiável q
+    | atomic recover r { e } on failure { e } on compensation_failed { e }
 ```
 
 **Capacidades `Cap[E]`.** Só existem no ambiente inicial: são as capacidades do agente.
@@ -191,6 +194,57 @@ endosso aceito satisfaz a sua política auditada.
 
   Os dois divergem exatamente na decisão de endosso.
 
+## T6: sagas no avaliador canônico
+
+As sagas estão no mesmo `eval` de T1–T3. O estado ganhou o **mundo abstrato** e o **registro de
+compensação** da saga corrente. A assinatura ganhou a transição de cada ferramenta
+(`step`), a sua compensação (`undo`, que o provedor pode recusar) e as sondas confiáveis
+(`probe`). São funções arbitrárias, e os teoremas valem para qualquer uma delas.
+
+- **`await q`** consulta a sonda `q`. Se ela não confirma, a saga corrente falha com
+  `timeout q s tr`, que carrega o estado e os eventos até ali. O `bnd` acrescenta à frente os
+  eventos já produzidos, então o traço de uma saga que falha registra tudo o que o corpo fez.
+- **`atomic body r f g`** roda o corpo com um registro novo. Há dois desfechos:
+  - **confirmação:** os efeitos ficam e o registro é descartado, como no ARX;
+  - **falha:** as compensações rodam da ação mais recente à mais antiga, como obrigação, sem
+    reserva de orçamento. Uma recusa não interrompe as seguintes. Depois roda a sonda `r`:
+    `f` (`on failure`) roda se todas as compensações deram certo e a sonda confirma; `g`
+    (`on compensation_failed`) roda em qualquer outro caso.
+
+  O traço registra `fail q`, cada `undo t v ok` e `recover r ok`.
+
+Os teoremas:
+
+| teorema | enunciado |
+|---|---|
+| `T6_no_masking` | para qualquer mundo e qualquer compensação, `on failure` roda **exatamente** quando todas as compensações deram certo e a sonda confirmou |
+| `T6_recovered` | com uma sonda correta para `Inv`, quem chega a `on failure` recebe um mundo que satisfaz `Inv`, sem nenhuma compensação recusada; senão, o programa está em `CompensationFailed` |
+| `T6` | sob contratos `restoring` (cada compensação desfaz a sua ação a menos de uma equivalência `E`), um corpo sem saga aninhada que falha é compensado **exatamente** nas ações que executou, uma vez cada e na ordem reversa; nenhuma compensação é recusada; o mundo volta a ser `E`-equivalente ao de antes da saga |
+| `T6_saga` | a saga inteira: confirma com os efeitos do corpo, ou entrega ao tratador um mundo em que o invariante de antes da saga volta a valer, e a escolha entre `on failure` e `CompensationFailed` depende só da sonda |
+| `eval_preserves` | toda relação estado × estado × traço que os passos primitivos preservam vale nos dois desfechos (sucesso e `timeout`); `eval_fresh`, `effects_granted`, `endorsed_sound` e o registro do T6 são instâncias |
+
+`SagaExample` é a remediação como saga. Escala `api` em 2 réplicas e espera `healthy`, que
+nunca confirma. Pelo `rfl`, a execução compensa, a sonda vê 3 réplicas e `on failure` roda;
+com o provedor recusando a compensação, o programa entra em `CompensationFailed`.
+`saga_restores` aplica o `T6_saga`: para qualquer mundo inicial com 3 réplicas, o tratador
+recebe de novo 3 réplicas.
+
+O T6 tem três limites, que estão no enunciado:
+
+- **sagas aninhadas:** a restauração vale para corpos sem saga aninhada. No ARX, uma saga
+  interna que confirma descarta o seu registro, e os efeitos dela ficam fora das
+  compensações da saga externa. A semântica formal reproduz isso e o teorema o torna
+  explícito;
+- **tipagem:** `await` e `atomic` ainda não estão no julgamento de tipos. T1–T3 continuam
+  valendo sobre o mesmo avaliador, para programas sem saga; estender `HasType` e a contagem
+  linear a sagas (um corpo que falha no meio consome só parte das capacidades) é o próximo
+  passo;
+- **gatilho da compensação:** só a falha de `await` dispara a compensação. No ARX, qualquer
+  erro do corpo dispara, mas num programa bem tipado os outros erros não acontecem (T1);
+- **o que entra no registro:** no núcleo, toda ação dentro da saga é compensável. No ARX, só
+  as ferramentas `compensable` entram no registro, e o `athc` recusa irrevogáveis dentro de
+  `atomic` (T0302).
+
 ## O tripé diferencial (`ath-lean-eval`)
 
 | arquivo | conteúdo |
@@ -258,8 +312,9 @@ Ainda não estão mecanizados:
 - registros, variantes e `match`;
 - `Text` e refinamentos `{x:σ | φ}` além das políticas decidíveis;
 - emissão de capacidades (`keys.mint()`) e atenuação;
-- `retry`, sagas, compensação e reconciliação (T6, T9): `Recovery.lean` é só um modelo
-  abstrato, sem ligação com o avaliador;
+- `retry` e a reconciliação de chaves dentro do avaliador (T9: `Recovery.lean` é um modelo
+  abstrato); as sagas já estão no avaliador (ver [T6](#t6-sagas-no-avaliador-canônico)), mas
+  ainda não no julgamento de tipos;
 - graus de certeza `σ ~ p`;
 - localizações ℓ;
 - os teoremas T4 e T5.

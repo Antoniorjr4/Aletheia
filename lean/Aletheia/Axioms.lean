@@ -85,3 +85,23 @@ open Aletheia
 
 /-- info: 'Aletheia.Examples.bothBranches_linear' does not depend on any axioms -/
 #guard_msgs in #print axioms Examples.bothBranches_linear
+
+/-! ## Sagas (T6) e o invariante nos dois desfechos -/
+
+/-- info: 'Aletheia.eval_preserves' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms eval_preserves
+
+/-- info: 'Aletheia.T6_no_masking' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms T6_no_masking
+
+/-- info: 'Aletheia.T6_recovered' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms T6_recovered
+
+/-- info: 'Aletheia.T6' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms T6
+
+/-- info: 'Aletheia.T6_saga' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms T6_saga
+
+/-- info: 'Aletheia.SagaExample.saga_restores' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms SagaExample.saga_restores

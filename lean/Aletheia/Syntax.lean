@@ -84,6 +84,14 @@ inductive Exp where
   | for_ (n : Nat) (xs body : Exp)
   /-- `infer m -> t { a }`: a saída do modelo é Untrusted -/
   | infer (m : Nat) (t : Ty) (a : Exp)
+  /-- `await q`: a pós-condição observada pela sonda confiável `q`; se ela não confirma, a
+  saga corrente falha (`TimeoutUnknown` do lado do mundo, `timeout` do lado do avaliador) -/
+  | await (q : Nat)
+  /-- `atomic recover r { body } on failure { f } on compensation_failed { g }`: a saga.
+  Se o corpo falha, as compensações do que ele executou rodam em ordem reversa; `f` roda se
+  todas deram certo e a sonda de recuperação `r` confirma, e `g` (`CompensationFailed`) em
+  qualquer outro caso -/
+  | atomic (body : Exp) (r : Nat) (f g : Exp)
   deriving Repr
 
 /-- Classe de efeito externo (identificador canônico atribuído pelo compilador, por exemplo
@@ -103,7 +111,18 @@ inductive Ev where
   | act (t : Nat) (id : Nat) (v : Val)
   /-- decisão de endosso pela política `p`: `some v` aceito, `none` recusado -/
   | endorse (p : Nat) (o : Option Val)
+  /-- a pós-condição `q` não foi observada: a saga corrente falhou -/
+  | fail (q : Nat)
+  /-- a compensação de `t(v)` rodou; `ok = false` se o provedor a recusou -/
+  | undo (t : Nat) (v : Val) (ok : Bool)
+  /-- a sonda de recuperação `r` observou (`true`) ou não (`false`) o invariante -/
+  | recover (r : Nat) (ok : Bool)
   deriving Repr
+
+/-- O estado abstrato do mundo: células indexadas (réplicas por deployment, saldos,
+registros). As ferramentas, as compensações e as sondas são funções arbitrárias sobre ele,
+declaradas na assinatura: os teoremas valem para qualquer uma delas. -/
+abbrev World := Nat → Int
 
 /-- A assinatura estática do programa: o contrato Δ das ferramentas e dos modelos, mais as
 políticas auditadas. -/
@@ -118,6 +137,13 @@ structure Sig where
   effect : Nat → EffectId
   /-- políticas auditadas (decidíveis) -/
   pol   : Nat → Val → Bool
+  /-- a transição que a ferramenta `t` com argumento `v` causa no mundo -/
+  step  : Nat → Val → World → World := fun _ _ w => w
+  /-- a compensação de `t(v)` (`compensable by …`): o mundo depois dela, ou `none` se o
+  provedor a recusou -/
+  undo  : Nat → Val → World → Option World := fun _ _ w => some w
+  /-- sondas confiáveis do mundo (`await`, `recover`) -/
+  probe : Nat → World → Bool := fun _ _ => true
 
 /-- O oráculo de inferência: `O i m t v` é a resposta da `i`-ésima chamada ao modelo `m`,
 pedida no tipo `t`, com o prompt `v`. Ele é arbitrário e, portanto, adversarial. -/

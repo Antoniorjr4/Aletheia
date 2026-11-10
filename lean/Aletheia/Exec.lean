@@ -224,7 +224,7 @@ def Prog.cfg (p : Prog) : Cfg where
   limit := 0
   grants := fun id => p.grants[id]?.getD []
 
-def St.init : St := ⟨[], 0, 0⟩
+def St.init : St := ⟨[], 0, 0, fun _ => 0, []⟩
 
 /-- A execução: exatamente o avaliador canônico. -/
 def Prog.run (p : Prog) : Except Err Out := eval p.sig p.cfg p.exp p.env St.init
@@ -261,6 +261,12 @@ def Prog.event (p : Prog) : Ev → String × J
   | .endorse q o =>
     ("endorse", .obj [("accepted", .bool o.isSome), ("policy", Prog.name (p.policies.map (·.name)) q),
       ("value", (o.map valJson).getD .null)])
+  -- eventos de saga: o formato do programa ainda não declara o mundo, então o tripé cobre o
+  -- fragmento sem `atomic`; estes ramos só dão nome aos eventos
+  | .fail q => ("fail", .obj [("probe", .int q)])
+  | .undo t v ok =>
+    ("undo", .obj [("args", .arr [valJson v]), ("ok", .bool ok), ("tool", Prog.name (p.tools.map (·.name)) t)])
+  | .recover r ok => ("recover", .obj [("ok", .bool ok), ("probe", .int r)])
 
 def GENESIS : String := "".pushn '0' 64
 

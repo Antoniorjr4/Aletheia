@@ -336,7 +336,8 @@ theorem sound (hO : c.oracle.Ok) {Γ : List Bind} {pc : Lab} {e : Exp} {τ : Ty}
       simp at hm; subst hm; exact hm1 rfl
     have hble : ble (oa.st.spent + S.cost t) c.limit = true :=
       ble_iff.mpr fun d => by have := hB d; have := (hwa d).2; simp at *; omega
-    exact ⟨⟨.unit, ⟨id :: oa.st.used, oa.st.spent + S.cost t, oa.st.calls⟩, oa.tr ++ [.act t id oa.v]⟩,
+    exact ⟨⟨.unit, ⟨id :: oa.st.used, oa.st.spent + S.cost t, oa.st.calls, S.step t oa.v oa.st.w,
+      (t, oa.v) :: oa.st.comp⟩, oa.tr ++ [.act t id oa.v]⟩,
       by simp [eval, hea, doAct, hid, hgrant, hfree, hble], .unit, hwa.trans (Within.step _ _),
       Consumed.seq hs hL hca (Consumed.single hid)⟩
   | @drop Γ pc j E hk =>
@@ -345,7 +346,7 @@ theorem sound (hO : c.oracle.Ok) {Γ : List Bind} {pc : Lab} {e : Exp} {τ : Ty}
     have hfree : id ∉ s.used := by
       obtain ⟨m, hm, _, hm1⟩ := hL j id hid
       simp [consumes] at hm; subst hm; exact hm1 rfl
-    exact ⟨⟨.unit, ⟨id :: s.used, s.spent, s.calls⟩, []⟩, by simp [eval, doDrop, hid, hfree], .unit,
+    exact ⟨⟨.unit, ⟨id :: s.used, s.spent, s.calls, s.w, s.comp⟩, []⟩, by simp [eval, doDrop, hid, hfree], .unit,
       Within.refl _ _, Consumed.single hid⟩
   | @for_ Γ pc n xs body τ τb ιx ιb βx βb _ _ ihx ihb =>
     intro ρ s hE hD hG hL hB
@@ -374,7 +375,8 @@ theorem sound (hO : c.oracle.Ok) {Γ : List Bind} {pc : Lab} {e : Exp} {τ : Ty}
     obtain ⟨oa, hea, _, hwa, hca⟩ := iha hE hD hG hL (fun d => by have := hB d; simp at this ⊢; omega)
     have hble : ble (oa.st.spent + S.mcost m) c.limit = true :=
       ble_iff.mpr fun d => by have := hB d; have := (hwa d).2; simp at *; omega
-    exact ⟨⟨c.oracle oa.st.calls m t oa.v, ⟨oa.st.used, oa.st.spent + S.mcost m, oa.st.calls + 1⟩, oa.tr⟩,
+    exact ⟨⟨c.oracle oa.st.calls m t oa.v, ⟨oa.st.used, oa.st.spent + S.mcost m, oa.st.calls + 1, oa.st.w,
+      oa.st.comp⟩, oa.tr⟩,
       by simp [eval, hea, doInfer, hble], hO _ _ _ _, hwa.trans (Within.step _ _), hca⟩
 
 /-! ## Enunciados -/
@@ -468,68 +470,23 @@ theorem loop_fresh {f : Val → St → Except Err Out}
     cases h
     exact (hf v s o ho).trans (loop_fresh hf vs o.st r' hr')
 
+/-- O conjunto consumido só cresce, com identidades novas: no sucesso e no `timeout`. -/
+theorem fresh_preserves : Preserves S c True (fun s s' _ => Fresh s.used s'.used) where
+  refl _ := Fresh.refl _
+  trans h₁ h₂ := h₁.trans h₂
+  endorse _ := Fresh.refl _
+  reject := Fresh.refl _
+  act _ hfree := Fresh.cons hfree
+  drop hfree := Fresh.cons hfree
+  infer := Fresh.refl _
+  commit _ := fun h => h
+  abort _ := fun _ _ _ h => h
+
 /-- Por construção, o avaliador só acrescenta ao conjunto consumido identidades que ainda
 não estavam lá, e nunca a mesma duas vezes. -/
-theorem eval_fresh : ∀ (e : Exp) {ρ : List Val} {s : St} {o : Out},
-    eval S c e ρ s = .ok o → Fresh s.used o.st.used
-  | .val _, ρ, s, o, h => by simp [eval] at h; subst h; exact Fresh.refl _
-  | .var k, ρ, s, o, h => by
-    simp only [eval] at h
-    split at h
-    · cases h; exact Fresh.refl _
-    · cases h
-  | .let_ e₁ e₂, ρ, s, o, h => by
-    simp only [eval, bnd_eq_ok] at h
-    obtain ⟨o₁, h₁, o₂, h₂, h⟩ := h
-    cases h
-    have := (eval_fresh e₁ h₁).trans (eval_fresh e₂ h₂); exact this
-  | .ite cnd t f, ρ, s, o, h => by
-    simp only [eval, bnd_eq_ok] at h
-    obtain ⟨oc, hc, h⟩ := h
-    split at h
-    · obtain ⟨o', h', h⟩ := bnd_eq_ok.mp h
-      cases h
-      rcases cond_ok h' with ⟨_, h'⟩ | ⟨_, h'⟩
-      · have := (eval_fresh cnd hc).trans (eval_fresh t h'); exact this
-      · have := (eval_fresh cnd hc).trans (eval_fresh f h'); exact this
-    · cases h
-  | .prim op a b, ρ, s, o, h => by
-    simp only [eval, bnd_eq_ok] at h
-    obtain ⟨o₁, h₁, o₂, h₂, h⟩ := h
-    split at h
-    · cases h; have := (eval_fresh a h₁).trans (eval_fresh b h₂); exact this
-    · cases h
-  | .endorse p e d, ρ, s, o, h => by
-    simp only [eval, bnd_eq_ok] at h
-    obtain ⟨oe, he, h⟩ := h
-    split at h
-    · cases h; have := eval_fresh e he; exact this
-    · obtain ⟨od, hd, h⟩ := bnd_eq_ok.mp h
-      cases h; have := (eval_fresh e he).trans (eval_fresh d hd); exact this
-  | .act t k a, ρ, s, o, h => by
-    simp only [eval, bnd_eq_ok] at h
-    obtain ⟨oa, ha, h⟩ := h
-    obtain ⟨id, _, _, hfree, _, rfl⟩ := doAct_ok h
-    have := (eval_fresh a ha).trans (Fresh.cons hfree); exact this
-  | .drop k, ρ, s, o, h => by
-    simp only [eval] at h
-    obtain ⟨id, _, hfree, rfl⟩ := doDrop_ok h
-    exact Fresh.cons hfree
-  | .for_ n xs body, ρ, s, o, h => by
-    simp only [eval, bnd_eq_ok] at h
-    obtain ⟨ox, hx, h⟩ := h
-    split at h
-    · obtain ⟨r, hr, h⟩ := bnd_eq_ok.mp h
-      cases h
-      have := (eval_fresh xs hx).trans
-        (loop_fresh (fun v s o ho => eval_fresh body ho) _ _ r hr)
-      exact this
-    · cases h
-  | .infer m t a, ρ, s, o, h => by
-    simp only [eval, bnd_eq_ok] at h
-    obtain ⟨oa, ha, h⟩ := h
-    obtain ⟨_, rfl⟩ := doInfer_ok h
-    have := eval_fresh a ha; exact this
+theorem eval_fresh (e : Exp) {ρ : List Val} {s : St} {o : Out}
+    (h : eval S c e ρ s = .ok o) : Fresh s.used o.st.used :=
+  (eval_preserves fresh_preserves e (.inl trivial)).1 h
 
 theorem eval_nodup {e : Exp} {ρ : List Val} {s : St} {o : Out}
     (h : eval S c e ρ s = .ok o) (hn : s.used.Nodup) : o.st.used.Nodup := by

@@ -166,7 +166,7 @@ theorem canned_ok (n : Int) : (canned n).Ok := by
   | list t k => exact .list (by simp) (by simp)
 
 def ρ₀ : List Val := [.int 42, .cap 7]
-def s₀ : St := ⟨[], 0, 0⟩
+def s₀ : St := ⟨[], 0, 0, fun _ => 0, []⟩
 def limit : Budget := fun d => match d with | .tok => 20000 | .usd => 500000 | .wall => 120000 | _ => 0
 
 /-- O runtime concede `Cluster.Write` à capacidade 7, e nada mais. -/

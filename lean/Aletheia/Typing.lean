@@ -99,6 +99,10 @@ def consumes : Exp → Nat → Option Nat
   | .drop j, k => some (if j = k then 1 else 0)
   | .for_ _ xs body, k => Count.add (consumes xs k) (Count.zero (consumes body (k + 1)))
   | .infer _ _ a, k => consumes a k
+  | .await _, _ => some 0
+  -- a disciplina linear das sagas (um corpo que falha no meio consome só parte das
+  -- capacidades) ainda não está no julgamento: um programa com `atomic` não é `Linear`
+  | .atomic .., _ => none
 
 /-- E1 com multiplicidade 1: cada `Cap[E]` de Γ é consumida exatamente uma vez em todo
 caminho de execução. -/
