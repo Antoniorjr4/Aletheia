@@ -98,9 +98,9 @@ pode ainda não ser desejável.
 
 ## C. Evidência, gates e regressões
 
-O CI `rev7-dev` executa `cargo fmt --check`, Clippy com
-`-D warnings`, `cargo test --all`, Python unit, testes offline
-do adaptador AgentDojo, `lake build --wfail` e M1 simulado.
+O CI executa `cargo fmt --check`, Clippy com `-D warnings`, `cargo test --all`, os testes
+Python, os testes offline do adaptador AgentDojo, os testes dos dois oráculos,
+`lake build --wfail` e a M1 simulada.
 A M1 contém dois testes de compilação negativos:
 - o estado confiável substituído por um literal deve emitir `E0421`;
 - a política reescrita com inventário à mão diante do prompt ancorado deve emitir `E0422`.
@@ -151,11 +151,11 @@ Como ler a tabela:
   quebra de linha (`bench/m1/python/agent.py`). Corrigido depois da rodada; o conteúdo
   informativo era o mesmo.
 
-A nova bateria real no Groq 120B está definida em
-`.github/workflows/rev7-groq-120b-m1.yml` e exige
-`secrets.GROQ_API_KEY`. São 7 cenários × 3 amostras × 2 sistemas
-(42 execuções), com artefatos e métricas p50/p95,
-sucesso de tarefa, ASR e ações fora da política.
+A bateria real da Rev7 rodou no laboratório com um workflow próprio, depois substituído por
+`.github/workflows/m1-multisample.yml`: só por disparo manual, com modelo e repetições como
+entradas, sob os dois oráculos, e com `secrets.GROQ_API_KEY`. Cada rodada tem 7 cenários × N
+amostras × 2 sistemas, com artefatos e métricas p50/p95, sucesso de tarefa, ASR e ações fora
+da política.
 
 Resultados somente são válidos quando produzidos pelo workflow; a
 segurança do simulador não é automaticamente transferível a um
@@ -164,7 +164,7 @@ cluster real ou a outro modelo.
 ## D. AgentDojo oficial — integração preliminar
 
 `bench/agentdojo/` contém:
-- `inspect.py`: usa `agentdojo.task_suite.load_suites.get_suite` e
+- `discover.py`: usa `agentdojo.task_suite.load_suites.get_suite` e
   exporta metadados reais de `workspace` e `banking` na versão
   de suíte `v1.2.2`;
 - `adapter.py`: mapeamento tipado e negação padrão de ferramentas

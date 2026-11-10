@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, rev7-dev]
+    branches: [main]
   pull_request:
 
 env:

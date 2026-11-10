@@ -9,7 +9,8 @@ no segredo de repositório `GROQ_API_KEY` e vai só no cabeçalho `Authorization
 gravado.
 
 A cada push, o teste `replay_of_real_groq_traffic_reproduces_the_recorded_journal`
-(`crates/athc/tests/differential.rs`) reproduz os 15 cassetes nos dois backends:
+(`crates/athc/tests/differential.rs`) reproduz os 22 cassetes nos dois backends: 15 do
+`openai/gpt-oss-20b` e 7 do `openai/gpt-oss-120b`.
 
 - o **ARX** recompila o programa a partir do código-fonte do cassete;
 - o **runtime Python** executa o mesmo programa depois de `athc emit --target py`.
@@ -81,3 +82,14 @@ caso diferem na latência e nos tokens de raciocínio servidos. O que o teste ex
 cassete, reproduzido em qualquer um dos dois backends, devolva exatamente o journal da sua
 execução real. O workflow conferiu também que o journal escrito durante a execução real é
 idêntico ao guardado no cassete.
+
+## Rodada `2026-11-09-groq-gpt-oss-120b-rev6`
+
+Sete cassetes do `openai/gpt-oss-120b` (5 pelo ARX, 2 pelo runtime Python), gravados no
+repositório de laboratório pela Rev6. O commit de dados foi criado pelo runner (`c38f870`).
+Em todas as chamadas do `remediate`, o modelo respondeu `{"kind":"Restart","deploy":"alerta"}`:
+leu ao pé da letra o prompt de então, "O deployment em \`alerta\` disparou um alerta". A
+política recusou a cada tentativa, e o resultado foi a escalada ao plantão. O prompt foi
+corrigido em seguida (alvo explícito e, na Rev7, o inventário da fotografia confiável). As
+medições por chamada estão em
+[`measurements.json`](2026-11-09-groq-gpt-oss-120b-rev6/measurements.json).

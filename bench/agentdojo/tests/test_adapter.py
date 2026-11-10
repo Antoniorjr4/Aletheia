@@ -40,3 +40,26 @@ class AdapterTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DiscoveryScript(unittest.TestCase):
+    """O script de descoberta roda direto pelo caminho documentado no README.
+
+    Ele se chamava `inspect.py` e sombreava o módulo `inspect` da biblioteca padrão: o
+    `dataclasses` importado pelo `adapter` carregava o próprio script, num import circular.
+    """
+
+    def test_runs_by_its_documented_path(self):
+        import subprocess
+
+        script = Path(__file__).resolve().parents[1] / "discover.py"
+        r = subprocess.run([sys.executable, str(script), "--help"], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("--suite", r.stdout)
+
+    def test_no_module_shadows_the_standard_library(self):
+        import sys as _sys
+
+        here = Path(__file__).resolve().parents[1]
+        names = {p.stem for p in here.glob("*.py")}
+        self.assertFalse(names & set(_sys.stdlib_module_names), names & set(_sys.stdlib_module_names))

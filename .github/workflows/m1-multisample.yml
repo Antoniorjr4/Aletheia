@@ -1,0 +1,82 @@
+name: M1 multiamostra (Groq)
+
+# M1 real com N repetições por cenário nos dois sistemas, sob os dois oráculos (canônico da
+# Rev6 e contextual da Rev7). Só roda por disparo manual: cada execução gasta cota real da
+# Groq. Os resultados brutos vão para o artefato e, se o portão passar, para o próprio branch.
+# A chave fica no segredo de repositório GROQ_API_KEY e nunca entra nos resultados.
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: "Modelo da Groq (precisa estar liberado no projeto)"
+        default: "openai/gpt-oss-120b"
+      reps:
+        description: "Repetições por cenário"
+        default: "3"
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  live:
+    name: M1 real · 7 cenários × N · dois oráculos
+    runs-on: ubuntu-latest
+    timeout-minutes: 95
+    env:
+      OPENAI_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      OPENAI_BASE_URL: https://api.groq.com/openai/v1
+      MODEL_INPUT: ${{ inputs.model }}
+      REPS: ${{ inputs.reps }}
+      TPM: "6500"
+      PYTHONPATH: runtimes/python
+      NO_COLOR: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: segredo GROQ_API_KEY e permissão do modelo
+        run: |
+          test -n "$OPENAI_API_KEY" || { echo "::error::defina o segredo de repositório GROQ_API_KEY"; exit 1; }
+          python3 bench/m1/probe.py --pick "$MODEL_INPUT"
+          grep -qx "ALETHEIA_MODEL=$MODEL_INPUT" "$GITHUB_ENV"
+      - name: diretório da rodada
+        run: echo "OUT=bench/m1/live/$(date -u +%Y-%m-%d)-${MODEL_INPUT//\//-}-n${REPS}-${GITHUB_RUN_ID}" >> "$GITHUB_ENV"
+      - name: build athc e checagem estática
+        run: |
+          cargo build --release --bin athc
+          ./target/release/athc check examples/remediate.ath
+          ./target/release/athc check bench/m1/aletheia/agent.ath
+      - name: M1 ao vivo (portão nos dois oráculos)
+        run: python3 bench/m1/run.py --live --reps "$REPS" --tpm "$TPM" --athc target/release/athc --out "$OUT"
+      - name: matriz, latência p50/p95 e reavaliação sob os dois oráculos
+        if: always()
+        run: |
+          if [ -s "$OUT/results.json" ]; then
+            python3 bench/m1/analyze_multisample.py "$OUT/results.json" --output "$OUT/analysis.md"
+            python3 bench/m1/rescore.py "$OUT/results.json" --output "$OUT/oracles.md"
+          else
+            echo "::warning::a M1 não produziu results.json; veja os logs"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: m1-multisample-${{ github.run_id }}
+          path: ${{ env.OUT }}
+      - name: versionar os resultados no branch
+        if: success()
+        run: |
+          git config user.name "Aletheia CI"
+          git config user.email "aletheia-ci@users.noreply.github.com"
+          git add "$OUT"
+          git diff --cached --quiet && exit 0
+          git commit -m "M1 real: $MODEL_INPUT, $REPS repetições por cenário [skip ci]"
+          git pull --rebase origin "$GITHUB_REF_NAME"
+          git push origin "HEAD:$GITHUB_REF_NAME"

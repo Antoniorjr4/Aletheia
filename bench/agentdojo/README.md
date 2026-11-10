@@ -14,8 +14,8 @@ um agente Aletheia. Nunca rotular estes scripts como benchmark oficial concluíd
 python3 -m venv .venv-agentdojo
 . .venv-agentdojo/bin/activate
 pip install agentdojo
-python3 bench/agentdojo/inspect.py --suite workspace --output bench/agentdojo/out/workspace.json
-python3 bench/agentdojo/inspect.py --suite banking --output bench/agentdojo/out/banking.json
+python3 bench/agentdojo/discover.py --suite workspace --output bench/agentdojo/out/workspace.json
+python3 bench/agentdojo/discover.py --suite banking --output bench/agentdojo/out/banking.json
 python3 -m unittest discover -s bench/agentdojo/tests -v
 ```
 
