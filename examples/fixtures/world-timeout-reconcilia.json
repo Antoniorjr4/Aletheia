@@ -28,5 +28,15 @@
       "nth": 1,
       "kind": "timeout_applied"
     }
-  ]
+  ],
+  "managed": [
+    "api",
+    "worker"
+  ],
+  "telemetry": {
+    "cpu_pct": {
+      "api": 95,
+      "worker": 45
+    }
+  }
 }
