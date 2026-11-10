@@ -32,6 +32,8 @@ jobs:
       - name: aletheia_runtime (testes de unidade)
         working-directory: runtimes/python
         run: PYTHONPATH=. python3 -m unittest discover -s tests -v
+      - name: AgentDojo adapter (testes offline sem efeitos)
+        run: python3 -m unittest discover -s bench/agentdojo/tests -v
 
   lean:
     # O núcleo λ_Ath mecanizado: T1 (preservação e progresso, com capacidades lineares e
