@@ -9,8 +9,8 @@ use ath_syntax::{est_tokens, Span};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 /// Identifica políticas que dependem explicitamente do estado confiável.
-//// Os cassetes Rev5/Rev6 legados continuam compiláveis: exigir s.managed()
-//// só para políticas que realmente leem a fotografia dinâmica.
+// Os cassetes Rev5/Rev6 legados continuam compiláveis: exigir s.managed()
+// só para políticas que realmente leem a fotografia dinâmica.
 fn policy_reads_snapshot(e: &Expr) -> bool {
     match &e.kind {
         ExprKind::Method { recv, method, args } => {
