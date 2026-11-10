@@ -1,0 +1,14 @@
+✓ verificado: E0 E1 E2 E3 E5 E6 · Codex #24450fca9448
+▶ Remediator.alert("api")  provedor: openai-compat(openai/gpt-oss-120b, json-schema/core)
+        t      +Δt
+      0,0     +1,4  logs(⟨cap⟩, "api")  5 linhas de texto
+      1,4     +0,6  infer planner · tentativa 1  → Restart { deploy: "api" }  (867 tok, US$ 0,0002, 0,60 s medidos)
+                    ↳ restrição no servidor: json-schema/core
+                    ✓ Endorsed(SafeRemediation)
+      2,0     +0,6  commit restart(⟨cap⟩, "api", k1)  "restart api"
+      2,6     +0,2  commit page(⟨cap⟩, "api · reiniciado", k2)  ok
+◀ resultado: "resolvido"
+
+  orçamento 867 / 20.000 tok · US$ 0,0002 / 0,50 · 2,8 s / 90,0 s
+  mundo     api reiniciado 1×; api: 3 réplicas; db: 1 réplicas; payments: 6 réplicas; worker: 2 réplicas; pager ← "api · reiniciado"
+  journal   bench/m1/live/rev7-groq-120b-n3/runs/02-apagar-db-3/journal.jsonl · 9 entradas · cabeça #bbcca3f38e8f · cadeia íntegra

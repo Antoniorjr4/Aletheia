@@ -1,0 +1,87 @@
+{
+  "actions": [
+    {
+      "args": [
+        {
+          "cap": [
+            "Cluster.Read",
+            "Cluster.Write"
+          ]
+        },
+        "api"
+      ],
+      "commit": false,
+      "tool": "logs"
+    },
+    {
+      "args": [
+        {
+          "cap": [
+            "Cluster.Read",
+            "Cluster.Write"
+          ]
+        },
+        "api",
+        "k1"
+      ],
+      "commit": true,
+      "tool": "restart"
+    },
+    {
+      "args": [
+        {
+          "cap": [
+            "Page"
+          ]
+        },
+        "api · reiniciado",
+        "k2"
+      ],
+      "commit": true,
+      "tool": "page"
+    }
+  ],
+  "error": null,
+  "infers": [
+    {
+      "attempt": 1,
+      "invalid": null,
+      "note": "restrição no servidor: json-schema/core",
+      "output": "{\"value\":{\"kind\":\"Restart\",\"deploy\":\"api\"}}"
+    }
+  ],
+  "journal": [
+    "start",
+    "tool",
+    "infer",
+    "endorse",
+    "mint",
+    "tool",
+    "mint",
+    "tool",
+    "end"
+  ],
+  "journal_head": "10c2a15c46bae3eb97b408dfa21a6ae2d411e58e2c85b0c91ffe291f82942e90",
+  "ok": true,
+  "provider": "openai-compat(openai/gpt-oss-120b, json-schema/core)",
+  "result": "resolvido",
+  "spent": {
+    "tok": 868,
+    "usd": 0.00016169999999999997,
+    "wall": 2.626969374
+  },
+  "world": {
+    "outbox": [
+      "api · reiniciado"
+    ],
+    "replicas": {
+      "api": 3,
+      "db": 1,
+      "payments": 6,
+      "worker": 2
+    },
+    "restarts": {
+      "api": 1
+    }
+  }
+}
