@@ -520,8 +520,16 @@ impl<'m> Gen<'m> {
                 let mut parts = Vec::new();
                 for (k, v) in fields {
                     let quoted = matches!(v.kind, ExprKind::Quote(_));
+                    // O rótulo do campo: dado citado (Untrusted), fotografia do host (Trusted) ou instrução.
+                    let tag = if quoted {
+                        "True"
+                    } else if v.is_snapshot_field() {
+                        "\"trusted\""
+                    } else {
+                        "False"
+                    };
                     let a = self.expr(v)?;
-                    parts.push(format!("({}, {}, {a})", py_str(&k.name), if quoted { "True" } else { "False" }));
+                    parts.push(format!("({}, {tag}, {a})", py_str(&k.name)));
                 }
                 let shape = shape_of(self.m, out).map_err(|m| format!("forma de saída: {m}"))?;
                 let name = format!("SHAPE_{}", self.shapes.len());

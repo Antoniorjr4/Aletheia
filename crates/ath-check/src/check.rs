@@ -8,23 +8,74 @@ use ath_syntax::ast::*;
 use ath_syntax::{est_tokens, Span};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-/// Identifica políticas que dependem explicitamente do estado confiável.
-// Os cassetes Rev5/Rev6 legados continuam compiláveis: exigir s.managed()
-// só para políticas que realmente leem a fotografia dinâmica.
-fn policy_reads_snapshot(e: &Expr) -> bool {
-    match &e.kind {
-        ExprKind::Method { recv, method, args } => {
-            (matches!(&recv.kind, ExprKind::Var(name) if name == "s")
-                && matches!(method.name.as_str(), "is_managed" | "scale_justified"))
-                || args.iter().any(policy_reads_snapshot)
-        }
-        ExprKind::Match { scrut, arms } => {
-            policy_reads_snapshot(scrut) || arms.iter().any(|a| policy_reads_snapshot(&a.body))
-        }
-        ExprKind::Binary(_, left, right) => policy_reads_snapshot(left) || policy_reads_snapshot(right),
-        ExprKind::Unary(_, x) | ExprKind::Field(x, _) => policy_reads_snapshot(x),
-        _ => false,
+/// Verdadeiro se algum nó de `e` (inclusive `e`) satisfaz `f`. Percorre todas as formas de
+/// expressão, então as regras de ancoragem não dependem de onde o termo aparece.
+fn expr_any(e: &Expr, f: &dyn Fn(&Expr) -> bool) -> bool {
+    if f(e) {
+        return true;
     }
+    let block = |b: &Block| {
+        b.stmts.iter().any(|st| match st {
+            Stmt::Let { value, .. } => expr_any(value, f),
+            Stmt::Expr(x) => expr_any(x, f),
+        }) || b.tail.as_ref().is_some_and(|t| expr_any(t, f))
+    };
+    match &e.kind {
+        ExprKind::Int(_) | ExprKind::Bool(_) | ExprKind::Str(_) | ExprKind::Var(_) => false,
+        ExprKind::Transfer(_) => false,
+        ExprKind::Field(x, _) | ExprKind::Unary(_, x) | ExprKind::Return(x) => expr_any(x, f),
+        ExprKind::Quote(x) | ExprKind::Commit(x) => expr_any(x, f),
+        ExprKind::Call { args, .. } => args.iter().any(|a| expr_any(a, f)),
+        ExprKind::Method { recv, args, .. } => expr_any(recv, f) || args.iter().any(|a| expr_any(a, f)),
+        ExprKind::Ctor { fields, .. } | ExprKind::Infer { fields, .. } => fields.iter().any(|(_, v)| expr_any(v, f)),
+        ExprKind::Binary(_, l, r) => expr_any(l, f) || expr_any(r, f),
+        ExprKind::If { cond, then, els } => expr_any(cond, f) || block(then) || els.as_ref().is_some_and(block),
+        ExprKind::Match { scrut, arms } => expr_any(scrut, f) || arms.iter().any(|a| expr_any(&a.body, f)),
+        ExprKind::Block(b) => block(b),
+        ExprKind::Refine { draft, els, .. } => expr_any(draft, f) || block(els),
+        ExprKind::Atomic { recover, body, on_failure, on_cf } => {
+            expr_any(recover, f)
+                || block(body)
+                || on_failure.as_ref().is_some_and(|(_, b)| block(b))
+                || on_cf.as_ref().is_some_and(|(_, b)| block(b))
+        }
+        ExprKind::Await { cond, .. } => expr_any(cond, f),
+        ExprKind::Reconcile { els, .. } => block(els),
+        ExprKind::List(xs) => xs.iter().any(|x| expr_any(x, f)),
+        ExprKind::For { iter, body, .. } => expr_any(iter, f) || block(body),
+        ExprKind::Quant { iter, body, .. } => expr_any(iter, f) || expr_any(body, f),
+    }
+}
+
+/// `s.<método>(…)`: leitura da fotografia confiável do host. `s` é o receptor intrínseco: uma
+/// variável local chamada `s` não intercepta esses métodos.
+fn snapshot_method(e: &Expr) -> Option<&str> {
+    match &e.kind {
+        ExprKind::Method { recv, method, .. } if matches!(&recv.kind, ExprKind::Var(n) if n == "s") => {
+            Some(method.name.as_str())
+        }
+        _ => None,
+    }
+}
+
+/// A política decide pela fotografia confiável (`s.is_managed`, `s.scale_justified`…).
+fn reads_snapshot(e: &Expr) -> bool {
+    expr_any(e, &|x| snapshot_method(x).is_some())
+}
+
+/// A política compara texto com um literal (`deploy == "api"`): um inventário escrito à mão.
+fn compares_text_literal(e: &Expr) -> bool {
+    expr_any(e, &|x| match &x.kind {
+        ExprKind::Binary(BinOp::Eq | BinOp::Ne, l, r) => {
+            matches!(l.kind, ExprKind::Str(_)) || matches!(r.kind, ExprKind::Str(_))
+        }
+        _ => false,
+    })
+}
+
+/// O campo do prompt é exatamente `s.managed()`: o inventário vem da fotografia confiável.
+fn is_inventory_anchor(e: &Expr) -> bool {
+    matches!(&e.kind, ExprKind::Method { args, .. } if args.is_empty()) && snapshot_method(e) == Some("managed")
 }
 
 /// Custo de uma amostra de um nó `infer`, sob o contrato Δ do modelo.
@@ -126,6 +177,8 @@ pub struct Ctx<'m> {
     in_handle: bool,
     /// Ao checar condições de controle, o resultado de uma ferramenta herda a integridade dos argumentos.
     taint_calls: bool,
+    /// `infer`s (por span) cujo prompt recebe o inventário confiável `s.managed()`.
+    anchored: BTreeSet<Span>,
 }
 
 use Stratum::{E0, E1, E2, E3, E5, E6};
@@ -152,6 +205,7 @@ impl<'m> Ctx<'m> {
             atomic_stack: Vec::new(),
             in_handle: false,
             taint_calls: false,
+            anchored: BTreeSet::new(),
         }
     }
 
@@ -1392,7 +1446,17 @@ impl<'m> Ctx<'m> {
                 "is_managed" | "scale_justified" => {
                     check_args(self, if method.name == "is_managed" { 1 } else { 2 });
                     if !self.in_policy {
-                        self.impure(method.span, "sonda contextual fora de política");
+                        // As decisões contextuais ficam nas políticas auditadas, onde o `refine` as aplica.
+                        self.push(
+                            Diag::new(
+                                E2,
+                                "E0423",
+                                "sonda contextual fora de política",
+                                method.span,
+                                format!("`s.{}` só decide dentro de `policy`", method.name),
+                            )
+                            .help("leve a decisão para a política aplicada pelo `refine`"),
+                        );
                     }
                     for (i, arg) in args.iter().enumerate() {
                         let t = self.expr(arg);
@@ -2004,32 +2068,10 @@ impl<'m> Ctx<'m> {
             return LTy::never();
         };
         let (oty, _) = self.resolve(out);
-        // Em fluxos com política contextual, `Action` só pode ser decodificado
-        // com o inventário do snapshot confiável explicitamente no estado.
-        // O compilador vincula a origem; o runtime verifica cada ação contra
-        // a mesma fotografia no momento da decisão.
-        if matches!(&oty, Ty::Adt(name) if name == "Action")
-            && self.policies.get("SafeRemediation").is_some_and(|p| policy_reads_snapshot(&p.body))
-        {
-            let trusted_field = fields.iter().any(|(key, value)| {
-                key.name == "estado"
-                    && matches!(&value.kind,
-                    ExprKind::Method { recv, method, args }
-                    if matches!(&recv.kind, ExprKind::Var(name) if name == "s")
-                       && method.name == "managed" && args.is_empty())
-            });
-            if !trusted_field {
-                self.push(
-                    Diag::new(
-                        E3,
-                        "E0420",
-                        "inventário do planner sem vínculo com estado confiável",
-                        e.span,
-                        "ausente `estado = s.managed()`",
-                    )
-                    .help("o inventário não pode ser copiado de literal, log ou mensagem do modelo"),
-                );
-            }
+        // Ancoragem: o prompt recebe o inventário da fotografia confiável. O `refine` que decidir
+        // sobre este rascunho confere que a política usa a mesma fonte (E0421/E0422).
+        if fields.iter().any(|(_, v)| is_inventory_anchor(v)) {
+            self.anchored.insert(e.span);
         }
         if !matches!(oty, Ty::Adt(_) | Ty::Text | Ty::List(..) | Ty::Never) {
             self.push(Diag::new(
@@ -2196,6 +2238,10 @@ impl<'m> Ctx<'m> {
             self.impure(e.span, "`refine`");
         }
         let d = self.expr(draft);
+        let infer_span = match &d.ty {
+            Ty::Draft(_, ispan) => Some(*ispan),
+            _ => None,
+        };
         let inner = match &d.ty {
             Ty::Draft(inner, ispan) => {
                 self.facts.draft_src.insert(e.span, *ispan);
@@ -2222,6 +2268,38 @@ impl<'m> Ctx<'m> {
                 "não declarada",
             )),
             Some(p) => {
+                // Inventário e política precisam vir da mesma fotografia confiável do host.
+                if let Some(ispan) = infer_span {
+                    let anchored = self.anchored.contains(&ispan);
+                    if reads_snapshot(&p.body) && !anchored {
+                        self.push(
+                            Diag::new(
+                                E3,
+                                "E0421",
+                                "a política decide pela fotografia confiável, mas o prompt não recebe o inventário",
+                                ispan,
+                                format!("`{}` lê `s.…`; o `infer` não tem um campo `= s.managed()`", policy.name),
+                            )
+                            .note(format!("decidido por `refine … by {}`", policy.name))
+                            .help("passe o inventário ao modelo como `campo = s.managed()`: nunca copiado de literal, log ou resposta de modelo"),
+                        );
+                    }
+                    if anchored && compares_text_literal(&p.body) {
+                        self.push(
+                            Diag::new(
+                                E3,
+                                "E0422",
+                                "descompasso entre o inventário confiável e a política",
+                                policy.span,
+                                format!(
+                                    "o prompt recebe `s.managed()`, mas `{}` compara com literais de texto",
+                                    policy.name
+                                ),
+                            )
+                            .help("decida pela mesma fotografia: `s.is_managed(x)` no lugar de `x == \"…\"`"),
+                        );
+                    }
+                }
                 if p.params.len() != 1 {
                     self.push(Diag::new(
                         E0,

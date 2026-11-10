@@ -355,6 +355,17 @@ pub struct Expr {
     pub span: Span,
 }
 
+impl Expr {
+    /// `s.managed()` ou `s.telemetry()`: um campo do prompt que vem da fotografia confiável do
+    /// host. Os dois backends o rotulam como `Trusted` no payload do modelo.
+    pub fn is_snapshot_field(&self) -> bool {
+        matches!(&self.kind, ExprKind::Method { recv, method, args }
+            if args.is_empty()
+                && matches!(&recv.kind, ExprKind::Var(n) if n == "s")
+                && matches!(method.name.as_str(), "managed" | "telemetry"))
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum ExprKind {
     Int(i64),

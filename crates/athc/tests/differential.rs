@@ -664,3 +664,46 @@ fn balance(journal: &str) -> Json {
         .collect();
     json!({ "end": entries.last().unwrap()["detail"]["spent"], "infer": infer })
 }
+
+/// Rev7: o inventário entra no payload do modelo como `Trusted`, idêntico nos dois backends,
+/// e a fotografia usada fica no journal BLAKE3.
+#[test]
+fn trusted_snapshot_is_labelled_in_the_payload_and_journaled_identically() {
+    // Uma escala justificada pela telemetria da fotografia (CPU 95%, 3 → 6 réplicas): a política
+    // contextual decide pela mesma fotografia que o prompt recebeu.
+    let scale = r#"{"value":{"kind":"Scale","deploy":"api","to":6}}"#;
+    let replies = vec![(
+        200,
+        "",
+        json!({
+            "id": "chatcmpl-mock-rev7",
+            "model": "openai/gpt-oss-20b",
+            "choices": [{ "message": { "role": "assistant", "content": scale, "reasoning": "CPU 95% na api" }, "finish_reason": "stop" }],
+            "usage": { "prompt_tokens": 690, "completion_tokens": 40, "completion_tokens_details": { "reasoning_tokens": 12 } },
+        })
+        .to_string(),
+    )];
+    let cas = record("examples/remediate.ath", "Remediator", replies);
+    assert_eq!(cas.exchanges.len(), 1);
+    let req: Json = serde_json::from_str(&cas.exchanges[0].request).unwrap();
+    let user = req["messages"][1]["content"].as_str().unwrap();
+    for field in ["estado", "metricas"] {
+        let header = format!("### {field} ({})\n", arx::TRUSTED_HEADER);
+        assert!(user.contains(&header), "campo `{field}` sem rótulo Trusted:\n{user}");
+    }
+    assert!(user.contains(&format!("({})\napi, worker\n", arx::TRUSTED_HEADER)), "{user}");
+    let snapshot: Vec<Json> = cas
+        .journal
+        .lines()
+        .map(|l| serde_json::from_str::<Json>(l).unwrap())
+        .filter(|e| e["kind"] == "snapshot")
+        .collect();
+    assert_eq!(snapshot.len(), 1, "a fotografia entra no journal exatamente uma vez");
+    assert_eq!(snapshot[0]["detail"]["managed"], json!(["api", "worker"]));
+    let endorsed = cas.journal.lines().any(|l| l.contains(r#""kind":"endorse""#) && l.contains(r#""to":6"#));
+    assert!(endorsed, "a escala justificada precisa ser endossada:\n{}", cas.journal);
+    let (arx_journal, _) = replay_arx(&cas);
+    let py_journal = replay_py(&cas, "trusted-snapshot");
+    assert_same("Trusted: gravação × replay ARX", &cas.journal, &arx_journal);
+    assert_same("Trusted: gravação × replay Python", &cas.journal, &py_journal);
+}
