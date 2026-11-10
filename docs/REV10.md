@@ -12,7 +12,7 @@ estão separadas das herdadas de execuções anteriores.
 | workflows | `ci.yml` (push na `main` e PR) e quatro que gastam na Groq: `agentdojo.yml`, `live.yml`, `m1-multisample.yml` e `replay.yml`. Nenhum tem `schedule:`; todos rodam por `workflow_dispatch`, e `live.yml` também por tag `live-*` |
 | execuções em andamento ou na fila | nenhuma antes desta revisão |
 | agendamento do 2º lote | **não estava no repositório.** Era uma tarefa agendada da conta, criada pela sessão anterior: o workflow completo, na `main`, às 08:45 UTC de 11/11, com `max_minutes=320`, todos os pares, 120B e sem teto em dólar. **Foi pausada com a autorização do usuário**, sem ser apagada |
-| limites da chave `GROQ_API_KEY` | a resposta de `limits.py` no run [42915660955](https://github.com/Antoniorjr4/Aletheia/actions/runs/42915660955) traz `x-ratelimit-limit-tokens: 8000` (por minuto) e `x-ratelimit-limit-requests: 1000` (por dia), que são os limites do plano gratuito. **O plano pago não se reflete nesta chave.** Falta conferir no console da Groq a organização e o plano dela |
+| limites da chave `GROQ_API_KEY` | os cabeçalhos de `limits.py` (run [42915660955](https://github.com/Antoniorjr4/Aletheia/actions/runs/42915660955)) dizem `x-ratelimit-limit-tokens: 8000` e `x-ratelimit-limit-requests: 1000`, os números do plano gratuito. Mas o consumo medido os contradiz: ≈ 464 mil tokens em 27 min no lote 2b. O limite que de fato parou a medição veio no corpo do 429 do lote 2d: **400 mil tokens por dia, configurados no projeto Groq** (*Settings → Project → Limits*), acima dos 200 mil do gratuito. O plano pago parece valer, com esse teto de projeto por cima. Ele é um segundo freio de gasto: cerca de US$ 0,10 por dia a preço de lista |
 | preço de lista (GroqCloud, out./2026) | `gpt-oss-120b`: US$ 0,15 / 0,60 por milhão de tokens (entrada / saída); `gpt-oss-20b`: US$ 0,075 / 0,30 |
 
 ## 2. Evidências
@@ -48,7 +48,7 @@ idêntica, porque o projeto não depende do Mathlib.
 | # | achado | severidade | estado |
 | --- | --- | --- | --- |
 | G1 | tarefa agendada fora do repositório disparando uma bateria paga sem teto em dólar nem autorização | crítica (financeira e de protocolo) | **pausada**; o workflow ganhou teto em dólar (§4) |
-| G2 | a chave em `GROQ_API_KEY` opera com os limites do plano gratuito | alta (operacional): com 8K tokens/min e o teto diário, a `workspace` é inviável | aberto: conferir organização e plano no console da Groq |
+| G2 | os cabeçalhos de limite da Groq não descrevem o limite efetivo, e o corpo do 429 não era registrado | média (observabilidade) | **corrigido:** cada 429 vai para `rate_limits.jsonl`, com os identificadores de projeto e organização redigidos. O limite efetivo é de 400 mil tokens por dia no projeto; com ele, a `workspace` (~10 milhões de tokens) levaria semanas |
 | G3 | `live.yml`, `m1-multisample.yml` e `replay.yml` não têm teto em dólar, só em tempo e repetições | média | parcial: os quatro workflows pagos agora são serializados (`concurrency: groq-paid`); o teto em dólar deles fica para quando forem usados de novo |
 | G4 | o README diz `cargo test # 98 testes`; são 99 | baixa | corrigir na documentação da v1.0 |
 | G5 | o IC de Wilson do AgentDojo trata os pares como independentes, mas 9 injeções compartilham cada tarefa de usuário | média (estatística) | plano em §6.2 |
@@ -104,8 +104,8 @@ executados e não diz nada fora de F.
 | I.1d classes de provedor | `reply` arbitrário | `idempotent`, `queryable` e `opaque` na `Sig`; teorema de no máximo uma aplicação sob provedor honesto | I.1c | médio | teorema com hipóteses explícitas | não | US$ 0 |
 | I.2 tripé com chaves | — | gerador com ferramentas com chave e roteiros de falha cobrindo os 7 cenários da Rev10; relatório de cobertura | I.1a–d | baixo | 400 programas com chaves, zero divergências não explicadas, cobertura por cenário documentada | não | US$ 0 |
 | II.1 retomada controlada | **feito**: agendamento pausado, teto em dólar, congelamento verificado | — | — | — | — | — | — |
-| II.2 Banking: pares restantes | lote 2a feito (§8) | os pares restantes, em lotes retomáveis | G2 define o ritmo | — | 144/144 pares nos dois pipelines, ou cobertura parcial declarada | sim | ≈ US$ 0,15 esperado e ≈ US$ 0,35 no pior caso observado, a preço de lista; US$ 0 faturado se a chave for de fato gratuita |
-| II.3 estatística | Wilson por pipeline | bootstrap por agrupamento de tarefa; McNemar exato para a utilidade pareada; registro das dependências | II.2 | — | `RESULTS.md` com os 7 indicadores da Rev10 por pipeline | não | US$ 0 |
+| II.2 Banking: pares restantes | lotes 2a–2d: **94/144 pares** (§8) | 50 pares, ≈ 100 execuções | limite de 400 mil tokens por dia do projeto | — | 144/144 pares nos dois pipelines, ou cobertura parcial declarada | sim | ≈ US$ 0,07 esperado; até US$ 0,35 se toda execução custasse o máximo observado, cortado pelo teto da rodada |
+| II.3 estatística | **feito:** `stats.py` (Wilson por par e por tarefa, bootstrap por tarefa, McNemar exato, taxonomia de falhas) | recalcular ao fechar a matriz | II.2 | — | `RESULTS.md` com os 7 indicadores da Rev10 por pipeline | não | US$ 0 |
 | II.4 suíte `workspace` | — | mapeamento offline: 24 ferramentas, inventários, política e agente `workspace.ath` | II.2 | — | ponte testada offline como a `banking` | não para o mapeamento; sim para a execução | 560 pares (1.200 execuções). Estimativa grosseira: US$ 2–5 com o 120B. **Exige autorização própria e um plano com limites de pago** |
 | III.B reconciliador durável | o journal detecta chaves abertas (`verify-journal`) | `athc resume`, serviço durável e T9 sobre journals concatenados | I.1c | médio | journal interrompido em qualquer prefixo e retomado: toda chave termina | não | US$ 0 |
 | III.C contratos `restoring` | T6 no cálculo sob hipótese de contrato | sintaxe de contrato com footprint; E5 com SMT | — | médio | `athc check` descarrega ou recusa a obrigação | não | US$ 0 |
@@ -192,4 +192,13 @@ Teto autorizado: **US$ 1,00** de consumo novo. O livro-razão é
 
 | lote | run | o que rodou | estimado | medido (tokens do servidor × preço de lista) |
 | --- | --- | --- | --- | --- |
-| 2a · conectividade | [42915660955](https://github.com/Antoniorjr4/Aletheia/actions/runs/42915660955) | sondas de limite e modelo; `user_task_2 × injection_task_1` no Aletheia | US$ 0,0013 (máx. 0,003) | US$ 0,000401, mais as sondas (< US$ 0,0001, fora do livro-razão) |
+| 2a · conectividade | [42915660955](https://github.com/Antoniorjr4/Aletheia/actions/runs/42915660955) | sondas de limite e modelo; `user_task_2 × injection_task_1` no Aletheia | US$ 0,0013 (máx. 0,003) | US$ 0,000401 |
+| 2b | [42916927323](https://github.com/Antoniorjr4/Aletheia/actions/runs/42916927323) | 132 execuções; parou no **teto da rodada** (US$ 0,10) | US$ 0,15 para todos os pares restantes | US$ 0,091438 |
+| 2c | [42921575344](https://github.com/Antoniorjr4/Aletheia/actions/runs/42921575344) | 15 execuções; 429 | dentro de US$ 0,20 | US$ 0,010886 |
+| 2d | [42922588725](https://github.com/Antoniorjr4/Aletheia/actions/runs/42922588725) | 1 execução; 429 de 400 mil tokens por dia no projeto | dentro de US$ 0,20 | US$ 0,000395 |
+| **total** | | 149 execuções, 441 chamadas, todas com `usage` do servidor | | **US$ 0,103119** |
+
+As sondas de cada disparo (4 chamadas de no máximo 16 tokens de saída) ficam fora do livro-razão:
+menos de US$ 0,0001 por disparo. Resultado: 94/144 pares, com o Aletheia em ASR 0/94 (IC95 de
+0–4% por par e de 0–26% por tarefa) contra 68/94 do baseline. Detalhes em
+`bench/agentdojo/RESULTS.md`.

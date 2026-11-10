@@ -1,5 +1,5 @@
 {
- "reason": "cota: Error code: 429 - Rate limit reached for project `project_01m717jwcae9r9e9vnr8bn8bra` on tokens per day (TPD): Limit 400000, Used 399294, Requested 1146. Please try again in 1m35.04s. You can change your project's rate limits at https://console.groq.com/settings/project/limits",
+ "reason": "cota: Error code: 429 - Rate limit reached for project `project_…` on tokens per day (TPD): Limit 400000, Used 399294, Requested 1146. Please try again in 1m35.04s. You can change your project's rate limits at https://console.groq.com/settings/project/limits",
  "executed": 1,
  "spend": {
   "usd_round_server": 0.000395,

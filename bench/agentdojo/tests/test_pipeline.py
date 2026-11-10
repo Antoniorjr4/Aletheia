@@ -155,7 +155,7 @@ class Limited(BaseHTTPRequestHandler):
 
     def do_POST(self):
         self.rfile.read(int(self.headers["Content-Length"]))
-        data = json.dumps({"error": {"message": "Rate limit reached for model `openai/gpt-oss-120b` on tokens per "
+        data = json.dumps({"error": {"message": "Rate limit reached for project `project_01abc` on tokens per "
                                                 "day (TPD): Limit 200000, Used 199500, Requested 1200.",
                                      "type": "tokens", "code": "rate_limit_exceeded"}}).encode()
         self.send_response(429)
@@ -279,6 +279,8 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(last["spend"]["usd_round"], 0.0)
             rl = [json.loads(x) for x in (Path(d) / "rate_limits.jsonl").read_text().splitlines()]
             self.assertIn("tokens per day (TPD)", rl[0]["body"])
+            self.assertNotIn("project_01abc", rl[0]["body"])
+            self.assertIn("project_…", rl[0]["body"])
             self.assertEqual(rl[0]["user_task"], "user_task_4")
         srv.shutdown()
 

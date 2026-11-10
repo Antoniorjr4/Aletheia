@@ -149,7 +149,7 @@ class Usage:
         if self.spend is None:
             return
         line = {"run_id": os.environ.get("GITHUB_RUN_ID"), **self.spend.context, "retry_after": retry_after,
-                "body": body[:600]}
+                "body": redact(body)[:600]}
         with (self.spend.path.parent / "rate_limits.jsonl").open("a", encoding="utf-8") as f:
             f.write(json.dumps(line, sort_keys=True, ensure_ascii=False) + "\n")
 
@@ -177,6 +177,15 @@ class Usage:
         self.est_in = self.est_out = 0
         self.errors = []
         return r
+
+
+IDS = re.compile(r"\b(project|org)_[A-Za-z0-9]+")
+
+
+def redact(text: str) -> str:
+    """Tira das mensagens do provedor os identificadores de projeto e organização da conta,
+    que não são credenciais mas não precisam ir para arquivos versionados."""
+    return IDS.sub(lambda m: f"{m.group(1)}_…", text)
 
 
 def est_tokens(text: str) -> int:
@@ -452,7 +461,7 @@ def main() -> int:
     except BudgetExhausted as e:
         state["reason"] = f"orçamento: {e}"
     except (QuotaExhausted, *rate_errors) as e:
-        state["reason"] = f"cota: {str(e)[:300]}"
+        state["reason"] = f"cota: {redact(str(e))[:300]}"
         if rate_errors and isinstance(e, rate_errors):
             usage.rate_limited(str(e), None)
     done, reason = state["done"], state["reason"]
