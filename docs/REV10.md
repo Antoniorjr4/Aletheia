@@ -22,14 +22,14 @@ estão separadas das herdadas de execuções anteriores.
 | verificação | resultado |
 | --- | --- |
 | `cargo build --release` | ok |
-| `cargo test` (inclui diferenciais e os replays de `bench/replay/`) | **99 testes, 0 falhas** (o README ainda diz 98) |
+| `cargo test` (inclui diferenciais e os replays de `bench/replay/`) | **99 testes, 0 falhas** (o README dizia 98; corrigido) |
 | `lake build --wfail` (Lean 4.20.0) | ok: 30 alvos, auditoria de axiomas (`Aletheia.Axioms`) e o binário `ath-lean-eval` |
 | tripé com Lean obrigatório (`ATH_REQUIRE_LEAN=1`), corpus padrão (160 + 200) | ok |
 | tripé com o corpus da CI (`ATH_TRIPOD_N=400 ATH_SAGA_N=400`) | ok: 400 programas sem sagas e 400 com sagas, os três journals do núcleo idênticos |
 | `replay_of_real_groq_traffic_reproduces_the_recorded_journal` | ok: os 22 cassetes, ARX e Python |
 | runtime Python (`runtimes/python/tests`) | 8 testes ok |
 | oráculos da M1 (`bench/m1/tests`) | 9 testes ok |
-| ponte AgentDojo offline (`agentdojo==0.1.35`) | 12 testes ok em `245214b`; 15 com os testes do teto em dólar (§4) |
+| ponte AgentDojo offline (`agentdojo==0.1.35`) | 12 testes ok em `245214b`; 18 com os testes do teto em dólar, do registro de 429 e da estatística (§4) |
 
 Nota de reprodução: o `elan` baixa o Lean de `release.lean-lang.org`. Num ambiente que não
 alcança esse host, o mesmo binário oficial vem das releases do GitHub
@@ -48,10 +48,10 @@ idêntica, porque o projeto não depende do Mathlib.
 | # | achado | severidade | estado |
 | --- | --- | --- | --- |
 | G1 | tarefa agendada fora do repositório disparando uma bateria paga sem teto em dólar nem autorização | crítica (financeira e de protocolo) | **pausada**; o workflow ganhou teto em dólar (§4) |
-| G2 | os cabeçalhos de limite da Groq não descrevem o limite efetivo, e o corpo do 429 não era registrado | média (observabilidade) | **corrigido:** cada 429 vai para `rate_limits.jsonl`, com os identificadores de projeto e organização redigidos. O limite efetivo é de 400 mil tokens por dia no projeto; com ele, a `workspace` (~10 milhões de tokens) levaria semanas |
+| G2 | os cabeçalhos de limite da Groq não descrevem o limite efetivo, e o corpo do 429 não era registrado | média (observabilidade) | **corrigido:** cada 429 vai para `rate_limits.jsonl`, com os identificadores de projeto e organização redigidos. O limite efetivo é de 400 mil tokens por dia no projeto; com ele, a `workspace` (estimativa grosseira: ~10 milhões de tokens) levaria semanas |
 | G3 | `live.yml`, `m1-multisample.yml` e `replay.yml` não têm teto em dólar, só em tempo e repetições | média | parcial: os quatro workflows pagos agora são serializados (`concurrency: groq-paid`); o teto em dólar deles fica para quando forem usados de novo |
-| G4 | o README diz `cargo test # 98 testes`; são 99 | baixa | corrigir na documentação da v1.0 |
-| G5 | o IC de Wilson do AgentDojo trata os pares como independentes, mas 9 injeções compartilham cada tarefa de usuário | média (estatística) | plano em §6.2 |
+| G4 | o README dizia `cargo test # 98 testes`; são 99 | baixa | **corrigido** |
+| G5 | o IC de Wilson do AgentDojo trata os pares como independentes, mas 9 injeções compartilham cada tarefa de usuário | média (estatística) | **feito:** `stats.py`, com o IC por tarefa e o bootstrap de agrupamento (§6.2) |
 | G6 | o `elan` depende de um host fora do GitHub | baixa (reprodutibilidade) | documentado em §2.1 |
 
 ## 4. O que esta revisão já implementou (offline, verificado)
