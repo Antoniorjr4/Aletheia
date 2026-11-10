@@ -1,12 +1,12 @@
 {
- "reason": "or\u00e7amento: gasto US$ 0.0914 na rodada e US$ 0.0918 acumulado; a pr\u00f3xima tarefa reserva US$ 0.0094",
- "executed": 132,
+ "reason": "cota: https://api.groq.com/openai/v1/chat/completions: HTTP 429: o provedor pediu 156 s de espera",
+ "executed": 15,
  "spend": {
-  "usd_round_server": 0.091438,
+  "usd_round_server": 0.010886,
   "usd_round_estimate": 0.0,
-  "usd_round": 0.091438,
-  "usd_total": 0.091839,
-  "max_usd_round": 0.1,
+  "usd_round": 0.010886,
+  "usd_total": 0.102724,
+  "max_usd_round": 0.2,
   "max_usd_total": 1.0,
   "price_per_mtok": [
    0.15,
