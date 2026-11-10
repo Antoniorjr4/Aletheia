@@ -419,6 +419,7 @@ impl<'m> Gen<'m> {
                         .collect::<Result<_, _>>()?;
                     let builtin = match method.name.as_str() {
                         "managed" if rendered.is_empty() => "managed",
+                        "telemetry" if rendered.is_empty() => "telemetry",
                         "is_managed" if rendered.len() == 1 => "is_managed",
                         "scale_justified" if rendered.len() == 2 => "scale_justified",
                         _ => return Err(format!("método intrínseco s.{} inválido", method.name)),
