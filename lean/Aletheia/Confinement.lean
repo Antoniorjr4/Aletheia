@@ -107,7 +107,7 @@ theorem granted_preserves (c : Cfg) : Preserves S c True (fun _ _ tr => Granted'
   endorse _ := Granted'.endorse _ _ _ [] (Granted'.nil _)
   reject := Granted'.endorse _ _ _ [] (Granted'.nil _)
   act hg _ := fun t' id' v' hm => by
-    rcases List.mem_singleton.mp hm with ⟨⟩
+    obtain ⟨rfl, rfl, rfl⟩ := mem_actEvs_act hm
     exact hg
   drop _ := Granted'.nil _
   infer := Granted'.nil _
@@ -252,8 +252,7 @@ theorem effects_lexical_total (c : Cfg) {Γ : List Bind} {pc : Lab} {e : Exp} {�
       obtain ⟨oa, ha, he⟩ := he
       obtain ⟨id, hid, _, _, _, rfl⟩ := doAct_ok he
       refine (iha.1 _ ha).append fun t' id' v' hm => ?_
-      simp at hm
-      obtain ⟨rfl, rfl, rfl⟩ := hm
+      obtain ⟨rfl, rfl, rfl⟩ := mem_actEvs_act hm
       exact ⟨k, E, hk, hid, heff⟩
     · simp only [eval] at he
       rcases bnd_eq_timeout he with h₀ | ⟨_, _, _, h₁, _⟩

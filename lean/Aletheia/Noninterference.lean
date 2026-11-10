@@ -521,7 +521,7 @@ theorem policy_preserves : Preserves S c True (fun _ _ tr => PolicyOk S tr) wher
   trans h₁ h₂ := h₁.append h₂
   endorse hp := by intro p' v hv; simp at hv; obtain ⟨rfl, rfl⟩ := hv; exact hp
   reject := fun p' v hv => by rcases List.mem_singleton.mp hv with ⟨⟩
-  act _ _ := by intro p v hv; rcases List.mem_singleton.mp hv with ⟨⟩
+  act _ _ := by intro p v hv; exact absurd hv endorse_not_mem_actEvs
   drop _ := PolicyOk.nil
   infer := PolicyOk.nil
   commit _ := fun h => h

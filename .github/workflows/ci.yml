@@ -63,7 +63,7 @@ jobs:
     # orçamento graduado), T2 (Cap[E] linear no avaliador canônico) e T3 (não-interferência robusta). `--wfail` reprova
     # qualquer aviso, inclusive "declaration uses 'sorry'". O alvo Audit fixa o conjunto de
     # axiomas de cada teorema principal.
-    name: provas Lean 4 (T1 · T2 · T3 · T6)
+    name: provas Lean 4 (T1 · T2 · T3 · T6 · T9)
     runs-on: ubuntu-latest
     defaults:
       run:

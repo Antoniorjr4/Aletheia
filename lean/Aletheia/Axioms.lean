@@ -131,3 +131,20 @@ open Aletheia
 
 /-- info: 'Aletheia.noninterference_saga_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms noninterference_saga_total
+
+/-! ## Chaves e reconciliação (T9) -/
+
+/-- info: 'Aletheia.keys_preserves' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms keys_preserves
+
+/-- info: 'Aletheia.T9' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms T9
+
+/-- info: 'Aletheia.T9_no_silent_discard' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms T9_no_silent_discard
+
+/-- info: 'Aletheia.T9_done_observed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms T9_done_observed
+
+/-- info: 'Aletheia.T9_transferred_exhausted' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms T9_transferred_exhausted

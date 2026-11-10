@@ -121,6 +121,138 @@ def loop (f : Val → St → Except Err Out) : List Val → St → Except Err (S
 def logAct (S : Sig) (t : Nat) (v : Val) (comp : List (Nat × Val)) : List (Nat × Val) :=
   if S.compensable t then (t, v) :: comp else comp
 
+/-! ## Chaves, `Pending[k]` e reconciliação
+
+Uma ferramenta `keyed` recebe uma chave `own IdemKey`. A chave da operação é a identidade da
+capacidade linear que a autoriza: cada uma é consumida uma única vez (`eval_nodup`), então
+cada chave nomeia uma única operação. A chamada pode ser aplicada, recusada ou ficar sem
+resposta (`TimeoutUnknown`); no último caso nasce a obrigação `Pending[k]`, que a
+reconciliação consulta até `fuel` vezes. Se nenhuma consulta for conclusiva, a obrigação é
+transferida ao reconciliador durável. -/
+
+/-- A reconciliação de `k` a partir da tentativa `i`, com `n` consultas de combustível: as
+consultas feitas e o estado terminal. Sem resposta conclusiva, `Transferred`. -/
+def reconcile (S : Sig) (k : Nat) : Nat → Nat → List Ev × KEnd
+  | _, 0 => ([], .transferred)
+  | i, n + 1 =>
+    match S.reply k i with
+    | .done => ([.query k i .done], .done)
+    | .failed => ([.query k i .failed], .failed)
+    | .unknown =>
+      let r := reconcile S k (i + 1) n
+      (.query k i .unknown :: r.1, r.2)
+
+/-- O estado terminal da operação `t` de chave `k`. Uma ferramenta sem chave é aplicada. -/
+def kend (S : Sig) (t k : Nat) : KEnd :=
+  if S.keyed t then
+    match S.reply k 0 with
+    | .done => .done
+    | .failed => .failed
+    | .unknown => (reconcile S k 1 (S.fuel t)).2
+  else .done
+
+/-- O efeito aconteceu (resposta direta ou confirmação da reconciliação). -/
+def applied (S : Sig) (t k : Nat) : Bool := kend S t k == .done
+
+/-- O mundo depois da ação: a transição só se o efeito aconteceu. -/
+def actW (S : Sig) (t k : Nat) (v : Val) (w : World) : World :=
+  if applied S t k then S.step t v w else w
+
+/-- O registro da saga depois da ação: só entra o que aconteceu. Uma obrigação transferida
+sai da saga com o reconciliador durável. -/
+def actC (S : Sig) (t k : Nat) (v : Val) (comp : List (Nat × Val)) : List (Nat × Val) :=
+  if applied S t k then logAct S t v comp else comp
+
+/-- Os eventos da ação. -/
+def actEvs (S : Sig) (t k : Nat) (v : Val) : List Ev :=
+  if S.keyed t then
+    match S.reply k 0 with
+    | .done => [.act t k v, .settle k .done]
+    | .failed => [.settle k .failed]
+    | .unknown =>
+      let r := reconcile S k 1 (S.fuel t)
+      .pending t k v :: r.1 ++ (if r.2 == .done then [.act t k v] else []) ++ [.settle k r.2]
+  else [.act t k v]
+
+theorem actEvs_unkeyed {S : Sig} {t k : Nat} {v : Val} (h : S.keyed t = false) :
+    actEvs S t k v = [.act t k v] := by simp [actEvs, h]
+
+theorem reconcile_queries (S : Sig) (k : Nat) :
+    ∀ (i n : Nat), ∀ e ∈ (reconcile S k i n).1, ∃ j r, e = .query k j r
+  | _, 0, e, h => by simp [reconcile] at h
+  | i, n + 1, e, h => by
+    simp only [reconcile] at h
+    split at h
+    · simp at h; exact ⟨_, _, h⟩
+    · simp at h; exact ⟨_, _, h⟩
+    · simp only [List.mem_cons] at h
+      rcases h with h | h
+      · exact ⟨_, _, h⟩
+      · exact reconcile_queries S k (i + 1) n e h
+
+theorem filterMap_queries {β : Type} (f : Ev → Option β) (hf : ∀ k i r, f (.query k i r) = none)
+    {l : List Ev} {k : Nat} (h : ∀ e ∈ l, ∃ j r, e = .query k j r) : l.filterMap f = [] := by
+  induction l with
+  | nil => rfl
+  | cons e l ih =>
+    obtain ⟨j, r, rfl⟩ := h e (List.mem_cons_self ..)
+    simp only [List.filterMap_cons, hf]
+    exact ih fun x hx => h x (List.mem_cons_of_mem _ hx)
+
+/-- Os eventos de uma ação, vistos por uma projeção que só enxerga `act`: a ação aparece uma
+vez se o efeito aconteceu, e nenhuma se não. -/
+theorem filterMap_actEvs {β : Type} (f : Ev → Option β)
+    (hp : ∀ t k v, f (.pending t k v) = none) (hq : ∀ k i r, f (.query k i r) = none)
+    (hs : ∀ k e, f (.settle k e) = none) (S : Sig) (t k : Nat) (v : Val) :
+    (actEvs S t k v).filterMap f = if applied S t k then (f (.act t k v)).toList else [] := by
+  unfold actEvs applied kend
+  by_cases hk : S.keyed t = true
+  · simp only [hk, if_true]
+    cases h0 : S.reply k 0 with
+    | done => cases hx : f (Ev.act t k v) <;> simp [List.filterMap_cons, hx, hs]
+    | failed => simp [hs]
+    | unknown =>
+      simp only [List.filterMap_cons, hp, List.filterMap_append, List.cons_append,
+        filterMap_queries f hq (reconcile_queries S k 1 (S.fuel t)), List.nil_append]
+      cases (reconcile S k 1 (S.fuel t)).2 <;>
+        (cases hx : f (Ev.act t k v) <;> simp [List.filterMap_cons, hx, hs])
+  · simp only [hk, Bool.false_eq_true, if_false]
+    cases hx : f (Ev.act t k v) <;> simp [List.filterMap_cons, hx]
+
+theorem mem_actEvs_act {S : Sig} {t k t' k' : Nat} {v v' : Val} (h : Ev.act t' k' v' ∈ actEvs S t k v) :
+    t' = t ∧ k' = k ∧ v' = v := by
+  have := filterMap_actEvs (fun e => match e with | .act a b c => some (a, b, c) | _ => none)
+    (fun _ _ _ => rfl) (fun _ _ _ => rfl) (fun _ _ => rfl) S t k v
+  have hm : (t', k', v') ∈ (actEvs S t k v).filterMap
+      (fun e => match e with | .act a b c => some (a, b, c) | _ => none) :=
+    List.mem_filterMap.mpr ⟨_, h, rfl⟩
+  rw [this] at hm
+  split at hm
+  · simp at hm; obtain ⟨rfl, rfl, rfl⟩ := hm; exact ⟨rfl, rfl, rfl⟩
+  · simp at hm
+
+theorem endorse_not_mem_actEvs {S : Sig} {t k p : Nat} {v : Val} {o : Option Val} :
+    Ev.endorse p o ∉ actEvs S t k v := by
+  intro h
+  have := filterMap_actEvs (fun e => match e with | .endorse a b => some (a, b) | _ => none)
+    (fun _ _ _ => rfl) (fun _ _ _ => rfl) (fun _ _ => rfl) S t k v
+  have hm : (p, o) ∈ (actEvs S t k v).filterMap
+      (fun e => match e with | .endorse a b => some (a, b) | _ => none) :=
+    List.mem_filterMap.mpr ⟨_, h, rfl⟩
+  rw [this] at hm
+  split at hm <;> simp at hm
+
+theorem undo_not_mem_actEvs {S : Sig} {t k t' : Nat} {v v' : Val} {ok : Bool} :
+    Ev.undo t' v' ok ∉ actEvs S t k v := by
+  intro h
+  have := filterMap_actEvs (fun e => match e with | .undo a b c => some (a, b, c) | _ => none)
+    (fun _ _ _ => rfl) (fun _ _ _ => rfl) (fun _ _ => rfl) S t k v
+  have hm : (t', v', ok) ∈ (actEvs S t k v).filterMap
+      (fun e => match e with | .undo a b c => some (a, b, c) | _ => none) :=
+    List.mem_filterMap.mpr ⟨_, h, rfl⟩
+  rw [this] at hm
+  split at hm <;> simp at hm
+
 /-- O efeito de `act t`, depois de avaliado o argumento (saída `o`), com a autoridade `cv`.
 A guarda confere, nesta ordem, a concessão do runtime para o efeito da ferramenta, a
 linearidade e a reserva de orçamento. Só então o evento é emitido. -/
@@ -130,8 +262,8 @@ def doAct (S : Sig) (c : Cfg) (t : Nat) (cv : Option Val) (o : Out) : Except Err
     if S.effect t ∈ c.grants id then
       if id ∈ o.st.used then .error .reuse
       else if ble (o.st.spent + S.cost t) c.limit then
-        .ok ⟨.unit, ⟨id :: o.st.used, o.st.spent + S.cost t, o.st.calls, S.step t o.v o.st.w,
-          logAct S t o.v o.st.comp⟩, o.tr ++ [.act t id o.v]⟩
+        .ok ⟨.unit, ⟨id :: o.st.used, o.st.spent + S.cost t, o.st.calls, actW S t id o.v o.st.w,
+          actC S t id o.v o.st.comp⟩, o.tr ++ actEvs S t id o.v⟩
       else .error .budget
     else .error .noCap
   | _ => .error .noCap
@@ -321,8 +453,8 @@ theorem doAct_ok {S : Sig} {c : Cfg} {t : Nat} {cv : Option Val} {o r : Out}
     (h : doAct S c t cv o = .ok r) :
     ∃ id, cv = some (.cap id) ∧ S.effect t ∈ c.grants id ∧ id ∉ o.st.used ∧
       ble (o.st.spent + S.cost t) c.limit = true ∧
-      r = ⟨.unit, ⟨id :: o.st.used, o.st.spent + S.cost t, o.st.calls, S.step t o.v o.st.w,
-        logAct S t o.v o.st.comp⟩, o.tr ++ [.act t id o.v]⟩ := by
+      r = ⟨.unit, ⟨id :: o.st.used, o.st.spent + S.cost t, o.st.calls, actW S t id o.v o.st.w,
+        actC S t id o.v o.st.comp⟩, o.tr ++ actEvs S t id o.v⟩ := by
   unfold doAct at h
   split at h
   · rename_i id
@@ -561,7 +693,8 @@ structure Preserves (S : Sig) (c : Cfg) (sagas : Prop) (R : St → St → List E
   endorse : ∀ {s : St} {p : Nat} {v : Val}, S.pol p v = true → R s s [.endorse p (some v)]
   reject  : ∀ {s : St} {p : Nat}, R s s [.endorse p none]
   act     : ∀ {s : St} {t id : Nat} {v : Val}, S.effect t ∈ c.grants id → id ∉ s.used →
-    R s ⟨id :: s.used, s.spent + S.cost t, s.calls, S.step t v s.w, logAct S t v s.comp⟩ [.act t id v]
+    R s ⟨id :: s.used, s.spent + S.cost t, s.calls, actW S t id v s.w, actC S t id v s.comp⟩
+      (actEvs S t id v)
   drop    : ∀ {s : St} {id : Nat}, id ∉ s.used → R s ⟨id :: s.used, s.spent, s.calls, s.w, s.comp⟩ []
   infer   : ∀ {s : St} {m : Nat}, R s ⟨s.used, s.spent + S.mcost m, s.calls + 1, s.w, s.comp⟩ []
   commit  : sagas → ∀ {s s' : St} {t : List Ev}, R { s with comp := [] } s' t →

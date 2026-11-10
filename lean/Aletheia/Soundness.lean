@@ -471,7 +471,7 @@ theorem sound (hO : c.oracle.Ok) {Γ : List Bind} {pc : Lab} {e : Exp} {τ : Ty}
       have hble : ble (oa.st.spent + S.cost t) c.limit = true :=
         ble_iff.mpr fun d => by have := hB d; have := (hwa d).2; simp at *; omega
       exact .inl ⟨⟨.unit, ⟨id :: oa.st.used, oa.st.spent + S.cost t, oa.st.calls,
-        S.step t oa.v oa.st.w, logAct S t oa.v oa.st.comp⟩, oa.tr ++ [.act t id oa.v]⟩,
+        actW S t id oa.v oa.st.w, actC S t id oa.v oa.st.comp⟩, oa.tr ++ actEvs S t id oa.v⟩,
         by simp [eval, hea, doAct, hid, hgrant, hfree, hble], .unit, hwa.trans (Within.step _ _),
         Consumed.seq hs hL hca (Consumed.single hid)⟩
     · exact .inr ⟨q, s₁, tr, by simp only [eval, hea, bnd_error], hwa.mono fun d => by simp,

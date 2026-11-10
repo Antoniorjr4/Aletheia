@@ -8,5 +8,6 @@ import Aletheia.Noninterference
 import Aletheia.Recovery
 import Aletheia.Saga
 import Aletheia.SagaNI
+import Aletheia.Keys
 import Aletheia.Confinement
 import Aletheia.Examples

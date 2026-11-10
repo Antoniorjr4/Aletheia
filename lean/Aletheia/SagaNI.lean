@@ -656,9 +656,9 @@ theorem noninterference_saga {c₁ c₂ : Cfg} {Γ : List Bind} {pc : Lab} {e : 
     cases hcap
     have hv' : o₁.v = o₂.v := hv hla
     refine .inl ⟨_, _, rfl, rfl, by simp [HasTr.tr, hv'], ⟨?_, ?_⟩, fun _ => rfl⟩
-    · show S.step t o₁.v o₁.st.w = S.step t o₂.v o₂.st.w
+    · show actW S t id₁ o₁.v o₁.st.w = actW S t id₁ o₂.v o₂.st.w
       rw [hv', hw'.1]
-    · show logAct S t o₁.v o₁.st.comp = logAct S t o₂.v o₂.st.comp
+    · show actC S t id₁ o₁.v o₁.st.comp = actC S t id₁ o₂.v o₂.st.comp
       rw [hv', hw'.2]
   | @drop Γ pc k E hk =>
     intro ρ₁ ρ₂ s₁ s₂ _ hw hs₁ hs₂

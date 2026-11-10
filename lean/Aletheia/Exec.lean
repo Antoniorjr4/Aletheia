@@ -323,6 +323,15 @@ def Prog.event (p : Prog) : Ev → String × J
   | .undo t v ok =>
     ("undo", .obj [("args", .arr [valJson v]), ("ok", .bool ok), ("tool", Prog.name (p.tools.map (·.name)) t)])
   | .recover r ok => ("recover", .obj [("ok", .bool ok), ("probe", Prog.name (p.probes.map (·.name)) r)])
+  -- o protocolo de chaves (ainda fora do tripé: o formato do programa não declara chaves)
+  | .pending t k v =>
+    ("pending", .obj [("args", .arr [valJson v]), ("key", .int k), ("tool", Prog.name (p.tools.map (·.name)) t)])
+  | .query k i r =>
+    ("query", .obj [("attempt", .int i), ("key", .int k), ("status", .str (match r with
+      | .done => "done" | .failed => "failed" | .unknown => "unknown"))])
+  | .settle k e =>
+    ("settle", .obj [("key", .int k), ("status", .str (match e with
+      | .done => "done" | .failed => "failed" | .transferred => "transferred"))])
 
 def GENESIS : String := "".pushn '0' 64
 

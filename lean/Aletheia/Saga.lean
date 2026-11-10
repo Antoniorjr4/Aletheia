@@ -188,10 +188,20 @@ theorem logged_preserves (hR : Restoring S E) : Preserves S c False (Logged S E)
   reject := ⟨[], rfl, rfl, hR.refl _⟩
   act := by
     intro s t id v _ _
-    by_cases hc : S.compensable t = true
-    · exact ⟨[(t, v)], by simp [logAct, hc], by simp [actsOf, hc], by simp [replay]; exact hR.refl _⟩
-    · have hc' : S.compensable t = false := by simpa using hc
-      exact ⟨[], by simp [logAct, hc'], by simp [actsOf, hc'], by simpa [replay] using hR.inert t v s.w hc'⟩
+    have hacts : actsOf S (actEvs S t id v) =
+        if applied S t id then (if S.compensable t then [(t, v)] else []) else [] := by
+      unfold actsOf
+      rw [filterMap_actEvs _ (fun _ _ _ => rfl) (fun _ _ _ => rfl) (fun _ _ => rfl)]
+      by_cases ha : applied S t id = true <;> by_cases hc : S.compensable t = true <;> simp [ha, hc]
+    by_cases ha : applied S t id = true
+    · by_cases hc : S.compensable t = true
+      · exact ⟨[(t, v)], by simp [actC, ha, logAct, hc], by simp [hacts, ha, hc],
+          by simp [replay, actW, ha]; exact hR.refl _⟩
+      · have hc' : S.compensable t = false := by simpa using hc
+        exact ⟨[], by simp [actC, ha, logAct, hc'], by simp [hacts, ha, hc'],
+          by simpa [replay, actW, ha] using hR.inert t v s.w hc'⟩
+    · have ha' : applied S t id = false := by simpa using ha
+      exact ⟨[], by simp [actC, ha'], by simp [hacts, ha'], by simp [replay, actW, ha']; exact hR.refl _⟩
   drop _ := ⟨[], rfl, rfl, hR.refl _⟩
   infer := ⟨[], rfl, rfl, hR.refl _⟩
   commit h := h.elim
