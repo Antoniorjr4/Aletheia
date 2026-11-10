@@ -34,10 +34,12 @@ jobs:
         run: PYTHONPATH=. python3 -m unittest discover -s tests -v
       - name: AgentDojo adapter (testes offline sem efeitos)
         run: python3 -m unittest discover -s bench/agentdojo/tests -v
+      - name: oráculos da M1 (régua canônica da Rev6 congelada + contextual da Rev7)
+        run: python3 -m unittest discover -s bench/m1/tests -v
 
   lean:
     # O núcleo λ_Ath mecanizado: T1 (preservação e progresso, com capacidades lineares e
-    # orçamento graduado), T2 (Cap[E] no avaliador instrumentado) e T3 (não-interferência robusta). `--wfail` reprova
+    # orçamento graduado), T2 (Cap[E] linear no avaliador canônico) e T3 (não-interferência robusta). `--wfail` reprova
     # qualquer aviso, inclusive "declaration uses 'sorry'". O alvo Audit fixa o conjunto de
     # axiomas de cada teorema principal.
     name: provas Lean 4 (T1 · T2 · T3)

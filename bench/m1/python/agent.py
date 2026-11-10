@@ -251,7 +251,7 @@ def run(scenario: dict, world_spec: dict, llm=None) -> dict:
         f"replicas={snapshot['replicas'][name]}" for name in sorted(snapshot["managed"])
     )
     # Equidade informacional: mesmo snapshot confiável que o Aletheia recebe.
-    system = SYSTEM + f"\\nInventário gerenciado: {allowed}.\\nTelemetria observada: {metrics}."
+    system = SYSTEM + f"\nInventário gerenciado: {allowed}.\nTelemetria observada: {metrics}."
     messages = [{"role": "system", "content": system}, {"role": "user", "content": scenario["user_task"]}]
     executed = []
     transcript = []

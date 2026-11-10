@@ -42,8 +42,16 @@ def main() -> None:
     benign = [r for r in rows if not r["attacked"]]
     by = {key: [r for r in rows if r["id"] == key] for key in sorted({r["id"] for r in rows})}
 
+    # Duas réguas: o oráculo canônico da Rev6 (`out_of_policy`, comparável com as rodadas
+    # anteriores) e, quando presente, o contextual da Rev7 (`out_of_policy_contextual`).
+    # Rodadas antigas não declaram o oráculo; a de `449b0cf` mediu `out_of_policy` com o
+    # contextual. Sem declaração, o rótulo não afirma qual régua foi usada: veja
+    # `bench/m1/rescore.py` para reavaliar sob as duas.
+    contextual = "out_of_policy_contextual" in summary["python"]
+    canonical = "oráculo canônico da Rev6" if "oracles" in summary else "oráculo da rodada (ver rescore.py)"
+
     report = [
-        "# Rev6 — M1 real no Groq GPT-OSS-120B · multiamostra",
+        f"# M1 real no Groq `{summary['model']}` · multiamostra",
         "",
         f"Commit: `{summary['commit']}` · {summary['scenarios']} cenários × {summary['reps']} repetições, "
         f"{len(attacked)} execuções com injeção e {len(benign)} controles, **por sistema**.",
@@ -57,8 +65,15 @@ def main() -> None:
         "| --- | ---: | ---: |",
         f"| Ataques que atingiram objetivo | {summary['python']['attack_success']}/{len(attacked)} | "
         f"{summary['aletheia']['attack_success']}/{len(attacked)} |",
-        f"| Ações fora da política | {summary['python']['out_of_policy']} | "
+        f"| Ações fora da política · {canonical} | {summary['python']['out_of_policy']} | "
         f"{summary['aletheia']['out_of_policy']} |",
+    ]
+    if contextual:
+        report += [
+            f"| Ações fora da política · oráculo contextual da Rev7 | "
+            f"{summary['python']['out_of_policy_contextual']} | {summary['aletheia']['out_of_policy_contextual']} |",
+        ]
+    report += [
         f"| Tarefas cumpridas sob ataque | {summary['python']['utility_under_attack']}/{len(attacked)} | "
         f"{summary['aletheia']['utility_under_attack']}/{len(attacked)} |",
         f"| Tarefas cumpridas sem ataque | {summary['python']['utility_benign']}/{len(benign)} | "
@@ -73,20 +88,25 @@ def main() -> None:
         stats = latency(rows, system)
         report.append(f"| {system} | {stats['n']} | {stats['p50_s']} s | {stats['p95_s']} s | {stats['mean_s']} s |")
     report += ["", "## Matriz por cenário (cada linha tem N repetições)", "",
-               "| Cenário | Python ataque | Aletheia ataque | Python tarefa | Aletheia tarefa | Python fora | Aletheia fora |",
+               "| Cenário | Python ataque | Aletheia ataque | Python tarefa | Aletheia tarefa | "
+               "Python fora (Rev6 / ctx) | Aletheia fora (Rev6 / ctx) |",
                "| --- | ---: | ---: | ---: | ---: | ---: | ---: |"]
     for id_, subset in by.items():
         n = len(subset)
         def hits(system: str, k: str) -> str:
             return f"{sum(bool(r[system][k]) for r in subset)}/{n}"
-        def outside(system: str) -> int:
-            return sum(len(r[system]["out_of_policy"]) for r in subset)
+        def outside(system: str) -> str:
+            canonical = sum(len(r[system]["out_of_policy"]) for r in subset)
+            if not contextual:
+                return f"{canonical} / —"
+            return f"{canonical} / {sum(len(r[system]['out_of_policy_contextual']) for r in subset)}"
         atk_py = hits("python", "attack") if subset[0]["attacked"] else "—"
         atk_ath = hits("aletheia", "attack") if subset[0]["attacked"] else "—"
         report.append(f"| `{id_}` | {atk_py} | {atk_ath} | {hits('python','utility')} | "
                       f"{hits('aletheia','utility')} | {outside('python')} | {outside('aletheia')} |")
     report += ["", "## Limites de interpretação", "",
                "- N=3 por cenário é uma amostra pequena; não justifica alegar segurança inatacável.",
+               "- As duas colunas de 'fora' usam réguas diferentes; só a canônica da Rev6 é comparável com rodadas anteriores.",
                "- 0 violações observadas não é uma prova estatística de 0 probabilidade de violação.",
                "- A métrica 'utility' do harness pode ser verdadeira apesar de ações indevidas; leia ao lado de out_of_policy.",
                "- O p95 usa interpolação linear; não é a latência interna da LPU nem inclui esperas do limitador TPM.",
