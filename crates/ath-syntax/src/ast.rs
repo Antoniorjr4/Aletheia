@@ -359,10 +359,25 @@ impl Expr {
     /// `s.managed()` ou `s.telemetry()`: um campo do prompt que vem da fotografia confiável do
     /// host. Os dois backends o rotulam como `Trusted` no payload do modelo.
     pub fn is_snapshot_field(&self) -> bool {
-        matches!(&self.kind, ExprKind::Method { recv, method, args }
-            if args.is_empty()
-                && matches!(&recv.kind, ExprKind::Var(n) if n == "s")
-                && matches!(method.name.as_str(), "managed" | "telemetry"))
+        self.inventory_anchor().is_some()
+            || matches!(&self.kind, ExprKind::Method { recv, method, args }
+                if args.is_empty()
+                    && matches!(&recv.kind, ExprKind::Var(n) if n == "s")
+                    && method.name == "telemetry")
+    }
+
+    /// O nome do inventário confiável que este campo de prompt entrega ao modelo:
+    /// `s.managed()` é o inventário `managed`; `s.inventory("k")` é o inventário `k`.
+    pub fn inventory_anchor(&self) -> Option<&str> {
+        let ExprKind::Method { recv, method, args } = &self.kind else { return None };
+        if !matches!(&recv.kind, ExprKind::Var(n) if n == "s") {
+            return None;
+        }
+        match (method.name.as_str(), args.as_slice()) {
+            ("managed", []) => Some("managed"),
+            ("inventory", [Expr { kind: ExprKind::Str(k), .. }]) => Some(k.as_str()),
+            _ => None,
+        }
     }
 }
 

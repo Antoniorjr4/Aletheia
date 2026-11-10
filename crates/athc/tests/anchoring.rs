@@ -76,3 +76,53 @@ fn contextual_probe_outside_a_policy_is_e0423() {
     assert!(src.contains("let ok = s.is_managed"));
     assert_eq!(errors(&src), ["E0423"]);
 }
+
+// ------------------------------------------------------------------ inventários nomeados
+
+/// Um programa mínimo de inventário nomeado: o prompt recebe `s.inventory("payees")` e a
+/// política decide por `s.member("payees", …)`, a mesma fonte.
+fn payees(prompt_field: &str, policy: &str) -> String {
+    format!(
+        "module bank.mini
+type Pay = | Pay {{ to: Text[..34] }}
+model m {{ price_in = 0.0  price_out = 0.0  ctx = 8192  max_out = 64  reasoning = 0  ttft = 1.0  per_tok = 0.01 }}
+tool pay(c: Cap[Bank.Transfer], to: Text[..34] ^ Endorsed) -> Text ! {{ Bank.Transfer }} irrevocable latency 1.0
+policy Known(p: Pay) -> Bool = match p {{ Pay {{ to }} => {policy} }}
+agent A(bank: Cap[Bank.Transfer]) budget [tok <= 10000, usd <= 1.0, wall <= 100.0] {{
+  on go(req: Text[..200] ^ Trusted) -> Text ! {{ Infer, Bank.Transfer }} {{
+    let d = infer m -> Pay {{ request = req{prompt_field} }}
+    let p = refine d by Known else {{ return \"recusado\" }}
+    match p {{ Pay {{ to }} => commit pay(bank, to) }}
+  }}
+}}
+"
+    )
+}
+
+#[test]
+fn named_inventory_anchors_prompt_and_policy() {
+    let src = payees(", payees = s.inventory(\"payees\")", "s.member(\"payees\", to)");
+    assert!(errors(&src).is_empty(), "{:?}", errors(&src));
+}
+
+#[test]
+fn named_inventory_missing_from_the_prompt_is_e0421() {
+    assert_eq!(errors(&payees("", "s.member(\"payees\", to)")), ["E0421"]);
+    // o prompt recebe OUTRO inventário: a política decide por `payees`, que o modelo não viu
+    let other = payees(", ids = s.inventory(\"scheduled\")", "s.member(\"payees\", to)");
+    assert_eq!(errors(&other), ["E0421"]);
+}
+
+#[test]
+fn named_inventory_with_hand_written_literals_is_e0422() {
+    let src = payees(", payees = s.inventory(\"payees\")", "to == \"US133000000121212121212\"");
+    assert_eq!(errors(&src), ["E0422"]);
+}
+
+#[test]
+fn inventory_name_must_be_a_literal_and_member_stays_in_policy() {
+    let src = payees(", payees = s.inventory(req)", "s.member(\"payees\", to)");
+    assert!(errors(&src).contains(&"E0424".to_string()), "{:?}", errors(&src));
+    let src = payees(", payees = s.inventory(\"payees\"), ok = s.member(\"payees\", req)", "s.member(\"payees\", to)");
+    assert!(errors(&src).contains(&"E0423".to_string()), "{:?}", errors(&src));
+}

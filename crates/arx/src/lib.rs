@@ -203,11 +203,14 @@ impl<'m> Arx<'m> {
             return;
         }
         self.snapshot_logged = true;
-        let detail = json!({
+        let mut detail = json!({
             "managed": self.snapshot.managed,
             "replicas": self.snapshot.replicas,
             "cpu_pct": self.snapshot.cpu_pct,
         });
+        if !self.snapshot.inventories.is_empty() {
+            detail["inventories"] = json!(self.snapshot.inventories);
+        }
         self.journal.push(self.clock, "snapshot", detail);
     }
 
@@ -453,7 +456,12 @@ impl<'m> Arx<'m> {
                     let vals: Vec<Value> = args.iter().map(|a| self.eval(a)).collect::<Result<_, _>>()?;
                     let known = matches!(
                         (method.name.as_str(), vals.len()),
-                        ("managed", 0) | ("telemetry", 0) | ("is_managed", 1) | ("scale_justified", 2)
+                        ("managed", 0)
+                            | ("telemetry", 0)
+                            | ("is_managed", 1)
+                            | ("scale_justified", 2)
+                            | ("inventory", 1)
+                            | ("member", 2)
                     );
                     if !known {
                         return Err(rt("R0108", format!("método `s.{}` desconhecido", method.name)).into());
@@ -465,6 +473,11 @@ impl<'m> Arx<'m> {
                         ("is_managed", [Value::Text(d)]) => Ok(Value::Bool(self.snapshot.is_managed(d))),
                         ("scale_justified", [Value::Text(d), Value::Int(n)]) => {
                             Ok(Value::Bool(self.snapshot.scale_justified(d, *n)))
+                        }
+                        ("inventory", [Value::Text(k)]) => Ok(Value::Text(self.snapshot.inventory_text(k))),
+                        ("member", [Value::Text(k), Value::Text(x)]) => Ok(Value::Bool(self.snapshot.member(k, x))),
+                        ("member", [Value::Text(k), Value::Int(n)]) => {
+                            Ok(Value::Bool(self.snapshot.member(k, &n.to_string())))
                         }
                         (m, _) => Err(rt("R0103", format!("argumentos inválidos para `s.{m}`")).into()),
                     };

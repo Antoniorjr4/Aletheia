@@ -232,11 +232,26 @@ class Runtime:
             return
         self._snapshot_logged = True
         snap = self.snapshot
-        self.journal.push(self.clock, "snapshot", {
+        detail = {
             "managed": list(snap["managed"]),
             "replicas": dict(snap["replicas"]),
             "cpu_pct": dict(snap["cpu_pct"]),
-        })
+        }
+        if snap.get("inventories"):
+            detail["inventories"] = {k: list(v) for k, v in snap["inventories"].items()}
+        self.journal.push(self.clock, "snapshot", detail)
+
+    def inventory(self, name: str) -> str:
+        """`s.inventory("k")`: o inventário confiável `k`, para o prompt."""
+        self._log_snapshot()
+        return ", ".join(self.snapshot.get("inventories", {}).get(name, []))
+
+    def member(self, name: str, x) -> bool:
+        """`s.member("k", x)`: `x` (texto, ou inteiro na grafia decimal) está no inventário `k`."""
+        self._log_snapshot()
+        if type(x) is int:
+            x = str(x)
+        return type(x) is str and x in self.snapshot.get("inventories", {}).get(name, [])
 
     def managed(self) -> str:
         self._log_snapshot()

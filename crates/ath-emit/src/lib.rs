@@ -421,6 +421,8 @@ impl<'m> Gen<'m> {
                         "telemetry" if rendered.is_empty() => "telemetry",
                         "is_managed" if rendered.len() == 1 => "is_managed",
                         "scale_justified" if rendered.len() == 2 => "scale_justified",
+                        "inventory" if rendered.len() == 1 => "inventory",
+                        "member" if rendered.len() == 2 => "member",
                         _ => return Err(format!("método intrínseco s.{} inválido", method.name)),
                     };
                     self.assign("t", format!("R.{builtin}({})", rendered.join(", ")))

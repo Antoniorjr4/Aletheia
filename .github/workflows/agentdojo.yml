@@ -1,0 +1,103 @@
+name: AgentDojo oficial (Groq)
+
+# A suíte oficial do AgentDojo (v1.2.2) contra um modelo real da Groq, em dois pipelines com o
+# mesmo modelo: o baseline padrão do AgentDojo (sem defesa) e o agente Aletheia
+# (bench/agentdojo/banking.ath sobre o aletheia_runtime). A rodada é retomável: o que já tem
+# log oficial completo não roda de novo, e cota esgotada encerra a rodada sem gravar falha.
+# Os logs, os journals do Aletheia e a matriz são versionados no próprio branch.
+# A chave fica no segredo de repositório GROQ_API_KEY e nunca entra nos resultados.
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: "Modelo da Groq (precisa estar liberado no projeto)"
+        default: "openai/gpt-oss-120b"
+      pipelines:
+        description: "Pipelines, na ordem pareada"
+        default: "baseline,aletheia"
+      max_minutes:
+        description: "Teto da rodada, em minutos"
+        default: "320"
+      user_tasks:
+        description: "Subconjunto de tarefas do usuário (vírgulas; vazio = todas)"
+        default: ""
+      injection_tasks:
+        description: "Subconjunto de tarefas de injeção (vírgulas; vazio = todas)"
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: agentdojo-${{ inputs.model }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  run:
+    name: banking · baseline × Aletheia · important_instructions
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    env:
+      OPENAI_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      OPENAI_BASE_URL: https://api.groq.com/openai/v1
+      MODEL: ${{ inputs.model }}
+      PYTHONPATH: runtimes/python
+      NO_COLOR: "1"
+      TERM: dumb
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: segredo GROQ_API_KEY e permissão do modelo
+        run: |
+          test -n "$OPENAI_API_KEY" || { echo "::error::defina o segredo de repositório GROQ_API_KEY"; exit 1; }
+          python3 bench/m1/probe.py --pick "$MODEL"
+          python3 bench/agentdojo/limits.py "$MODEL"
+      - name: athc e o pacote oficial
+        run: |
+          cargo build --release --bin athc
+          python3 -m pip install --quiet "agentdojo==0.1.35"
+          echo "LOGDIR=bench/agentdojo/runs/banking-${MODEL//\//-}" >> "$GITHUB_ENV"
+      - name: testes offline da ponte
+        run: python3 -m unittest discover -s bench/agentdojo/tests -v
+      - name: rodada (retomável)
+        run: |
+          args=(--suite banking --model "$MODEL" --pipelines "${{ inputs.pipelines }}"
+                --logdir "$LOGDIR" --athc target/release/athc --max-minutes "${{ inputs.max_minutes }}")
+          [ -n "${{ inputs.user_tasks }}" ] && args+=(--user-tasks "${{ inputs.user_tasks }}")
+          [ -n "${{ inputs.injection_tasks }}" ] && args+=(--injection-tasks "${{ inputs.injection_tasks }}")
+          set +e
+          python3 bench/agentdojo/run.py "${args[@]}" > round.log 2>&1
+          status=$?
+          set -e
+          tail -n 300 round.log
+          exit $status
+      - name: matriz
+        if: always()
+        run: |
+          if [ -s "$LOGDIR/matrix.md" ]; then cat "$LOGDIR/matrix.md" >> "$GITHUB_STEP_SUMMARY"; fi
+          cat "$LOGDIR/last_round.json" 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: agentdojo-${{ github.run_id }}
+          path: ${{ env.LOGDIR }}
+      - name: versionar os logs e a matriz no branch
+        if: always()
+        run: |
+          [ -d "$LOGDIR" ] || exit 0
+          git config user.name "Aletheia CI"
+          git config user.email "aletheia-ci@users.noreply.github.com"
+          git add "$LOGDIR"
+          git diff --cached --quiet && exit 0
+          git commit -q -m "AgentDojo banking: rodada de $MODEL ($(jq -r .reason "$LOGDIR/last_round.json" 2>/dev/null || echo ?)) [skip ci]"
+          git pull -q --rebase origin "$GITHUB_REF_NAME"
+          git push -q origin "HEAD:$GITHUB_REF_NAME"

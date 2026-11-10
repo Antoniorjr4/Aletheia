@@ -73,9 +73,25 @@ fn compares_text_literal(e: &Expr) -> bool {
     })
 }
 
-/// O campo do prompt é exatamente `s.managed()`: o inventário vem da fotografia confiável.
-fn is_inventory_anchor(e: &Expr) -> bool {
-    matches!(&e.kind, ExprKind::Method { args, .. } if args.is_empty()) && snapshot_method(e) == Some("managed")
+/// Os inventários confiáveis em que a política decide: `s.is_managed`/`s.scale_justified`
+/// decidem pelo inventário `managed`; `s.member("k", x)`, pelo inventário `k`.
+fn policy_inventories(e: &Expr) -> BTreeSet<String> {
+    let found = std::cell::RefCell::new(BTreeSet::new());
+    expr_any(e, &|x| {
+        match (snapshot_method(x), &x.kind) {
+            (Some("is_managed" | "scale_justified"), _) => {
+                found.borrow_mut().insert("managed".to_string());
+            }
+            (Some("member"), ExprKind::Method { args, .. }) => {
+                if let Some(Expr { kind: ExprKind::Str(k), .. }) = args.first() {
+                    found.borrow_mut().insert(k.clone());
+                }
+            }
+            _ => {}
+        }
+        false
+    });
+    found.into_inner()
 }
 
 /// Custo de uma amostra de um nó `infer`, sob o contrato Δ do modelo.
@@ -177,8 +193,9 @@ pub struct Ctx<'m> {
     in_handle: bool,
     /// Ao checar condições de controle, o resultado de uma ferramenta herda a integridade dos argumentos.
     taint_calls: bool,
-    /// `infer`s (por span) cujo prompt recebe o inventário confiável `s.managed()`.
-    anchored: BTreeSet<Span>,
+    /// `infer`s (por span) e os inventários confiáveis que o seu prompt recebe
+    /// (`s.managed()`, `s.inventory("k")`).
+    anchored: HashMap<Span, BTreeSet<String>>,
 }
 
 use Stratum::{E0, E1, E2, E3, E5, E6};
@@ -205,7 +222,7 @@ impl<'m> Ctx<'m> {
             atomic_stack: Vec::new(),
             in_handle: false,
             taint_calls: false,
-            anchored: BTreeSet::new(),
+            anchored: HashMap::new(),
         }
     }
 
@@ -1467,6 +1484,46 @@ impl<'m> Ctx<'m> {
                     }
                     return LTy::trusted(Ty::Bool);
                 }
+                "inventory" | "member" => {
+                    let member = method.name == "member";
+                    check_args(self, if member { 2 } else { 1 });
+                    if member && !self.in_policy {
+                        self.push(
+                            Diag::new(
+                                E2,
+                                "E0423",
+                                "sonda contextual fora de política",
+                                method.span,
+                                "`s.member` só decide dentro de `policy`",
+                            )
+                            .help("leve a decisão para a política aplicada pelo `refine`"),
+                        );
+                    }
+                    // o nome do inventário é parte do programa: literal, nunca dado
+                    if !matches!(args.first().map(|a| &a.kind), Some(ExprKind::Str(_))) {
+                        self.push(
+                            Diag::new(
+                                E3,
+                                "E0424",
+                                "nome de inventário não literal",
+                                args.first().map_or(method.span, |a| a.span),
+                                "o nome precisa ser um literal de texto",
+                            )
+                            .help("escreva `s.inventory(\"nome\")`: o nome do inventário não pode vir de dado"),
+                        );
+                    }
+                    for (i, arg) in args.iter().enumerate() {
+                        let t = self.expr(arg);
+                        if i == 1 && !assignable(&t.ty, &Ty::Text) && !assignable(&t.ty, &Ty::Int) {
+                            self.mismatch(arg.span, &Ty::Text, &t.ty);
+                        }
+                    }
+                    return if member {
+                        LTy::trusted(Ty::Bool)
+                    } else {
+                        LTy::declared(Ty::Text, Label::Trusted, Some(Refn::Text { max: 2048 }), Vec::new())
+                    };
+                }
                 _ => {
                     self.push(Diag::new(
                         E0,
@@ -2070,8 +2127,10 @@ impl<'m> Ctx<'m> {
         let (oty, _) = self.resolve(out);
         // Ancoragem: o prompt recebe o inventário da fotografia confiável. O `refine` que decidir
         // sobre este rascunho confere que a política usa a mesma fonte (E0421/E0422).
-        if fields.iter().any(|(_, v)| is_inventory_anchor(v)) {
-            self.anchored.insert(e.span);
+        let names: BTreeSet<String> =
+            fields.iter().filter_map(|(_, v)| v.inventory_anchor()).map(str::to_string).collect();
+        if !names.is_empty() {
+            self.anchored.insert(e.span, names);
         }
         if !matches!(oty, Ty::Adt(_) | Ty::Text | Ty::List(..) | Ty::Int | Ty::Bool | Ty::Never) {
             self.push(Diag::new(
@@ -2270,18 +2329,32 @@ impl<'m> Ctx<'m> {
             Some(p) => {
                 // Inventário e política precisam vir da mesma fotografia confiável do host.
                 if let Some(ispan) = infer_span {
-                    let anchored = self.anchored.contains(&ispan);
-                    if reads_snapshot(&p.body) && !anchored {
+                    let given = self.anchored.get(&ispan).cloned().unwrap_or_default();
+                    let anchored = !given.is_empty();
+                    let missing: Vec<String> = policy_inventories(&p.body).difference(&given).cloned().collect();
+                    if reads_snapshot(&p.body) && (!anchored || !missing.is_empty()) {
+                        let want = missing
+                            .iter()
+                            .map(|k| {
+                                if k == "managed" {
+                                    "s.managed()".to_string()
+                                } else {
+                                    format!("s.inventory(\"{k}\")")
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        let want = if want.is_empty() { "s.managed()".to_string() } else { want };
                         self.push(
                             Diag::new(
                                 E3,
                                 "E0421",
                                 "a política decide pela fotografia confiável, mas o prompt não recebe o inventário",
                                 ispan,
-                                format!("`{}` lê `s.…`; o `infer` não tem um campo `= s.managed()`", policy.name),
+                                format!("`{}` lê `s.…`; o `infer` não tem um campo `= {want}`", policy.name),
                             )
                             .note(format!("decidido por `refine … by {}`", policy.name))
-                            .help("passe o inventário ao modelo como `campo = s.managed()`: nunca copiado de literal, log ou resposta de modelo"),
+                            .help(format!("passe o inventário ao modelo como `campo = {want}`: nunca copiado de literal, log ou resposta de modelo")),
                         );
                     }
                     if anchored && compares_text_literal(&p.body) {

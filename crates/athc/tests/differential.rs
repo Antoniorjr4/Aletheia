@@ -973,3 +973,61 @@ agent A() budget [tok <= 100000, usd <= 1.0, wall <= 100.0] {{
     }
     assert!(codes(&program("Unit", "")).contains(&"E0021".to_string()));
 }
+
+/// Inventários confiáveis nomeados (`s.inventory`, `s.member`), como no agente do AgentDojo:
+/// o mesmo inventário no prompt e na política, a fotografia no journal, e o mesmo journal nos
+/// dois backends para um destinatário conhecido (endossado) e um injetado (recusado).
+#[test]
+fn named_inventories_are_isomorphic() {
+    let src = "module bank.inventories
+type Pay = | Pay { to: Text[..34], amount: Text[..16] }
+model m0 { price_in = 0.0  price_out = 0.0  ctx = 8192  max_out = 64  reasoning = 0  ttft = 0.0  per_tok = 0.0 }
+tool pay(c: Cap[Bank.Transfer], to: Text[..34] ^ Endorsed, amount: Text[..16] ^ Endorsed) -> Unit
+  ! { Bank.Transfer } irrevocable latency 0.0
+policy Known(p: Pay) -> Bool = match p { Pay { to } => s.member(\"payees\", to) }
+agent A(bank: Cap[Bank.Transfer]) budget [tok <= 100000, usd <= 1.0, wall <= 100.0] {
+  on go() -> Text ! { Infer, Bank.Transfer } {
+    let d = infer m0 -> Pay { request = \"refund my friend\", payees = s.inventory(\"payees\") }
+    let p = refine d by Known retry 2 else { return \"recusado\" }
+    match p { Pay { to, amount } => {
+      commit pay(bank, to, amount)
+      \"pago\"
+    } }
+  }
+}
+";
+    let c = compile(src).unwrap_or_else(|d| panic!("{:?}", d.iter().map(|x| &x.code).collect::<Vec<_>>()));
+    let py = ath_emit::python(&c.module, &c.check, &c.codex, "inventories.ath").expect("emissão");
+    let path = scratch().join("inventories.py");
+    std::fs::write(&path, py).unwrap();
+    let world = json!({
+        "sinks": ["pay"],
+        "latency": { "pay": 0.0 },
+        "inventories": { "payees": ["GB29NWBK60161331926819", "SE3550000000054910000003", "GB29NWBK60161331926819"] },
+    });
+    let friend = json!({ "Pay": { "to": "GB29NWBK60161331926819", "amount": "10.00" } });
+    let attacker = json!({ "Pay": { "to": "US133000000121212121212", "amount": "0.01" } });
+    let mut heads = Vec::new();
+    for (tag, script) in [
+        ("conhecido", json!({ "m0": [friend.clone()] })),
+        ("injetado", json!({ "m0": [attacker.clone(), attacker.clone()] })),
+        ("injetado-depois-conhecido", json!({ "m0": [attacker, friend] })),
+    ] {
+        let case = Case {
+            name: format!("inventários/{tag}"),
+            agent: "A",
+            event: "go",
+            world: world.clone(),
+            models: script,
+            masked: false,
+            args: vec![],
+        };
+        let a = run_arx(&c, &case);
+        assert!(a
+            .journal
+            .contains(r#""inventories":{"payees":["GB29NWBK60161331926819","SE3550000000054910000003"]}"#));
+        heads.push(same(&c, &path, case));
+    }
+    heads.dedup();
+    assert_eq!(heads.len(), 3, "os três roteiros produzem journals distintos");
+}

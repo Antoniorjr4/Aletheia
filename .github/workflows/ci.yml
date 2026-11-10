@@ -38,6 +38,26 @@ jobs:
       - name: oráculos da M1 (régua canônica da Rev6 congelada + contextual da Rev7)
         run: python3 -m unittest discover -s bench/m1/tests -v
 
+  agentdojo:
+    # A ponte AgentDojo × Aletheia contra o pacote oficial, offline: modelo roteirizado e uma
+    # API compatível local. Nenhuma chamada sai para a rede e nenhuma cota é gasta.
+    name: AgentDojo oficial (ponte, offline)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: athc e o pacote oficial
+        run: |
+          cargo build --release --bin athc
+          ./target/release/athc check bench/agentdojo/banking.ath
+          python3 -m pip install --quiet "agentdojo==0.1.35"
+      - name: testes da ponte (suíte banking v1.2.2)
+        run: python3 -m unittest discover -s bench/agentdojo/tests -v
+
   lean:
     # O núcleo λ_Ath mecanizado: T1 (preservação e progresso, com capacidades lineares e
     # orçamento graduado), T2 (Cap[E] linear no avaliador canônico) e T3 (não-interferência robusta). `--wfail` reprova

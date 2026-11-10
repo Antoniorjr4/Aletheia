@@ -13,9 +13,20 @@ pub struct TrustedSnapshot {
     pub managed: Vec<String>,
     pub replicas: BTreeMap<String, i64>,
     pub cpu_pct: BTreeMap<String, i64>,
+    /// Inventários confiáveis nomeados (`s.inventory("k")`, `s.member("k", x)`), ordenados e
+    /// sem repetição. Um inventário ausente é vazio: a política falha fechado.
+    pub inventories: BTreeMap<String, Vec<String>>,
 }
 
 impl TrustedSnapshot {
+    pub fn inventory_text(&self, name: &str) -> String {
+        self.inventories.get(name).map(|v| v.join(", ")).unwrap_or_default()
+    }
+
+    pub fn member(&self, name: &str, x: &str) -> bool {
+        self.inventories.get(name).is_some_and(|v| v.iter().any(|s| s == x))
+    }
+
     pub fn managed_text(&self) -> String {
         self.managed.join(", ")
     }
@@ -134,6 +145,7 @@ pub struct SimWorld {
     sinks: Vec<String>,
     /// (ferramenta, argumentos) de cada chamada a um sumidouro, em ordem.
     pub sunk: Vec<(String, Vec<Value>)>,
+    inventories: BTreeMap<String, Vec<String>>,
 }
 
 fn key_of(args: &[Value]) -> Option<u64> {
@@ -221,6 +233,22 @@ impl SimWorld {
             }
         }
         w.initial = w.replicas.clone();
+        if let Some(m) = j.get("inventories") {
+            let obj = m.as_object().ok_or("`inventories` deve ser um objeto de listas")?;
+            for (k, v) in obj {
+                let mut items = Vec::new();
+                for x in v.as_array().ok_or("inventário deve ser uma lista")? {
+                    items.push(match x {
+                        Json::String(s) => s.clone(),
+                        Json::Number(n) => n.to_string(),
+                        _ => return Err(format!("item não textual no inventário `{k}`")),
+                    });
+                }
+                items.sort();
+                items.dedup();
+                w.inventories.insert(k.clone(), items);
+            }
+        }
         if let Some(list) = j.get("sinks") {
             let arr = list.as_array().ok_or("`sinks` deve ser uma lista de nomes de ferramenta")?;
             for v in arr {
@@ -317,6 +345,7 @@ impl Host for SimWorld {
             managed: self.managed.clone(),
             replicas: self.replicas.clone(),
             cpu_pct: self.cpu_pct.clone(),
+            inventories: self.inventories.clone(),
         }
     }
 

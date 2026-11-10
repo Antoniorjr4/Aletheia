@@ -71,6 +71,15 @@ class SimWorld:
         # Ferramentas sumidouro: aceitam qualquer argumento, devolvem () e só registram a chamada.
         # Servem aos programas do núcleo gerados pelo teste diferencial triplo.
         self.sinks = [str(s) for s in spec.get("sinks", [])]
+        # Inventários confiáveis nomeados: ordenados e sem repetição, como no ARX.
+        self.inventories = {}
+        for k, items in (spec.get("inventories") or {}).items():
+            vals = []
+            for x in items:
+                if isinstance(x, bool) or not isinstance(x, (str, int)):
+                    raise ValueError(f"item não textual no inventário `{k}`")
+                vals.append(x if isinstance(x, str) else str(x))
+            self.inventories[k] = sorted(set(vals))
         self.sunk: list = []
 
     def lat(self, tool: str) -> float:
@@ -162,7 +171,7 @@ class SimWorld:
 
     def trusted_snapshot(self) -> dict:
         return {"managed": list(self.managed), "replicas": dict(self.replicas),
-                "cpu_pct": dict(self.cpu_pct)}
+                "cpu_pct": dict(self.cpu_pct), "inventories": {k: list(v) for k, v in self.inventories.items()}}
 
     def state(self) -> dict:
         return {"replicas": dict(self.replicas), "restarts": dict(self.restarts), "outbox": list(self.outbox)}
