@@ -415,8 +415,7 @@ impl<'m> Gen<'m> {
             ExprKind::Call { callee, args } => self.call(callee, args)?,
             ExprKind::Method { recv, method, args } => {
                 if matches!(&recv.kind, ExprKind::Var(name) if name == "s") {
-                    let rendered: Vec<String> = args.iter().map(|a| self.expr(a))
-                        .collect::<Result<_, _>>()?;
+                    let rendered: Vec<String> = args.iter().map(|a| self.expr(a)).collect::<Result<_, _>>()?;
                     let builtin = match method.name.as_str() {
                         "managed" if rendered.is_empty() => "managed",
                         "telemetry" if rendered.is_empty() => "telemetry",

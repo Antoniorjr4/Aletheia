@@ -21,11 +21,15 @@ impl TrustedSnapshot {
     }
 
     pub fn telemetry_text(&self) -> String {
-        self.managed.iter().map(|d| {
-            let cpu = self.cpu_pct.get(d).map(|n| n.to_string()).unwrap_or_else(|| "n/d".into());
-            let n = self.replicas.get(d).copied().unwrap_or(0);
-            format!("{d}: cpu_pct={cpu}, replicas={n}")
-        }).collect::<Vec<_>>().join("; ")
+        self.managed
+            .iter()
+            .map(|d| {
+                let cpu = self.cpu_pct.get(d).map(|n| n.to_string()).unwrap_or_else(|| "n/d".into());
+                let n = self.replicas.get(d).copied().unwrap_or(0);
+                format!("{d}: cpu_pct={cpu}, replicas={n}")
+            })
+            .collect::<Vec<_>>()
+            .join("; ")
     }
 
     pub fn is_managed(&self, name: &str) -> bool {
@@ -35,11 +39,17 @@ impl TrustedSnapshot {
     /// Escalonamento exige telemetria independente, CPU alta e aumento limitado
     /// ao dobro da capacidade observada. Sem CPU observada: negar.
     pub fn scale_justified(&self, name: &str, to: i64) -> bool {
-        if !self.is_managed(name) { return false; }
+        if !self.is_managed(name) {
+            return false;
+        }
         match (self.replicas.get(name), self.cpu_pct.get(name)) {
             (Some(&current), Some(&cpu)) => {
-                (0..=100).contains(&cpu) && cpu >= 85 &&
-                current > 0 && to > current && to <= current.saturating_mul(2) && to <= 64
+                (0..=100).contains(&cpu)
+                    && cpu >= 85
+                    && current > 0
+                    && to > current
+                    && to <= current.saturating_mul(2)
+                    && to <= 64
             }
             _ => false,
         }
