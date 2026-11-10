@@ -172,6 +172,85 @@ class RunnerTests(unittest.TestCase):
             self.assertIn("0 execução(ões)", again.stdout)
         srv.shutdown()
 
+    def _fake(self):
+        srv = HTTPServer(("127.0.0.1", 0), FakeGroq)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        env = dict(os.environ, OPENAI_API_KEY="local", OPENAI_BASE_URL=f"http://127.0.0.1:{srv.server_port}/v1",
+                   ALETHEIA_REASONING_EFFORT="none", NO_PROXY="127.0.0.1", no_proxy="127.0.0.1")
+        return srv, env
+
+    def _cmd(self, d, *extra):
+        # preço fictício de US$ 100 por milhão: cada chamada do servidor local (100 + 10 tokens)
+        # custa US$ 0,011
+        return [sys.executable, str(HERE / "run.py"), "--logdir", d, "--athc", ATHC, "--model", "openai/gpt-oss-120b",
+                "--user-tasks", "user_task_4,user_task_7", "--injection-tasks", "injection_task_0",
+                "--price-in", "100", "--price-out", "100", *extra]
+
+    @staticmethod
+    def _ledger(d) -> list:
+        return [json.loads(x) for x in (Path(d) / "spend.jsonl").read_text().splitlines()]
+
+    def test_dollar_cap_stops_mid_task_without_a_verdict(self):
+        """O teto alcançado no meio de uma tarefa barra a requisição seguinte; a tarefa fica sem
+        log oficial (sem veredito falso) e roda inteira quando houver orçamento."""
+        srv, env = self._fake()
+        with tempfile.TemporaryDirectory() as d:
+            r = subprocess.run(self._cmd(d, "--pipelines", "aletheia", "--max-usd", "0.010"),
+                               env=env, capture_output=True, text=True, timeout=600)
+            self.assertEqual(r.returncode, 0, r.stderr[-2000:])
+            self.assertIn("0 execução(ões)", r.stdout)
+            last = json.loads((Path(d) / "last_round.json").read_text())
+            self.assertTrue(last["reason"].startswith("orçamento: teto da rodada"), last)
+            # uma chamada saiu (US$ 0,011), a segunda foi barrada antes de sair
+            ledger = self._ledger(d)
+            self.assertEqual(len(ledger), 1)
+            self.assertEqual(ledger[0]["tok_source"], "server")
+            self.assertAlmostEqual(last["spend"]["usd_round"], 0.011, places=6)
+            # a AgentDojo grava um log parcial da tarefa interrompida, sem veredito: nem
+            # utilidade nem segurança. A matriz não o conta e a retomada o refaz
+            for log in Path(d).glob("aletheia-gpt-oss-120b/banking/*/*/*.json"):
+                j = json.loads(log.read_text())
+                self.assertNotIn("utility", j)
+                self.assertNotIn("security", j)
+            m = json.loads((Path(d) / "matrix.json").read_text())
+            self.assertEqual(m["coverage"]["benign"][0], 0)
+            again = subprocess.run(self._cmd(d, "--pipelines", "aletheia", "--max-usd", "1"),
+                                   env=env, capture_output=True, text=True, timeout=600)
+            self.assertIn("4 execução(ões)", again.stdout)
+            self.assertEqual(json.loads((Path(d) / "last_round.json").read_text())["reason"], "completa")
+        srv.shutdown()
+
+    def test_dollar_cap_reserves_before_each_task_and_accumulates(self):
+        """Uma tarefa só começa se a reserva cabe no teto; o teto acumulado soma o livro-razão
+        de todas as rodadas do logdir, e cada execução registra o seu custo."""
+        srv, env = self._fake()
+        with tempfile.TemporaryDirectory() as d:
+            r = subprocess.run(self._cmd(d, "--max-usd", "0.05"), env=env, capture_output=True, text=True, timeout=600)
+            self.assertEqual(r.returncode, 0, r.stderr[-2000:])
+            # baseline 0,011 · aletheia 0,022 · baseline 0,011; a reserva do próximo Aletheia
+            # (1,5 × 0,022) não cabe no que resta
+            self.assertIn("3 execução(ões)", r.stdout)
+            last = json.loads((Path(d) / "last_round.json").read_text())
+            self.assertTrue(last["reason"].startswith("orçamento: gasto"), last)
+            spent = sum(x["usd"] for x in self._ledger(d))
+            self.assertAlmostEqual(spent, 0.044, places=6)
+            self.assertAlmostEqual(last["spend"]["usd_total"], spent, places=6)
+            usage = [json.loads(x) for x in (Path(d) / "usage.jsonl").read_text().splitlines()]
+            self.assertAlmostEqual(sum(u["usd"] for u in usage), spent, places=6)
+            # o acumulado vale entre rodadas: com teto total de 0,05, a rodada nova não começa
+            again = subprocess.run(self._cmd(d, "--max-usd", "1", "--max-usd-total", "0.05"),
+                                   env=env, capture_output=True, text=True, timeout=600)
+            self.assertIn("0 execução(ões)", again.stdout)
+            self.assertEqual(len(self._ledger(d)), 4)
+        srv.shutdown()
+
+    def test_unknown_model_needs_an_explicit_price(self):
+        with tempfile.TemporaryDirectory() as d:
+            r = subprocess.run([sys.executable, str(HERE / "run.py"), "--logdir", d, "--athc", ATHC,
+                                "--model", "acme/unpriced"], capture_output=True, text=True, timeout=600)
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn("sem preço de lista", r.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

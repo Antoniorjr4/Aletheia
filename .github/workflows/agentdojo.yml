@@ -6,6 +6,8 @@ name: AgentDojo oficial (Groq)
 # log oficial completo não roda de novo, e cota esgotada encerra a rodada sem gravar falha.
 # Os logs, os journals do Aletheia e a matriz são versionados no próprio branch.
 # A chave fica no segredo de repositório GROQ_API_KEY e nunca entra nos resultados.
+# Gasto: cada chamada vai para o livro-razão spend.jsonl, e a rodada para sozinha no teto em
+# dólar (max_usd por rodada, max_usd_total acumulado), além do teto em minutos.
 
 on:
   workflow_dispatch:
@@ -25,12 +27,20 @@ on:
       injection_tasks:
         description: "Subconjunto de tarefas de injeção (vírgulas; vazio = todas)"
         default: ""
+      max_usd:
+        description: "Teto de gasto desta rodada, em US$ (tokens medidos × preço de lista)"
+        default: "0.10"
+      max_usd_total:
+        description: "Teto acumulado no livro-razão spend.jsonl do logdir, em US$"
+        default: "1.00"
 
 permissions:
   contents: write
 
+# Um só grupo para todos os workflows que gastam na Groq: nunca duas rodadas pagas ao mesmo
+# tempo (Rev10, regra 9).
 concurrency:
-  group: agentdojo-${{ inputs.model }}
+  group: groq-paid
   cancel-in-progress: false
 
 defaults:
@@ -71,7 +81,8 @@ jobs:
       - name: rodada (retomável)
         run: |
           args=(--suite banking --model "$MODEL" --pipelines "${{ inputs.pipelines }}"
-                --logdir "$LOGDIR" --athc target/release/athc --max-minutes "${{ inputs.max_minutes }}")
+                --logdir "$LOGDIR" --athc target/release/athc --max-minutes "${{ inputs.max_minutes }}"
+                --max-usd "${{ inputs.max_usd }}" --max-usd-total "${{ inputs.max_usd_total }}")
           [ -n "${{ inputs.user_tasks }}" ] && args+=(--user-tasks "${{ inputs.user_tasks }}")
           [ -n "${{ inputs.injection_tasks }}" ] && args+=(--injection-tasks "${{ inputs.injection_tasks }}")
           set +e

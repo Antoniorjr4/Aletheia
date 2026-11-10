@@ -58,18 +58,120 @@ def emit_program(athc: str, suite: str, model: str, out_dir: Path) -> Path:
     return py
 
 
-class Usage:
-    """Soma o `usage` de cada resposta do provedor, por tarefa."""
+# Preço de lista da Groq, em US$ por milhão de tokens (entrada, saída), conferido em 10/11/2026
+# na tabela de modelos da GroqCloud. O custo que o executor calcula é tokens medidos pelo
+# servidor × preço de lista: descontos de cache não entram, e o valor faturado de fato é o do
+# painel da Groq. `--price-in` / `--price-out` sobrepõem a tabela.
+PRICES = {
+    "openai/gpt-oss-120b": (0.15, 0.60),
+    "openai/gpt-oss-20b": (0.075, 0.30),
+}
 
-    def __init__(self):
+
+class BudgetExhausted(RuntimeError):
+    """O teto em dólar foi atingido: a requisição não sai, e a tarefa em andamento fica sem
+    veredito, como numa cota esgotada (roda de novo na próxima rodada)."""
+
+
+class Spend:
+    """O livro-razão do gasto e o teto em dólar (Rev10, regra 7).
+
+    Cada chamada ao modelo acrescenta uma linha a `spend.jsonl` antes de qualquer outra coisa:
+    tokens, origem da contagem (`server`, do `usage` da resposta, ou `estimate`, 4 caracteres
+    por token quando a resposta não traz `usage`) e custo. O arquivo sobrevive a uma rodada
+    interrompida e é a base do teto acumulado entre rodadas. Antes de cada requisição, `guard`
+    recusa se o gasto da rodada ou o acumulado já alcançou o teto, então o excesso máximo é o
+    de uma requisição.
+    """
+
+    def __init__(self, path: Path, price_in: float, price_out: float, max_round: float, max_total: float):
+        self.path, self.price_in, self.price_out = path, price_in, price_out
+        self.max_round, self.max_total = max_round, max_total
+        self.before = self.total_in(path)
+        self.round = {"server": 0.0, "estimate": 0.0}
+        self.context: dict = {}
+
+    @staticmethod
+    def total_in(path: Path) -> float:
+        if not path.exists():
+            return 0.0
+        return sum(json.loads(line)["usd"] for line in path.read_text(encoding="utf-8").splitlines() if line.strip())
+
+    def cost(self, tok_in: int, tok_out: int) -> float:
+        return (tok_in * self.price_in + tok_out * self.price_out) / 1e6
+
+    @property
+    def spent_round(self) -> float:
+        return self.round["server"] + self.round["estimate"]
+
+    @property
+    def spent_total(self) -> float:
+        return self.before + self.spent_round
+
+    def guard(self) -> None:
+        if self.spent_round >= self.max_round:
+            raise BudgetExhausted(f"teto da rodada: US$ {self.spent_round:.4f} ≥ US$ {self.max_round:.2f}")
+        if self.spent_total >= self.max_total:
+            raise BudgetExhausted(f"teto acumulado: US$ {self.spent_total:.4f} ≥ US$ {self.max_total:.2f}")
+
+    def charge(self, tok_in: int, tok_out: int, source: str) -> None:
+        usd = self.cost(tok_in, tok_out)
+        self.round[source] += usd
+        line = {"run_id": os.environ.get("GITHUB_RUN_ID"), **self.context, "tok_in": tok_in, "tok_out": tok_out,
+                "tok_source": source, "usd": round(usd, 8)}
+        with self.path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(line, sort_keys=True) + "\n")
+
+    def summary(self) -> dict:
+        return {"usd_round_server": round(self.round["server"], 6), "usd_round_estimate": round(self.round["estimate"], 6),
+                "usd_round": round(self.spent_round, 6), "usd_total": round(self.spent_total, 6),
+                "max_usd_round": self.max_round, "max_usd_total": self.max_total,
+                "price_per_mtok": [self.price_in, self.price_out]}
+
+
+class Usage:
+    """Soma o `usage` de cada resposta do provedor, por tarefa, e lança cada chamada no
+    livro-razão `Spend` (sem ele, nos testes, só conta)."""
+
+    def __init__(self, spend: Spend | None = None):
+        self.spend = spend
         self.tok_in = self.tok_out = self.calls = 0
+        self.est_in = self.est_out = 0
         self.errors: list = []
+
+    def guard(self) -> None:
+        if self.spend is not None:
+            self.spend.guard()
+
+    def add(self, tok_in: int | None, tok_out: int | None, est_in: int = 0, est_out: int = 0) -> None:
+        """Uma chamada: com `usage` do servidor (`tok_in`/`tok_out`) ou sem ele (estimativa)."""
+        self.calls += 1
+        if tok_in is None and tok_out is None:
+            self.est_in += est_in
+            self.est_out += est_out
+            if self.spend is not None:
+                self.spend.charge(est_in, est_out, "estimate")
+            return
+        self.tok_in += tok_in or 0
+        self.tok_out += tok_out or 0
+        if self.spend is not None:
+            self.spend.charge(tok_in or 0, tok_out or 0, "server")
 
     def reset(self) -> dict:
         r = {"tok_in": self.tok_in, "tok_out": self.tok_out, "calls": self.calls, "api_errors": self.errors}
+        if self.est_in or self.est_out:
+            r["est_in"], r["est_out"] = self.est_in, self.est_out
+        if self.spend is not None and self.calls:
+            r["usd"] = round(self.spend.cost(self.tok_in + self.est_in, self.tok_out + self.est_out), 8)
         self.tok_in = self.tok_out = self.calls = 0
+        self.est_in = self.est_out = 0
         self.errors = []
         return r
+
+
+def est_tokens(text: str) -> int:
+    """A estimativa do runtime quando o servidor não informa: 4 caracteres por token."""
+    return (len(text) + 3) // 4
 
 
 def groq_llm(model: str, usage: Usage):
@@ -106,6 +208,7 @@ def groq_llm(model: str, usage: Usage):
         def query(self, query, runtime, env, messages=(), extra_args={}):
             msgs = [flat(_message_to_openai(m, self.model)) for m in messages]
             tools = [_function_to_openai(t) for t in runtime.functions.values()]
+            usage.guard()
             try:
                 completion = self.client.chat.completions.create(
                     model=self.model,
@@ -118,16 +221,18 @@ def groq_llm(model: str, usage: Usage):
             except openai.BadRequestError as e:
                 # o modelo gerou uma chamada de ferramenta que o servidor recusou (ex.:
                 # `tool_use_failed`): a execução do baseline termina aqui, registrada
-                usage.calls += 1
+                # sem `usage` na resposta: a entrada é estimada pelo tamanho do pedido
+                usage.add(None, None, est_tokens(json.dumps(msgs) + json.dumps(tools)), 0)
                 usage.errors.append(str(getattr(e, "code", None) or e)[:200])
                 out = ChatAssistantMessage(
                     role="assistant", content=[text_content_block_from_string(f"API error: {e}")], tool_calls=None
                 )
                 return query, runtime, env, [*messages, out], extra_args
             if completion.usage is not None:
-                usage.tok_in += completion.usage.prompt_tokens or 0
-                usage.tok_out += completion.usage.completion_tokens or 0
-            usage.calls += 1
+                usage.add(completion.usage.prompt_tokens or 0, completion.usage.completion_tokens or 0)
+            else:
+                usage.add(None, None, est_tokens(json.dumps(msgs) + json.dumps(tools)),
+                          est_tokens(completion.choices[0].message.model_dump_json()))
             out = _openai_to_assistant_message(completion.choices[0].message)
             return query, runtime, env, [*messages, out], extra_args
 
@@ -164,14 +269,21 @@ def aletheia_pipeline(suite: str, model: str, program: Path, journal_dir: Path, 
 
         class Counting:
             def post(self, url, key, body):
+                usage.guard()
                 r = inner.post(url, key, body)
-                usage.calls += 1
                 try:
-                    u = json.loads(r.body).get("usage") or {}
-                    usage.tok_in += u.get("prompt_tokens") or 0
-                    usage.tok_out += u.get("completion_tokens") or 0
+                    u = json.loads(r.body).get("usage")
                 except (ValueError, AttributeError):
-                    pass
+                    u = None
+                if isinstance(u, dict):
+                    usage.add(u.get("prompt_tokens") or 0, u.get("completion_tokens") or 0)
+                elif r.status == 429:
+                    # recusado por limite de taxa antes de gerar: não conta como gasto
+                    usage.calls += 1
+                else:
+                    # ex.: 400 `json_validate_failed`, que não traz `usage`: estimativa
+                    usage.add(None, None, est_tokens(body if isinstance(body, str) else body.decode()),
+                              est_tokens(r.body or ""))
                 return r
 
             def live(self):
@@ -204,7 +316,17 @@ def main() -> int:
     ap.add_argument("--user-tasks", default=None, help="subconjunto (vírgulas), para ensaios")
     ap.add_argument("--injection-tasks", default=None, help="subconjunto (vírgulas), para ensaios")
     ap.add_argument("--no-attacks", action="store_true")
+    ap.add_argument("--max-usd", type=float, default=0.10,
+                    help="teto de gasto desta rodada, em US$ (tokens medidos × preço de lista)")
+    ap.add_argument("--max-usd-total", type=float, default=1.00,
+                    help="teto acumulado no livro-razão spend.jsonl do logdir, em US$")
+    ap.add_argument("--price-in", type=float, default=None, help="US$ por milhão de tokens de entrada")
+    ap.add_argument("--price-out", type=float, default=None, help="US$ por milhão de tokens de saída")
     args = ap.parse_args()
+    if args.price_in is None or args.price_out is None:
+        if args.model not in PRICES:
+            raise SystemExit(f"sem preço de lista para {args.model}: passe --price-in e --price-out")
+        args.price_in, args.price_out = (args.price_in or PRICES[args.model][0]), (args.price_out or PRICES[args.model][1])
 
     from agentdojo import models as ad_models
     from agentdojo.attacks.attack_registry import load_attack
@@ -228,7 +350,8 @@ def main() -> int:
     # tabela do AgentDojo, o nome genérico que a própria tabela usa para modelos abertos.
     ad_models.MODEL_NAMES.setdefault(short, "AI assistant")
 
-    usage = Usage()
+    spend = Spend(logdir / "spend.jsonl", args.price_in, args.price_out, args.max_usd, args.max_usd_total)
+    usage = Usage(spend)
     pipelines = {}
     agent = None
     for name in args.pipelines.split(","):
@@ -268,12 +391,32 @@ def main() -> int:
 
     state = {"done": 0, "reason": "completa"}
 
+    # A reserva antes de cada tarefa: 1,5 × o maior custo por execução já medido no pipeline
+    # (no mínimo US$ 0,005). Uma tarefa só começa se cabe inteira no que resta do teto.
+    worst: dict = {}
+    if usage_log.exists():
+        for line in usage_log.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                u = json.loads(line)
+                c = spend.cost(u["tok_in"] + u.get("est_in", 0), u["tok_out"] + u.get("est_out", 0))
+                worst[u["pipeline"]] = max(worst.get(u["pipeline"], 0.0), c)
+
+    def reserve(pname: str) -> float:
+        return max(0.005, 1.5 * worst.get(pipelines[pname].name, 0.0))
+
     def run_all():
         for ut_id, inj_id in jobs:
             for pname, p in pipelines.items():
                 if time.monotonic() > deadline:
                     state["reason"] = "tempo"
                     return
+                r = reserve(pname)
+                if spend.spent_round + r > spend.max_round or spend.spent_total + r > spend.max_total:
+                    state["reason"] = (f"orçamento: gasto US$ {spend.spent_round:.4f} na rodada e "
+                                       f"US$ {spend.spent_total:.4f} acumulado; a próxima tarefa reserva US$ {r:.4f}")
+                    return
+                spend.context = {"pipeline": pipelines[pname].name, "user_task": ut_id,
+                                 "injection_task": inj_id or "none"}
                 if pname == "aletheia" and agent is not None:
                     agent.current = (ut_id, inj_id or "none")
                 usage.reset()
@@ -285,21 +428,29 @@ def main() -> int:
                     run_task_with_injection_tasks(
                         suite, p, ut, attacks[pname], logdir, False, [inj_id], BENCHMARK_VERSION
                     )
-                state["done"] += record(pname, ut_id, inj_id or "none", t0)
+                done = record(pname, ut_id, inj_id or "none", t0)
+                state["done"] += done
+                if done:
+                    u = json.loads(usage_log.read_text(encoding="utf-8").splitlines()[-1])
+                    worst[u["pipeline"]] = max(worst.get(u["pipeline"], 0.0), u.get("usd", 0.0))
 
     try:
         with OutputLogger(str(logdir), live=None):
             run_all()
+    except BudgetExhausted as e:
+        state["reason"] = f"orçamento: {e}"
     except (QuotaExhausted, *rate_errors) as e:
         state["reason"] = f"cota: {str(e)[:300]}"
     done, reason = state["done"], state["reason"]
     print(f"rodada encerrada ({reason}); {done} execução(ões) nesta rodada")
+    print("gasto: " + json.dumps(spend.summary()))
     from matrix import write_matrix
 
     # a matriz cobre a suíte inteira: a cobertura diz quanto dela já tem log completo
     m = write_matrix(logdir, suite, args.attack, [p.name for p in pipelines.values()],
                      ids(suite.user_tasks, None), ids(suite.injection_tasks, None))
-    (logdir / "last_round.json").write_text(json.dumps({"reason": reason, "executed": done}, indent=1) + "\n")
+    (logdir / "last_round.json").write_text(
+        json.dumps({"reason": reason, "executed": done, "spend": spend.summary()}, indent=1) + "\n")
     print(json.dumps(m["summary"], indent=1))
     return 0
 
