@@ -1,4 +1,16 @@
 {
- "reason": "cota: https://api.groq.com/openai/v1/chat/completions: HTTP 429: o provedor pediu 454 s de espera",
- "executed": 71
+ "reason": "completa",
+ "executed": 1,
+ "spend": {
+  "usd_round_server": 0.000401,
+  "usd_round_estimate": 0.0,
+  "usd_round": 0.000401,
+  "usd_total": 0.000401,
+  "max_usd_round": 0.02,
+  "max_usd_total": 1.0,
+  "price_per_mtok": [
+   0.15,
+   0.6
+  ]
+ }
 }

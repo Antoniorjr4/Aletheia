@@ -9,7 +9,7 @@
    16
   ],
   "attacked": [
-   19,
+   20,
    144
   ]
  },
@@ -54,20 +54,20 @@
     },
     "utility_under_attack": {
      "k": 3,
-     "n": 19,
-     "rate": 0.15789473684210525,
+     "n": 20,
+     "rate": 0.15,
      "ci95": [
-      0.0552,
-      0.3757
+      0.0524,
+      0.3604
      ]
     },
     "asr": {
-     "k": 15,
-     "n": 19,
-     "rate": 0.7894736842105263,
+     "k": 16,
+     "n": 20,
+     "rate": 0.8,
      "ci95": [
-      0.5667,
-      0.9149
+      0.584,
+      0.9193
      ]
     }
    },
@@ -109,20 +109,20 @@
    },
    "utility_under_attack": {
     "k": 6,
-    "n": 19,
-    "rate": 0.3157894736842105,
+    "n": 20,
+    "rate": 0.3,
     "ci95": [
-     0.1536,
-     0.5399
+     0.1455,
+     0.519
     ]
    },
    "asr": {
     "k": 0,
-    "n": 19,
+    "n": 20,
     "rate": 0.0,
     "ci95": [
      0.0,
-     0.1682
+     0.1611
     ]
    },
    "paired": {
@@ -137,20 +137,20 @@
     },
     "utility_under_attack": {
      "k": 6,
-     "n": 19,
-     "rate": 0.3157894736842105,
+     "n": 20,
+     "rate": 0.3,
      "ci95": [
-      0.1536,
-      0.5399
+      0.1455,
+      0.519
      ]
     },
     "asr": {
      "k": 0,
-     "n": 19,
+     "n": 20,
      "rate": 0.0,
      "ci95": [
       0.0,
-      0.1682
+      0.1611
      ]
     }
    },
@@ -166,7 +166,7 @@
  "aletheia": {
   "aborts": {},
   "journal": {
-   "endorse": 70,
+   "endorse": 72,
    "decode_reject": 1,
    "refine_exhausted": 1
   },
@@ -175,7 +175,7 @@
    "update_scheduled_transaction": 4,
    "update_user_info": 2,
    "update_password": 1,
-   "schedule_transaction": 2
+   "schedule_transaction": 3
   }
  },
  "usage": {
@@ -189,25 +189,25 @@
    "tok_per_run": 3632
   },
   "aletheia-gpt-oss-120b": {
-   "runs": 35,
-   "calls": 128,
-   "tok_in": 52385,
-   "tok_out": 10770,
-   "seconds": 291.5,
+   "runs": 36,
+   "calls": 130,
+   "tok_in": 53701,
+   "tok_out": 11109,
+   "seconds": 292.7,
    "api_errors": 0,
-   "tok_per_run": 1804
+   "tok_per_run": 1800
   }
  },
  "summary": {
   "baseline-gpt-oss-120b": {
    "utilidade": "68,8% (11/16; IC95 44–86%)",
-   "utilidade sob ataque": "15,8% (3/19; IC95 6–38%)",
-   "ASR": "78,9% (15/19; IC95 57–91%)"
+   "utilidade sob ataque": "15,0% (3/20; IC95 5–36%)",
+   "ASR": "80,0% (16/20; IC95 58–92%)"
   },
   "aletheia-gpt-oss-120b": {
    "utilidade": "75,0% (12/16; IC95 50–90%)",
-   "utilidade sob ataque": "31,6% (6/19; IC95 15–54%)",
-   "ASR": "0,0% (0/19; IC95 0–17%)"
+   "utilidade sob ataque": "30,0% (6/20; IC95 15–52%)",
+   "ASR": "0,0% (0/20; IC95 0–16%)"
   }
  }
 }
