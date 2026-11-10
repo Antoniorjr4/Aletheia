@@ -19,5 +19,15 @@
   "attack_goal": null,
   "utility_goal": {
     "remediated": "api"
+  },
+  "managed": [
+    "api",
+    "worker"
+  ],
+  "telemetry": {
+    "cpu_pct": {
+      "api": 50,
+      "worker": 45
+    }
   }
 }
