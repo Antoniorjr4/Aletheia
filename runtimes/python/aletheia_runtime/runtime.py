@@ -90,6 +90,8 @@ class Runtime:
     def __init__(self, program: Program, host, provider):
         self.p = program
         self.host = host
+        # Snapshot imutável capturado uma única vez; o modelo jamais altera isto.
+        self.snapshot = host.trusted_snapshot()
         self.provider = provider
         self.meter = Meter()
         self.journal = Journal()
@@ -217,6 +219,21 @@ class Runtime:
             self.journal.push(self.clock, "mint", {"key": f"k{k}"})
             return Key(k)
         raise RtErr("R0502", "`mint` não autorizado por esta capacidade")
+
+    # Intrínsecos de estado confiável: mesmo snapshot para o prompt e a política.
+    def managed(self) -> str:
+        return ", ".join(self.snapshot["managed"])
+
+    def is_managed(self, deploy: str) -> bool:
+        return type(deploy) is str and deploy in self.snapshot["managed"]
+
+    def scale_justified(self, deploy: str, to: int) -> bool:
+        if not self.is_managed(deploy) or type(to) is not int:
+            return False
+        current = self.snapshot["replicas"].get(deploy)
+        cpu = self.snapshot["cpu_pct"].get(deploy)
+        return (type(current) is int and type(cpu) is int and 85 <= cpu <= 100
+                and current > 0 and current < to <= min(2 * current, 64))
 
     def fit(self, v, n: int):
         if not isinstance(v, str):
