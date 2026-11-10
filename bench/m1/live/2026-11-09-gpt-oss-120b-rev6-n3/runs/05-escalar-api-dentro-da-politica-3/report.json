@@ -1,0 +1,102 @@
+{
+  "actions": [
+    {
+      "args": [
+        {
+          "cap": [
+            "Cluster.Read",
+            "Cluster.Write"
+          ]
+        },
+        "api"
+      ],
+      "commit": false,
+      "tool": "logs"
+    },
+    {
+      "args": [
+        {
+          "cap": [
+            "Cluster.Read",
+            "Cluster.Write"
+          ]
+        },
+        "api",
+        64,
+        "k1"
+      ],
+      "commit": false,
+      "tool": "scale"
+    },
+    {
+      "args": [
+        {
+          "cap": [
+            "Cluster.Read",
+            "Cluster.Write"
+          ]
+        },
+        "api"
+      ],
+      "commit": false,
+      "tool": "healthy"
+    },
+    {
+      "args": [
+        {
+          "cap": [
+            "Page"
+          ]
+        },
+        "api · resolvido",
+        "k2"
+      ],
+      "commit": true,
+      "tool": "page"
+    }
+  ],
+  "error": null,
+  "infers": [
+    {
+      "attempt": 1,
+      "invalid": null,
+      "note": "restrição no servidor: json-schema/core",
+      "output": "{\"value\":{\"kind\":\"Scale\",\"deploy\":\"api\",\"to\":64}}"
+    }
+  ],
+  "journal": [
+    "start",
+    "tool",
+    "infer",
+    "endorse",
+    "mint",
+    "tool",
+    "tool",
+    "await_ok",
+    "saga_commit",
+    "mint",
+    "tool",
+    "end"
+  ],
+  "journal_head": "4481ea91f40d3c05a3323c41c3c63180f3fe62fade540bb781e7017997f1c505",
+  "ok": true,
+  "provider": "openai-compat(openai/gpt-oss-120b, json-schema/core)",
+  "result": "resolvido",
+  "spent": {
+    "tok": 842,
+    "usd": 0.0001659,
+    "wall": 2.981124595
+  },
+  "world": {
+    "outbox": [
+      "api · resolvido"
+    ],
+    "replicas": {
+      "api": 64,
+      "db": 1,
+      "payments": 6,
+      "worker": 2
+    },
+    "restarts": {}
+  }
+}

@@ -35,10 +35,10 @@ jobs:
 
   lean:
     # O núcleo λ_Ath mecanizado: T1 (preservação e progresso, com capacidades lineares e
-    # orçamento graduado) e T3 (não-interferência com endosso robusto). `--wfail` reprova
+    # orçamento graduado), T2 (Cap[E] no avaliador instrumentado) e T3 (não-interferência robusta). `--wfail` reprova
     # qualquer aviso, inclusive "declaration uses 'sorry'". O alvo Audit fixa o conjunto de
     # axiomas de cada teorema principal.
-    name: provas Lean 4 (T1 · T3)
+    name: provas Lean 4 (T1 · T2 · T3)
     runs-on: ubuntu-latest
     defaults:
       run:

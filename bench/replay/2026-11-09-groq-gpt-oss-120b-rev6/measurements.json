@@ -1,0 +1,172 @@
+[
+  {
+    "journal": "remediate-saga-compensa.arx.live.jsonl",
+    "tok_reasoning": 39,
+    "tok_out": 67,
+    "tok_in": 626,
+    "contract_s": 2.67,
+    "latency_s": 0.577549515,
+    "attempt": 1,
+    "note": "restrição no servidor: json-schema/core"
+  },
+  {
+    "journal": "remediate-saga-compensa.arx.live.jsonl",
+    "tok_reasoning": 39,
+    "tok_out": 67,
+    "tok_in": 626,
+    "contract_s": 2.67,
+    "latency_s": 0.44181718,
+    "attempt": 2,
+    "note": "restrição no servidor: json-schema/core"
+  },
+  {
+    "journal": "remediate-saga-compensa.arx.live.jsonl",
+    "tok_reasoning": 39,
+    "tok_out": 67,
+    "tok_in": 626,
+    "contract_s": 2.67,
+    "latency_s": 0.571926473,
+    "attempt": 3,
+    "note": "restrição no servidor: json-schema/core"
+  },
+  {
+    "journal": "remediate-timeout-reconcilia.arx.live.jsonl",
+    "tok_reasoning": 39,
+    "tok_out": 67,
+    "tok_in": 626,
+    "contract_s": 2.67,
+    "latency_s": 0.302502896,
+    "attempt": 1,
+    "note": "restrição no servidor: json-schema/core"
+  },
+  {
+    "journal": "remediate-timeout-reconcilia.arx.live.jsonl",
+    "tok_reasoning": 39,
+    "tok_out": 67,
+    "tok_in": 626,
+    "contract_s": 2.67,
+    "latency_s": 0.596511912,
+    "attempt": 2,
+    "note": "restrição no servidor: json-schema/core"
+  },
+  {
+    "journal": "remediate-timeout-reconcilia.arx.live.jsonl",
+    "tok_reasoning": 39,
+    "tok_out": 67,
+    "tok_in": 626,
+    "contract_s": 2.67,
+    "latency_s": 0.688396414,
+    "attempt": 3,
+    "note": "restrição no servidor: json-schema/core"
+  },
+  {
+    "journal": "remediate-world.arx.live.jsonl",
+    "tok_reasoning": 39,
+    "tok_out": 67,
+    "tok_in": 626,
+    "contract_s": 2.67,
+    "latency_s": 0.720587525,
+    "attempt": 1,
+    "note": "restrição no servidor: json-schema/core"
+  },
+  {
+    "journal": "remediate-world.arx.live.jsonl",
+    "tok_reasoning": 39,
+    "tok_out": 67,
+    "tok_in": 626,
+    "contract_s": 2.67,
+    "latency_s": 0.58231064,
+    "attempt": 2,
+    "note": "restrição no servidor: json-schema/core"
+  },
+  {
+    "journal": "remediate-world.arx.live.jsonl",
+    "tok_reasoning": 39,
+    "tok_out": 67,
+    "tok_in": 626,
+    "contract_s": 2.67,
+    "latency_s": 0.510842975,
+    "attempt": 3,
+    "note": "restrição no servidor: json-schema/core"
+  },
+  {
+    "journal": "remediate-world.py.live.jsonl",
+    "tok_reasoning": 39,
+    "tok_out": 67,
+    "tok_in": 626,
+    "contract_s": 2.67,
+    "latency_s": 0.2991131550000006,
+    "attempt": 1,
+    "note": "restrição no servidor: json-schema/core"
+  },
+  {
+    "journal": "remediate-world.py.live.jsonl",
+    "tok_reasoning": 39,
+    "tok_out": 67,
+    "tok_in": 626,
+    "contract_s": 2.67,
+    "latency_s": 0.30575713199999655,
+    "attempt": 2,
+    "note": "restrição no servidor: json-schema/core"
+  },
+  {
+    "journal": "remediate-world.py.live.jsonl",
+    "tok_reasoning": 39,
+    "tok_out": 67,
+    "tok_in": 626,
+    "contract_s": 2.67,
+    "latency_s": 0.359774563000002,
+    "attempt": 3,
+    "note": "restrição no servidor: json-schema/core"
+  },
+  {
+    "journal": "rollout-saga-falha.arx.live.jsonl",
+    "tok_reasoning": 33,
+    "tok_out": 75,
+    "tok_in": 652,
+    "contract_s": 2.75,
+    "latency_s": 0.470255386,
+    "attempt": 1,
+    "note": "restrição no servidor: json-schema/core"
+  },
+  {
+    "journal": "rollout-saga-falha.arx.live.jsonl",
+    "tok_reasoning": 33,
+    "tok_out": 75,
+    "tok_in": 652,
+    "contract_s": 2.75,
+    "latency_s": 0.461837501,
+    "attempt": 2,
+    "note": "restrição no servidor: json-schema/core"
+  },
+  {
+    "journal": "rollout-world.arx.live.jsonl",
+    "tok_reasoning": 33,
+    "tok_out": 75,
+    "tok_in": 652,
+    "contract_s": 2.75,
+    "latency_s": 0.442144515,
+    "attempt": 1,
+    "note": "restrição no servidor: json-schema/core"
+  },
+  {
+    "journal": "rollout-world.arx.live.jsonl",
+    "tok_reasoning": 33,
+    "tok_out": 75,
+    "tok_in": 652,
+    "contract_s": 2.75,
+    "latency_s": 0.424500319,
+    "attempt": 2,
+    "note": "restrição no servidor: json-schema/core"
+  },
+  {
+    "journal": "rollout-world.py.live.jsonl",
+    "tok_reasoning": 31,
+    "tok_out": 71,
+    "tok_in": 652,
+    "contract_s": 2.71,
+    "latency_s": 0.5932997000000029,
+    "attempt": 1,
+    "note": "restrição no servidor: json-schema/core"
+  }
+]

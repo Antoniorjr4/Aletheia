@@ -1,0 +1,172 @@
+name: Rev6 · fogo real Groq GPT-OSS-120B
+
+# O token pertence apenas ao LAB. Nunca usar pull_request_target.
+on:
+  push:
+    branches: [rev6-dev]
+    paths: [.github/workflows/rev6-groq-120b.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fire:
+    name: M1 real + cassetes ARX/Python (120B)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      OPENAI_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      OPENAI_BASE_URL: https://api.groq.com/openai/v1
+      MODEL_INPUT: openai/gpt-oss-120b
+      NO_COLOR: "1"
+      PYTHONPATH: runtimes/python
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: rev6-dev
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Confirmar credencial do laboratório (sem expor segredo)
+        run: |
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "::error::GROQ_API_KEY não definido nos Secrets do Aletheia-Lab; execução live impossível."
+            exit 1
+          fi
+      - name: Confirmar permissão real do 120B na Groq
+        run: |
+          python3 bench/m1/probe.py --pick openai/gpt-oss-120b
+          grep -qx "ALETHEIA_MODEL=openai/gpt-oss-120b" "$GITHUB_ENV" || { echo "::error::modelo não confirmado"; exit 1; }
+      - name: Compilar compilador e runtime
+        run: cargo build --release --bin athc
+      - name: Preparar fonte versionada com contrato de modelo 120B
+        run: |
+          mkdir -p bench/replay/2026-11-09-groq-gpt-oss-120b-rev6
+          python3 - <<'PY'
+          from pathlib import Path
+          src=Path('examples/rollout.ath').read_text()
+          assert 'id        = "openai/gpt-oss-20b"' in src
+          src=src.replace('id        = "openai/gpt-oss-20b"', 'id        = "openai/gpt-oss-120b"')
+          src=src.replace('price_in  = 0.075', 'price_in  = 0.15')
+          src=src.replace('price_out = 0.30', 'price_out = 0.60')
+          Path('bench/replay/2026-11-09-groq-gpt-oss-120b-rev6/rollout-120b.ath').write_text(src)
+          PY
+      - name: Gravar chamadas HTTP reais no ARX (cenários com injeção)
+        shell: bash
+        run: |
+          set -uo pipefail
+          dir=bench/replay/2026-11-09-groq-gpt-oss-120b-rev6
+          mkdir -p "$dir"
+          record() {
+            local name="$1" src="$2" fixture="$3"
+            echo "::group::ARX $name"
+            ./target/release/athc run "$src" --provider openai --model "$ALETHEIA_MODEL" \
+              --world "examples/fixtures/$fixture.json" --arg '"api"' \
+              --record "$dir/$name.arx.cassette.json" --journal "$dir/$name.arx.live.jsonl" \
+              > "$dir/$name.arx.stdout.txt" 2>&1
+            local rc=$?
+            echo "$rc" > "$dir/$name.arx.exitcode"
+            test -s "$dir/$name.arx.cassette.json" || { cat "$dir/$name.arx.stdout.txt"; exit 1; }
+            ./target/release/athc verify-journal "$dir/$name.arx.live.jsonl" || exit 1
+            echo "::endgroup::"
+          }
+          record remediate-world examples/remediate.ath world
+          record remediate-saga-compensa examples/remediate.ath world-saga-compensa
+          record remediate-timeout-reconcilia examples/remediate.ath world-timeout-reconcilia
+          record rollout-world "$dir/rollout-120b.ath" world
+          record rollout-saga-falha "$dir/rollout-120b.ath" world-saga-falha
+      - name: Gravar chamadas HTTP reais no Python emitido (casos pares)
+        shell: bash
+        run: |
+          set -uo pipefail
+          dir=bench/replay/2026-11-09-groq-gpt-oss-120b-rev6
+          record_py() {
+            local name="$1" src="$2" fixture="$3"
+            ./target/release/athc emit "$src" --target py --out "$dir/$name.py"
+            python3 -m aletheia_runtime run "$dir/$name.py" \
+              --provider openai --model "$ALETHEIA_MODEL" --source "$src" \
+              --world "examples/fixtures/$fixture.json" --arg-json '"api"' \
+              --record "$dir/$name.py.cassette.json" --journal "$dir/$name.py.live.jsonl" \
+              > "$dir/$name.py.stdout.txt" 2>&1
+            local rc=$?
+            echo "$rc" > "$dir/$name.py.exitcode"
+            test -s "$dir/$name.py.cassette.json" || { cat "$dir/$name.py.stdout.txt"; exit 1; }
+            rm -f "$dir/$name.py"
+          }
+          record_py remediate-world examples/remediate.ath world
+          record_py rollout-world "$dir/rollout-120b.ath" world
+      - name: Replay e equivalência com o journal gravado (ARX e Python)
+        shell: bash
+        run: |
+          set -uo pipefail
+          dir=bench/replay/2026-11-09-groq-gpt-oss-120b-rev6
+          failed=0
+          for cass in "$dir"/*.cassette.json; do
+            echo "::group::$(basename "$cass")"
+            ./target/release/athc replay "$cass" --emit-py "$dir/_replay.py" || failed=1
+            python3 -m aletheia_runtime replay "$cass" "$dir/_replay.py" || failed=1
+            echo "::endgroup::"
+          done
+          rm -f "$dir/_replay.py"
+          exit "$failed"
+      - name: Métrica M1 — 120B em mundo simulado com ataques reais
+        run: |
+          mkdir -p bench/m1/live/2026-11-09-gpt-oss-120b-rev6
+          python3 bench/m1/run.py --live --reps 1 --athc target/release/athc \
+            --out bench/m1/live/2026-11-09-gpt-oss-120b-rev6
+      - name: Consolidar reasoning, latência, contrato Delta e M1 em Markdown
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json, pathlib, statistics
+          replay=pathlib.Path('bench/replay/2026-11-09-groq-gpt-oss-120b-rev6')
+          m1=pathlib.Path('bench/m1/live/2026-11-09-gpt-oss-120b-rev6')
+          if not replay.exists(): raise SystemExit(0)
+          rows=[]
+          for p in sorted(replay.glob('*.live.jsonl')):
+              for line in p.read_text().splitlines():
+                  try: e=json.loads(line)
+                  except ValueError: continue
+                  if e.get('kind') != 'infer': continue
+                  d=e.get('detail',{})
+                  rows.append({'journal':p.name,'tok_reasoning':d.get('tok_reasoning'),
+                    'tok_out':d.get('tok_out'),'tok_in':d.get('tok_in'),
+                    'contract_s':d.get('contract_s'),'latency_s':d.get('latency_s'),
+                    'attempt':d.get('attempt'),'note':d.get('note')})
+          (replay/'measurements.json').write_text(json.dumps(rows,indent=2,ensure_ascii=False))
+          report=['# Rev6 · Groq openai/gpt-oss-120b · medições reais',
+             '','Fonte: journal ARX e runtime Python, sem inferir amostras ausentes.',
+             '',f'Requisições com evento infer: {len(rows)}','']
+          for k in ('tok_reasoning','tok_out','tok_in','latency_s','contract_s'):
+              v=[x[k] for x in rows if isinstance(x.get(k),(float,int))]
+              report.append(f'- {k}: amostras={len(v)}, min={min(v) if v else "n/d"}, mediana={statistics.median(v) if v else "n/d"}, max={max(v) if v else "n/d"}')
+          report+=['','## M1']
+          f=m1/'results.json'
+          if f.exists():
+              raw=json.loads(f.read_text())
+              report+=['','```json',json.dumps(raw['summary'],ensure_ascii=False,indent=2),'```']
+          else: report+=['','M1 não concluído ou dados ausentes.']
+          report+=['','## Ressalvas','Uso de reasoning sem campo retornado pelo provedor = n/d. Os mundos remotos são fixtures de simulação; chamadas ao LLM são reais.']
+          (replay/'README.md').write_text('\n'.join(report)+'\n')
+          print('\n'.join(report))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rev6-groq-120b-${{ github.run_id }}
+          path: |
+            bench/replay/2026-11-09-groq-gpt-oss-120b-rev6
+            bench/m1/live/2026-11-09-gpt-oss-120b-rev6
+      - name: Publicar artefatos empíricos no rev6-dev (somente Lab)
+        if: success()
+        run: |
+          git config user.name "Aletheia-Lab CI"
+          git config user.email "aletheia-lab-ci@users.noreply.github.com"
+          git add bench/replay/2026-11-09-groq-gpt-oss-120b-rev6 bench/m1/live/2026-11-09-gpt-oss-120b-rev6
+          git diff --cached --quiet && exit 0
+          git commit -m "Rev6: real Groq 120B cassettes and M1 measurements [skip ci]"
+          git push origin HEAD:rev6-dev

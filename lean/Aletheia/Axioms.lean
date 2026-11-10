@@ -55,3 +55,10 @@ open Aletheia
 
 /-- info: 'Aletheia.Examples.looped_not_linear' does not depend on any axioms -/
 #guard_msgs in #print axioms Examples.looped_not_linear
+
+-- Rev6 T2: o kernel só pode usar os axiomas padrão, sem sorryAx.
+/-- info: 'Aletheia.T2_confinement' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms T2_confinement
+
+/-- info: 'Aletheia.T2_scoped' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms T2_scoped
