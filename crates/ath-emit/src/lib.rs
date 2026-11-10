@@ -413,12 +413,24 @@ impl<'m> Gen<'m> {
                 self.assign("t", format!("R.field({r}, {})", py_str(&f.name)))
             }
             ExprKind::Call { callee, args } => self.call(callee, args)?,
-            ExprKind::Method { recv, method, .. } => {
-                let r = self.expr(recv)?;
-                if method.name != "mint" {
-                    return Err(format!("método `{}` sem semântica no runtime", method.name));
+            ExprKind::Method { recv, method, args } => {
+                if matches!(&recv.kind, ExprKind::Var(name) if name == "s") {
+                    let rendered: Vec<String> = args.iter().map(|a| self.expr(a))
+                        .collect::<Result<_, _>>()?;
+                    let builtin = match method.name.as_str() {
+                        "managed" if rendered.is_empty() => "managed",
+                        "is_managed" if rendered.len() == 1 => "is_managed",
+                        "scale_justified" if rendered.len() == 2 => "scale_justified",
+                        _ => return Err(format!("método intrínseco s.{} inválido", method.name)),
+                    };
+                    self.assign("t", format!("R.{builtin}({})", rendered.join(", ")))
+                } else {
+                    let r = self.expr(recv)?;
+                    if method.name != "mint" {
+                        return Err(format!("método `{}` sem semântica no runtime", method.name));
+                    }
+                    self.assign("k", format!("R.mint({r})"))
                 }
-                self.assign("k", format!("R.mint({r})"))
             }
             ExprKind::Ctor { name, fields } => {
                 let ty = self.variants.get(&name.name).cloned().ok_or_else(|| format!("construtor `{}`", name.name))?;
