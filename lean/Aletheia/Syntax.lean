@@ -139,6 +139,9 @@ structure Sig where
   pol   : Nat → Val → Bool
   /-- a transição que a ferramenta `t` com argumento `v` causa no mundo -/
   step  : Nat → Val → World → World := fun _ _ w => w
+  /-- a ferramenta é `compensable` (entra no registro de compensação de uma saga). As
+  reversíveis e as leituras não entram, como no ARX -/
+  compensable : Nat → Bool := fun _ => true
   /-- a compensação de `t(v)` (`compensable by …`): o mundo depois dela, ou `none` se o
   provedor a recusou -/
   undo  : Nat → Val → World → Option World := fun _ _ w => some w

@@ -203,24 +203,26 @@ theorem confine {Γ : List Bind} {pc : Lab} {e : Exp} {τ : Ty} {ι : Lab} {β :
     obtain ⟨oa, ha, he⟩ := he
     obtain ⟨_, rfl⟩ := doInfer_ok he
     have := iha hpc ha; exact this
+  | await hl => intro hpc; exact absurd hl hpc
+  | atomic hl _ _ _ _ _ _ => intro hpc; exact absurd hl hpc
 
 /-! ## O teorema -/
 
 /-- **Teorema T3 (não-interferência com endosso robusto).** Duas execuções bem-sucedidas do
-mesmo programa bem tipado, a partir de ambientes baixo-equivalentes e com oráculos e tetos
+mesmo programa bem tipado e sem sagas, a partir de ambientes baixo-equivalentes e com oráculos e tetos
 arbitrários, produzem o mesmo traço e o mesmo resultado `⊒ Endorsed`, ou então divergem
 numa decisão de endosso. -/
 theorem noninterference {c₁ c₂ : Cfg} {Γ : List Bind} {pc : Lab} {e : Exp} {τ : Ty} {ι : Lab}
     {β : Budget} (h : HasType S Γ pc e τ ι β) :
-    ∀ {ρ₁ ρ₂ : List Val} {s₁ s₂ : St} {o₁ o₂ : Out}, LowEq Γ ρ₁ ρ₂ →
+    sagaFree e = true → ∀ {ρ₁ ρ₂ : List Val} {s₁ s₂ : St} {o₁ o₂ : Out}, LowEq Γ ρ₁ ρ₂ →
       eval S c₁ e ρ₁ s₁ = .ok o₁ → eval S c₂ e ρ₂ s₂ = .ok o₂ → NI ι o₁ o₂ := by
   induction h with
   | val _ =>
-    intro ρ₁ ρ₂ s₁ s₂ o₁ o₂ _ h₁ h₂
+    intro hsf ρ₁ ρ₂ s₁ s₂ o₁ o₂ _ h₁ h₂
     simp [eval] at h₁ h₂; subst h₁; subst h₂
     exact .inl ⟨rfl, fun _ => rfl⟩
   | var hk =>
-    intro ρ₁ ρ₂ s₁ s₂ o₁ o₂ hl h₁ h₂
+    intro hsf ρ₁ ρ₂ s₁ s₂ o₁ o₂ hl h₁ h₂
     simp only [eval] at h₁ h₂
     split at h₁
     next v₁ hρ₁ =>
@@ -234,24 +236,26 @@ theorem noninterference {c₁ c₂ : Cfg} {Γ : List Bind} {pc : Lab} {e : Exp} 
       next => cases h₂
     next => cases h₁
   | @let_ Γ pc x y τ₁ τ₂ ι₁ ι₂ β₁ β₂ _ _ ih₁ ih₂ =>
-    intro ρ₁ ρ₂ s₁ s₂ o₁ o₂ hl h₁ h₂
+    intro hsf ρ₁ ρ₂ s₁ s₂ o₁ o₂ hl h₁ h₂
     simp only [eval, bnd_eq_ok] at h₁ h₂
     obtain ⟨a₁, ha₁, b₁, hb₁, h₁⟩ := h₁
     obtain ⟨a₂, ha₂, b₂, hb₂, h₂⟩ := h₂
     cases h₁; cases h₂
-    have hA := ih₁ hl ha₁ ha₂
+    simp only [sagaFree, Bool.and_eq_true] at hsf
+    have hA := ih₁ hsf.1 hl ha₁ ha₂
     refine seq_agree hA.tr fun htr => ?_
     have hv : low ι₁ → a₁.v = a₂.v := by
       rcases hA with ⟨_, hv⟩ | ⟨pre, p, _, _, t₁, t₂, hne, e₁, e₂⟩
       · exact hv
       · rw [htr] at e₁; rw [e₁] at e₂; simp at e₂; exact absurd e₂.1 hne
-    exact ih₂ (.data hv hl) hb₁ hb₂
+    exact ih₂ hsf.2 (.data hv hl) hb₁ hb₂
   | @ite Γ pc cnd t f τ ιc ιt ιf βc βt βf _ ht hf ihc iht ihf =>
-    intro ρ₁ ρ₂ s₁ s₂ o₁ o₂ hl h₁ h₂
+    intro hsf ρ₁ ρ₂ s₁ s₂ o₁ o₂ hl h₁ h₂
     simp only [eval, bnd_eq_ok] at h₁ h₂
     obtain ⟨c₁', hc₁, h₁⟩ := h₁
     obtain ⟨c₂', hc₂, h₂⟩ := h₂
-    have hC := ihc hl hc₁ hc₂
+    simp only [sagaFree, Bool.and_eq_true] at hsf
+    have hC := ihc hsf.1.1 hl hc₁ hc₂
     split at h₁
     next b₁ hb₁ =>
       split at h₂
@@ -269,10 +273,10 @@ theorem noninterference {c₁ c₂ : Cfg} {Γ : List Bind} {pc : Lab} {e : Exp} 
           rw [hb₁, hb₂] at hv
           cases hv
           rcases cond_ok hx₁ with ⟨rfl, hx₁⟩ | ⟨rfl, hx₁⟩ <;> simp only [cond] at hx₂
-          · rcases iht hl hx₁ hx₂ with ⟨h, hv'⟩ | h
+          · rcases iht hsf.1.2 hl hx₁ hx₂ with ⟨h, hv'⟩ | h
             · exact .inl ⟨h, fun hι => hv' (low_meet.mp (low_meet.mp hι).2).1⟩
             · exact .inr h
-          · rcases ihf hl hx₁ hx₂ with ⟨h, hv'⟩ | h
+          · rcases ihf hsf.2 hl hx₁ hx₂ with ⟨h, hv'⟩ | h
             · exact .inl ⟨h, fun hι => hv' (low_meet.mp (low_meet.mp hι).2).2⟩
             · exact .inr h
         · -- condição não confiável: os ramos rodam sob pc Untrusted e não produzem eventos
@@ -289,12 +293,13 @@ theorem noninterference {c₁ c₂ : Cfg} {Γ : List Bind} {pc : Lab} {e : Exp} 
       next => cases h₂
     next => cases h₁
   | prim _ _ iha ihb =>
-    intro ρ₁ ρ₂ s₁ s₂ o₁ o₂ hl h₁ h₂
+    intro hsf ρ₁ ρ₂ s₁ s₂ o₁ o₂ hl h₁ h₂
     simp only [eval, bnd_eq_ok] at h₁ h₂
     obtain ⟨a₁, ha₁, b₁, hb₁, h₁⟩ := h₁
     obtain ⟨a₂, ha₂, b₂, hb₂, h₂⟩ := h₂
-    have hA := iha hl ha₁ ha₂
-    have hB := ihb hl hb₁ hb₂
+    simp only [sagaFree, Bool.and_eq_true] at hsf
+    have hA := iha hsf.1 hl ha₁ ha₂
+    have hB := ihb hsf.2 hl hb₁ hb₂
     split at h₁
     next x₁ y₁ hx₁ hy₁ =>
       split at h₂
@@ -314,11 +319,12 @@ theorem noninterference {c₁ c₂ : Cfg} {Γ : List Bind} {pc : Lab} {e : Exp} 
       next => cases h₂
     next => cases h₁
   | @endorse Γ pc p e d τ ιe ιd βe βd _ _ _ ihe ihd =>
-    intro ρ₁ ρ₂ s₁ s₂ o₁ o₂ hl h₁ h₂
+    intro hsf ρ₁ ρ₂ s₁ s₂ o₁ o₂ hl h₁ h₂
     simp only [eval, bnd_eq_ok] at h₁ h₂
     obtain ⟨e₁, he₁, h₁⟩ := h₁
     obtain ⟨e₂, he₂, h₂⟩ := h₂
-    have hE := (ihe hl he₁ he₂).tr
+    simp only [sagaFree, Bool.and_eq_true] at hsf
+    have hE := (ihe hsf.1 hl he₁ he₂).tr
     by_cases hp₁ : S.pol p e₁.v = true <;> by_cases hp₂ : S.pol p e₂.v = true <;>
       simp only [hp₁, hp₂, if_true, if_false, Bool.false_eq_true] at h₁ h₂
     · -- os dois aceitam
@@ -349,12 +355,12 @@ theorem noninterference {c₁ c₂ : Cfg} {Γ : List Bind} {pc : Lab} {e : Exp} 
         (by rcases hE with htr | hd
             · exact .inl (by rw [htr])
             · exact .inr (hd.append _ _)) fun _ => by
-          rcases ihd hl hx₁ hx₂ with ⟨h, hv⟩ | h
+          rcases ihd hsf.2 hl hx₁ hx₂ with ⟨h, hv⟩ | h
           · exact .inl ⟨h, fun hι => hv (low_meet.mp hι).2⟩
           · exact .inr h
       simpa using this
   | @act Γ pc t k a ιa βa E _ hk _ _ hla iha =>
-    intro ρ₁ ρ₂ s₁ s₂ o₁ o₂ hl h₁ h₂
+    intro hsf ρ₁ ρ₂ s₁ s₂ o₁ o₂ hl h₁ h₂
     simp only [eval, bnd_eq_ok] at h₁ h₂
     obtain ⟨a₁, ha₁, h₁⟩ := h₁
     obtain ⟨a₂, ha₂, h₂⟩ := h₂
@@ -363,15 +369,16 @@ theorem noninterference {c₁ c₂ : Cfg} {Γ : List Bind} {pc : Lab} {e : Exp} 
     have hcap := hl.cap_eq hk
     rw [hid₁, hid₂] at hcap
     cases hcap
-    rcases iha hl ha₁ ha₂ with ⟨htr, hv⟩ | hd
+    rcases iha hsf hl ha₁ ha₂ with ⟨htr, hv⟩ | hd
     · exact .inl ⟨by simp [htr, hv hla], fun _ => rfl⟩
     · exact .inr (hd.append _ _)
   | @for_ Γ pc n xs body τ τb ιx ιb βx βb _ hb ihx ihb =>
-    intro ρ₁ ρ₂ s₁ s₂ o₁ o₂ hl h₁ h₂
+    intro hsf ρ₁ ρ₂ s₁ s₂ o₁ o₂ hl h₁ h₂
     simp only [eval, bnd_eq_ok] at h₁ h₂
     obtain ⟨x₁, hx₁, h₁⟩ := h₁
     obtain ⟨x₂, hx₂, h₂⟩ := h₂
-    have hX := ihx hl hx₁ hx₂
+    simp only [sagaFree, Bool.and_eq_true] at hsf
+    have hX := ihx hsf.1 hl hx₁ hx₂
     split at h₁
     next vs₁ hvs₁ =>
       split at h₂
@@ -390,7 +397,7 @@ theorem noninterference {c₁ c₂ : Cfg} {Γ : List Bind} {pc : Lab} {e : Exp} 
           cases hv
           rcases loop_agree (f₁ := fun v s' => eval S c₁ body (v :: ρ₁) s')
               (f₂ := fun v s' => eval S c₂ body (v :: ρ₂) s') (fun v s₁ s₂ o₁ o₂ h₁ h₂ =>
-              (ihb (.data (fun _ => rfl) hl) h₁ h₂).tr) vs₁ _ _ r₁ r₂ hr₁ hr₂ with h | h
+              (ihb hsf.2 (.data (fun _ => rfl) hl) h₁ h₂).tr) vs₁ _ _ r₁ r₂ hr₁ hr₂ with h | h
           · exact .inl ⟨h, fun _ => rfl⟩
           · exact .inr h
         · -- lista não confiável: o corpo roda sob pc Untrusted e não produz eventos
@@ -401,21 +408,27 @@ theorem noninterference {c₁ c₂ : Cfg} {Γ : List Bind} {pc : Lab} {e : Exp} 
       next => cases h₂
     next => cases h₁
   | drop _ =>
-    intro ρ₁ ρ₂ s₁ s₂ o₁ o₂ _ h₁ h₂
+    intro hsf ρ₁ ρ₂ s₁ s₂ o₁ o₂ _ h₁ h₂
     simp only [eval] at h₁ h₂
     obtain ⟨_, _, _, rfl⟩ := doDrop_ok h₁
     obtain ⟨_, _, _, rfl⟩ := doDrop_ok h₂
     exact .inl ⟨rfl, fun _ => rfl⟩
   | infer _ iha =>
-    intro ρ₁ ρ₂ s₁ s₂ o₁ o₂ hl h₁ h₂
+    intro hsf ρ₁ ρ₂ s₁ s₂ o₁ o₂ hl h₁ h₂
     simp only [eval, bnd_eq_ok] at h₁ h₂
     obtain ⟨a₁, ha₁, h₁⟩ := h₁
     obtain ⟨a₂, ha₂, h₂⟩ := h₂
     obtain ⟨_, rfl⟩ := doInfer_ok h₁
     obtain ⟨_, rfl⟩ := doInfer_ok h₂
-    rcases (iha hl ha₁ ha₂).tr with h | h
+    rcases (iha hsf hl ha₁ ha₂).tr with h | h
     · exact .inl ⟨h, fun hι => absurd hι not_low_U⟩
     · exact .inr h
+  | await _ =>
+    intro _ ρ₁ ρ₂ s₁ s₂ o₁ o₂ _ h₁ h₂
+    simp only [eval] at h₁ h₂
+    split at h₁ <;> split at h₂ <;> cases h₁ <;> cases h₂
+    exact .inl ⟨rfl, fun _ => rfl⟩
+  | atomic _ _ _ _ _ _ _ => intro hsf; simp [sagaFree] at hsf
 
 /-! ## Consequências -/
 
@@ -446,11 +459,11 @@ mesmas capacidades e os mesmos argumentos, e devolvem o mesmo resultado `⊒ End
 isso vale por mais que as entradas `Untrusted` e as respostas dos modelos difiram. -/
 theorem robust_endorsement {c₁ c₂ : Cfg} {Γ : List Bind} {pc : Lab} {e : Exp} {τ : Ty}
     {ι : Lab} {β : Budget} {ρ₁ ρ₂ : List Val} {s₁ s₂ : St} {o₁ o₂ : Out}
-    (h : HasType S Γ pc e τ ι β) (hl : LowEq Γ ρ₁ ρ₂)
+    (h : HasType S Γ pc e τ ι β) (hsf : sagaFree e = true) (hl : LowEq Γ ρ₁ ρ₂)
     (h₁ : eval S c₁ e ρ₁ s₁ = .ok o₁) (h₂ : eval S c₂ e ρ₂ s₂ = .ok o₂)
     (hend : endorsements o₁.tr = endorsements o₂.tr) :
     o₁.tr = o₂.tr ∧ actions o₁.tr = actions o₂.tr ∧ (low ι → o₁.v = o₂.v) := by
-  rcases noninterference h hl h₁ h₂ with ⟨htr, hv⟩ | hd
+  rcases noninterference h hsf hl h₁ h₂ with ⟨htr, hv⟩ | hd
   · exact ⟨htr, by rw [htr], hv⟩
   · exact absurd hend hd.endorsements_ne
 
@@ -458,11 +471,11 @@ theorem robust_endorsement {c₁ c₂ : Cfg} {Γ : List Bind} {pc : Lab} {e : Ex
 do traço é idêntica nas duas execuções. -/
 theorem actions_agree_until_endorsement {c₁ c₂ : Cfg} {Γ : List Bind} {pc : Lab} {e : Exp}
     {τ : Ty} {ι : Lab} {β : Budget} {ρ₁ ρ₂ : List Val} {s₁ s₂ : St} {o₁ o₂ : Out}
-    (h : HasType S Γ pc e τ ι β) (hl : LowEq Γ ρ₁ ρ₂)
+    (h : HasType S Γ pc e τ ι β) (hsf : sagaFree e = true) (hl : LowEq Γ ρ₁ ρ₂)
     (h₁ : eval S c₁ e ρ₁ s₁ = .ok o₁) (h₂ : eval S c₂ e ρ₂ s₂ = .ok o₂) :
     o₁.tr = o₂.tr ∨ ∃ pre p r₁ r₂ t₁ t₂, r₁ ≠ r₂ ∧
       o₁.tr = pre ++ Ev.endorse p r₁ :: t₁ ∧ o₂.tr = pre ++ Ev.endorse p r₂ :: t₂ := by
-  rcases noninterference h hl h₁ h₂ with ⟨htr, _⟩ | hd
+  rcases noninterference h hsf hl h₁ h₂ with ⟨htr, _⟩ | hd
   · exact .inl htr
   · exact .inr hd
 
@@ -472,12 +485,12 @@ duas execuções. A conclusão do T3 vale, portanto, sem hipótese sobre o resul
 theorem noninterference_total {c₁ c₂ : Cfg} (hO₁ : c₁.oracle.Ok) (hO₂ : c₂.oracle.Ok)
     {Γ : List Bind} {pc : Lab} {e : Exp} {τ : Ty} {ι : Lab} {β : Budget}
     {ρ₁ ρ₂ : List Val} {s₁ s₂ : St} (h : HasType S Γ pc e τ ι β) (hlin : Linear Γ e)
-    (h0₁ : Start c₁.grants Γ ρ₁ s₁) (h0₂ : Start c₂.grants Γ ρ₂ s₂) (hB₁ : s₁.spent + β ≤ c₁.limit)
+    (hsf : sagaFree e = true) (hg : Guarded e) (h0₁ : Start c₁.grants Γ ρ₁ s₁) (h0₂ : Start c₂.grants Γ ρ₂ s₂) (hB₁ : s₁.spent + β ≤ c₁.limit)
     (hB₂ : s₂.spent + β ≤ c₂.limit) (hl : LowEq Γ ρ₁ ρ₂) :
     ∃ o₁ o₂, eval S c₁ e ρ₁ s₁ = .ok o₁ ∧ eval S c₂ e ρ₂ s₂ = .ok o₂ ∧ NI ι o₁ o₂ := by
-  obtain ⟨o₁, h₁, _⟩ := soundness hO₁ h hlin h0₁ hB₁
-  obtain ⟨o₂, h₂, _⟩ := soundness hO₂ h hlin h0₂ hB₂
-  exact ⟨o₁, o₂, h₁, h₂, noninterference h hl h₁ h₂⟩
+  obtain ⟨o₁, h₁, _⟩ := soundness hO₁ h hlin hg h0₁ hB₁
+  obtain ⟨o₂, h₂, _⟩ := soundness hO₂ h hlin hg h0₂ hB₂
+  exact ⟨o₁, o₂, h₁, h₂, noninterference h hsf hl h₁ h₂⟩
 
 /-- Todo endosso aceito num traço satisfaz a política auditada que o aceitou. -/
 def PolicyOk (S : Sig) (tr : List Ev) : Prop := ∀ p v, Ev.endorse p (some v) ∈ tr → S.pol p v = true
@@ -512,6 +525,7 @@ theorem policy_preserves : Preserves S c True (fun _ _ tr => PolicyOk S tr) wher
   drop _ := PolicyOk.nil
   infer := PolicyOk.nil
   commit _ := fun h => h
+  revoke _ := fun _ _ _ h => h
   abort _ := fun q r p h => by
     rw [List.append_assoc]
     refine h.append ?_

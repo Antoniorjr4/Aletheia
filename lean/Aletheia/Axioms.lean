@@ -105,3 +105,29 @@ open Aletheia
 
 /-- info: 'Aletheia.SagaExample.saga_restores' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms SagaExample.saga_restores
+
+/-! ## Sagas na tipagem: T1, T2 e T3 sobre `await` e `atomic` -/
+
+/-- info: 'Aletheia.soundness_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms soundness_total
+
+/-- info: 'Aletheia.guarded_no_timeout' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms guarded_no_timeout
+
+/-- info: 'Aletheia.Partial.exit' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Partial.exit
+
+/-- info: 'Aletheia.effects_lexical_total' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms effects_lexical_total
+
+/-- info: 'Aletheia.confine_w' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms confine_w
+
+/-- info: 'Aletheia.noninterference_saga' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms noninterference_saga
+
+/-- info: 'Aletheia.noninterference_saga_ok' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms noninterference_saga_ok
+
+/-- info: 'Aletheia.noninterference_saga_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms noninterference_saga_total

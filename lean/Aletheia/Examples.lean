@@ -192,7 +192,7 @@ theorem fits : s₀.spent + βR ≤ limit := by
 
 /-- Para qualquer resposta do modelo, a remediação executa sem erro e dentro do orçamento. -/
 theorem remediate_runs (n : Int) : ∀ err, eval S (cfg n) remediate ρ₀ s₀ ≠ .error err :=
-  progress (c := cfg n) (canned_ok n) remediate_typed remediate_linear start₀ fits
+  progress (c := cfg n) (canned_ok n) remediate_typed remediate_linear rfl start₀ fits
 
 /-- T2 aplicado: a ação usou `Cap[Cluster.Write]` léxica e concedida, e a capacidade 7 foi
 consumida exatamente uma vez, para qualquer resposta do modelo. -/
@@ -200,7 +200,7 @@ theorem remediate_T2 (n : Int) :
     ∃ o new, eval S (cfg n) remediate ρ₀ s₀ = .ok o ∧ Lexical S Γ ρ₀ o.tr ∧
       Granted' S grants o.tr ∧ o.st.used = new ++ s₀.used ∧ new.Nodup ∧
       ∀ id : Nat, id ∈ new ↔ ∃ k : Nat, ρ₀[k]? = some (Val.cap id) :=
-  T2 (c := cfg n) (canned_ok n) remediate_typed remediate_linear start₀ fits
+  T2 (c := cfg n) (canned_ok n) remediate_typed remediate_linear rfl start₀ fits
 
 /-- Com a concessão revogada, a guarda do runtime recusa a ação. -/
 example : eval S ⟨canned 5, limit, revoked⟩ remediate ρ₀ s₀ = .error .noCap := rfl

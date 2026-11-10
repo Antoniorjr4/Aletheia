@@ -68,6 +68,20 @@ inductive HasType (S : Sig) : List Bind → Lab → Exp → Ty → Lab → Budge
   | infer {Γ pc m t a τa ιa βa} :
       HasType S Γ pc a τa ιa βa →
       HasType S Γ pc (.infer m t a) t .U (βa + S.mcost m)
+  /-- `await q` observa o mundo pela sonda confiável `q`. Como uma falha dispara
+  compensações, que são efeitos, ela exige `pc ⊒ Endorsed`. -/
+  | await {Γ pc q} :
+      low pc →
+      HasType S Γ pc (.await q) .unit .T 0
+  /-- A saga: o corpo e os dois tratadores têm o mesmo tipo. A escolha do tratador depende
+  só do mundo e das compensações (observações confiáveis do host). As compensações rodam
+  como obrigação, sem orçamento: β = β(corpo) + (β(f) ⊔ β(g)). -/
+  | atomic {Γ pc body r f g τ ιb ιf ιg βb βf βg} :
+      low pc →
+      HasType S Γ pc body τ ιb βb →
+      HasType S Γ pc f τ ιf βf →
+      HasType S Γ pc g τ ιg βg →
+      HasType S Γ pc (.atomic body r f g) τ (ιb ⊓ (ιf ⊓ ιg)) (βb + (βf ⊔ βg))
 
 /-! ## Multiplicidade exata -/
 
@@ -100,9 +114,10 @@ def consumes : Exp → Nat → Option Nat
   | .for_ _ xs body, k => Count.add (consumes xs k) (Count.zero (consumes body (k + 1)))
   | .infer _ _ a, k => consumes a k
   | .await _, _ => some 0
-  -- a disciplina linear das sagas (um corpo que falha no meio consome só parte das
-  -- capacidades) ainda não está no julgamento: um programa com `atomic` não é `Linear`
-  | .atomic .., _ => none
+  -- a saga consome o que o corpo consome e o que os tratadores consomem (os dois iguais);
+  -- o que um caminho não usar é revogado na saída (`Eval.lean`), então todo caminho
+  -- consome exatamente essa contagem
+  | .atomic body _ f g, k => Count.add (consumes body k) (Count.same (consumes f k) (consumes g k))
 
 /-- E1 com multiplicidade 1: cada `Cap[E]` de Γ é consumida exatamente uma vez em todo
 caminho de execução. -/

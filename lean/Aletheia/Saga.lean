@@ -53,10 +53,10 @@ theorem replay_append (S : Sig) :
   | [], _, _ => rfl
   | (t, v) :: a, b, w => by simp only [List.cons_append, replay, replay_append S a b w]
 
-/-- As ações de um traço, em ordem: `(ferramenta, argumento)`. -/
-def actsOf (tr : List Ev) : List (Nat × Val) :=
+/-- As ações `compensable` de um traço, em ordem: `(ferramenta, argumento)`. -/
+def actsOf (S : Sig) (tr : List Ev) : List (Nat × Val) :=
   tr.filterMap fun
-    | .act t _ v => some (t, v)
+    | .act t _ v => if S.compensable t then some (t, v) else none
     | _ => none
 
 /-- As compensações de uma lista de eventos, em ordem. -/
@@ -91,10 +91,6 @@ theorem compensate_ok_iff (S : Sig) :
 
 /-! ## T6, parte 1: sem mascaramento -/
 
-theorem eval_cond (b : Bool) (f g : Exp) (ρ : List Val) (s : St) :
-    cond b (eval S c f ρ s) (eval S c g ρ s) = eval S c (cond b f g) ρ s := by
-  cases b <;> rfl
-
 /-- O caminho de falha de uma saga, por extenso: o corpo falhou, as compensações rodaram, a
 sonda observou o mundo compensado, e o tratador foi escolhido por `ok && sonda`. O traço
 registra o corpo até a falha, a falha, cada compensação, a observação da sonda e o
@@ -105,7 +101,7 @@ theorem atomic_failed {body : Exp} {r : Nat} {f g : Exp} {ρ : List Val} {s : St
     (h : eval S c (.atomic body r f g) ρ s = .ok o) :
     ∃ o', eval S c (cond ((compensate S s₁.comp s₁.w).ok && S.probe r (compensate S s₁.comp s₁.w).w) f g)
         ρ { s₁ with w := (compensate S s₁.comp s₁.w).w, comp := s.comp } = .ok o' ∧
-      o = ⟨o'.v, o'.st, tr ++ .fail q :: (compensate S s₁.comp s₁.w).evs ++
+      o = ⟨o'.v, exitSaga ρ (.atomic body r f g) o'.st, tr ++ .fail q :: (compensate S s₁.comp s₁.w).evs ++
         [.recover r (S.probe r (compensate S s₁.comp s₁.w).w)] ++ o'.tr⟩ := by
   simp only [eval, hb] at h
   obtain ⟨o', h', h⟩ := bnd_eq_ok.mp (pre_eq_ok.mp h)
@@ -164,6 +160,8 @@ structure Restoring (S : Sig) (E : World → World → Prop) : Prop where
   step  : ∀ (t : Nat) (v : Val) {w₁ w₂ : World}, E w₁ w₂ → E (S.step t v w₁) (S.step t v w₂)
   undo  : ∀ (t : Nat) (v : Val) {w w₀ : World}, E w (S.step t v w₀) →
     ∃ w', S.undo t v w = some w' ∧ E w' w₀
+  /-- o que não é `compensable` (leituras, reversíveis) não muda o que a saga restaura -/
+  inert : ∀ (t : Nat) (v : Val) (w : World), S.compensable t = false → E (S.step t v w) w
 
 variable {E : World → World → Prop}
 
@@ -176,7 +174,7 @@ theorem replay_congr (hR : Restoring S E) :
 ações, da mais recente à mais antiga, e o mundo é `E`-equivalente a reaplicá-las sobre o
 mundo de partida. -/
 def Logged (S : Sig) (E : World → World → Prop) (s s' : St) (tr : List Ev) : Prop :=
-  ∃ new, s'.comp = new ++ s.comp ∧ new = (actsOf tr).reverse ∧ E s'.w (replay S new s.w)
+  ∃ new, s'.comp = new ++ s.comp ∧ new = (actsOf S tr).reverse ∧ E s'.w (replay S new s.w)
 
 theorem logged_preserves (hR : Restoring S E) : Preserves S c False (Logged S E) where
   refl _ := ⟨[], rfl, rfl, hR.refl _⟩
@@ -188,10 +186,16 @@ theorem logged_preserves (hR : Restoring S E) : Preserves S c False (Logged S E)
       exact hR.trans hw₂ (replay_congr hR n₂ hw₁)
   endorse _ := ⟨[], rfl, rfl, hR.refl _⟩
   reject := ⟨[], rfl, rfl, hR.refl _⟩
-  act _ _ := ⟨[_], rfl, rfl, hR.refl _⟩
+  act := by
+    intro s t id v _ _
+    by_cases hc : S.compensable t = true
+    · exact ⟨[(t, v)], by simp [logAct, hc], by simp [actsOf, hc], by simp [replay]; exact hR.refl _⟩
+    · have hc' : S.compensable t = false := by simpa using hc
+      exact ⟨[], by simp [logAct, hc'], by simp [actsOf, hc'], by simpa [replay] using hR.inert t v s.w hc'⟩
   drop _ := ⟨[], rfl, rfl, hR.refl _⟩
   infer := ⟨[], rfl, rfl, hR.refl _⟩
   commit h := h.elim
+  revoke h := h.elim
   abort h := h.elim
 
 /-- O registro acompanha o mundo em toda execução sem saga aninhada, no sucesso e no
@@ -222,7 +226,7 @@ de uma saga falha:
 theorem T6 (hR : Restoring S E) {body : Exp} (hsf : sagaFree body = true) {ρ : List Val} {s : St}
     {q : Nat} {s₁ : St} {tr : List Ev}
     (hb : eval S c body ρ { s with comp := [] } = .error (.timeout q s₁ tr)) :
-    undoTargets (compensate S s₁.comp s₁.w).evs = (actsOf tr).reverse ∧
+    undoTargets (compensate S s₁.comp s₁.w).evs = (actsOf S tr).reverse ∧
       (compensate S s₁.comp s₁.w).ok = true ∧ E (compensate S s₁.comp s₁.w).w s.w := by
   obtain ⟨new, hc, ha, hw⟩ := (eval_logged hR body hsf).2 hb
   simp only [List.append_nil] at hc
@@ -240,9 +244,9 @@ theorem T6_saga {Inv : World → Prop} (hR : Restoring S E) (hInv : ∀ w w', E 
     {body : Exp} {r : Nat} {f g : Exp} (hsf : sagaFree body = true) {ρ : List Val} {s : St} {o : Out}
     (hs : Inv s.w) (h : eval S c (.atomic body r f g) ρ s = .ok o) :
     (∃ o₁, eval S c body ρ { s with comp := [] } = .ok o₁ ∧
-        o = ⟨o₁.v, { o₁.st with comp := s.comp }, o₁.tr⟩) ∨
+        o = ⟨o₁.v, exitSaga ρ (.atomic body r f g) { o₁.st with comp := s.comp }, o₁.tr⟩) ∨
     (∃ q s₁ tr o', eval S c body ρ { s with comp := [] } = .error (.timeout q s₁ tr) ∧
-        undoTargets (compensate S s₁.comp s₁.w).evs = (actsOf tr).reverse ∧
+        undoTargets (compensate S s₁.comp s₁.w).evs = (actsOf S tr).reverse ∧
         (compensate S s₁.comp s₁.w).ok = true ∧ Inv (compensate S s₁.comp s₁.w).w ∧
         eval S c (cond (S.probe r (compensate S s₁.comp s₁.w).w) f g) ρ
           { s₁ with w := (compensate S s₁.comp s₁.w).w, comp := s.comp } = .ok o' ∧
@@ -335,16 +339,17 @@ theorem restoring : Restoring S Eq where
         omega
       · simp [bump, hi]
     | _ => exact ⟨w₀, rfl, rfl⟩
+  inert _ _ _ h := by simp [S] at h
 
 /-- T6 aplicado: para qualquer mundo inicial com 3 réplicas, se a saga termina por falha
 do corpo, o mundo entregue ao tratador tem de novo 3 réplicas. -/
 theorem saga_restores {ρ : List Val} {s : St} {o : Out} (hs : s.w 0 = 3)
     (h : eval S cfg saga ρ s = .ok o) :
     (∃ o₁, eval S cfg (.let_ (.act 0 0 (.val (.int 2))) (.await 0)) ρ { s with comp := [] } = .ok o₁ ∧
-        o = ⟨o₁.v, { o₁.st with comp := s.comp }, o₁.tr⟩) ∨
+        o = ⟨o₁.v, exitSaga ρ saga { o₁.st with comp := s.comp }, o₁.tr⟩) ∨
     (∃ (q : Nat) (s₁ : St) (tr : List Ev) (o' : Out), eval S cfg (.let_ (.act 0 0 (.val (.int 2))) (.await 0)) ρ { s with comp := [] } =
         .error (.timeout q s₁ tr) ∧ (compensate S s₁.comp s₁.w).w 0 = 3 ∧
-        undoTargets (compensate S s₁.comp s₁.w).evs = (actsOf tr).reverse ∧
+        undoTargets (compensate S s₁.comp s₁.w).evs = (actsOf S tr).reverse ∧
         o.tr = tr ++ .fail q :: (compensate S s₁.comp s₁.w).evs ++
           [.recover 1 (S.probe 1 (compensate S s₁.comp s₁.w).w)] ++ o'.tr) := by
   rcases T6_saga (Inv := fun w => w 0 = 3) restoring (fun w w' h hw => h ▸ hw) rfl hs h with

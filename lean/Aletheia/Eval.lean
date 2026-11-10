@@ -116,6 +116,11 @@ def loop (f : Val → St → Except Err Out) : List Val → St → Except Err (S
   | [], s => .ok (s, [])
   | v :: vs, s => bnd (f v s) fun o => bnd (loop f vs o.st) fun r => .ok (r.1, o.tr ++ r.2)
 
+/-- Uma ação `compensable` entra no registro de compensação da saga corrente; as outras
+(reversíveis, leituras) não entram, como no ARX. -/
+def logAct (S : Sig) (t : Nat) (v : Val) (comp : List (Nat × Val)) : List (Nat × Val) :=
+  if S.compensable t then (t, v) :: comp else comp
+
 /-- O efeito de `act t`, depois de avaliado o argumento (saída `o`), com a autoridade `cv`.
 A guarda confere, nesta ordem, a concessão do runtime para o efeito da ferramenta, a
 linearidade e a reserva de orçamento. Só então o evento é emitido. -/
@@ -126,7 +131,7 @@ def doAct (S : Sig) (c : Cfg) (t : Nat) (cv : Option Val) (o : Out) : Except Err
       if id ∈ o.st.used then .error .reuse
       else if ble (o.st.spent + S.cost t) c.limit then
         .ok ⟨.unit, ⟨id :: o.st.used, o.st.spent + S.cost t, o.st.calls, S.step t o.v o.st.w,
-          (t, o.v) :: o.st.comp⟩, o.tr ++ [.act t id o.v]⟩
+          logAct S t o.v o.st.comp⟩, o.tr ++ [.act t id o.v]⟩
       else .error .budget
     else .error .noCap
   | _ => .error .noCap
@@ -145,6 +150,70 @@ def doInfer (S : Sig) (c : Cfg) (m : Nat) (t : Ty) (o : Out) : Except Err Out :=
     .ok ⟨c.oracle o.st.calls m t o.v, ⟨o.st.used, o.st.spent + S.mcost m, o.st.calls + 1, o.st.w,
       o.st.comp⟩, o.tr⟩
   else .error .budget
+
+/-- Sem repetição, preservando a primeira ocorrência de trás para a frente. -/
+def dedup : List Nat → List Nat
+  | [] => []
+  | x :: xs => if x ∈ dedup xs then dedup xs else x :: dedup xs
+
+theorem mem_dedup : ∀ {xs : List Nat} {x : Nat}, x ∈ dedup xs ↔ x ∈ xs
+  | [], _ => by simp [dedup]
+  | y :: ys, x => by
+    unfold dedup
+    split
+    · rename_i h; rw [mem_dedup]; constructor
+      · exact List.mem_cons_of_mem _
+      · intro hx; rcases List.mem_cons.mp hx with rfl | hx
+        · exact mem_dedup.mp h
+        · exact hx
+    · simp [mem_dedup]
+
+theorem nodup_dedup : ∀ (xs : List Nat), (dedup xs).Nodup
+  | [] => List.nodup_nil
+  | y :: ys => by
+    unfold dedup
+    split
+    · exact nodup_dedup ys
+    · rename_i h; exact List.nodup_cons.mpr ⟨h, nodup_dedup ys⟩
+
+/-- As identidades das capacidades do ambiente que a contagem `f` consome uma vez. -/
+def capsOf (ρ : List Val) (f : Nat → Option Nat) : List Nat :=
+  (List.range ρ.length).filterMap fun k =>
+    match ρ[k]? with
+    | some (Val.cap id) => if f k = some 1 then some id else none
+    | _ => none
+
+theorem mem_capsOf {ρ : List Val} {f : Nat → Option Nat} {x : Nat} :
+    x ∈ capsOf ρ f ↔ ∃ k, ρ[k]? = some (.cap x) ∧ f k = some 1 := by
+  simp only [capsOf, List.mem_filterMap, List.mem_range]
+  constructor
+  · rintro ⟨k, _, hk⟩
+    split at hk
+    · rename_i id hρ
+      split at hk
+      · cases hk; exact ⟨k, hρ, by assumption⟩
+      · cases hk
+    · cases hk
+  · rintro ⟨k, hρ, h1⟩
+    refine ⟨k, ?_, by rw [hρ]; simp [h1]⟩
+    exact (List.getElem?_eq_some_iff.mp hρ).1
+
+/-- A revogação na saída de uma saga: as capacidades que a saga conta como consumidas e que
+o caminho percorrido não consumiu. Assim todo caminho consome exatamente a contagem da
+saga, inclusive o de confirmação (sem tratador) e o de falha (corpo interrompido). -/
+def revoke (ρ : List Val) (f : Nat → Option Nat) (u : List Nat) : List Nat :=
+  dedup ((capsOf ρ f).filter fun x => x ∉ u)
+
+theorem revoke_nodup (ρ : List Val) (f : Nat → Option Nat) (u : List Nat) : (revoke ρ f u).Nodup :=
+  nodup_dedup _
+
+theorem mem_revoke {ρ : List Val} {f : Nat → Option Nat} {u : List Nat} {x : Nat} :
+    x ∈ revoke ρ f u ↔ (∃ k, ρ[k]? = some (.cap x) ∧ f k = some 1) ∧ x ∉ u := by
+  simp [revoke, mem_dedup, List.mem_filter, mem_capsOf]
+
+/-- A saída de uma saga: revoga o que ela não consumiu no caminho percorrido. -/
+def exitSaga (ρ : List Val) (e : Exp) (st : St) : St :=
+  { st with used := revoke ρ (consumes e) st.used ++ st.used }
 
 /-- O resultado das compensações de uma saga. -/
 structure Comp where
@@ -224,15 +293,16 @@ def eval (S : Sig) (c : Cfg) : Exp → List Val → St → Except Err Out
   | .atomic body r f g, ρ, s =>
     match eval S c body ρ { s with comp := [] } with
     | .ok o =>
-      -- commit: os efeitos ficam; o registro da saga é descartado, como no ARX
-      .ok ⟨o.v, { o.st with comp := s.comp }, o.tr⟩
+      -- commit: os efeitos ficam; o registro da saga é descartado, como no ARX; as
+      -- capacidades da saga que os tratadores usariam são revogadas
+      .ok ⟨o.v, exitSaga ρ (.atomic body r f g) { o.st with comp := s.comp }, o.tr⟩
     | .error (.timeout q s₁ tr) =>
       let k := compensate S s₁.comp s₁.w
       let s₂ : St := { s₁ with w := k.w, comp := s.comp }
       let p := S.probe r k.w
       let evs := tr ++ .fail q :: k.evs ++ [.recover r p]
       pre evs (bnd (cond (k.ok && p) (eval S c f ρ s₂) (eval S c g ρ s₂)) fun o' =>
-        .ok ⟨o'.v, o'.st, evs ++ o'.tr⟩)
+        .ok ⟨o'.v, exitSaga ρ (.atomic body r f g) o'.st, evs ++ o'.tr⟩)
     | .error e => .error e
 
 theorem cond_ok {α : Type} {b : Bool} {x y : Except Err α} {r : α} (h : cond b x y = .ok r) :
@@ -252,7 +322,7 @@ theorem doAct_ok {S : Sig} {c : Cfg} {t : Nat} {cv : Option Val} {o r : Out}
     ∃ id, cv = some (.cap id) ∧ S.effect t ∈ c.grants id ∧ id ∉ o.st.used ∧
       ble (o.st.spent + S.cost t) c.limit = true ∧
       r = ⟨.unit, ⟨id :: o.st.used, o.st.spent + S.cost t, o.st.calls, S.step t o.v o.st.w,
-        (t, o.v) :: o.st.comp⟩, o.tr ++ [.act t id o.v]⟩ := by
+        logAct S t o.v o.st.comp⟩, o.tr ++ [.act t id o.v]⟩ := by
   unfold doAct at h
   split at h
   · rename_i id
@@ -318,12 +388,161 @@ def sagaFree : Exp → Bool
   | .atomic .. => false
   | .val _ | .var _ | .drop _ | .await _ => true
 
+/-- `await` só dentro do corpo de uma saga (o E0601 do `athc`). `sg` diz se a posição está
+dentro do corpo de alguma saga; os tratadores herdam a posição da própria saga. -/
+def guarded : Bool → Exp → Bool
+  | sg, .let_ a b | sg, .prim _ a b => guarded sg a && guarded sg b
+  | sg, .ite x t f => guarded sg x && guarded sg t && guarded sg f
+  | sg, .endorse _ e d => guarded sg e && guarded sg d
+  | sg, .act _ _ a | sg, .infer _ _ a => guarded sg a
+  | sg, .for_ _ xs body => guarded sg xs && guarded sg body
+  | sg, .await _ => sg
+  | sg, .atomic body _ f g => guarded true body && guarded sg f && guarded sg g
+  | _, .val _ | _, .var _ | _, .drop _ => true
+
+/-- Um programa em que todo `await` está dentro de uma saga. -/
+def Guarded (e : Exp) : Prop := guarded false e = true
+
 /-- `e` é admissível para um invariante: o invariante cobre sagas (`sagas`), ou `e` não
 tem `atomic`. -/
 def Adm (sagas : Prop) (e : Exp) : Prop := sagas ∨ sagaFree e = true
 
 theorem Adm.mono {P : Prop} {e e' : Exp} (h : Adm P e) (hs : sagaFree e = true → sagaFree e' = true) :
     Adm P e' := h.imp id hs
+
+theorem eval_cond {S : Sig} {c : Cfg} (b : Bool) (f g : Exp) (ρ : List Val) (s : St) :
+    cond b (eval S c f ρ s) (eval S c g ρ s) = eval S c (cond b f g) ρ s := by
+  cases b <;> rfl
+
+/-- A saga que confirma. -/
+theorem eval_atomic_ok {S : Sig} {c : Cfg} {body : Exp} {r : Nat} {f g : Exp} {ρ : List Val}
+    {s : St} {o : Out} (h : eval S c body ρ { s with comp := [] } = .ok o) :
+    eval S c (.atomic body r f g) ρ s =
+      .ok ⟨o.v, exitSaga ρ (.atomic body r f g) { o.st with comp := s.comp }, o.tr⟩ := by
+  simp only [eval, h]
+
+/-- A saga cujo corpo falha: compensa, observa e roda o tratador escolhido. -/
+theorem eval_atomic_fail {S : Sig} {c : Cfg} {body : Exp} {r : Nat} {f g : Exp} {ρ : List Val}
+    {s : St} {q : Nat} {s₁ : St} {tr : List Ev}
+    (h : eval S c body ρ { s with comp := [] } = .error (.timeout q s₁ tr)) :
+    eval S c (.atomic body r f g) ρ s =
+      pre (tr ++ .fail q :: (compensate S s₁.comp s₁.w).evs ++
+          [.recover r (S.probe r (compensate S s₁.comp s₁.w).w)])
+        (bnd (eval S c (cond ((compensate S s₁.comp s₁.w).ok && S.probe r (compensate S s₁.comp s₁.w).w) f g)
+            ρ { s₁ with w := (compensate S s₁.comp s₁.w).w, comp := s.comp }) fun o' =>
+          .ok ⟨o'.v, exitSaga ρ (.atomic body r f g) o'.st,
+            (tr ++ .fail q :: (compensate S s₁.comp s₁.w).evs ++
+              [.recover r (S.probe r (compensate S s₁.comp s₁.w).w)]) ++ o'.tr⟩) := by
+  simp only [eval, h]
+  rw [eval_cond]
+
+/-! ## Fora de saga, nenhum `timeout` escapa -/
+
+section
+variable {S : Sig} {c : Cfg}
+
+theorem loop_no_timeout {f : Val → St → Except Err Out}
+    (hf : ∀ v s q s₁ tr, f v s ≠ .error (.timeout q s₁ tr)) :
+    ∀ (vs : List Val) (s : St) (q : Nat) (s₁ : St) (tr : List Ev), loop f vs s ≠ .error (.timeout q s₁ tr)
+  | [], s, q, s₁, tr, h => by simp [loop] at h
+  | v :: vs, s, q, s₁, tr, h => by
+    simp only [loop] at h
+    rcases bnd_eq_timeout h with h₀ | ⟨o, t, _, h₁, _⟩
+    · exact hf v s q s₁ tr h₀
+    · rcases bnd_eq_timeout h₁ with h₂ | ⟨_, _, _, h₃, _⟩
+      · exact loop_no_timeout hf vs _ q s₁ _ h₂
+      · cases h₃
+
+/-- Com todo `await` dentro de uma saga, a falha de uma pós-condição é sempre capturada pela
+saga que a contém: a execução nunca termina em `timeout`. -/
+theorem guarded_no_timeout : ∀ (e : Exp), guarded false e = true →
+    ∀ (ρ : List Val) (s : St) (q : Nat) (s₁ : St) (tr : List Ev), eval S c e ρ s ≠ .error (.timeout q s₁ tr)
+  | .val _, _, ρ, s, q, s₁, tr, h => by simp [eval] at h
+  | .var k, _, ρ, s, q, s₁, tr, h => by
+    simp only [eval] at h; split at h <;> cases h
+  | .let_ e₁ e₂, hg, ρ, s, q, s₁, tr, h => by
+    simp only [guarded, Bool.and_eq_true] at hg
+    simp only [eval] at h
+    rcases bnd_eq_timeout h with h₀ | ⟨o₁, t, _, h₁, _⟩
+    · exact guarded_no_timeout e₁ hg.1 _ _ _ _ _ h₀
+    · rcases bnd_eq_timeout h₁ with h₂ | ⟨_, _, _, h₃, _⟩
+      · exact guarded_no_timeout e₂ hg.2 _ _ _ _ _ h₂
+      · cases h₃
+  | .ite x t f, hg, ρ, s, q, s₁, tr, h => by
+    simp only [guarded, Bool.and_eq_true] at hg
+    simp only [eval] at h
+    rcases bnd_eq_timeout h with h₀ | ⟨o, tr', _, h₁, _⟩
+    · exact guarded_no_timeout x hg.1.1 _ _ _ _ _ h₀
+    · revert h₁; split
+      · intro h₁
+        rcases bnd_eq_timeout h₁ with h₂ | ⟨_, _, _, h₃, _⟩
+        · rcases cond_eq h₂ with ⟨_, h₄⟩ | ⟨_, h₄⟩
+          · exact guarded_no_timeout t hg.1.2 _ _ _ _ _ h₄
+          · exact guarded_no_timeout f hg.2 _ _ _ _ _ h₄
+        · cases h₃
+      · intro h₁; cases h₁
+  | .prim op a b, hg, ρ, s, q, s₁, tr, h => by
+    simp only [guarded, Bool.and_eq_true] at hg
+    simp only [eval] at h
+    rcases bnd_eq_timeout h with h₀ | ⟨o₁, t, _, h₁, _⟩
+    · exact guarded_no_timeout a hg.1 _ _ _ _ _ h₀
+    · rcases bnd_eq_timeout h₁ with h₂ | ⟨_, _, _, h₃, _⟩
+      · exact guarded_no_timeout b hg.2 _ _ _ _ _ h₂
+      · revert h₃; split <;> intro h₃ <;> cases h₃
+  | .endorse p e d, hg, ρ, s, q, s₁, tr, h => by
+    simp only [guarded, Bool.and_eq_true] at hg
+    simp only [eval] at h
+    rcases bnd_eq_timeout h with h₀ | ⟨oe, t, _, h₁, _⟩
+    · exact guarded_no_timeout e hg.1 _ _ _ _ _ h₀
+    · revert h₁; split
+      · intro h₁; cases h₁
+      · intro h₁
+        obtain ⟨t', h₂, _⟩ := pre_eq_timeout h₁
+        rcases bnd_eq_timeout h₂ with h₃ | ⟨_, _, _, h₄, _⟩
+        · exact guarded_no_timeout d hg.2 _ _ _ _ _ h₃
+        · cases h₄
+  | .act t k a, hg, ρ, s, q, s₁, tr, h => by
+    simp only [guarded] at hg
+    simp only [eval] at h
+    rcases bnd_eq_timeout h with h₀ | ⟨_, _, _, h₁, _⟩
+    · exact guarded_no_timeout a hg _ _ _ _ _ h₀
+    · exact doAct_ne_timeout h₁
+  | .drop k, _, ρ, s, q, s₁, tr, h => by
+    simp only [eval] at h; exact doDrop_ne_timeout h
+  | .for_ n xs body, hg, ρ, s, q, s₁, tr, h => by
+    simp only [guarded, Bool.and_eq_true] at hg
+    simp only [eval] at h
+    rcases bnd_eq_timeout h with h₀ | ⟨ox, t, _, h₁, _⟩
+    · exact guarded_no_timeout xs hg.1 _ _ _ _ _ h₀
+    · revert h₁; split
+      · intro h₁
+        rcases bnd_eq_timeout h₁ with h₂ | ⟨_, _, _, h₃, _⟩
+        · exact loop_no_timeout (fun v s' => guarded_no_timeout body hg.2 (v :: ρ) s') _ _ _ _ _ h₂
+        · cases h₃
+      · intro h₁; cases h₁
+  | .infer m t a, hg, ρ, s, q, s₁, tr, h => by
+    simp only [guarded] at hg
+    simp only [eval] at h
+    rcases bnd_eq_timeout h with h₀ | ⟨_, _, _, h₁, _⟩
+    · exact guarded_no_timeout a hg _ _ _ _ _ h₀
+    · exact doInfer_ne_timeout h₁
+  | .await q', hg, ρ, s, q, s₁, tr, h => by simp [guarded] at hg
+  | .atomic body r f g, hg, ρ, s, q, s₁, tr, h => by
+    simp only [guarded, Bool.and_eq_true] at hg
+    simp only [eval] at h
+    split at h
+    · cases h
+    · obtain ⟨t', h₁, _⟩ := pre_eq_timeout h
+      rcases bnd_eq_timeout h₁ with h₂ | ⟨_, _, _, h₃, _⟩
+      · rcases cond_eq h₂ with ⟨_, h₄⟩ | ⟨_, h₄⟩
+        · exact guarded_no_timeout f hg.1.2 _ _ _ _ _ h₄
+        · exact guarded_no_timeout g hg.2 _ _ _ _ _ h₄
+      · cases h₃
+    · rename_i hne _
+      cases h
+      exact absurd rfl (hne _ _ _)
+
+end
 
 /-! ## Invariantes nos dois desfechos
 
@@ -342,11 +561,14 @@ structure Preserves (S : Sig) (c : Cfg) (sagas : Prop) (R : St → St → List E
   endorse : ∀ {s : St} {p : Nat} {v : Val}, S.pol p v = true → R s s [.endorse p (some v)]
   reject  : ∀ {s : St} {p : Nat}, R s s [.endorse p none]
   act     : ∀ {s : St} {t id : Nat} {v : Val}, S.effect t ∈ c.grants id → id ∉ s.used →
-    R s ⟨id :: s.used, s.spent + S.cost t, s.calls, S.step t v s.w, (t, v) :: s.comp⟩ [.act t id v]
+    R s ⟨id :: s.used, s.spent + S.cost t, s.calls, S.step t v s.w, logAct S t v s.comp⟩ [.act t id v]
   drop    : ∀ {s : St} {id : Nat}, id ∉ s.used → R s ⟨id :: s.used, s.spent, s.calls, s.w, s.comp⟩ []
   infer   : ∀ {s : St} {m : Nat}, R s ⟨s.used, s.spent + S.mcost m, s.calls + 1, s.w, s.comp⟩ []
   commit  : sagas → ∀ {s s' : St} {t : List Ev}, R { s with comp := [] } s' t →
     R s { s' with comp := s.comp } t
+  /-- a revogação na saída da saga: identidades novas, sem repetição -/
+  revoke  : sagas → ∀ {s s' : St} {t : List Ev} (ids : List Nat), ids.Nodup → (∀ x ∈ ids, x ∉ s'.used) →
+    R s s' t → R s { s' with used := ids ++ s'.used } t
   abort   : sagas → ∀ {s s₁ : St} {t : List Ev} (q r : Nat) (p : Bool), R { s with comp := [] } s₁ t →
     R s { s₁ with w := (compensate S s₁.comp s₁.w).w, comp := s.comp }
       (t ++ .fail q :: (compensate S s₁.comp s₁.w).evs ++ [.recover r p])
@@ -513,12 +735,14 @@ theorem eval_preserves (hR : Preserves S c sagas R) : ∀ (e : Exp), Adm sagas e
       split at h
       · rename_i o hb
         cases h
-        exact hR.commit hsg ((eval_preserves hR body (hadm.mono (by simp_all [sagaFree]))).1 hb)
+        exact hR.revoke hsg _ (revoke_nodup _ _ _) (fun x hx => (mem_revoke.mp hx).2)
+          (hR.commit hsg ((eval_preserves hR body (hadm.mono (by simp_all [sagaFree]))).1 hb))
       · rename_i q s₁ tr hb
         obtain ⟨o', h', h⟩ := bnd_eq_ok.mp (pre_eq_ok.mp h)
         cases h
         have ha := hR.abort hsg (s := s) q r (S.probe r (compensate S s₁.comp s₁.w).w)
           ((eval_preserves hR body (hadm.mono (by simp_all [sagaFree]))).2 hb)
+        refine hR.revoke hsg _ (revoke_nodup _ _ _) (fun x hx => (mem_revoke.mp hx).2) ?_
         rcases cond_ok h' with ⟨_, h'⟩ | ⟨_, h'⟩
         · exact hR.trans ha ((eval_preserves hR f (hadm.mono (by simp_all [sagaFree]))).1 h')
         · exact hR.trans ha ((eval_preserves hR g (hadm.mono (by simp_all [sagaFree]))).1 h')
