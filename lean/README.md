@@ -1,14 +1,18 @@
 # Aletheia em Lean 4: o núcleo λ_Ath mecanizado
 
 Esta pasta formaliza o núcleo λ_Ath, isto é, o subconjunto que o `athc` verifica e o ARX
-executa, e demonstra três teoremas sobre **um único** julgamento de tipagem e **um único**
+executa, e demonstra cinco teoremas sobre **um único** julgamento de tipagem e **um único**
 avaliador:
 
-- **T1**: preservação e progresso, com orçamento graduado e consumo exato de capacidades.
+- **T1**: preservação e progresso, com orçamento graduado e consumo exato de capacidades,
+  inclusive nos dois ramos de uma saga.
 - **T2**: efeitos e capacidades lineares `Cap[E]`. Toda ação usa uma capacidade léxica cujo
   `E` contém o efeito e foi concedida pelo runtime, e cada capacidade é consumida exatamente
   uma vez.
-- **T3**: não-interferência com endosso robusto.
+- **T3**: não-interferência com endosso robusto, com e sem sagas.
+- **T6**: sagas sem mascaramento e com restauração sob contratos `restoring`.
+- **T9**: toda chave `IdemKey` termina em `Done`, `Failed` ou `Transferred`, sem descarte
+  silencioso de `Pending[k]` em nenhum caminho.
 
 Não há `sorry`. Cada teorema principal tem o conjunto de axiomas fixado em
 [`Aletheia/Axioms.lean`](Aletheia/Axioms.lean), que só aceita os três axiomas padrão do Lean
@@ -33,12 +37,14 @@ do `aletheia_runtime` (Python). Ver [o tripé diferencial](#o-tripé-diferencial
 | `Budget.lean` | β sobre seis dimensões (tok, usd, wall, energy, bytes, risk), `+`, `⊔`, `n • β` | E6, contrato Δ |
 | `Syntax.lean` | tipos `Int`/`Bool`/`Unit`/`List[T, 0..n]`, valores, `Cap[E]`, eventos, assinatura Σ (custos, tipos de argumento, efeito de cada ferramenta, políticas), oráculo, tabela de concessões do runtime | AST, Codex, linhas de efeito |
 | `Typing.lean` | Γ; pc ⊢ e : τ ^ ι ▷ β, contagem exata `consumes`, `Linear` (multiplicidade 1), `Granted` | E1, E2, E3, E5 (políticas), E6 |
-| `Eval.lean` | avaliador total de passo grande: quatro erros de tipo verificados em tempo de execução, o mundo abstrato, `await`, sagas e compensação; `eval_preserves`, o invariante nos dois desfechos (sucesso e `timeout`) | ARX |
-| `Soundness.lean` | T1 e o consumo exato | |
-| `Noninterference.lean` | T3 | |
-| `Confinement.lean` | T2, sobre o mesmo `eval` e o mesmo `HasType` | E2, E1 |
+| `Eval.lean` | avaliador total de passo grande: quatro erros de tipo verificados em tempo de execução, o mundo abstrato, `await`, sagas e compensação, o protocolo de chaves (`TimeoutUnknown`, `Pending[k]`, reconciliação, transferência); `eval_preserves`, o invariante nos dois desfechos (sucesso e `timeout`); `guarded_no_timeout` | ARX |
+| `Soundness.lean` | T1 nos dois desfechos e o consumo exato; `Partial.exit`, a conta da saída de uma saga | |
+| `Noninterference.lean` | T3 para programas sem saga, com estados arbitrários | |
+| `SagaNI.lean` | T3 com sagas: não-interferência sobre desfechos, a partir do mesmo mundo | `atomic`, `await` |
+| `Confinement.lean` | T2, sobre o mesmo `eval` e o mesmo `HasType`, também nos traços de `timeout` | E2, E1 |
 | `Saga.lean` | T6 sobre o avaliador canônico: sem mascaramento e restauração sob contratos `restoring`; a remediação como saga | `atomic … recover`, `compensable by`, `CompensationFailed` |
-| `Recovery.lean` | modelo abstrato da reconciliação com combustível (T9): sucesso só com evidência | `reconcile … fuel … else` |
+| `Keys.lean` | T9 sobre o avaliador canônico: o ciclo de vida de cada chave, nos dois desfechos, para qualquer provedor | `own IdemKey`, `Pending[k]`, `reconcile … fuel … else { transfer }` |
+| `Recovery.lean` | o modelo abstrato da Rev6 (`resolve`, `compensateOrEscalate`), agora refinado por `Eval.lean` e `Keys.lean` | |
 | `Examples.lean` | o padrão de remediação: tipado, executado, com as variantes perigosas recusadas | `examples/remediate.ath` |
 
 As expressões são estas, com índices de de Bruijn:
@@ -87,8 +93,17 @@ garante (decodificação restrita e análise; recusa → `refine`).
 ## T1: preservação e progresso
 
 ```lean
-theorem soundness (hO : c.oracle.Ok) (h : HasType S Γ pc e τ ι β) (hlin : Linear Γ e)
+-- todo programa bem tipado e linear, com ou sem sagas: um valor, ou um timeout que escapou
+theorem soundness_total (hO : c.oracle.Ok) (h : HasType S Γ pc e τ ι β) (hlin : Linear Γ e)
     (h0 : Start c.grants Γ ρ s) (hB : s.spent + β ≤ c.limit) :
+    (∃ o, eval S c e ρ s = .ok o ∧ HasTy o.v τ ∧ Within s.spent o.st.spent β ∧
+      ∃ new, o.st.used = new ++ s.used ∧ ∀ id, id ∈ new ↔ ∃ k, ρ[k]? = some (.cap id)) ∨
+    (∃ q s₁ tr, eval S c e ρ s = .error (.timeout q s₁ tr) ∧ Within s.spent s₁.spent β ∧
+      ∃ new, s₁.used = new ++ s.used ∧ ∀ id ∈ new, ∃ k, ρ[k]? = some (.cap id))
+
+-- com todo `await` dentro de uma saga (Guarded), nenhum erro
+theorem soundness (hO : c.oracle.Ok) (h : HasType S Γ pc e τ ι β) (hlin : Linear Γ e)
+    (hg : Guarded e) (h0 : Start c.grants Γ ρ s) (hB : s.spent + β ≤ c.limit) :
     ∃ o, eval S c e ρ s = .ok o ∧ HasTy o.v τ ∧ Within s.spent o.st.spent β ∧
       ∃ new, o.st.used = new ++ s.used ∧ ∀ id, id ∈ new ↔ ∃ k, ρ[k]? = some (.cap id)
 
@@ -110,15 +125,30 @@ máximo `n • β(corpo)`, como na regra E6.
 O conjunto `new` que a execução acrescenta é **exatamente** o conjunto das capacidades do
 agente. `eval_fresh` diz que, por construção, esse acréscimo não repete identidade.
 
+**Sagas na tipagem.** `await q` e `atomic body r f g` exigem `pc ⊒ Endorsed`: a falha de uma
+pós-condição dispara compensações, que são efeitos. O corpo e os dois tratadores têm o mesmo
+tipo, e o orçamento é `β(corpo) + (β(f) ⊔ β(g))`: as compensações rodam como obrigação, sem
+reserva. A contagem linear trata a saga como um `if` depois do corpo:
+`consumes (atomic …) = consumes body + (consumes f = consumes g)`.
+
+Um corpo que falha no meio consumiu só parte das suas capacidades (`Partial`). A saída da
+saga (`exitSaga`) revoga o que o caminho percorrido não consumiu, e `Partial.exit` mostra
+que as duas partes juntas são **exatamente** as capacidades que `consumes` conta. Assim o
+consumo exato vale nos dois ramos, confirmação e compensação. `sound` prova os dois desfechos
+por indução em `HasType`. `guarded_no_timeout` mostra que, com todo `await` dentro de uma
+saga, nenhum `timeout` escapa; daí `soundness`, `progress` e `T2` com a hipótese `Guarded`.
+
 ## T2: efeitos e capacidades lineares `Cap[E]`
 
 ```lean
 -- qualquer programa: toda ação do traço foi concedida pelo runtime
 theorem effects_granted (c : Cfg) (e : Exp) : eval S c e ρ s = .ok o → Granted' S c.grants o.tr
 
--- programa bem tipado: toda ação usou uma Cap[E] léxica cujo E contém o efeito
-theorem effects_lexical (c : Cfg) (h : HasType S Γ pc e τ ι β) :
-    eval S c e ρ s = .ok o → Lexical S Γ ρ o.tr
+-- programa bem tipado: toda ação usou uma Cap[E] léxica cujo E contém o efeito,
+-- também no traço de um timeout e no de uma saga que compensou
+theorem effects_lexical_total (c : Cfg) (h : HasType S Γ pc e τ ι β) :
+    (∀ o, eval S c e ρ s = .ok o → Lexical S Γ ρ o.tr) ∧
+    (∀ q s₁ tr, eval S c e ρ s = .error (.timeout q s₁ tr) → Lexical S Γ ρ tr)
 
 -- multiplicidade 1: cada capacidade do agente é consumida exatamente uma vez
 theorem caps_exactly_once … : ∃ o new, eval S c e ρ s = .ok o ∧ o.st.used = new ++ s.used ∧
@@ -139,9 +169,14 @@ nenhuma é descartada sem consumo explícito, porque todas as identidades do amb
 ## T3: não-interferência com endosso robusto
 
 ```lean
-theorem noninterference (h : HasType S Γ pc e τ ι β) (hl : LowEq Γ ρ₁ ρ₂)
+theorem noninterference (h : HasType S Γ pc e τ ι β) (hsf : sagaFree e = true) (hl : LowEq Γ ρ₁ ρ₂)
     (h₁ : eval S c₁ e ρ₁ s₁ = .ok o₁) (h₂ : eval S c₂ e ρ₂ s₂ = .ok o₂) :
     (o₁.tr = o₂.tr ∧ (low ι → o₁.v = o₂.v)) ∨ Diverge o₁.tr o₂.tr
+
+-- com sagas: sobre desfechos, a partir do mesmo mundo e do mesmo registro (SameW)
+theorem noninterference_saga (h : HasType S Γ pc e τ ι β) :
+    LowEq Γ ρ₁ ρ₂ → SameW s₁ s₂ → Settled (eval S c₁ e ρ₁ s₁) → Settled (eval S c₂ e ρ₂ s₂) →
+    NIR (OutEq ι) (eval S c₁ e ρ₁ s₁) (eval S c₂ e ρ₂ s₂)
 ```
 
 `LowEq Γ ρ₁ ρ₂` deixa as duas execuções diferirem arbitrariamente em toda entrada
@@ -163,6 +198,18 @@ theorem confine (h : HasType S Γ pc e τ ι β) : ¬ low pc → eval S c e ρ s
 -- com o T1, as duas execuções sempre terminam: o T3 vale sem hipótese sobre o resultado
 theorem noninterference_total … : ∃ o₁ o₂, eval … = .ok o₁ ∧ eval … = .ok o₂ ∧ NI ι o₁ o₂
 ```
+
+**Com sagas.** O fluxo de controle passa a depender do mundo: uma pós-condição que falha
+dispara compensações, e a sonda de recuperação escolhe o tratador. O mundo e o registro da
+saga são do host, não do atacante, então as duas execuções partem do mesmo (`SameW`); os
+dados `Untrusted` e os oráculos continuam arbitrários. `NIR` compara desfechos e tem três
+casos: os dois terminam com o mesmo traço, o mesmo mundo e o mesmo valor `⊒ Endorsed`; ou
+os dois param na mesma pós-condição com o mesmo traço e o mesmo mundo; ou os traços
+divergem numa decisão de endosso. Logo uma execução não confirma uma saga enquanto a outra
+a compensa, e não escolhe `on failure` enquanto a outra cai em `CompensationFailed`, sem
+antes divergir num endosso. A prova estende o confinamento (`confine_w`): sob `pc`
+`Untrusted` não há eventos, o mundo não muda e nenhuma pós-condição falha.
+`noninterference_saga_total` junta com o T1.
 
 A robustez está na regra de tipagem do endosso: `refine` exige `pc ⊒ Endorsed`. A própria
 decisão de endossar, portanto, não está sob controle de dado não confiável. Juntando tudo:
@@ -229,21 +276,50 @@ com o provedor recusando a compensação, o programa entra em `CompensationFaile
 `saga_restores` aplica o `T6_saga`: para qualquer mundo inicial com 3 réplicas, o tratador
 recebe de novo 3 réplicas.
 
-O T6 tem três limites, que estão no enunciado:
+Só as ferramentas `compensable` entram no registro (`logAct`), como no ARX; as reversíveis e
+as leituras não, e o contrato `restoring` exige delas que não mudem o que a saga restaura
+(`Restoring.inert`).
+
+O T6 tem dois limites, que estão no enunciado:
 
 - **sagas aninhadas:** a restauração vale para corpos sem saga aninhada. No ARX, uma saga
   interna que confirma descarta o seu registro, e os efeitos dela ficam fora das
   compensações da saga externa. A semântica formal reproduz isso e o teorema o torna
   explícito;
-- **tipagem:** `await` e `atomic` ainda não estão no julgamento de tipos. T1–T3 continuam
-  valendo sobre o mesmo avaliador, para programas sem saga; estender `HasType` e a contagem
-  linear a sagas (um corpo que falha no meio consome só parte das capacidades) é o próximo
-  passo;
 - **gatilho da compensação:** só a falha de `await` dispara a compensação. No ARX, qualquer
-  erro do corpo dispara, mas num programa bem tipado os outros erros não acontecem (T1);
-- **o que entra no registro:** no núcleo, toda ação dentro da saga é compensável. No ARX, só
-  as ferramentas `compensable` entram no registro, e o `athc` recusa irrevogáveis dentro de
-  `atomic` (T0302).
+  erro do corpo dispara, mas num programa bem tipado os outros erros não acontecem (T1).
+
+## T9: chaves, `Pending[k]` e reconciliação
+
+Uma ferramenta `keyed` recebe uma chave `own IdemKey`. A chave de cada operação é a
+identidade da capacidade linear que a autoriza; como cada capacidade é consumida uma única
+vez (`eval_nodup`), cada chave nomeia uma única operação. O provedor (`Sig.reply`) é
+arbitrário: pode aplicar, recusar ou não responder, à chamada e a cada consulta.
+
+- **Resposta direta:** `Done` (o efeito entra no mundo e no registro da saga) ou `Failed`.
+- **Sem resposta (`TimeoutUnknown`):** nasce `Pending[k]`, e a reconciliação consulta o
+  status até `fuel` vezes (`reconcile`). Uma consulta conclusiva decide `Done` ou `Failed`.
+  Se nenhuma for conclusiva, a obrigação é transferida ao reconciliador durável
+  (`Transferred`) e sai da saga: o efeito incerto não entra no mundo do agente nem no
+  registro de compensação.
+
+O traço registra `pending t k v`, cada `query k i r` e o `settle k e` terminal.
+
+| teorema | enunciado |
+|---|---|
+| `T9` | para **qualquer** programa (com ou sem sagas, tipado ou não), qualquer provedor e nos **dois** desfechos (valor ou `timeout`), os eventos de cada chave do traço formam um ciclo de vida completo (`Lifecycle`) |
+| `T9_no_silent_discard` | toda `Pending[k]` chega a um estado terminal, e toda chave tem exatamente um, no fim |
+| `T9_done_observed` | depois de `Pending[k]`, `Done` só com uma consulta que observou a operação aplicada: um `timeout` nunca vira sucesso por omissão |
+| `T9_transferred_exhausted` | `Transferred` só depois de `fuel` consultas, todas inconclusivas |
+
+A prova é uma instância de `eval_preserves` (`keys_preserves`). O invariante diz que o
+conjunto consumido cresce sem repetição, que toda chave do traço é uma capacidade consumida
+no próprio trecho (por isso ciclos de chaves distintas não se misturam na composição) e que
+os eventos de cada chave formam um ciclo completo. Os caminhos de compensação de uma saga
+não têm evento de chave, e a revogação na saída só acrescenta identidades novas.
+`KeysExample` mostra os dois casos por `rfl`: uma confirmação na segunda consulta e um
+provedor mudo que termina em `Transferred`. As ferramentas sem chave passam pelo protocolo
+trivial, então T1–T6 e o tripé continuam valendo sem mudança.
 
 ## O tripé diferencial (`ath-lean-eval`)
 
@@ -258,7 +334,15 @@ do traço `Out.tr` e um `end` com o valor final:
 
 - `act {args, cap, tool}`, em que `cap` é o conjunto de efeitos concedidos à capacidade;
 - `endorse {accepted, policy, value}`;
+- `fail {probe}`, `undo {args, ok, tool}` e `recover {ok, probe}`, os eventos de saga;
 - `end {value}`.
+
+O ARX e o Python não têm esses três eventos de saga no journal completo; a vista do núcleo os
+reconstrói. `await_timeout` vira `fail`, com a sonda que não observou a pós-condição. Cada
+`compensate` vira `undo`: o registro da saga é refeito como no ARX, com `compensable`
+empilhando, `saga_commit` descartando as `compensable_ops` do topo e `compensate`
+desempilhando. `saga_recovered` e `compensation_failed` viram `recover`, com o que a sonda de
+recuperação observou. Uma chamada sem capacidade é uma sonda do mundo e fica de fora.
 
 Cada entrada é encadeada por BLAKE3, com a serialização canônica do ARX (chaves ordenadas,
 sem espaços, sem carimbo de tempo). O ARX e o runtime Python produzem a mesma vista a partir
@@ -277,6 +361,12 @@ exigem que os três journals coincidam **byte a byte**, logo com a mesma cabeça
   Metade das respostas do oráculo cai na fronteira de alguma política. Cada programa é
   traduzido para a superfície em forma A-normal, na ordem de avaliação de `eval`, e precisa
   passar pelo `athc check`. São 160 sementes no `cargo test` e 400 no job `tripod` da CI.
+- **Programas gerados com sagas** (`generate_saga`). O mundo é de células: ferramentas que
+  somam o argumento a uma célula, a maioria `compensable by u<i>` (a compensação subtrai, ou
+  o provedor a recusa), e sondas de intervalo sem capacidade nem efeito. Cada programa é
+  conferido como bem tipado, linear e `Guarded`. A cobertura exige sagas que confirmam, que
+  compensam e recuperam, e que terminam em `CompensationFailed`, por compensação recusada e
+  por sonda falsa. São 200 sementes no `cargo test` e 400 na CI.
 - **A injeção da Groq** (`Examples.remediate`): as duas execuções dos `example` do Lean (o
   modelo responde 0 e 5) viram dois journals idênticos nos três backends, e as cabeças
   divergem.
@@ -311,10 +401,14 @@ Ainda não estão mecanizados:
 
 - registros, variantes e `match`;
 - `Text` e refinamentos `{x:σ | φ}` além das políticas decidíveis;
-- emissão de capacidades (`keys.mint()`) e atenuação;
-- `retry` e a reconciliação de chaves dentro do avaliador (T9: `Recovery.lean` é um modelo
-  abstrato); as sagas já estão no avaliador (ver [T6](#t6-sagas-no-avaliador-canônico)), mas
-  ainda não no julgamento de tipos;
+- emissão de capacidades e atenuação: no núcleo, a chave de uma operação é a identidade da
+  capacidade linear que a autoriza, não um `keys.mint()` separado;
+- o tratador `handle timeout_unknown` como código do agente: no núcleo, a reconciliação e a
+  transferência são o protocolo da própria ação. O E1 do `athc` já exige que o tratador
+  consuma `Pending[k]` exatamente uma vez;
+- as chaves no tripé: o formato do programa do `ath-lean-eval` ainda não declara ferramentas
+  `keyed`, então o diferencial cobre o fragmento sem chaves;
+- `retry`;
 - graus de certeza `σ ~ p`;
 - localizações ℓ;
 - os teoremas T4 e T5.

@@ -6,9 +6,10 @@ Implementação executável de Aletheia: o subconjunto **Aletheia Core 0**, com 
 compilador `athc`, o runtime `ARX` em Rust e um segundo backend, Python sobre o
 `aletheia_runtime`, verificado contra o ARX por testes diferenciais, inclusive por replay de
 tráfego real da Groq. Há também um núcleo formal em Lean 4, com a solidez de tipos (T1), os
-efeitos com capacidades lineares `Cap[E]` (T2) e a não-interferência com endosso robusto (T3)
-provados sem `sorry` sobre o mesmo avaliador, que também tem sagas, com a recuperação (T6)
-provada. Esse avaliador também roda compilado
+efeitos com capacidades lineares `Cap[E]` (T2), a não-interferência com endosso robusto (T3),
+a recuperação de sagas (T6) e o ciclo de vida das chaves `IdemKey` (T9) provados sem `sorry`
+sobre um só julgamento e um só avaliador, com as sagas dentro da tipagem. Esse avaliador
+também roda compilado
 (`ath-lean-eval`): é o terceiro backend de um tripé diferencial em que o Lean, o ARX e o
 Python produzem o mesmo journal encadeado, byte a byte. Para a suíte oficial `banking` do
 AgentDojo, o agente bancário é um programa Aletheia ligado ao benchmark por um
@@ -46,7 +47,7 @@ cargo build --release
 cargo test                                    # 98 testes, inclusive os diferenciais e o replay da Groq
 (cd runtimes/python && PYTHONPATH=. python3 -m unittest discover -s tests)   # runtime Python
 python3 -m unittest discover -s bench/m1/tests   # os dois oráculos da M1 contra as rodadas publicadas
-(cd lean && lake build --wfail)               # T1, T2, T3 e T6 em Lean 4, auditoria de axiomas e ath-lean-eval
+(cd lean && lake build --wfail)               # T1, T2, T3, T6 e T9 em Lean 4, auditoria de axiomas e ath-lean-eval
 cargo test -p athc --test differential        # com o binário do Lean presente: o tripé Lean × ARX × Python
 
 # reproduzir tráfego real gravado na Groq, nos dois backends
@@ -317,16 +318,19 @@ orçamento. São 29 casos:
 - os 7 cenários da M1.
 
 No mesmo arquivo está o **tripé**. O avaliador formal do Lean (`ath-lean-eval`, o `eval`
-sobre o qual T1–T3 estão provados) entra como terceiro backend. Para programas do núcleo
+sobre o qual T1–T9 estão provados) entra como terceiro backend. Para programas do núcleo
 λ_Ath, os três backends precisam produzir o mesmo **journal do núcleo** (`act`, `endorse`,
-`end`), byte a byte:
+os eventos de saga `fail`, `undo` e `recover`, e `end`), byte a byte:
 
 - **o Lean** escreve o journal a partir do traço do seu avaliador;
 - **o ARX e o Python** o derivam dos seus journals completos (`athc run --core-journal`), cada
   um com o seu BLAKE3.
 
-O corpus tem 160 programas gerados por semente: bem tipados e lineares, conferidos por uma
-reimplementação das regras de `Typing.lean`. Inclui ainda a injeção da Groq de
+O corpus tem 160 programas gerados por semente, bem tipados e lineares, conferidos por uma
+reimplementação das regras de `Typing.lean`, e 200 programas com sagas: ferramentas
+`compensable` sobre um mundo de células, compensações que o provedor pode recusar, sondas,
+`atomic` e `await`, com sagas que confirmam, que recuperam e que terminam em
+`CompensationFailed`. Inclui ainda a injeção da Groq de
 `Examples.lean` e o BLAKE3 do Lean contra o crate de referência. Detalhes em
 [`lean/README.md`](lean/README.md#o-tripé-diferencial-ath-lean-eval).
 
@@ -423,9 +427,12 @@ um oráculo adversarial, endosso por política auditada e ações. O julgamento 
 Γ; pc ⊢ e : τ ^ ι ▷ β, e o avaliador verifica em tempo de execução tudo o que o ARX verifica:
 efeito sem capacidade, reuso de capacidade linear, estouro de orçamento antes do efeito.
 
-- **T1, solidez** (`soundness`, `progress`, `preservation`, `eval_fresh`): um programa bem
-  tipado, linear e com β dentro do teto executa sem erro. O valor final tem o tipo estático, e
-  o gasto real fica dentro de β em cada dimensão; um laço gasta no máximo `n • β(corpo)`.
+- **T1, solidez** (`soundness`, `soundness_total`, `progress`, `preservation`, `eval_fresh`):
+  um programa bem tipado, linear, com todo `await` dentro de uma saga e β dentro do teto
+  executa sem erro. O valor final tem o tipo estático, e o gasto real fica dentro de β em cada
+  dimensão; um laço gasta no máximo `n • β(corpo)`. `await` e `atomic` estão no julgamento:
+  nos dois ramos de uma saga, confirmação e compensação, cada `Cap[E]` é consumida exatamente
+  uma vez, porque a saída revoga o que o caminho percorrido não consumiu.
 - **T2, efeitos e capacidades** (`T2`, `effects_granted`, `effects_lexical`,
   `caps_exactly_once`): sobre o **mesmo** avaliador, toda ação usou uma capacidade `Cap[E]`
   léxica cujo `E` contém o efeito da ferramenta e foi concedida pelo runtime. A guarda dinâmica
@@ -437,7 +444,9 @@ efeito sem capacidade, reuso de capacidade linear, estouro de orçamento antes d
   confiáveis, mas entradas `Untrusted` e oráculos arbitrários, produzem o mesmo traço de ações
   ou divergem numa decisão de endosso. Com as mesmas decisões, as ações, as capacidades e os
   argumentos são idênticos. Todo valor endossado satisfaz a sua política, e o endosso só ocorre
-  sob `pc ⊒ Endorsed`.
+  sob `pc ⊒ Endorsed`. Com sagas (`noninterference_saga`), a partir do mesmo mundo, as duas
+  execuções também concordam no mundo final e no desfecho de cada saga: uma não confirma
+  enquanto a outra compensa sem antes divergir num endosso.
 
 - **T6, recuperação de sagas** (`T6_no_masking`, `T6_recovered`, `T6`, `T6_saga`): `await` e
   `atomic … recover` estão no mesmo avaliador, sobre um mundo abstrato em que ferramentas,
@@ -446,12 +455,20 @@ efeito sem capacidade, reuso de capacidade linear, estouro de orçamento antes d
   silêncio. Sob contratos `restoring`, uma saga que falha compensa exatamente as ações que o
   corpo executou, uma vez cada e na ordem reversa, e devolve o mundo ao invariante de antes da
   saga. Isso vale para corpos sem saga aninhada, porque no ARX uma saga interna confirmada
-  descarta o seu registro. `await` e `atomic` ainda não estão no julgamento de tipos.
+  descarta o seu registro. Como no ARX, só as ferramentas `compensable` entram no registro.
+- **T9, chaves e reconciliação** (`T9`, `T9_no_silent_discard`, `T9_done_observed`,
+  `T9_transferred_exhausted`): uma ferramenta com `own IdemKey` passa pelo protocolo de
+  `TimeoutUnknown`, `Pending[k]` e reconciliação com combustível. Para qualquer programa,
+  qualquer provedor (que pode recusar tudo ou nunca responder) e nos dois desfechos da
+  execução, toda chave termina em exatamente um estado, `Done`, `Failed` ou `Transferred`.
+  Nenhuma `Pending[k]` é descartada em silêncio, `Done` depois de um timeout exige uma
+  consulta que observou a operação aplicada, e `Transferred` só vem depois de esgotar o
+  combustível.
 
 O CI roda `lake build --wfail`, e um alvo de auditoria fixa o conjunto de axiomas de cada
 teorema: só `propext`, `Quot.sound` e `Classical.choice`. O mesmo build compila o avaliador no
 binário `ath-lean-eval`, e o job `tripod` da CI o executa contra o ARX e o Python sobre 400
-programas gerados (o [tripé diferencial](#backend-python)). No cálculo, toda capacidade é
+programas gerados sem sagas e 400 com sagas (o [tripé diferencial](#backend-python)). No cálculo, toda capacidade é
 linear; no ARX, as capacidades de ferramenta são reutilizáveis e a linearidade vale para
 `IdemKey` e `Pending`. Aproximar as duas disciplinas faz parte da prova de refinamento, que
 ainda não existe.
@@ -566,7 +583,7 @@ crates/
   ath-emit/      emissor Python (ANF, nomes únicos, metadados calculados em Rust)
   athc/          CLI, renderização de diagnósticos, testes ponta a ponta e diferenciais
 runtimes/python/ aletheia_runtime: a semântica do ARX em Python (só biblioteca padrão), provedor openai, gravação e replay
-lean/            núcleo λ_Ath em Lean 4: sintaxe, tipagem, avaliador com sagas, T1, T2, T3 e T6, exemplos, auditoria de axiomas e o binário ath-lean-eval (BLAKE3 em Lean)
+lean/            núcleo λ_Ath em Lean 4: sintaxe, tipagem com sagas, avaliador com sagas e chaves, T1, T2, T3, T6 e T9, exemplos, auditoria de axiomas e o binário ath-lean-eval (BLAKE3 em Lean)
 examples/        remediação, plano em lista (rollout), mundos com falhas, 24 variantes com erro e o gerador
 bench/m1/        harness da métrica M1: cenários, linha de base Python, agente, dois oráculos, reavaliação
 bench/replay/    cassetes de tráfego real da Groq (20B e 120B), reproduzidos nos dois backends a cada push
@@ -597,9 +614,10 @@ docs/            registros da Rev6 e da Rev7: execuções reais, decisões e lim
 | 5.4 Métrica M1 | harness reprodutível no CI (simulado) e contra modelo real (workflows); dois oráculos versionados; rodadas N=3 no 120B (Rev6, Rev7) com reavaliação offline |
 | F1 Backend Python | `athc emit --target py` + `aletheia_runtime`; testes diferenciais traço a traço contra o ARX no CI |
 | F1 Replay | provedor `openai` nos dois backends; `--record`/`replay` no nível HTTP; 22 cassetes reais da Groq (20B e 120B) reproduzidos no CI com o mesmo journal, a mesma árvore de compensação e o mesmo balanço |
-| Tripé diferencial | `ath-lean-eval` (o `eval` provado, compilado) × ARX × Python: o mesmo journal do núcleo, byte a byte, em programas gerados bem tipados e lineares e na injeção da Groq; job `tripod` na CI |
-| 4 Metateoria (T6) | sagas no avaliador canônico: mundo abstrato, `await`, `atomic … recover`, compensação LIFO como obrigação, `CompensationFailed`; sem mascaramento e restauração sob contratos `restoring`, sem `sorry` |
-| 4 Metateoria (T1, T2, T3) | `lean/`: núcleo λ_Ath em Lean 4, com um só julgamento e um só avaliador: solidez (progresso, preservação, orçamento graduado), efeitos com `Cap[E]` linear (multiplicidade 1, `drop` explícito, concessão do runtime) e não-interferência com endosso robusto; sem `sorry`, axiomas auditados no build |
+| Tripé diferencial | `ath-lean-eval` (o `eval` provado, compilado) × ARX × Python: o mesmo journal do núcleo, byte a byte, em programas gerados bem tipados e lineares, com e sem sagas (confirmação, recuperação, `CompensationFailed`), e na injeção da Groq; job `tripod` na CI |
+| 4 Metateoria (T6) | sagas no avaliador canônico: mundo abstrato, `await`, `atomic … recover`, compensação LIFO como obrigação, só das ferramentas `compensable`, `CompensationFailed`; sem mascaramento e restauração sob contratos `restoring`, sem `sorry` |
+| 4 Metateoria (T1, T2, T3) | `lean/`: núcleo λ_Ath em Lean 4, com um só julgamento e um só avaliador: solidez (progresso, preservação, orçamento graduado), efeitos com `Cap[E]` linear (multiplicidade 1, `drop` explícito, concessão do runtime) e não-interferência com endosso robusto; `await` e `atomic` no julgamento, com consumo exato nos dois ramos da saga e não-interferência sobre desfechos; sem `sorry`, axiomas auditados no build |
+| 4 Metateoria (T9) | `IdemKey`, `Pending[k]` e `reconcile` no avaliador canônico: toda chave termina em `Done`, `Failed` ou `Transferred`, para qualquer provedor e nos dois desfechos, sem descarte silencioso e com evidência para `Done` |
 
 ### Erros que o compilador já pega
 
@@ -656,20 +674,21 @@ docs/            registros da Rev6 e da Rev7: execuções reais, decisões e lim
   chamada. A fotografia é imutável por execução, mas um host real ainda precisa de versão ou
   assinatura e de revalidação no commit (TOCTOU).
 - **Certificados:** sem `certify`, `Bounded` nem monitor de deriva estatística.
-- **Teoremas:** T1, T2 e T3 estão provados para o núcleo λ_Ath, e só para ele. Ficam de fora
-  registros, variantes e `match`, `Text`, `mint` e atenuação, `retry`, a reconciliação de
-  chaves (T9: `Recovery.lean` é um modelo abstrato), graus de certeza, localizações e T4/T5.
-  As sagas estão no avaliador e têm o T6, mas ainda não estão no julgamento de tipos. A
-  prova é do cálculo. Entre o cálculo e o ARX, e entre o ARX e o Python, a correspondência é
-  verificada por construção e por testes diferenciais (o tripé executa o próprio avaliador
-  provado), não demonstrada. O tripé cobre o fragmento linear do núcleo, sem `drop` na
-  superfície e sem sagas.
+- **Teoremas:** T1, T2, T3, T6 e T9 estão provados para o núcleo λ_Ath, e só para ele. Ficam
+  de fora registros, variantes e `match`, `Text`, `mint` separado e atenuação (no núcleo, a
+  chave de uma operação é a identidade da capacidade que a autoriza), o tratador
+  `timeout_unknown` como código do agente (no núcleo, reconciliação e transferência são o
+  protocolo da ação), `retry`, graus de certeza, localizações e T4/T5. A prova é do cálculo.
+  Entre o cálculo e o ARX, e entre o ARX e o Python, a correspondência é verificada por
+  construção e por testes diferenciais (o tripé executa o próprio avaliador provado), não
+  demonstrada. O tripé cobre o fragmento linear do núcleo, com sagas, mas sem `drop` na
+  superfície e sem ferramentas com chave.
 
 ## Próximos marcos
 
-1. **Sagas no julgamento de tipos**: estender `HasType` e a contagem linear a `await` e
-   `atomic`, levando T1–T3 às sagas; `reconcile` e `Pending` no avaliador (T9); sagas no
-   tripé diferencial.
+1. **Chaves no tripé e o tratador no núcleo**: ferramentas com `own IdemKey` e provedores
+   com falhas injetadas no `ath-lean-eval` e nos dois runtimes; `handle timeout_unknown` como
+   expressão do núcleo, com `Pending[k]` linear consumida por `reconcile` ou `transfer`.
 2. **A matriz oficial do AgentDojo**: completar a rodada `banking` (16 tarefas e 144 pares
    sob ataque, baseline × Aletheia) e estender a ponte à suíte `workspace`.
 3. **Invariantes de recuperação provados**: contratos `restoring` sobre um estado abstrato do

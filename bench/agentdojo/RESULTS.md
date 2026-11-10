@@ -70,3 +70,9 @@ Faltam 125 pares nos dois pipelines, cerca de 250 execuções. Pelo consumo medi
 700 mil tokens: de 3 a 4 lotes diários no limite de 200 mil tokens por dia, ou um lote no
 plano Developer. Cada disparo do workflow retoma de onde o anterior parou e atualiza esta
 matriz.
+
+A cota diária da Groq se recompõe aos poucos: o `429` do primeiro lote pedia 454 s para uma
+requisição de cerca de mil tokens, o que corresponde a uns 8 mil tokens por hora. Disparar
+logo depois do primeiro lote renderia duas ou três execuções. O segundo lote está agendado
+para 11/11/2026, 08:45 UTC, com a janela de 24 h recomposta, e roda com o mesmo agente
+congelado.
