@@ -1,0 +1,4 @@
+{
+ "reason": "cota: https://api.groq.com/openai/v1/chat/completions: HTTP 429: o provedor pediu 454 s de espera",
+ "executed": 71
+}
