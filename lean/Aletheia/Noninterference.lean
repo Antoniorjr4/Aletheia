@@ -38,7 +38,7 @@ inductive LowEq : List Bind → List Val → List Val → Prop where
   | nil : LowEq [] [] []
   | data {Γ ρ₁ ρ₂ v₁ v₂ τ ι} :
       (low ι → v₁ = v₂) → LowEq Γ ρ₁ ρ₂ → LowEq (.data τ ι :: Γ) (v₁ :: ρ₁) (v₂ :: ρ₂)
-  | cap {Γ ρ₁ ρ₂ v} : LowEq Γ ρ₁ ρ₂ → LowEq (.cap :: Γ) (v :: ρ₁) (v :: ρ₂)
+  | cap {Γ ρ₁ ρ₂ v E} : LowEq Γ ρ₁ ρ₂ → LowEq (.cap E :: Γ) (v :: ρ₁) (v :: ρ₂)
 
 theorem LowEq.data_eq {Γ : List Bind} {ρ₁ ρ₂ : List Val} (h : LowEq Γ ρ₁ ρ₂) :
     ∀ {k : Nat} {τ : Ty} {ι : Lab}, Γ[k]? = some (Bind.data τ ι) → low ι → ρ₁[k]? = ρ₂[k]? := by
@@ -56,16 +56,16 @@ theorem LowEq.data_eq {Γ : List Bind} {ρ₁ ρ₂ : List Val} (h : LowEq Γ ρ
     | succ k => simpa using ih (by simpa using hk) hl
 
 theorem LowEq.cap_eq {Γ : List Bind} {ρ₁ ρ₂ : List Val} (h : LowEq Γ ρ₁ ρ₂) :
-    ∀ {k : Nat}, Γ[k]? = some Bind.cap → ρ₁[k]? = ρ₂[k]? := by
+    ∀ {k : Nat} {E : List EffectId}, Γ[k]? = some (Bind.cap E) → ρ₁[k]? = ρ₂[k]? := by
   induction h with
-  | nil => intro k hk; simp at hk
+  | nil => intro k E hk; simp at hk
   | data _ _ ih =>
-    intro k hk
+    intro k E hk
     cases k with
     | zero => simp at hk
     | succ k => simpa using ih (by simpa using hk)
   | cap _ ih =>
-    intro k hk
+    intro k E hk
     cases k with
     | zero => rfl
     | succ k => simpa using ih (by simpa using hk)
@@ -181,7 +181,12 @@ theorem confine {Γ : List Bind} {pc : Lab} {e : Exp} {τ : Ty} {ι : Lab} {β :
     · cases he; simp [iha hpc h₁, ihb hpc h₂]
     · cases he
   | endorse hl _ _ _ _ => intro hpc; exact absurd hl hpc
-  | act hl _ _ _ _ => intro hpc; exact absurd hl hpc
+  | act hl _ _ _ _ _ => intro hpc; exact absurd hl hpc
+  | drop _ =>
+    intro _ ρ s o he
+    simp only [eval] at he
+    obtain ⟨_, _, _, rfl⟩ := doDrop_ok he
+    rfl
   | @for_ Γ pc n xs body τ τb ιx ιb βx βb _ _ ihx ihb =>
     intro hpc ρ s o he
     have hpc' : ¬ low (pc ⊓ ιx) := fun h => hpc (low_meet.mp h).1
@@ -348,13 +353,13 @@ theorem noninterference {c₁ c₂ : Cfg} {Γ : List Bind} {pc : Lab} {e : Exp} 
           · exact .inl ⟨h, fun hι => hv (low_meet.mp hι).2⟩
           · exact .inr h
       simpa using this
-  | @act Γ pc t k a ιa βa _ hk _ hla iha =>
+  | @act Γ pc t k a ιa βa E _ hk _ _ hla iha =>
     intro ρ₁ ρ₂ s₁ s₂ o₁ o₂ hl h₁ h₂
     simp only [eval, bnd_eq_ok] at h₁ h₂
     obtain ⟨a₁, ha₁, h₁⟩ := h₁
     obtain ⟨a₂, ha₂, h₂⟩ := h₂
-    obtain ⟨id₁, hid₁, _, _, rfl⟩ := doAct_ok h₁
-    obtain ⟨id₂, hid₂, _, _, rfl⟩ := doAct_ok h₂
+    obtain ⟨id₁, hid₁, _, _, _, rfl⟩ := doAct_ok h₁
+    obtain ⟨id₂, hid₂, _, _, _, rfl⟩ := doAct_ok h₂
     have hcap := hl.cap_eq hk
     rw [hid₁, hid₂] at hcap
     cases hcap
@@ -395,6 +400,12 @@ theorem noninterference {c₁ c₂ : Cfg} {Γ : List Bind} {pc : Lab} {e : Exp} 
           exact .inl ⟨by rw [e₁, e₂], fun _ => rfl⟩
       next => cases h₂
     next => cases h₁
+  | drop _ =>
+    intro ρ₁ ρ₂ s₁ s₂ o₁ o₂ _ h₁ h₂
+    simp only [eval] at h₁ h₂
+    obtain ⟨_, _, _, rfl⟩ := doDrop_ok h₁
+    obtain ⟨_, _, _, rfl⟩ := doDrop_ok h₂
+    exact .inl ⟨rfl, fun _ => rfl⟩
   | infer _ iha =>
     intro ρ₁ ρ₂ s₁ s₂ o₁ o₂ hl h₁ h₂
     simp only [eval, bnd_eq_ok] at h₁ h₂
@@ -461,7 +472,7 @@ duas execuções. A conclusão do T3 vale, portanto, sem hipótese sobre o resul
 theorem noninterference_total {c₁ c₂ : Cfg} (hO₁ : c₁.oracle.Ok) (hO₂ : c₂.oracle.Ok)
     {Γ : List Bind} {pc : Lab} {e : Exp} {τ : Ty} {ι : Lab} {β : Budget}
     {ρ₁ ρ₂ : List Val} {s₁ s₂ : St} (h : HasType S Γ pc e τ ι β) (hlin : Linear Γ e)
-    (h0₁ : Start Γ ρ₁ s₁) (h0₂ : Start Γ ρ₂ s₂) (hB₁ : s₁.spent + β ≤ c₁.limit)
+    (h0₁ : Start c₁.grants Γ ρ₁ s₁) (h0₂ : Start c₂.grants Γ ρ₂ s₂) (hB₁ : s₁.spent + β ≤ c₁.limit)
     (hB₂ : s₂.spent + β ≤ c₂.limit) (hl : LowEq Γ ρ₁ ρ₂) :
     ∃ o₁ o₂, eval S c₁ e ρ₁ s₁ = .ok o₁ ∧ eval S c₂ e ρ₂ s₂ = .ok o₂ ∧ NI ι o₁ o₂ := by
   obtain ⟨o₁, h₁, _⟩ := soundness hO₁ h hlin h0₁ hB₁
@@ -541,9 +552,13 @@ theorem endorsed_sound : ∀ (e : Exp) {ρ : List Val} {s : St} {o : Out},
   | .act t k a, ρ, s, o, h => by
     simp only [eval, bnd_eq_ok] at h
     obtain ⟨oa, ha, h⟩ := h
-    obtain ⟨id, _, _, _, rfl⟩ := doAct_ok h
+    obtain ⟨id, _, _, _, _, rfl⟩ := doAct_ok h
     refine (endorsed_sound a ha).append ?_
     intro p v hv; simp at hv
+  | .drop k, ρ, s, o, h => by
+    simp only [eval] at h
+    obtain ⟨_, _, _, rfl⟩ := doDrop_ok h
+    exact PolicyOk.nil
   | .for_ n xs body, ρ, s, o, h => by
     simp only [eval, bnd_eq_ok] at h
     obtain ⟨ox, hx, h⟩ := h

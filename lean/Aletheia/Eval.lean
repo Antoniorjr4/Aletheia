@@ -9,8 +9,9 @@ erro explícito. Os quatro erros são estes:
 
 * `stuck`: operação sobre um valor de forma errada (variável livre, `if` sobre não
   booleano…);
-* `noCap`: efeito sem capacidade (o índice de autoridade não guarda uma capacidade);
-* `reuse`: reuso de uma capacidade linear já consumida;
+* `noCap`: efeito sem capacidade (o índice de autoridade não guarda uma capacidade) ou sem
+  concessão do runtime para a classe de efeito da ferramenta;
+* `reuse`: reuso de uma capacidade linear já consumida (por `act` ou por `drop`);
 * `budget`: o efeito ultrapassaria o teto de orçamento. Como na reserva do ARX, a
   verificação acontece **antes** do efeito.
 
@@ -57,14 +58,26 @@ def loop (f : Val → St → Except Err Out) : List Val → St → Except Err (S
   | [], s => .ok (s, [])
   | v :: vs, s => bnd (f v s) fun o => bnd (loop f vs o.st) fun r => .ok (r.1, o.tr ++ r.2)
 
-/-- O efeito de `act t`, depois de avaliado o argumento (saída `o`), com a autoridade `cv`. -/
+/-- O efeito de `act t`, depois de avaliado o argumento (saída `o`), com a autoridade `cv`.
+A guarda confere, nesta ordem, a concessão do runtime para o efeito da ferramenta, a
+linearidade e a reserva de orçamento. Só então o evento é emitido. -/
 def doAct (S : Sig) (c : Cfg) (t : Nat) (cv : Option Val) (o : Out) : Except Err Out :=
   match cv with
   | some (.cap id) =>
-    if id ∈ o.st.used then .error .reuse
-    else if ble (o.st.spent + S.cost t) c.limit then
-      .ok ⟨.unit, ⟨id :: o.st.used, o.st.spent + S.cost t, o.st.calls⟩, o.tr ++ [.act t id o.v]⟩
-    else .error .budget
+    if S.effect t ∈ c.grants id then
+      if id ∈ o.st.used then .error .reuse
+      else if ble (o.st.spent + S.cost t) c.limit then
+        .ok ⟨.unit, ⟨id :: o.st.used, o.st.spent + S.cost t, o.st.calls⟩, o.tr ++ [.act t id o.v]⟩
+      else .error .budget
+    else .error .noCap
+  | _ => .error .noCap
+
+/-- `drop k`: consome a capacidade sem efeito e sem evento. -/
+def doDrop (cv : Option Val) (s : St) : Except Err Out :=
+  match cv with
+  | some (.cap id) =>
+    if id ∈ s.used then .error .reuse
+    else .ok ⟨.unit, ⟨id :: s.used, s.spent, s.calls⟩, []⟩
   | _ => .error .noCap
 
 /-- O efeito de `infer m t`, depois de avaliado o prompt (saída `o`). -/
@@ -101,6 +114,7 @@ def eval (S : Sig) (c : Cfg) : Exp → List Val → St → Except Err Out
     else bnd (eval S c d ρ o.st) fun o' => .ok ⟨o'.v, o'.st, o.tr ++ .endorse p none :: o'.tr⟩
   | .act t k a, ρ, s =>
     bnd (eval S c a ρ s) fun o => doAct S c t ρ[k]? o
+  | .drop k, ρ, s => doDrop ρ[k]? s
   | .for_ _ xs body, ρ, s =>
     bnd (eval S c xs ρ s) fun o =>
     match o.v with
@@ -119,17 +133,31 @@ theorem cond_ok {α : Type} {b : Bool} {x y : Except Err α} {r : α} (h : cond 
 
 theorem doAct_ok {S : Sig} {c : Cfg} {t : Nat} {cv : Option Val} {o r : Out}
     (h : doAct S c t cv o = .ok r) :
-    ∃ id, cv = some (.cap id) ∧ id ∉ o.st.used ∧ ble (o.st.spent + S.cost t) c.limit = true ∧
+    ∃ id, cv = some (.cap id) ∧ S.effect t ∈ c.grants id ∧ id ∉ o.st.used ∧
+      ble (o.st.spent + S.cost t) c.limit = true ∧
       r = ⟨.unit, ⟨id :: o.st.used, o.st.spent + S.cost t, o.st.calls⟩, o.tr ++ [.act t id o.v]⟩ := by
   unfold doAct at h
   split at h
   · rename_i id
-    by_cases hu : id ∈ o.st.used
+    by_cases hg : S.effect t ∈ c.grants id
+    · by_cases hu : id ∈ o.st.used
+      · simp [hg, hu] at h
+      · by_cases hb : ble (o.st.spent + S.cost t) c.limit = true
+        · simp [hg, hu, hb] at h
+          exact ⟨id, rfl, hg, hu, hb, h.symm⟩
+        · simp [hg, hu, hb] at h
+    · simp [hg] at h
+  · simp at h
+
+theorem doDrop_ok {cv : Option Val} {s : St} {r : Out} (h : doDrop cv s = .ok r) :
+    ∃ id, cv = some (.cap id) ∧ id ∉ s.used ∧ r = ⟨.unit, ⟨id :: s.used, s.spent, s.calls⟩, []⟩ := by
+  unfold doDrop at h
+  split at h
+  · rename_i id
+    by_cases hu : id ∈ s.used
     · simp [hu] at h
-    · by_cases hb : ble (o.st.spent + S.cost t) c.limit = true
-      · simp [hu, hb] at h
-        exact ⟨id, rfl, hu, hb, h.symm⟩
-      · simp [hu, hb] at h
+    · simp [hu] at h
+      exact ⟨id, rfl, hu, h.symm⟩
   · simp at h
 
 theorem doInfer_ok {S : Sig} {c : Cfg} {m : Nat} {t : Ty} {o r : Out}
@@ -140,71 +168,5 @@ theorem doInfer_ok {S : Sig} {c : Cfg} {m : Nat} {t : Ty} {o r : Out}
   by_cases hb : ble (o.st.spent + S.mcost m) c.limit = true
   · simp [hb] at h; exact ⟨hb, h.symm⟩
   · simp [hb] at h
-
-/-! ## Rev6 / T2: semântica instrumentada de Cap[E] -/
-
-/-- Na fronteira da ação: confere simultaneamente a permissão léxica
-    e a concessão efetiva da capacidade do runtime, ANTES de emitir evento. -/
-def doScopedAct (S : Sig) (c : Cfg) (A : Authority)
-    (Γ : List ScopedBind) (t k : Nat) (ρ : List Val) (o : Out) : Except Err Out :=
-  match Γ[k]?, ρ[k]? with
-  | some (.cap effects), some (.cap id) =>
-      if effects.contains (A.effectOf t) && (A.grants id).contains (A.effectOf t) then
-        doAct S c t (some (.cap id)) o
-      else .error .noCap
-  | _, _ => .error .noCap
-
-/-- Avaliador total com guarda de efeito no ponto de emissão.
-    Esta é a referência T2; o ARX em Rust ainda requer uma prova de refinamento. -/
-def evalScoped (S : Sig) (c : Cfg) (A : Authority) :
-    Exp → List ScopedBind → List Val → St → Except Err Out
-  | .val v, _, _, s => .ok ⟨v, s, []⟩
-  | .var k, _, ρ, s =>
-      match ρ[k]? with
-      | some v => .ok ⟨v, s, []⟩
-      | none => .error .stuck
-  | .let_ e₁ e₂, Γ, ρ, s =>
-      bnd (evalScoped S c A e₁ Γ ρ s) fun o₁ =>
-      bnd (evalScoped S c A e₂ (.data :: Γ) (o₁.v :: ρ) o₁.st) fun o₂ =>
-      .ok ⟨o₂.v, o₂.st, o₁.tr ++ o₂.tr⟩
-  | .ite cnd then_ else_, Γ, ρ, s =>
-      bnd (evalScoped S c A cnd Γ ρ s) fun o =>
-      match o.v with
-      | .bool b =>
-          bnd (cond b (evalScoped S c A then_ Γ ρ o.st)
-                  (evalScoped S c A else_ Γ ρ o.st)) fun o' =>
-          .ok ⟨o'.v, o'.st, o.tr ++ o'.tr⟩
-      | _ => .error .stuck
-  | .prim op a b, Γ, ρ, s =>
-      bnd (evalScoped S c A a Γ ρ s) fun o₁ =>
-      bnd (evalScoped S c A b Γ ρ o₁.st) fun o₂ =>
-      match o₁.v, o₂.v with
-      | .int x, .int y => .ok ⟨op.apply x y, o₂.st, o₁.tr ++ o₂.tr⟩
-      | _, _ => .error .stuck
-  | .endorse p e d, Γ, ρ, s =>
-      bnd (evalScoped S c A e Γ ρ s) fun o =>
-      if S.pol p o.v then
-        .ok ⟨o.v, o.st, o.tr ++ [.endorse p (some o.v)]⟩
-      else
-        bnd (evalScoped S c A d Γ ρ o.st) fun o' =>
-        .ok ⟨o'.v, o'.st, o.tr ++ .endorse p none :: o'.tr⟩
-  | .act t k a, Γ, ρ, s =>
-      bnd (evalScoped S c A a Γ ρ s) fun o =>
-      doScopedAct S c A Γ t k ρ o
-  | .for_ _ xs body, Γ, ρ, s =>
-      bnd (evalScoped S c A xs Γ ρ s) fun o =>
-      match o.v with
-      | .list vs =>
-          bnd (loop (fun v s' => evalScoped S c A body (.data :: Γ) (v :: ρ) s') vs o.st) fun r =>
-          .ok ⟨.unit, r.1, o.tr ++ r.2⟩
-      | _ => .error .stuck
-  | .infer m t a, Γ, ρ, s =>
-      bnd (evalScoped S c A a Γ ρ s) fun o =>
-      doInfer S c m t o
-
-/-- Nenhuma ação é tentada se a análise de Cap[E] inteira falhar. -/
-def runScoped (S : Sig) (c : Cfg) (A : Authority)
-    (e : Exp) (Γ : List ScopedBind) (ρ : List Val) (s : St) : Except Err Out :=
-  if scopeCheck A Γ e then evalScoped S c A e Γ ρ s else .error .noCap
 
 end Aletheia

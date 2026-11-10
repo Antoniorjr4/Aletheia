@@ -13,9 +13,13 @@ Estes são os estratos do `athc` que o núcleo cobre:
   exige também o argumento `⊒ Endorsed`. A saída de `infer` é sempre `Untrusted`.
 * **E6 (orçamento)**: os custos somam em sequência e fazem junção nos ramos, e o laço
   multiplica: β(for) = β(xs) + n • β(corpo).
-* **E1 (linearidade)**: `uses e k` conta quantas vezes `e` pode consumir a capacidade do
-  índice `k`, com o laço multiplicando pelo teto `n`. `Linear Γ e` exige no máximo um
-  consumo por capacidade.
+* **E2 (efeitos e capacidades)**: `act t k a` exige que o índice `k` seja uma capacidade
+  `Cap[E]` e que o efeito da ferramenta `t` esteja em `E`.
+* **E1 (linearidade, multiplicidade 1)**: `consumes e k` é o número de vezes que **todo**
+  caminho de execução de `e` consome a capacidade do índice `k`, ou `none` se caminhos
+  diferentes consomem quantidades diferentes. `Linear Γ e` exige exatamente um consumo de
+  cada `Cap[E]` em todo caminho: nem duplicação, nem descarte implícito. Descartar uma
+  capacidade exige `drop`.
 -/
 
 namespace Aletheia
@@ -47,12 +51,16 @@ inductive HasType (S : Sig) : List Bind → Lab → Exp → Ty → Lab → Budge
       HasType S Γ pc e τ ιe βe →
       HasType S Γ pc d τ ιd βd →
       HasType S Γ pc (.endorse p e d) τ (.E ⊓ ιd) (βe + βd)
-  | act {Γ pc t k a ιa βa} :
+  | act {Γ pc t k a ιa βa E} :
       low pc →
-      Γ[k]? = some .cap →
+      Γ[k]? = some (.cap E) →
+      S.effect t ∈ E →
       HasType S Γ pc a (S.arg t) ιa βa →
       low ιa →
       HasType S Γ pc (.act t k a) .unit .T (βa + S.cost t)
+  | drop {Γ pc k E} :
+      Γ[k]? = some (.cap E) →
+      HasType S Γ pc (.drop k) .unit .T 0
   | for_ {Γ pc n xs body τ τb ιx ιb βx βb} :
       HasType S Γ pc xs (.list τ n) ιx βx →
       HasType S (.data τ ιx :: Γ) (pc ⊓ ιx) body τb ιb βb →
@@ -61,27 +69,66 @@ inductive HasType (S : Sig) : List Bind → Lab → Exp → Ty → Lab → Budge
       HasType S Γ pc a τa ιa βa →
       HasType S Γ pc (.infer m t a) t .U (βa + S.mcost m)
 
-/-- Quantas vezes `e` pode consumir a capacidade do índice `k`. -/
-def uses : Exp → Nat → Nat
-  | .val _, _ => 0
-  | .var _, _ => 0
-  | .let_ e₁ e₂, k => uses e₁ k + uses e₂ (k + 1)
-  | .ite c t f, k => uses c k + max (uses t k) (uses f k)
-  | .prim _ a b, k => uses a k + uses b k
-  | .endorse _ e d, k => uses e k + uses d k
-  | .act _ j a, k => uses a k + (if j = k then 1 else 0)
-  | .for_ n xs body, k => uses xs k + n * uses body (k + 1)
-  | .infer _ _ a, k => uses a k
+/-! ## Multiplicidade exata -/
 
-/-- E1: cada capacidade em Γ é consumida no máximo uma vez. -/
-def Linear (Γ : List Bind) (e : Exp) : Prop := ∀ k, Γ[k]? = some .cap → uses e k ≤ 1
+/-- Soma de contagens; `none` (caminhos discordantes) absorve. -/
+def Count.add : Option Nat → Option Nat → Option Nat
+  | some a, some b => some (a + b)
+  | _, _ => none
+
+/-- Dois ramos alternativos precisam consumir a mesma quantidade. -/
+def Count.same : Option Nat → Option Nat → Option Nat
+  | some a, some b => if a = b then some a else none
+  | _, _ => none
+
+/-- Uma parte que pode não executar (o `else` de um endosso, o corpo de um laço) não pode
+consumir nada que venha de fora. -/
+def Count.zero : Option Nat → Option Nat
+  | some 0 => some 0
+  | _ => none
+
+/-- Quantas vezes todo caminho de execução de `e` consome a capacidade do índice `k`. -/
+def consumes : Exp → Nat → Option Nat
+  | .val _, _ => some 0
+  | .var _, _ => some 0
+  | .let_ e₁ e₂, k => Count.add (consumes e₁ k) (consumes e₂ (k + 1))
+  | .ite c t f, k => Count.add (consumes c k) (Count.same (consumes t k) (consumes f k))
+  | .prim _ a b, k => Count.add (consumes a k) (consumes b k)
+  | .endorse _ e d, k => Count.add (consumes e k) (Count.zero (consumes d k))
+  | .act _ j a, k => Count.add (consumes a k) (some (if j = k then 1 else 0))
+  | .drop j, k => some (if j = k then 1 else 0)
+  | .for_ _ xs body, k => Count.add (consumes xs k) (Count.zero (consumes body (k + 1)))
+  | .infer _ _ a, k => consumes a k
+
+/-- E1 com multiplicidade 1: cada `Cap[E]` de Γ é consumida exatamente uma vez em todo
+caminho de execução. -/
+def Linear (Γ : List Bind) (e : Exp) : Prop :=
+  ∀ (k : Nat) (E : List EffectId), Γ[k]? = some (Bind.cap E) → consumes e k = some 1
+
+theorem Count.add_eq {a b : Option Nat} {m : Nat} (h : Count.add a b = some m) :
+    ∃ x y, a = some x ∧ b = some y ∧ m = x + y := by
+  cases a <;> cases b <;> simp [Count.add] at h
+  exact ⟨_, _, rfl, rfl, h.symm⟩
+
+theorem Count.same_eq {a b : Option Nat} {m : Nat} (h : Count.same a b = some m) :
+    a = some m ∧ b = some m := by
+  cases a <;> cases b <;> simp [Count.same] at h
+  obtain ⟨rfl, rfl⟩ := h
+  exact ⟨rfl, rfl⟩
+
+theorem Count.zero_eq {a : Option Nat} {m : Nat} (h : Count.zero a = some m) :
+    a = some 0 ∧ m = 0 := by
+  unfold Count.zero at h
+  split at h
+  · cases h; exact ⟨rfl, rfl⟩
+  · cases h
 
 /-- O ambiente realiza o contexto: dados bem tipados nas posições de dado e capacidades nas
 posições de capacidade. -/
 inductive EnvOk : List Bind → List Val → Prop where
   | nil : EnvOk [] []
   | data {Γ ρ v τ ι} : HasTy v τ → EnvOk Γ ρ → EnvOk (.data τ ι :: Γ) (v :: ρ)
-  | cap {Γ ρ id} : EnvOk Γ ρ → EnvOk (.cap :: Γ) (.cap id :: ρ)
+  | cap {Γ ρ id E} : EnvOk Γ ρ → EnvOk (.cap E :: Γ) (.cap id :: ρ)
 
 theorem EnvOk.data_lookup {Γ : List Bind} {ρ : List Val} (h : EnvOk Γ ρ) :
     ∀ {k : Nat} {τ : Ty} {ι : Lab}, Γ[k]? = some (Bind.data τ ι) → ∃ v, ρ[k]? = some v ∧ HasTy v τ := by
@@ -99,23 +146,23 @@ theorem EnvOk.data_lookup {Γ : List Bind} {ρ : List Val} (h : EnvOk Γ ρ) :
     | succ k => simpa using ih (by simpa using hk)
 
 theorem EnvOk.cap_lookup {Γ : List Bind} {ρ : List Val} (h : EnvOk Γ ρ) :
-    ∀ {k : Nat}, Γ[k]? = some Bind.cap → ∃ id, ρ[k]? = some (Val.cap id) := by
+    ∀ {k : Nat} {E : List EffectId}, Γ[k]? = some (Bind.cap E) → ∃ id, ρ[k]? = some (Val.cap id) := by
   induction h with
-  | nil => intro k hk; simp at hk
+  | nil => intro k E hk; simp at hk
   | data _ _ ih =>
-    intro k hk
+    intro k E hk
     cases k with
     | zero => simp at hk
     | succ k => simpa using ih (by simpa using hk)
-  | @cap Γ ρ id _ ih =>
-    intro k hk
+  | @cap Γ ρ id _ _ ih =>
+    intro k E hk
     cases k with
     | zero => exact ⟨id, rfl⟩
     | succ k => simpa using ih (by simpa using hk)
 
 /-- Uma capacidade no ambiente está numa posição de capacidade de Γ. -/
 theorem EnvOk.cap_pos {Γ : List Bind} {ρ : List Val} (h : EnvOk Γ ρ) :
-    ∀ {k id : Nat}, ρ[k]? = some (Val.cap id) → Γ[k]? = some Bind.cap := by
+    ∀ {k id : Nat}, ρ[k]? = some (Val.cap id) → ∃ E, Γ[k]? = some (Bind.cap E) := by
   induction h with
   | nil => intro k id hk; simp at hk
   | data hv _ ih =>
@@ -123,45 +170,23 @@ theorem EnvOk.cap_pos {Γ : List Bind} {ρ : List Val} (h : EnvOk Γ ρ) :
     cases k with
     | zero => simp at hk; exact absurd hk (hv.not_cap id)
     | succ k => simpa using ih (by simpa using hk)
-  | cap _ ih =>
+  | @cap Γ ρ id' E _ ih =>
     intro k id hk
     cases k with
-    | zero => rfl
+    | zero => exact ⟨E, rfl⟩
     | succ k => simpa using ih (by simpa using hk)
 
-/-! ## Rev6 / T2: verificação léxica de Cap[E] -/
+/-- As concessões do runtime cobrem o tipo estático: a capacidade guardada em cada posição
+`Cap[E]` concede pelo menos os efeitos de `E`. -/
+def Granted (G : Nat → List EffectId) (Γ : List Bind) (ρ : List Val) : Prop :=
+  ∀ (k : Nat) (E : List EffectId) (id : Nat), Γ[k]? = some (Bind.cap E) →
+    ρ[k]? = some (Val.cap id) → ∀ x ∈ E, x ∈ G id
 
-/-- Checagem total do contexto de capacidade. É complementar ao HasType
-    histórico (T1/T3) e não transforma Cap em valor copiável.
-    A mudança de escopo por let/for preserva o índice de De Bruijn. -/
-def scopeCheck (A : Authority) : List ScopedBind → Exp → Bool
-  | _, .val _ => true
-  | _, .var _ => true
-  | Γ, .let_ e₁ e₂ => scopeCheck A Γ e₁ && scopeCheck A (.data :: Γ) e₂
-  | Γ, .ite c t f => scopeCheck A Γ c && scopeCheck A Γ t && scopeCheck A Γ f
-  | Γ, .prim _ a b => scopeCheck A Γ a && scopeCheck A Γ b
-  | Γ, .endorse _ e d => scopeCheck A Γ e && scopeCheck A Γ d
-  | Γ, .act t k arg =>
-      (match Γ[k]? with
-        | some (.cap effects) => effects.contains (A.effectOf t)
-        | _ => false) && scopeCheck A Γ arg
-  | Γ, .for_ _ xs body => scopeCheck A Γ xs && scopeCheck A (.data :: Γ) body
-  | Γ, .infer _ _ a => scopeCheck A Γ a
-
-/-- Uma ferramenta sem Cap[E] no escopo é rejeitada antes da avaliação. -/
-theorem scopeCheck_rejects_missing (A : Authority) (Γ : List ScopedBind)
-    (tool k : Nat) (arg : Exp)
-    (h : ¬ ScopedBind.permits Γ k (A.effectOf tool)) :
-    scopeCheck A Γ (.act tool k arg) = false := by
-  cases hget : Γ[k]? with
-  | none => simp [scopeCheck, hget]
-  | some b =>
-    cases b with
-    | data => simp [scopeCheck, hget]
-    | cap effects =>
-      have hn : A.effectOf tool ∉ effects := by
-        intro he
-        exact h ⟨effects, hget, he⟩
-      simp [scopeCheck, hget, hn]
+theorem Granted.cons {G : Nat → List EffectId} {Γ : List Bind} {ρ : List Val} {τ : Ty}
+    {ι : Lab} {v : Val} (h : Granted G Γ ρ) : Granted G (.data τ ι :: Γ) (v :: ρ) := by
+  intro k E id hk hid
+  cases k with
+  | zero => simp at hk
+  | succ k => exact h k E id (by simpa using hk) (by simpa using hid)
 
 end Aletheia
