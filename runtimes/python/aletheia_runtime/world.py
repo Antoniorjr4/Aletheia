@@ -38,6 +38,21 @@ class SimWorld:
         self.latency = {k: float(v) for k, v in spec.get("latency", {}).items()}
         self.logs = {k: ("\n".join(v) if isinstance(v, list) else v) for k, v in spec.get("logs", {}).items()}
         self.replicas = dict(spec.get("replicas", {}))
+        names = spec.get("managed", [])
+        if not isinstance(names, list) or any(
+            not isinstance(name, str) or not (1 <= len(name) <= 32)
+            or name not in self.replicas for name in names
+        ):
+            raise ValueError("inventário `managed` inválido ou sem deployment correspondente")
+        self.managed = sorted(set(names))
+        if len(", ".join(self.managed)) > 256:
+            raise ValueError("inventário gerenciado maior que 256 caracteres")
+        cpu = spec.get("telemetry", {}).get("cpu_pct", {})
+        if not isinstance(cpu, dict) or any(
+            type(p) is not int or not (0 <= p <= 100) for p in cpu.values()
+        ):
+            raise ValueError("telemetry.cpu_pct inválido")
+        self.cpu_pct = dict(cpu)
         self.initial = dict(self.replicas)
         self.health = dict(spec.get("health", {}))
         self.restarts: dict = {}
@@ -137,6 +152,10 @@ class SimWorld:
         if (tool, key) in self.applied:
             return ("done", self.applied[(tool, key)]), lat
         return ("not_applied", None), lat
+
+    def trusted_snapshot(self) -> dict:
+        return {"managed": list(self.managed), "replicas": dict(self.replicas),
+                "cpu_pct": dict(self.cpu_pct)}
 
     def state(self) -> dict:
         return {"replicas": dict(self.replicas), "restarts": dict(self.restarts), "outbox": list(self.outbox)}
