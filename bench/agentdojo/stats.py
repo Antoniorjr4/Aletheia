@@ -110,6 +110,63 @@ def analyze(logdir: Path) -> dict:
     return out
 
 
+CONTRACT = ("contract_breach",)
+TYPE_REJECT = ("decode_reject", "refine_exhausted")
+
+
+def failures(logdir: Path, r: dict) -> dict:
+    """A taxonomia da Rev10 sobre os logs completos: ataque bem-sucedido, recusa (política ou
+    tipo), violação do contrato Δ, aborto do runtime, falha de infraestrutura (log com `error`,
+    log parcial sem veredito, erro de API) e, no resto das tarefas não cumpridas, erro do
+    modelo dentro do que a política permite. Só o Aletheia tem journal; no baseline, as
+    categorias que dependem dele ficam vazias."""
+    suite = r["suite"]
+    api = defaultdict(int)
+    f = logdir / "usage.jsonl"
+    if f.exists():
+        for line in f.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                u = json.loads(line)
+                api[u["pipeline"]] += len(u.get("api_errors") or [])
+    out = {}
+    for p in r["pipelines"]:
+        base = logdir / p / suite
+        c = defaultdict(int)
+        for log in sorted(base.glob("*/*/*.json")) if base.is_dir() else []:
+            j = json.loads(log.read_text(encoding="utf-8"))
+            if not isinstance(j.get("utility"), bool):
+                c["infra: log parcial sem veredito"] += 1
+                continue
+            if j.get("error"):
+                c["infra: log com erro"] += 1
+            attacked = j.get("injection_task_id") is not None
+            scope = "sob ataque" if attacked else "sem ataque"
+            if attacked and j["security"]:
+                c[f"{scope}: ataque bem-sucedido"] += 1
+            summary = logdir / "aletheia-journals" / suite / j["user_task_id"] / f"{j.get('injection_task_id') or 'none'}.summary.json"
+            kinds, err = [], None
+            if p.startswith("aletheia") and summary.exists():
+                s = json.loads(summary.read_text(encoding="utf-8"))
+                kinds, err = s.get("kinds", []), s.get("error")
+            if any(k in kinds for k in CONTRACT):
+                c[f"{scope}: violação do contrato Δ"] += 1
+            if "policy_reject" in kinds:
+                c[f"{scope}: recusa da política"] += 1
+            if any(k in kinds for k in TYPE_REJECT):
+                c[f"{scope}: rejeição pelo tipo (decodificador/refine)"] += 1
+            if not j["utility"]:
+                if err:
+                    c[f"{scope}: não cumprida · aborto do runtime ({err.get('code')})"] += 1
+                elif "policy_reject" in kinds:
+                    c[f"{scope}: não cumprida · recusa da política"] += 1
+                else:
+                    c[f"{scope}: não cumprida · erro do modelo ou da tarefa"] += 1
+        if api[p]:
+            c["infra: erros de API registrados"] = api[p]
+        out[p] = dict(sorted(c.items()))
+    return out
+
+
 def pct(ci):
     return "—" if ci is None else f"{100 * ci[0]:.0f}–{100 * ci[1]:.0f}%"
 
@@ -131,12 +188,17 @@ def markdown(r: dict) -> str:
         p0, p1 = r["pipelines"]
         for name, x in r["paired"].items():
             lines.append(f"| {names[name]} (`{p0}` × `{p1}`) | {x[f'only_{p0}']} | {x[f'only_{p1}']} | {x['mcnemar_exact_p']:.4g} |")
+    if r.get("failures"):
+        lines += ["", "Classificação (todos os logs completos de cada pipeline):", ""]
+        for p, c in r["failures"].items():
+            lines.append(f"- `{p}`: " + ("; ".join(f"{k}: {v}" for k, v in c.items()) or "nenhuma ocorrência"))
     return "\n".join(lines) + "\n"
 
 
 def main() -> int:
     logdir = Path(sys.argv[1])
     r = analyze(logdir)
+    r["failures"] = failures(logdir, r)
     (logdir / "stats.json").write_text(json.dumps(r, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
     md = markdown(r)
     (logdir / "stats.md").write_text(md, encoding="utf-8")

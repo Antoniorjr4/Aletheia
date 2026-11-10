@@ -143,6 +143,16 @@ class Usage:
         if self.spend is not None:
             self.spend.guard()
 
+    def rate_limited(self, body: str, retry_after) -> None:
+        """Um 429: vai para `rate_limits.jsonl`, ao lado do livro-razão, com o corpo da resposta
+        (sem a chave, que nunca está nele)."""
+        if self.spend is None:
+            return
+        line = {"run_id": os.environ.get("GITHUB_RUN_ID"), **self.spend.context, "retry_after": retry_after,
+                "body": body[:600]}
+        with (self.spend.path.parent / "rate_limits.jsonl").open("a", encoding="utf-8") as f:
+            f.write(json.dumps(line, sort_keys=True, ensure_ascii=False) + "\n")
+
     def add(self, tok_in: int | None, tok_out: int | None, est_in: int = 0, est_out: int = 0) -> None:
         """Uma chamada: com `usage` do servidor (`tok_in`/`tok_out`) ou sem ele (estimativa)."""
         self.calls += 1
@@ -278,8 +288,10 @@ def aletheia_pipeline(suite: str, model: str, program: Path, journal_dir: Path, 
                 if isinstance(u, dict):
                     usage.add(u.get("prompt_tokens") or 0, u.get("completion_tokens") or 0)
                 elif r.status == 429:
-                    # recusado por limite de taxa antes de gerar: não conta como gasto
+                    # recusado por limite de taxa antes de gerar: não conta como gasto. O corpo
+                    # diz qual limite (por minuto, por dia, de tokens ou de requisições)
                     usage.calls += 1
+                    usage.rate_limited(r.body or "", r.retry_after)
                 else:
                     # ex.: 400 `json_validate_failed`, que não traz `usage`: estimativa
                     usage.add(None, None, est_tokens(body if isinstance(body, str) else body.decode()),
@@ -441,6 +453,8 @@ def main() -> int:
         state["reason"] = f"orçamento: {e}"
     except (QuotaExhausted, *rate_errors) as e:
         state["reason"] = f"cota: {str(e)[:300]}"
+        if rate_errors and isinstance(e, rate_errors):
+            usage.rate_limited(str(e), None)
     done, reason = state["done"], state["reason"]
     print(f"rodada encerrada ({reason}); {done} execução(ões) nesta rodada")
     print("gasto: " + json.dumps(spend.summary()))

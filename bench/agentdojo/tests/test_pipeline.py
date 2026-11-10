@@ -147,6 +147,25 @@ class FakeGroq(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
 
+class Limited(BaseHTTPRequestHandler):
+    """Uma API que responde 429 com espera longa, como a cota diária da Groq."""
+
+    def log_message(self, *a):
+        pass
+
+    def do_POST(self):
+        self.rfile.read(int(self.headers["Content-Length"]))
+        data = json.dumps({"error": {"message": "Rate limit reached for model `openai/gpt-oss-120b` on tokens per "
+                                                "day (TPD): Limit 200000, Used 199500, Requested 1200.",
+                                     "type": "tokens", "code": "rate_limit_exceeded"}}).encode()
+        self.send_response(429)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("retry-after", "900")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+
 @unittest.skipUnless(HAVE, "requer o pacote agentdojo e o athc compilado")
 class RunnerTests(unittest.TestCase):
     def test_paired_round_resumes_and_writes_the_matrix(self):
@@ -242,6 +261,25 @@ class RunnerTests(unittest.TestCase):
                                    env=env, capture_output=True, text=True, timeout=600)
             self.assertIn("0 execução(ões)", again.stdout)
             self.assertEqual(len(self._ledger(d)), 4)
+        srv.shutdown()
+
+    def test_rate_limit_body_is_recorded(self):
+        """Um 429 longo encerra a rodada como cota, sem gasto, e o corpo vai para
+        `rate_limits.jsonl` (é ele que diz qual limite foi atingido)."""
+        srv = HTTPServer(("127.0.0.1", 0), Limited)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        env = dict(os.environ, OPENAI_API_KEY="local", OPENAI_BASE_URL=f"http://127.0.0.1:{srv.server_port}/v1",
+                   ALETHEIA_REASONING_EFFORT="none", NO_PROXY="127.0.0.1", no_proxy="127.0.0.1")
+        with tempfile.TemporaryDirectory() as d:
+            r = subprocess.run(self._cmd(d, "--pipelines", "aletheia"), env=env, capture_output=True, text=True,
+                               timeout=600)
+            self.assertEqual(r.returncode, 0, r.stderr[-2000:])
+            last = json.loads((Path(d) / "last_round.json").read_text())
+            self.assertTrue(last["reason"].startswith("cota:"), last)
+            self.assertEqual(last["spend"]["usd_round"], 0.0)
+            rl = [json.loads(x) for x in (Path(d) / "rate_limits.jsonl").read_text().splitlines()]
+            self.assertIn("tokens per day (TPD)", rl[0]["body"])
+            self.assertEqual(rl[0]["user_task"], "user_task_4")
         srv.shutdown()
 
     def test_unknown_model_needs_an_explicit_price(self):
