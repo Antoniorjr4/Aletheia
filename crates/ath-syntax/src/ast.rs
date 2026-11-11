@@ -167,6 +167,11 @@ pub struct ToolDecl {
     pub latency: f64,
     /// Custo declarado por chamada, em US$.
     pub usd: f64,
+    /// `requires <expr>`: o contrato de autorização da ferramenta, uma expressão `Bool` pura
+    /// sobre os parâmetros e o estado confiável, conferida pelo runtime antes do efeito
+    /// (monitor de referência na fronteira do efeito), qualquer que seja a política que
+    /// endossou os argumentos.
+    pub requires: Option<Expr>,
 }
 
 impl ToolDecl {

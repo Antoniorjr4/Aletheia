@@ -166,7 +166,7 @@ theorem canned_ok (n : Int) : (canned n).Ok := by
   | list t k => exact .list (by simp) (by simp)
 
 def ρ₀ : List Val := [.int 42, .cap 7]
-def s₀ : St := ⟨[], 0, 0, fun _ => 0, []⟩
+def s₀ : St := ⟨[], 0, 0, fun _ => 0, [], 100, []⟩
 def limit : Budget := fun d => match d with | .tok => 20000 | .usd => 500000 | .wall => 120000 | _ => 0
 
 /-- O runtime concede `Cluster.Write` à capacidade 7, e nada mais. -/
@@ -186,6 +186,9 @@ theorem start₀ : Start grants Γ ρ₀ s₀ where
     intro k E id hk hid x hx
     rcases k with _ | _ | k <;> simp_all [Γ, ρ₀, grants]
   fresh := by simp [s₀]
+  nokey := by intro k; rcases k with _ | _ | k <;> simp [Γ]
+  kf := ⟨by intro k x hk; rcases k with _ | _ | k <;> simp [ρ₀] at hk <;> subst hk <;> simp [s₀],
+    by simp [s₀], by simp [s₀]⟩
 
 theorem fits : s₀.spent + βR ≤ limit := by
   intro d; cases d <;> decide

@@ -86,6 +86,22 @@ theorem Lexical.uncons {Γ : List Bind} {ρ : List Val} {τ : Ty} {ι : Lab} {v 
   | zero => simp at hk
   | succ k => exact ⟨k, E, by simpa using hk, by simpa using hid, he⟩
 
+/-- Sob uma chave cunhada, a capacidade usada vem de fora: a chave não é `Cap[E]`. -/
+theorem Lexical.unkey {Γ : List Bind} {ρ : List Val} {v : Val} {tr : List Ev}
+    (h : Lexical S (.key :: Γ) (v :: ρ) tr) : Lexical S Γ ρ tr := by
+  intro t id w hm
+  obtain ⟨k, E, hk, hid, he⟩ := h t id w hm
+  cases k with
+  | zero => simp at hk
+  | succ k => exact ⟨k, E, by simpa using hk, by simpa using hid, he⟩
+
+theorem Lexical.mint {Γ : List Bind} {ρ : List Val} {k : Nat} {tr : List Ev}
+    (h : Lexical S Γ ρ tr) : Lexical S Γ ρ (.mint k :: tr) := by
+  intro t id w hm
+  rcases List.mem_cons.mp hm with hm | hm
+  · cases hm
+  · exact h t id w hm
+
 theorem loop_all {f : Val → St → Except Err Out} {P : List Ev → Prop}
     (hnil : P []) (happ : ∀ a b, P a → P b → P (a ++ b))
     (hf : ∀ v (s : St) o, f v s = .ok o → P o.tr) :
@@ -107,7 +123,7 @@ def Outcome.tr' : Except Err Out → Option (List Ev)
 
 /-- Toda ação do traço foi concedida, nos dois desfechos (as compensações e as sondas de uma
 saga não são ações). -/
-theorem granted_preserves (c : Cfg) : Preserves S c True (fun _ _ tr => Granted' S c.grants tr) where
+theorem granted_preserves (c : Cfg) : Preserves S c True True (fun _ _ tr => Granted' S c.grants tr) where
   refl _ := Granted'.nil _
   trans h₁ h₂ := h₁.append h₂
   endorse _ := Granted'.endorse _ _ _ [] (Granted'.nil _)
@@ -129,30 +145,35 @@ theorem granted_preserves (c : Cfg) : Preserves S c True (fun _ _ tr => Granted'
       cases hu
     · simp at hv
   callDone := by
-    intro _ s t id v hg _ t' id' v' hm
+    intro _ s t id kid v hg _ _ _ t' id' v' hm
     simp at hm; obtain ⟨rfl, rfl, rfl⟩ := hm; exact hg
-  callFailed := by intro _ s t id _ _ t' id' v' hm; simp at hm
+  callFailed := by intro _ s t id kid _ _ _ _ t' id' v' hm; simp at hm
   callRec := by
-    intro _ s t id n v e _ _ _ _ t' id' v' hm
+    intro _ s t id kid n v e _ _ _ _ _ _ t' id' v' hm
     rcases List.mem_cons.mp hm with hm | hm
     · cases hm
     · rcases List.mem_append.mp hm with hm | hm
-      · obtain ⟨j, r, h'⟩ := reconcile_queries S (S.prov t) id 1 n _ hm; cases h'
+      · obtain ⟨j, r, h'⟩ := reconcile_queries S t kid 1 n _ hm; cases h'
       · simp at hm
   callAbort := by
-    intro _ s s₃ t id n v tr _ _ _ hh _ t' id' v' hm
+    intro _ s s₃ t id kid n v tr _ _ _ _ _ hh _ t' id' v' hm
     rcases List.mem_cons.mp hm with hm | hm
     · cases hm
     · rcases List.mem_append.mp hm with hm | hm
-      · obtain ⟨j, r, h'⟩ := reconcile_queries S (S.prov t) id 1 n _ hm; cases h'
+      · obtain ⟨j, r, h'⟩ := reconcile_queries S t kid 1 n _ hm; cases h'
       · rcases List.mem_append.mp hm with hm | hm
         · exact hh t' id' v' hm
         · simp at hm
+  mint := by
+    intro s s' t _ _ h t' id' v' hm
+    rcases List.mem_cons.mp hm with hm | hm
+    · cases hm
+    · exact h t' id' v' hm
   transfer := by intro s k t' id' v' hm; simp at hm
 
 theorem effects_granted (c : Cfg) (e : Exp) {ρ : List Val} {s : St} {o : Out}
     (h : eval S c e ρ s = .ok o) : Granted' S c.grants o.tr :=
-  (eval_preserves (granted_preserves c) e (.inl trivial)).1 h
+  (eval_preserves (granted_preserves c) e ⟨.inl trivial, .inl trivial⟩).1 h
 
 /-! ## 2. Toda ação usa uma `Cap[E]` léxica que contém o efeito -/
 
@@ -373,7 +394,7 @@ theorem effects_lexical_total (c : Cfg) {Γ : List Bind} {pc : Lab} {e : Exp} {�
       · rename_i hne _
         cases he
         exact absurd rfl (hne _ _ _)
-  | @call Γ pc t k a n e ιa βa E ιe βe _ hk heff _ _ _ _ _ iha ihe =>
+  | @call Γ pc t k κ a n e ιa βa E ιe βe _ hk heff _ _ _ _ _ _ iha ihe =>
     intro ρ s
     -- o tratador roda num ambiente sem capacidades: o traço dele não tem ação
     have hnoact : ∀ {s' : St} {o' : Out} {pid : Nat}, eval S c e [.pend t pid] s' = .ok o' →
@@ -386,7 +407,7 @@ theorem effects_lexical_total (c : Cfg) {Γ : List Bind} {pc : Lab} {e : Exp} {�
     refine ⟨fun o he => ?_, fun q s₁ tr he => ?_⟩
     · simp only [eval, bnd_eq_ok] at he
       obtain ⟨oa, ha, he⟩ := he
-      obtain ⟨id, hid, _, _, _, hc⟩ := doCall_ok he
+      obtain ⟨id, kid, hid, _, _, _, _, _, _, hc⟩ := doCall_ok he
       rcases hc with ⟨_, rfl⟩ | ⟨_, _, rfl⟩
       · refine (iha.1 _ ha).append fun t' id' v' hm => ?_
         simp at hm; obtain ⟨rfl, rfl, rfl⟩ := hm
@@ -395,27 +416,34 @@ theorem effects_lexical_total (c : Cfg) {Γ : List Bind} {pc : Lab} {e : Exp} {�
         rcases List.mem_cons.mp hm with hm | hm
         · cases hm
         · rcases List.mem_append.mp hm with hm | hm
-          · obtain ⟨j, r, h'⟩ := reconcile_queries S (S.prov t) id 1 n _ hm; cases h'
+          · obtain ⟨j, r, h'⟩ := reconcile_queries S t kid 1 n _ hm; cases h'
           · simp at hm
     · simp only [eval] at he
       rcases bnd_eq_timeout he with h₀ | ⟨oa, t₀, ha, h₁, rfl⟩
       · exact iha.2 _ _ _ h₀
-      · obtain ⟨id, hid, _, _, _, hc⟩ := doCall_timeout h₁
+      · obtain ⟨id, kid, hid, _, _, _, _, _, _, hc⟩ := doCall_timeout h₁
         refine (iha.1 _ ha).append fun t' id' v' hm => ?_
         rcases hc with ⟨_, _, _, rfl⟩ | ⟨_, _, _, _, rfl⟩ | ⟨_, _, oh, hoh, _, _, _, rfl⟩
         · simp at hm
         · rcases List.mem_cons.mp hm with hm | hm
           · cases hm
           · rcases List.mem_append.mp hm with hm | hm
-            · obtain ⟨j, r, h'⟩ := reconcile_queries S (S.prov t) id 1 n _ hm; cases h'
+            · obtain ⟨j, r, h'⟩ := reconcile_queries S t kid 1 n _ hm; cases h'
             · simp at hm
         · rcases List.mem_cons.mp hm with hm | hm
           · cases hm
           · rcases List.mem_append.mp hm with hm | hm
-            · obtain ⟨j, r, h'⟩ := reconcile_queries S (S.prov t) id 1 n _ hm; cases h'
+            · obtain ⟨j, r, h'⟩ := reconcile_queries S t kid 1 n _ hm; cases h'
             · rcases List.mem_append.mp hm with hm | hm
               · exact absurd hm (hnoact hoh t' id' v')
               · simp at hm
+  | mint _ _ _ ih =>
+    intro ρ s
+    refine ⟨fun o he => ?_, fun q s₁ tr he => ?_⟩
+    · obtain ⟨_, _, o', h', rfl⟩ := eval_mint_ok he
+      exact (ih.1 _ h').unkey.mint
+    · obtain ⟨_, _, s', tr', h', _, rfl⟩ := eval_mint_timeout he
+      exact (ih.2 _ _ _ h').unkey.mint
   | transfer _ _ =>
     intro ρ s
     refine ⟨fun o he => ?_, fun q s₁ tr he => ?_⟩
@@ -497,9 +525,9 @@ theorem T2_keys {c : Cfg} (hO : c.oracle.Ok) {Γ : List Bind} {pc : Lab} {e : Ex
   rcases soundness hO h hlin hg h0 hB with ⟨o, he, _⟩ | ⟨k, s₁, tr, he⟩ | ⟨v, s₁, tr, he, _⟩
   · exact ⟨o.tr, by simp [Outcome.tr', he], effects_lexical c h he, effects_granted c e he⟩
   · exact ⟨tr, by simp [Outcome.tr', he], (effects_lexical_total c h).2 _ _ _ he,
-      (eval_preserves (granted_preserves c) e (.inl trivial)).2 he⟩
+      (eval_preserves (granted_preserves c) e ⟨.inl trivial, .inl trivial⟩).2 he⟩
   · exact ⟨tr, by simp [Outcome.tr', he], (effects_lexical_total c h).2 _ _ _ he,
-      (eval_preserves (granted_preserves c) e (.inl trivial)).2 he⟩
+      (eval_preserves (granted_preserves c) e ⟨.inl trivial, .inl trivial⟩).2 he⟩
 
 end
 

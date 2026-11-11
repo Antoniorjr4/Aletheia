@@ -96,6 +96,8 @@ impl Journal {
     ///
     /// * `tool` com chave → `act {args, cap, tool}` (sem a chave nos argumentos) e
     ///   `settle {key, status: "done"}`: a resposta na hora é a evidência de `Done`;
+    /// * `mint` → `mint {key}` (Rev12): a identidade da operação nasce no evento de cunhagem,
+    ///   e o λ_Ath a nomeia pela mesma ordem;
     /// * `tool_failed` → `settle {key, status: "failed"}`;
     /// * `timeout_unknown` → `pending {key, tool}`;
     /// * `reconcile` → `query {attempt, key, status}`;
@@ -147,6 +149,7 @@ impl Journal {
                     refused = d["key"].clone();
                     j.push_untimed("settle", json!({ "key": d["key"], "status": "failed" }));
                 }
+                Some("mint") => j.push_untimed("mint", json!({ "key": d["key"] })),
                 Some("timeout_unknown") => {
                     if d["tool"].as_str().is_some_and(|t| compensable.contains(t)) {
                         comp.push(Vec::new());

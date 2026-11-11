@@ -173,7 +173,7 @@ impl Prov {
 /// `queryable`, as consultas de status que respondem "desconhecido" antes da verdade.
 #[derive(Clone, Debug)]
 pub struct KeySpec {
-    /// a capacidade que dá a chave à chamada (a chave do Lean)
+    /// a capacidade que autoriza a chamada (a chave é cunhada à parte, `keys.mint()`)
     pub cap: usize,
     pub provider: Prov,
     pub faults: Vec<(u32, &'static str)>,
@@ -976,7 +976,12 @@ fn exp_json(e: &E, h: &(usize, Json)) -> Json {
         E::Infer(m, t, a) => json!({ "infer": [m, ty_json(t), exp_json(a)] }),
         E::Await(q) => json!({ "await": q }),
         E::Atomic(b, r, f, g) => json!({ "atomic": [exp_json(b), r, exp_json(f), exp_json(g)] }),
-        E::Call(t, k, a) => json!({ "call": [t, k, exp_json(a), h.0, h.1] }),
+        // `t(c, a, keys.mint())`: o argumento primeiro, depois a cunhagem da chave fresca, como
+        // o ARX avalia os argumentos. Sob o `let` e o `mint`, a capacidade `k` passa a `k + 2`, o
+        // argumento a 1 e a chave a 0: `let x = a in mint κ. call t (k+2) κ x`
+        E::Call(t, k, a) => {
+            json!({ "let": [exp_json(a), { "mint": { "call": [t, k + 2, 0, { "var": 1 }, h.0, h.1] } }] })
+        }
         E::Transfer(p) => json!({ "transfer": p }),
     }
 }
@@ -1012,8 +1017,10 @@ impl Prog {
             "env": (0..self.caps.len()).rev().map(|id| json!({ "cap": id })).collect::<Vec<_>>(),
             "oracle": self.oracle,
             "exp": exp_json(&self.exp, &(self.fuel, exp_json(&self.handler(), &(0, Json::Null)))),
-            "replies": self.key_runs().iter().map(|(_, cap, r)| json!({ "key": cap, "replies": r.replies })).collect::<Vec<_>>(),
-            "applied": self.key_runs().iter().filter(|(_, _, r)| r.applied).map(|(_, cap, _)| cap).collect::<Vec<_>>(),
+            // o provedor responde à operação da ferramenta (um único ponto de chamada executado
+            // por ferramenta com chave), não ao nome da chave
+            "replies": self.key_runs().iter().map(|(t, _, r)| json!({ "tool": t, "replies": r.replies })).collect::<Vec<_>>(),
+            "applied": self.key_runs().iter().filter(|(_, _, r)| r.applied).map(|(t, _, _)| t).collect::<Vec<_>>(),
         })
     }
 

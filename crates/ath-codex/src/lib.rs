@@ -165,6 +165,9 @@ impl Deps<'_> {
                 if let Some(c) = &d.compensator {
                     self.name(&c.name);
                 }
+                if let Some(req) = &d.requires {
+                    self.expr(req);
+                }
             }
             Item::Policy(d) => {
                 d.params.iter().for_each(|p| self.ty(&p.ty));
@@ -394,7 +397,19 @@ impl Canon<'_> {
                     self.reference(&c.name);
                     self.w(")");
                 }
-                let _ = write!(self.out, " (provider {}) (latency {}) (usd {}))", d.provider.name(), d.latency, d.usd);
+                let _ = write!(self.out, " (provider {}) (latency {}) (usd {})", d.provider.name(), d.latency, d.usd);
+                // o contrato `requires` é parte da identidade da ferramenta (Rev12); ausente, a
+                // forma canônica é a de antes, byte a byte
+                if let Some(req) = &d.requires {
+                    self.w(" (requires ");
+                    for p in &d.params {
+                        self.locals.push(p.name.name.clone());
+                    }
+                    self.expr(req);
+                    self.locals.clear();
+                    self.w(")");
+                }
+                self.w(")");
             }
             Item::Policy(d) => {
                 self.w("(policy ");

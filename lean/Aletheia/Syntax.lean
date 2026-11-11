@@ -98,14 +98,19 @@ inductive Exp where
   todas deram certo e a sonda de recuperação `r` confirma, e `g` (`CompensationFailed`) em
   qualquer outro caso -/
   | atomic (body : Exp) (r : Nat) (f g : Exp)
-  /-- `call t k a n e`: a ferramenta `t` com chave `own IdemKey`, com a autoridade da
-  capacidade do índice `k`, que ela consome. A chave da operação é a identidade dessa
-  capacidade. A chamada pode ser aplicada, recusada (`Failed`) ou ficar sem resposta
-  (`TimeoutUnknown`). No último caso roda o tratador `reconcile p fuel n else e`: até `n`
-  consultas pelo protocolo do provedor; se nenhuma for conclusiva, `e` roda num ambiente
-  fechado que só contém a obrigação linear `Pending[k]` (índice 0), precisa transferi-la, e o
-  seu valor encerra o evento (`Abort`). -/
-  | call (t k : Nat) (a : Exp) (n : Nat) (e : Exp)
+  /-- `call t c κ a n e`: a ferramenta `t` com chave `own IdemKey`. A **autoridade** vem da
+  capacidade do índice `c`; a **identidade** da operação é a chave do índice `κ`, cunhada por
+  `mint`. As duas são recursos lineares independentes, e a chamada consome os dois. A chamada
+  pode ser aplicada, recusada (`Failed`) ou ficar sem resposta (`TimeoutUnknown`). No último
+  caso roda o tratador `reconcile p fuel n else e`: até `n` tentativas pelo protocolo do
+  provedor; se nenhuma for conclusiva, `e` roda num ambiente fechado que só contém a obrigação
+  linear `Pending[κ]` (índice 0), precisa transferi-la, e o seu valor encerra o evento
+  (`Abort`). -/
+  | call (t c κ : Nat) (a : Exp) (n : Nat) (e : Exp)
+  /-- `mint e`: cunha uma chave fresca e a liga no índice 0 de `e`, que precisa consumi-la
+  exatamente uma vez. Na saída, a chave é aposentada: nunca mais pode identificar uma
+  operação. -/
+  | mint (e : Exp)
   /-- `transfer p`: entrega a obrigação do índice `p` ao reconciliador durável -/
   | transfer (p : Nat)
   deriving Repr
@@ -121,6 +126,8 @@ inductive Bind where
   | cap (E : List EffectId)
   /-- a obrigação linear `Pending[k]` no ambiente do tratador -/
   | pend
+  /-- uma chave `IdemKey` cunhada por `mint`, linear, sem autoridade -/
+  | key
   deriving DecidableEq, Repr
 
 /-- O que o provedor responde a uma chamada com chave (tentativa 0) ou a uma tentativa da
@@ -174,6 +181,8 @@ inductive Ev where
   | query (k : Nat) (i : Nat) (r : Option Reply)
   /-- a chave `k` chegou ao estado terminal `e` -/
   | settle (k : Nat) (e : KEnd)
+  /-- `mint`: a chave `k` foi cunhada (fresca) -/
+  | mint (k : Nat)
   /-- `transfer`: o tratador entregou a obrigação `k` ao reconciliador durável. O fechamento
   `Transferred` é emitido pela própria chamada, depois de conferir que o tratador entregou
   aquela obrigação exatamente uma vez -/
@@ -210,14 +219,14 @@ structure Sig where
   probe : Nat → World → Bool := fun _ _ => true
   /-- a classe do provedor de cada ferramenta com chave -/
   prov  : Nat → Prov := fun _ => .queryable
-  /-- o provedor: `reply k i` é a resposta à tentativa `i` da operação de chave `k` (0 é a
-  chamada; 1, 2, … o reenvio ou a consulta de status). Arbitrária: os teoremas valem para
-  qualquer provedor, inclusive um que nunca responde -/
-  reply : Nat → Nat → Reply := fun _ _ => .done
-  /-- a verdade oculta de uma operação que ficou sem resposta: `applied k` diz se o efeito
-  de `k` existe no mundo, saiba o agente ou não. É a razão de `Transferred` não significar
-  "desfeito" -/
-  applied : Nat → Bool := fun _ => false
+  /-- o provedor: `reply t k i` é a resposta à tentativa `i` da operação de chave `k` da
+  ferramenta `t` (0 é a chamada; 1, 2, … o reenvio ou a consulta de status). Arbitrária: os
+  teoremas valem para qualquer provedor, inclusive um que nunca responde -/
+  reply : Nat → Nat → Nat → Reply := fun _ _ _ => .done
+  /-- a verdade oculta de uma operação que ficou sem resposta: `applied t k` diz se o efeito
+  da operação de chave `k` existe no mundo, saiba o agente ou não. É a razão de `Transferred`
+  não significar "desfeito" -/
+  applied : Nat → Nat → Bool := fun _ _ => false
   /-- o tipo do valor com que o tratador de `TimeoutUnknown` encerra o evento (o tipo de
   retorno do agente, como em `handle timeout_unknown(p) -> T`) -/
   ret   : Ty := .unit

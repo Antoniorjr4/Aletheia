@@ -18,6 +18,24 @@ pub struct TrustedSnapshot {
     pub inventories: BTreeMap<String, Vec<String>>,
 }
 
+/// Um decimal não negativo (`123`, `98.70`, `1,050.00`) em milionésimos; `None` se ilegível.
+/// O runtime Python usa a mesma leitura (`aletheia_runtime.runtime.decimal`).
+pub fn decimal(x: &str) -> Option<i128> {
+    let t: String = x.trim().chars().filter(|&ch| ch != ',').collect();
+    let (int, frac) = t.split_once('.').unwrap_or((&t, ""));
+    if int.is_empty() || int.len() > 18 || frac.len() > 6 {
+        return None;
+    }
+    if !int.bytes().all(|b| b.is_ascii_digit()) || !frac.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let mut v: i128 = int.parse().ok()?;
+    v *= 1_000_000;
+    let f = format!("{frac:0<6}");
+    v += f.parse::<i128>().ok()?;
+    Some(v)
+}
+
 impl TrustedSnapshot {
     pub fn inventory_text(&self, name: &str) -> String {
         self.inventories.get(name).map(|v| v.join(", ")).unwrap_or_default()
@@ -25,6 +43,20 @@ impl TrustedSnapshot {
 
     pub fn member(&self, name: &str, x: &str) -> bool {
         self.inventories.get(name).is_some_and(|v| v.iter().any(|s| s == x))
+    }
+
+    /// `s.within("k", x)`: `x` (decimal) não passa do limite confiável `k` (o primeiro item do
+    /// inventário). Inventário ausente ou número ilegível: falha fechado.
+    pub fn within(&self, name: &str, x: &str) -> bool {
+        match (self.inventories.get(name).and_then(|v| v.first()).and_then(|l| decimal(l)), decimal(x)) {
+            (Some(l), Some(v)) => v <= l,
+            _ => false,
+        }
+    }
+
+    /// `s.mentions("k", x)`: `x`, não vazio, aparece literalmente num texto confiável `k`.
+    pub fn mentions(&self, name: &str, x: &str) -> bool {
+        !x.is_empty() && self.inventories.get(name).is_some_and(|v| v.iter().any(|s| s.contains(x)))
     }
 
     pub fn managed_text(&self) -> String {

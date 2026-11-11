@@ -63,7 +63,7 @@ def core_view(entries: list, compensable=()) -> Journal:
     `compensable_ops` do topo, `compensate` desempilha. O avaliador do Lean produz esta mesma
     vista, byte a byte.
 
-    O protocolo de chaves (Rev11): `tool` com chave → `act` (sem a chave nos argumentos) e
+    O protocolo de chaves (Rev11; `mint` → `mint {key}` desde a Rev12): `tool` com chave → `act` (sem a chave nos argumentos) e
     `settle {key, status: "done"}`; `tool_failed` → `settle {key, status: "failed"}`;
     `timeout_unknown` → `pending {key, tool}` (e, se a ferramenta está em `compensable`, a
     operação entra no registro); `reconcile` → `query {attempt, key, status}`; `resolved` →
@@ -102,6 +102,8 @@ def core_view(entries: list, compensable=()) -> Journal:
         elif kind == "tool_failed":
             refused = d.get("key")
             j.push_untimed("settle", {"key": d.get("key"), "status": "failed"})
+        elif kind == "mint":
+            j.push_untimed("mint", {"key": d.get("key")})
         elif kind == "timeout_unknown":
             if d.get("tool") in compensable:
                 comp.append([])
