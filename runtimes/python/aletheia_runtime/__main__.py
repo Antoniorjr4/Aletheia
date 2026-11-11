@@ -127,7 +127,8 @@ def main(argv: list) -> int:
             f.write(rt.journal.to_jsonl())
     if one("core-journal"):
         with open(one("core-journal"), "w", encoding="utf-8", newline="\n") as f:
-            f.write(core_view(rt.journal.entries).to_jsonl())
+            comp = [n for n, t in prog.tools.items() if t.get("class") == "compensable"]
+            f.write(core_view(rt.journal.entries, comp).to_jsonl())
     if recorder is not None:
         manifest = {"source_path": one("source") or path, "agent": agent, "event": event, "args": raw,
                     "world": json.load(open(one("world"), encoding="utf-8")) if one("world") else {}}

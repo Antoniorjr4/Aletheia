@@ -331,6 +331,9 @@ class Runtime:
         try:
             out, lat = self.host.call(name, args)
         except HostFailed as e:
+            # com chave, a recusa é um estado terminal da obrigação (`Failed`), como no ARX
+            if key_n is not None:
+                self.journal.push(self.clock, "tool_failed", {"tool": name, "key": f"k{key_n}", "error": e.msg})
             raise RtErr("R0600", e.msg) from None
         except HostTimeout as e:
             elapsed = e.elapsed

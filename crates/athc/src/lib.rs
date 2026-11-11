@@ -39,6 +39,20 @@ pub fn contract_hashes(c: &Compiled) -> std::collections::HashMap<String, String
         .collect()
 }
 
+/// As ferramentas declaradas `compensable`: a vista do núcleo do journal precisa delas para
+/// reconstruir o registro da saga quando uma operação com chave fica sem resposta.
+pub fn compensable_tools(m: &Module) -> std::collections::BTreeSet<String> {
+    m.items
+        .iter()
+        .filter_map(|i| match i {
+            ath_syntax::ast::Item::Tool(t) if t.class == ath_syntax::ast::EffClass::Compensable => {
+                Some(t.name.name.clone())
+            }
+            _ => None,
+        })
+        .collect()
+}
+
 /// Estilo de saída: com ou sem cores ANSI.
 #[derive(Clone, Copy)]
 pub struct Style {
