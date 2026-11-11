@@ -151,6 +151,12 @@ pub fn python(m: &Module, _check: &CheckResult, codex: &Codex, source: &str) -> 
                         "provider": t.provider.name(),
                         "latency": t.latency,
                         "usd": t.usd,
+                        // a forma dos argumentos, para a recuperação ler as intenções do WAL
+                        "params": t.params.iter().map(|p| match p.ty.unlabeled() {
+                            ath_syntax::ast::TypeExpr::Cap(..) => "cap",
+                            t if t.base_name() == "IdemKey" => "key",
+                            _ => "val",
+                        }).collect::<Vec<_>>(),
                     }),
                 );
             }

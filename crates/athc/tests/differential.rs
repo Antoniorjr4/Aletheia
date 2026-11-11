@@ -2200,3 +2200,255 @@ fn rev12_paid_compensation_counterexample_is_closed() {
     first_diff("rev12/limite-2", "λ_Ath × ARX", r2.lean_run.as_ref().unwrap(), &r2.arx_core);
     assert!(r2.arx_core.contains("\"undo\""), "a saga compensou");
 }
+
+// ------------------------------------------------------------------ M-III: WAL, queda e recuperação
+
+/// As chamadas `(ferramenta, chave)` que um host recebeu.
+type Calls = std::rc::Rc<std::cell::RefCell<Vec<(String, Option<u64>)>>>;
+
+/// O host da recuperação, que registra cada chamada `(ferramenta, chave)`: a recuperação só pode
+/// reenviar a um provedor `idempotent`.
+struct Counting<'a> {
+    inner: Box<dyn arx::host::Host + 'a>,
+    calls: Calls,
+}
+
+impl arx::host::Host for Counting<'_> {
+    fn call(&mut self, tool: &str, args: &[Value]) -> Result<(Value, f64), arx::host::HostError> {
+        let key = args.iter().find_map(|v| if let Value::Key(k) = v { Some(*k) } else { None });
+        self.calls.borrow_mut().push((tool.to_string(), key));
+        self.inner.call(tool, args)
+    }
+    fn status(&mut self, tool: &str, key: u64) -> (arx::host::Status, f64) {
+        self.inner.status(tool, key)
+    }
+    fn summary(&self) -> Vec<String> {
+        self.inner.summary()
+    }
+    fn applied(&self, tool: &str, key: u64) -> Option<bool> {
+        self.inner.applied(tool, key)
+    }
+}
+
+fn quiet_crashes() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        let prev = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            let msg = info.payload().downcast_ref::<String>().map(String::as_str).unwrap_or("");
+            if !msg.starts_with(arx::wal::CRASH) {
+                prev(info);
+            }
+        }));
+    });
+}
+
+/// Uma execução com queda injetada e o reinício: o WAL que sobrou, o WAL depois da recuperação,
+/// o host que sobreviveu (o provedor) e as chamadas da recuperação. `None` se o programa
+/// terminou antes de chegar ao ponto de queda.
+#[allow(clippy::type_complexity)]
+fn crash_and_recover<'m>(
+    c: &'m Compiled,
+    p: &lambda_ath::Prog,
+    at: arx::wal::CrashPoint,
+    nth: u32,
+) -> Option<(arx::journal::Journal, arx::journal::Journal, Box<dyn arx::host::Host + 'm>, Vec<(String, Option<u64>)>)> {
+    quiet_crashes();
+    let provider = Box::new(Scripted::from_json(&p.models()).unwrap());
+    let mut a = Arx::new(&c.module, Box::new(SimWorld::from_json(&p.world()).unwrap()), provider);
+    let mut w = arx::wal::Wal::memory();
+    w.crash = Some((at, nth));
+    a.wal = Some(w);
+    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = a.run("A", "go", vec![]);
+    }));
+    match r {
+        Ok(()) => return None,
+        Err(e) => {
+            let msg = e.downcast_ref::<String>().cloned().unwrap_or_default();
+            assert!(msg.starts_with(arx::wal::CRASH), "pânico inesperado: {msg}");
+        }
+    }
+    // o reinício: um processo novo, o WAL persistido e o mesmo provedor remoto
+    let host = std::mem::replace(&mut a.host, Box::new(SimWorld::from_json(&json!({})).unwrap()));
+    let crashed = arx::journal::Journal::from_entries(a.wal.take().unwrap().log.entries);
+    let calls = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let provider = Box::new(Scripted::from_json(&p.models()).unwrap());
+    let mut b = Arx::new(&c.module, Box::new(Counting { inner: host, calls: calls.clone() }), provider);
+    b.wal = Some(arx::wal::Wal::resume(arx::journal::Journal::from_entries(crashed.entries.clone())));
+    b.recover(3);
+    let after = arx::journal::Journal::from_entries(b.wal.take().unwrap().log.entries);
+    let host = std::mem::replace(&mut b.host, Box::new(SimWorld::from_json(&json!({})).unwrap()));
+    let calls = calls.borrow().clone();
+    Some((crashed, after, host, calls))
+}
+
+/// **M-III, a queda em cada ponto.** Programas gerados com chamadas com chave (os três
+/// provedores, falhas na chamada e nos reenvios, consultas inconclusivas) e sagas, com a queda do
+/// processo injetada em cada ponto do protocolo — depois de persistir a intenção, depois do envio,
+/// com o desfecho conhecido e ainda não persistido, e depois de persisti-lo — de cada uma das
+/// primeiras operações com chave. Depois do reinício e da recuperação:
+///
+/// * toda intenção tem **exatamente um** desfecho (`close` ou `escalate`): nenhuma obrigação some;
+/// * `close done` só com o efeito presente no provedor e `close failed` só com ele ausente;
+/// * a recuperação só reenvia ao provedor `idempotent`; `queryable` é consultado e `opaque`, se a
+///   queda o deixou em aberto, é escalado;
+/// * toda saga interrompida é encerrada, e nenhuma operação refutada é compensada.
+///
+/// `ATH_WAL_N` muda o número de sementes (padrão 120).
+#[test]
+fn wal_crash_recovery_never_loses_an_obligation() {
+    use arx::wal::{CrashPoint, WalState};
+    let n: u64 = std::env::var("ATH_WAL_N").ok().and_then(|v| v.parse().ok()).unwrap_or(120);
+    let mut seen = std::collections::BTreeMap::<String, usize>::new();
+    for seed in 0..n {
+        let p = lambda_ath::generate_keyed(seed);
+        let src = p.to_ath();
+        let c = compile(&src).unwrap_or_else(|d| panic!("{seed}: {:?}", d.iter().map(|x| &x.code).collect::<Vec<_>>()));
+        let prov: std::collections::HashMap<String, String> = c
+            .module
+            .items
+            .iter()
+            .filter_map(|i| match i {
+                ath_syntax::ast::Item::Tool(t) => Some((t.name.name.clone(), t.provider.name().to_string())),
+                _ => None,
+            })
+            .collect();
+        for at in [CrashPoint::Intent, CrashPoint::Sent, CrashPoint::Confirmed, CrashPoint::Closed] {
+            for nth in 1..=3 {
+                let tag = format!("wal/{seed}/{}/{nth}", at.name());
+                let Some((crashed, after, host, calls)) = crash_and_recover(&c, &p, at, nth) else { continue };
+                *seen.entry(format!("queda em {}", at.name())).or_default() += 1;
+                assert_eq!(arx::journal::Journal::verify(&after.entries), Ok(()), "{tag}: cadeia do WAL");
+                let before = WalState::of(&crashed);
+                let st = WalState::of(&after);
+                assert!(st.open().is_empty(), "{tag}: intenções em aberto depois da recuperação: {:?}", st.open());
+                for (k, d) in &st.intents {
+                    let outs = after
+                        .entries
+                        .iter()
+                        .filter(|e| {
+                            matches!(e["kind"].as_str(), Some("close" | "escalate")) && e["detail"]["key"] == json!(k)
+                        })
+                        .count();
+                    assert_eq!(outs, 1, "{tag}: {k} tem {outs} desfechos\n{}", after.to_jsonl());
+                    let tool = d["tool"].as_str().unwrap();
+                    let kn: u64 = k[1..].parse().unwrap();
+                    let truth = host.applied(tool, kn).unwrap();
+                    match st.outcome[k].as_str() {
+                        "done" => assert!(truth, "{tag}: {k} fechada `done` sem o efeito no provedor"),
+                        "failed" => assert!(!truth, "{tag}: {k} fechada `failed` com o efeito no provedor"),
+                        _ => {}
+                    }
+                    let was_open = before.open().iter().any(|(x, _)| x == k);
+                    if was_open {
+                        let p = prov[tool].as_str();
+                        *seen.entry(format!("recuperada ({p} → {})", st.outcome[k])).or_default() += 1;
+                        if p != "idempotent" {
+                            assert!(
+                                !calls.iter().any(|(t, key)| t == tool && *key == Some(kn)),
+                                "{tag}: a recuperação reenviou {k} a um provedor {p}"
+                            );
+                        }
+                        if p == "opaque" {
+                            assert_eq!(st.outcome[k], "escalated", "{tag}: {k} opaco fechado sem evidência");
+                        }
+                    }
+                }
+                for (sid, sg) in &st.sagas {
+                    assert!(sg.ended, "{tag}: saga {sid} sem encerramento");
+                    if !before.sagas.get(sid).is_some_and(|s| s.ended) {
+                        *seen.entry("saga interrompida encerrada".into()).or_default() += 1;
+                    }
+                }
+                for e in &after.entries {
+                    if e["kind"] == "compensated" {
+                        if let Some(k) = e["detail"]["key"].as_str() {
+                            assert_ne!(
+                                st.outcome.get(k).map(String::as_str),
+                                Some("failed"),
+                                "{tag}: {k} refutada e compensada"
+                            );
+                        }
+                    }
+                    if e["kind"] == "saga_unlog" && e["seq"].as_u64().unwrap_or(0) as usize >= crashed.entries.len() {
+                        *seen.entry("refutada fora do registro na recuperação".into()).or_default() += 1;
+                    }
+                }
+            }
+        }
+    }
+    eprintln!("M-III: {n} programas · {seen:?}");
+    for k in
+        ["queda em intent", "queda em sent", "queda em confirmed", "queda em closed", "saga interrompida encerrada"]
+    {
+        assert!(seen.get(k).copied().unwrap_or(0) >= 10, "cobertura fraca de `{k}`: {seen:?}");
+    }
+    assert!(seen.keys().any(|k| k.contains("opaque → escalated")), "{seen:?}");
+    assert!(seen.keys().any(|k| k.contains("idempotent → done")), "{seen:?}");
+    assert!(seen.keys().any(|k| k.contains("queryable → failed")), "{seen:?}");
+}
+
+/// **M-III, ARX × Python na recuperação.** Os mesmos programas e os mesmos pontos de queda no
+/// runtime Python emitido: o WAL depois da recuperação é o mesmo, byte a byte (as intenções, os
+/// desfechos com evidência, as escaladas, as compensações das sagas interrompidas, a cadeia).
+/// `ATH_WAL_PY_N` muda o número de sementes (padrão 40).
+#[test]
+fn wal_recovery_is_the_same_in_arx_and_python() {
+    use arx::wal::CrashPoint;
+    let n: u64 = std::env::var("ATH_WAL_PY_N").ok().and_then(|v| v.parse().ok()).unwrap_or(40);
+    let dir = scratch();
+    let mut compared = 0;
+    for seed in 0..n {
+        let p = lambda_ath::generate_keyed(seed);
+        let src = p.to_ath();
+        let c = compile(&src).unwrap();
+        let py = ath_emit::python(&c.module, &c.check, &c.codex, "wal.ath").expect("emissão");
+        let (pp, w, m) = (
+            dir.join(format!("wal{seed}.py")),
+            dir.join(format!("wal{seed}.world.json")),
+            dir.join(format!("wal{seed}.models.json")),
+        );
+        std::fs::write(&pp, py).unwrap();
+        std::fs::write(&w, p.world().to_string()).unwrap();
+        std::fs::write(&m, p.models().to_string()).unwrap();
+        for at in [CrashPoint::Intent, CrashPoint::Sent, CrashPoint::Confirmed, CrashPoint::Closed] {
+            for nth in 1..=2 {
+                let tag = format!("wal-py/{seed}/{}/{nth}", at.name());
+                let out = dir.join(format!("wal{seed}-{}-{nth}.jsonl", at.name()));
+                let _ = std::fs::remove_file(&out);
+                let r = Command::new("python3")
+                    .env("PYTHONPATH", root().join("runtimes/python"))
+                    .args(["-m", "aletheia_runtime", "crash"])
+                    .arg(&pp)
+                    .arg("--world")
+                    .arg(&w)
+                    .arg("--models")
+                    .arg(&m)
+                    .arg("--at")
+                    .arg(format!("{}:{nth}", at.name()))
+                    .arg("--wal")
+                    .arg(&out)
+                    .args(["--agent", "A", "--on", "go"])
+                    .output()
+                    .unwrap();
+                let rust = crash_and_recover(&c, &p, at, nth);
+                match (r.status.code(), rust) {
+                    (Some(4), None) => {}
+                    (Some(0), Some((_, after, _, _))) => {
+                        let pyw = std::fs::read_to_string(&out).unwrap();
+                        first_diff(&tag, "WAL recuperado ARX × Python", &after.to_jsonl(), &pyw);
+                        compared += 1;
+                    }
+                    (code, rust) => panic!(
+                        "{tag}: desfecho difere (Python {code:?}, ARX {})\n{}",
+                        if rust.is_some() { "caiu" } else { "terminou" },
+                        String::from_utf8_lossy(&r.stderr)
+                    ),
+                }
+            }
+        }
+    }
+    eprintln!("M-III: {compared} WALs recuperados comparados ARX × Python");
+    assert!(compared as u64 >= n, "poucas quedas comparadas: {compared}");
+}

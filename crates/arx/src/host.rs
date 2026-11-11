@@ -124,6 +124,11 @@ pub trait Host {
         (Status::Unknown, 0.0)
     }
     fn summary(&self) -> Vec<String>;
+    /// A verdade do provedor sobre a operação de chave `key` da ferramenta `tool`: o efeito
+    /// existe? `None` se o host não sabe dizer (só os testes de queda a consultam).
+    fn applied(&self, _tool: &str, _key: u64) -> Option<bool> {
+        None
+    }
     /// Estado observável do mundo, em JSON (para relatórios e benchmarks).
     fn state(&self) -> Json {
         Json::Null
@@ -475,6 +480,10 @@ impl Host for SimWorld {
 
     fn state(&self) -> Json {
         serde_json::json!({ "replicas": self.replicas, "restarts": self.restarts, "outbox": self.outbox })
+    }
+
+    fn applied(&self, tool: &str, key: u64) -> Option<bool> {
+        Some(self.applied.contains_key(&(tool.to_string(), key)))
     }
 
     fn summary(&self) -> Vec<String> {

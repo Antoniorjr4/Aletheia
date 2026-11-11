@@ -81,9 +81,47 @@ def replay(argv: list) -> int:
     return 1
 
 
+def crash(argv: list) -> int:
+    """`crash programa.py --world w.json --models m.json --at ponto:n --wal saída.jsonl [--fuel 3]`:
+    roda com a queda injetada no ponto `ponto` (intent, sent, confirmed, closed) da `n`-ésima
+    operação com chave; reinicia com o WAL persistido e o mesmo provedor e recupera. Escreve o
+    WAL final. Código 4 se o programa terminou antes da queda."""
+    from .wal import Crash, Wal
+
+    path, rest = argv[0], argv[1:]
+    opts = {rest[i].lstrip("-"): rest[i + 1] for i in range(0, len(rest), 2)}
+    prog = load_program(path)
+    world = SimWorld(json.load(open(opts["world"], encoding="utf-8")) if "world" in opts else {})
+    models = json.load(open(opts["models"], encoding="utf-8")) if "models" in opts else {}
+    point, nth = opts["at"].split(":")
+    rt = Runtime(prog, world, Scripted(models))
+    rt.wal = Wal()
+    rt.wal.crash = (point, int(nth))
+    agent = opts.get("agent") or next(iter(prog.agents))
+    event = opts.get("on") or next(iter(prog.agents[agent]["handlers"]))
+    try:
+        rt.run(agent, event, [])
+    except Crash:
+        pass
+    except RtErr:
+        return 4
+    else:
+        return 4
+    # o reinício: um processo novo, o WAL que sobrou e o mesmo provedor remoto
+    rt2 = Runtime(prog, world, Scripted(models))
+    rt2.wal = Wal()
+    rt2.wal.log = Wal.parse(rt.wal.to_jsonl())
+    rt2.recover(int(opts.get("fuel", "3")))
+    with open(opts["wal"], "w", encoding="utf-8", newline="\n") as f:
+        f.write(rt2.wal.to_jsonl())
+    return 0
+
+
 def main(argv: list) -> int:
     if len(argv) >= 3 and argv[0] == "replay":
         return replay(argv[1:])
+    if len(argv) >= 2 and argv[0] == "crash":
+        return crash(argv[1:])
     if len(argv) < 2 or argv[0] != "run":
         print(__doc__, file=sys.stderr)
         return 2

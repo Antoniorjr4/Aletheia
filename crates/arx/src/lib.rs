@@ -13,6 +13,7 @@ pub mod host;
 pub mod journal;
 pub mod model;
 pub mod value;
+pub mod wal;
 
 use ath_grammar::Shape;
 use ath_syntax::ast::*;
@@ -171,6 +172,11 @@ pub struct Arx<'m> {
     committing: bool,
     agent: Option<&'m AgentDecl>,
     sagas: Vec<Vec<SagaOp<'m>>>,
+    /// A identidade de cada saga aberta, no WAL (paralela a `sagas`).
+    saga_ids: Vec<u64>,
+    next_saga: u64,
+    /// O write-ahead log das operações com chave e das sagas (M-III), se ativado.
+    pub wal: Option<wal::Wal>,
     /// Compensação, recuperação e reconciliação são obrigações: não pedem reserva de orçamento.
     obligation: bool,
 }
@@ -269,6 +275,9 @@ impl<'m> Arx<'m> {
             committing: false,
             agent: None,
             sagas: Vec::new(),
+            saga_ids: Vec::new(),
+            next_saga: 1,
+            wal: None,
             obligation: false,
         };
         for item in &m.items {
@@ -667,6 +676,8 @@ impl<'m> Arx<'m> {
                     return Err(rt("R0940", "`transfer` sobre valor que não é obrigação").into());
                 };
                 self.journal.push(self.clock, "transfer", json!({ "key": format!("k{key}"), "tool": tool }));
+                // a obrigação sai do processo sem desfecho conclusivo: o WAL a escala
+                self.wlog("escalate", json!({ "key": format!("k{key}"), "reason": "transferred" }));
                 self.events.push(Event {
                     t: self.clock,
                     dt: 0.0,
@@ -734,8 +745,13 @@ impl<'m> Arx<'m> {
         on_cf: Option<&(Ident, Block)>,
     ) -> R<Value> {
         self.sagas.push(Vec::new());
+        let sid = self.next_saga;
+        self.next_saga += 1;
+        self.saga_ids.push(sid);
+        self.wlog("saga_begin", json!({ "saga": sid }));
         let r = self.block(body);
         let ops = self.sagas.pop().unwrap_or_default();
+        self.saga_ids.pop();
         // O quadro fecha: as reservas dele voltam ao saldo. Se a saga falhou, cada compensação
         // é liquidada a seguir com o custo real, que a reserva liberada cobre (`cc ≤ ccost`).
         for op in &ops {
@@ -744,10 +760,17 @@ impl<'m> Arx<'m> {
         let cause = match r {
             Ok(v) => {
                 self.journal.push(self.clock, "saga_commit", json!({ "compensable_ops": ops.len() }));
+                self.wlog("saga_end", json!({ "saga": sid, "outcome": "commit" }));
                 return Ok(v);
             }
-            Err(Unwind::Ret(v)) => return Err(Unwind::Ret(v)),
-            Err(Unwind::Resume(v)) => return Err(Unwind::Resume(v)),
+            Err(Unwind::Ret(v)) => {
+                self.wlog("saga_end", json!({ "saga": sid, "outcome": "exit" }));
+                return Err(Unwind::Ret(v));
+            }
+            Err(Unwind::Resume(v)) => {
+                self.wlog("saga_end", json!({ "saga": sid, "outcome": "exit" }));
+                return Err(Unwind::Resume(v));
+            }
             Err(other) => other,
         };
         let reason = match &cause {
@@ -784,6 +807,7 @@ impl<'m> Arx<'m> {
                         "compensate",
                         json!({ "of": op.tool.name.name, "tool": comp.name.name, "key": key, "ok": true, "result": out.to_json() }),
                     );
+                    self.wlog("compensated", json!({ "saga": sid, "of": op.tool.name.name, "key": key, "ok": true }));
                     self.line(format!("↩ {}({})", comp.name.name, key.unwrap_or_default()), out.show(), lat, None);
                 }
                 Err(e) => {
@@ -799,6 +823,7 @@ impl<'m> Arx<'m> {
                         "compensate",
                         json!({ "of": op.tool.name.name, "tool": comp.name.name, "key": key, "ok": false, "error": msg }),
                     );
+                    self.wlog("compensated", json!({ "saga": sid, "of": op.tool.name.name, "key": key, "ok": false }));
                     self.line(
                         format!("↩ {}({})", comp.name.name, key.unwrap_or_default()),
                         msg.clone(),
@@ -820,6 +845,7 @@ impl<'m> Arx<'m> {
         };
         self.obligation = prev;
         if residual.is_empty() && restored {
+            self.wlog("saga_end", json!({ "saga": sid, "outcome": "abort", "residual": 0 }));
             self.journal.push(self.clock, "saga_recovered", json!({}));
             self.line("invariante de recuperação", "observado pela sonda", 0.0, Some((true, "recuperado".into())));
             return match (cause, on_failure) {
@@ -832,6 +858,7 @@ impl<'m> Arx<'m> {
             residual.push("a sonda de recuperação não observou o invariante".into());
         }
         let cf = residual.join("; ");
+        self.wlog("saga_end", json!({ "saga": sid, "outcome": "abort", "residual": residual.len() }));
         self.journal.push(self.clock, "compensation_failed", json!({ "residual": residual, "cause": reason }));
         self.line("CompensationFailed", cf.clone(), 0.0, Some((false, "estado não recuperado".into())));
         match on_cf {
@@ -958,6 +985,7 @@ impl<'m> Arx<'m> {
         self.obligation = prev;
         match outcome {
             Some(Ok(v)) => {
+                self.wclose(key, "done", "reconcile");
                 self.journal.push(self.clock, "resolved", json!({ "key": format!("k{key}"), "status": "done" }));
                 self.line(
                     format!("Pending[k{key}] resolvida"),
@@ -969,9 +997,10 @@ impl<'m> Arx<'m> {
             }
             Some(Err(m)) => {
                 // `R0611`: a reconciliação provou que a operação não aconteceu. Ela sai do quadro
-                // (o campo `tool` só aparece aqui, para a vista do núcleo desempilhar; o `resolved`
-                // de `Done` fica como era, e os journals gravados continuam reproduzíveis)
-                // da saga (não há o que estornar) e a reserva do compensador é liberada.
+                // da saga (não há o que estornar) e a reserva do compensador é liberada. O campo
+                // `tool` só aparece aqui, para a vista do núcleo desempilhar; o `resolved` de
+                // `Done` fica como era, e os journals gravados continuam reproduzíveis.
+                self.wclose(key, "failed", "reconcile");
                 self.unlog(key);
                 self.journal.push(
                     self.clock,
@@ -997,13 +1026,170 @@ impl<'m> Arx<'m> {
     /// Tira dos quadros abertos a operação de chave `key` (a mais interna primeiro) e libera a
     /// reserva dela.
     fn unlog(&mut self, key: u64) {
-        for frame in self.sagas.iter_mut().rev() {
+        for (fi, frame) in self.sagas.iter_mut().enumerate().rev() {
             if let Some(i) = frame.iter().rposition(|op| op.key() == Some(key)) {
                 let op = frame.remove(i);
                 self.meter.release(op.held.0, op.held.1);
+                let sid = self.saga_ids.get(fi).copied().unwrap_or_default();
+                self.wlog("saga_unlog", json!({ "saga": sid, "key": format!("k{key}") }));
                 return;
             }
         }
+    }
+
+    /// Acrescenta um registro ao WAL, se ativado.
+    fn wlog(&mut self, kind: &str, detail: serde_json::Value) {
+        let t = self.clock;
+        if let Some(w) = self.wal.as_mut() {
+            w.append(t, kind, detail);
+        }
+    }
+
+    /// A queda injetada no ponto `at` da operação de chave `key`.
+    fn wcrash(&self, at: wal::CrashPoint, key: u64) {
+        if let Some(w) = &self.wal {
+            w.maybe_crash_key(at, key);
+        }
+    }
+
+    /// Registra a operação no quadro da saga corrente (e no WAL).
+    fn push_op(&mut self, t: &'m ToolDecl, args: &[Value], held: (f64, f64)) {
+        if let Some(frame) = self.sagas.last_mut() {
+            frame.push(SagaOp { tool: t, args: args.to_vec(), held });
+            self.meter.hold(held.0, held.1);
+            let sid = self.saga_ids.last().copied().unwrap_or_default();
+            let key = args.iter().find_map(|v| if let Value::Key(k) = v { Some(format!("k{k}")) } else { None });
+            self.wlog(
+                "saga_op",
+                json!({ "saga": sid, "tool": t.name.name, "key": key,
+                        "args": args.iter().map(|v| v.to_json()).collect::<Vec<_>>() }),
+            );
+        }
+    }
+
+    /// O desfecho com evidência de uma operação com chave, no WAL, entre os pontos de queda
+    /// `confirmed` (o desfecho é conhecido) e `closed` (o desfecho está persistido).
+    fn wclose(&mut self, key: u64, status: &str, via: &str) {
+        if self.wal.is_some() {
+            self.wcrash(wal::CrashPoint::Confirmed, key);
+            self.wlog("close", json!({ "key": format!("k{key}"), "status": status, "evidence": via }));
+            self.wcrash(wal::CrashPoint::Closed, key);
+        }
+    }
+
+    /// Um argumento de ferramenta lido do WAL, no tipo do parâmetro.
+    fn arg_from_json(&self, j: &serde_json::Value, te: &TypeExpr) -> Option<Value> {
+        match te.unlabeled() {
+            TypeExpr::Cap(..) => {
+                Some(Value::Cap(j["cap"].as_array()?.iter().filter_map(|x| x.as_str().map(String::from)).collect()))
+            }
+            t if t.base_name() == "IdemKey" => j.as_str()?.strip_prefix('k')?.parse().ok().map(Value::Key),
+            _ => self.value_from_json(j, te),
+        }
+    }
+
+    /// **A recuperação depois do reinício** (`lean/Aletheia/Wal.lean`). Para cada intenção em
+    /// aberto no WAL, reconcilia pelo protocolo do provedor — `idempotent` reenvia com a mesma
+    /// chave, `queryable` consulta o status, `opaque` não tem protocolo — com até `fuel`
+    /// tentativas, e persiste o desfecho com a evidência: `close done`, `close failed` ou
+    /// `escalate`. Nunca fecha sem resposta, nunca descarta. Depois compensa, da mais recente à
+    /// mais antiga, as operações das sagas que a queda interrompeu, menos as refutadas.
+    /// Devolve os registros acrescentados.
+    pub fn recover(&mut self, fuel: u32) -> Vec<serde_json::Value> {
+        let Some(w) = &self.wal else { return Vec::new() };
+        let before = w.log.entries.len();
+        let st = wal::WalState::of(&w.log);
+        let open: Vec<(String, serde_json::Value)> = st.open().into_iter().cloned().collect();
+        for (key, d) in open {
+            let tool = d["tool"].as_str().unwrap_or_default().to_string();
+            let Some(decl) = self.tools.get(tool.as_str()).copied() else {
+                self.wlog("escalate", json!({ "key": key, "reason": "ferramenta ausente do programa" }));
+                continue;
+            };
+            let kn: u64 = key.strip_prefix('k').and_then(|x| x.parse().ok()).unwrap_or_default();
+            let args: Option<Vec<Value>> = decl
+                .params
+                .iter()
+                .zip(d["args"].as_array().into_iter().flatten())
+                .map(|(p, j)| self.arg_from_json(j, &p.ty))
+                .collect();
+            let mut outcome: Option<bool> = None;
+            let mut tries = 0;
+            if decl.provider != ProviderClass::Opaque {
+                for _ in 0..fuel {
+                    tries += 1;
+                    let r = match decl.provider {
+                        ProviderClass::Idempotent => match args.as_ref().map(|a| self.host.call(&tool, a)) {
+                            Some(Ok(_)) => Some(true),
+                            Some(Err(HostError::Failed(_))) => Some(false),
+                            _ => None,
+                        },
+                        _ => match self.host.status(&tool, kn).0 {
+                            Status::Done(_) => Some(true),
+                            Status::NotApplied => Some(false),
+                            Status::Unknown => None,
+                        },
+                    };
+                    if r.is_some() {
+                        outcome = r;
+                        break;
+                    }
+                }
+            }
+            let via = if decl.provider == ProviderClass::Idempotent { "recovery:resend" } else { "recovery:status" };
+            match outcome {
+                Some(b) => self.wlog(
+                    "close",
+                    json!({ "key": key, "status": if b { "done" } else { "failed" }, "evidence": via, "attempts": tries }),
+                ),
+                None => {
+                    let reason =
+                        if decl.provider == ProviderClass::Opaque { "opaque: sem protocolo" } else { "sem resposta conclusiva" };
+                    self.wlog("escalate", json!({ "key": key, "reason": reason, "attempts": tries }))
+                }
+            }
+        }
+        // as sagas interrompidas: compensa o que foi ou pode ter sido aplicado, menos o refutado
+        let st = wal::WalState::of(&self.wal.as_ref().expect("wal").log);
+        for (sid, sg) in st.sagas.iter().rev() {
+            if sg.ended {
+                continue;
+            }
+            let mut residual = 0;
+            for op in sg.ops.iter().rev() {
+                let key = op["key"].as_str().map(String::from);
+                if let Some(k) = &key {
+                    if sg.unlogged.contains(k) {
+                        continue;
+                    }
+                    if st.outcome.get(k).map(String::as_str) == Some("failed") {
+                        self.wlog("saga_unlog", json!({ "saga": sid, "key": k }));
+                        continue;
+                    }
+                }
+                let tool = op["tool"].as_str().unwrap_or_default();
+                let Some(decl) = self.tools.get(tool).copied() else { continue };
+                if decl.class != EffClass::Compensable {
+                    continue;
+                }
+                let Some(comp) = decl.compensator.as_ref().and_then(|c| self.tools.get(c.name.as_str()).copied())
+                else {
+                    residual += 1;
+                    continue;
+                };
+                let args: Option<Vec<Value>> = comp
+                    .params
+                    .iter()
+                    .zip(op["args"].as_array().into_iter().flatten())
+                    .map(|(p, j)| self.arg_from_json(j, &p.ty))
+                    .collect();
+                let ok = args.is_some_and(|a| self.host.call(&comp.name.name, &a).is_ok());
+                residual += usize::from(!ok);
+                self.wlog("compensated", json!({ "saga": sid, "of": tool, "key": key, "ok": ok, "via": "recovery" }));
+            }
+            self.wlog("saga_end", json!({ "saga": sid, "outcome": "recovered", "residual": residual }));
+        }
+        self.wal.as_ref().map(|w| w.log.entries[before..].to_vec()).unwrap_or_default()
     }
 
     /// A reserva do compensador de `t`: o custo e a latência declarados da ferramenta nomeada em
@@ -1143,13 +1329,33 @@ impl<'m> Arx<'m> {
         let shown: Vec<String> = args.iter().map(|v| v.show()).collect();
         let key_n = args.iter().find_map(|v| if let Value::Key(k) = v { Some(*k) } else { None });
         let key = key_n.map(|k| format!("k{k}"));
+        // M-III: a intenção é persistida antes do envio
+        if let (Some(k), true) = (key_n, self.wal.is_some()) {
+            let sid = self.saga_ids.last().copied();
+            if let Some(w) = self.wal.as_mut() {
+                w.nth += 1;
+                let n = w.nth;
+                w.ord.insert(k, n);
+            }
+            self.wlog(
+                "intent",
+                json!({ "key": format!("k{k}"), "tool": name, "provider": t.provider.name(), "obligation": "reconcile",
+                        "saga": sid, "args": args.iter().map(|v| v.to_json()).collect::<Vec<_>>() }),
+            );
+            self.wcrash(wal::CrashPoint::Intent, k);
+        }
         let t0 = self.clock;
-        let (out, lat) = match self.host.call(name, &args) {
+        let hr = self.host.call(name, &args);
+        if let Some(k) = key_n {
+            self.wcrash(wal::CrashPoint::Sent, k);
+        }
+        let (out, lat) = match hr {
             Ok(r) => r,
             Err(HostError::Failed(m)) => {
                 // Com chave, a recusa é um estado terminal da obrigação (`Failed`): fica no
                 // journal, como `resolved` fica na reconciliação. Sem chave, nada muda.
                 if let Some(k) = key_n {
+                    self.wclose(k, "failed", "reply");
                     self.journal.push(
                         self.clock,
                         "tool_failed",
@@ -1167,10 +1373,7 @@ impl<'m> Arx<'m> {
                 };
                 // Compensar é total sobre "aconteceu" e "não aconteceu": a operação em aberto entra na saga.
                 if t.class == EffClass::Compensable {
-                    if let Some(frame) = self.sagas.last_mut() {
-                        frame.push(SagaOp { tool: t, args: args.clone(), held });
-                        self.meter.hold(held.0, held.1);
-                    }
+                    self.push_op(t, &args, held);
                 }
                 self.journal.push(
                     self.clock,
@@ -1191,10 +1394,10 @@ impl<'m> Arx<'m> {
         self.clock += lat;
         self.meter.settle(0, t.usd, lat);
         if t.class == EffClass::Compensable {
-            if let Some(frame) = self.sagas.last_mut() {
-                frame.push(SagaOp { tool: t, args: args.clone(), held });
-                self.meter.hold(held.0, held.1);
-            }
+            self.push_op(t, &args, held);
+        }
+        if let Some(k) = key_n {
+            self.wclose(k, "done", "reply");
         }
         self.journal.push(
             self.clock,

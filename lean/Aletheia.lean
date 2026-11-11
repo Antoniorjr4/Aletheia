@@ -14,3 +14,4 @@ import Aletheia.Confinement
 import Aletheia.Examples
 import Aletheia.Arx
 import Aletheia.Contracts
+import Aletheia.Wal

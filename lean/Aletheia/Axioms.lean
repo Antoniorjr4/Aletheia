@@ -251,3 +251,27 @@ open Aletheia
 
 /-- info: 'Aletheia.ContractsExample.policyOk_but_not_contract' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms ContractsExample.policyOk_but_not_contract
+
+/-- info: 'Aletheia.Wal.no_silent_loss' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Wal.no_silent_loss
+
+/-- info: 'Aletheia.Wal.evidence' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Wal.evidence
+
+/-- info: 'Aletheia.Wal.at_most_once' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Wal.at_most_once
+
+/-- info: 'Aletheia.Wal.opaque_escalates' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Wal.opaque_escalates
+
+/-- info: 'Aletheia.Wal.registry_after_recovery' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Wal.registry_after_recovery
+
+/-- info: 'Aletheia.Wal.opaque_not_exactly_once' does not depend on any axioms -/
+#guard_msgs in #print axioms Wal.opaque_not_exactly_once
+
+/-- info: 'Aletheia.Wal.idempotent_exactly_once' does not depend on any axioms -/
+#guard_msgs in #print axioms Wal.idempotent_exactly_once
+
+/-- info: 'Aletheia.Wal.resend_without_dedup_duplicates' does not depend on any axioms -/
+#guard_msgs in #print axioms Wal.resend_without_dedup_duplicates
