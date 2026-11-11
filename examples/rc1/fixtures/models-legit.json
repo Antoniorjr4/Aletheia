@@ -1,0 +1,11 @@
+{
+  "planner": [
+    { "kind": "Plan",
+      "pays": [
+        { "kind": "Pay", "to": "ACME", "amount": "120.00", "memo": "NF 4471" },
+        { "kind": "Pay", "to": "BETA", "amount": "75.50", "memo": "pedido da tesouraria" }
+      ],
+      "finals": [ { "kind": "Schedule", "to": "BETA", "amount": "250.00", "date": "2026-12-01" } ],
+      "answer": "Paguei 120.00 a ACME e 75.50 a BETA; agendei 250.00 para BETA em 2026-12-01." }
+  ]
+}

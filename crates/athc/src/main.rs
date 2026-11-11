@@ -1,7 +1,10 @@
 use arx::cassette::{first_divergence, Cassette};
-use arx::host::SimWorld;
+use arx::grant::{Grant, GrantStore};
+use arx::host::{Host, SimWorld};
 use arx::journal::Journal;
 use arx::model::{Constraint, Masked, ModelProvider, OpenAiCompat, Recorder, Replay, Scripted};
+use arx::remote::RemoteHost;
+use arx::wal::{CrashMode, CrashPoint, Wal, WalState};
 use arx::{Arx, Value};
 use ath_check::fmt;
 use ath_grammar::Dialect;
@@ -25,7 +28,16 @@ uso:
                          [--world mundo.json] [--models modelos.json] [--journal saída.jsonl]
                          [--provider masked|scripted|openai] [--report relatório.json]
                          [--core-journal núcleo.jsonl]
+                         [--host tcp://127.0.0.1:PORTA --trusted confiável.json --timeout s]
+                         [--run-id R] [--grants concessões.json] [--wal execução.wal]
+                         [--kill-at intent|sent|confirmed|closed:N]
       verifica e executa um handler no runtime ARX
+      --host      executa as ferramentas num serviço externo (ath-world) em vez do mundo simulado;
+                  a fotografia confiável `s.…` vem de --trusted, nunca do serviço
+      --grants    as concessões desta execução (`s.authorizes`); o consumo fica em <arquivo>.spent
+      --wal       write-ahead log durável das operações com chave e das sagas; o journal de
+                  evidências passa a ser gravado entrada a entrada
+      --kill-at   SIGKILL no próprio processo no ponto dado da N-ésima operação com chave
       (sem --world/--models, usa fixtures/world.json e fixtures/models.json ao lado do arquivo)
       provedores:
         masked    (padrão) roteiro como proposta + máscara derivada do tipo: saída válida por construção
@@ -51,6 +63,22 @@ uso:
   athc replay <cassete.json> [--journal saída.jsonl] [--emit-py programa.py]
       reexecuta o programa embutido no cassete contra as respostas gravadas e exige o mesmo
       journal, byte a byte
+  athc grant --out concessões.json --run R --origin confirmation:REF
+             (--op OP --arg X … | --from intenção.json)
+      registra a confirmação estruturada do principal: cada concessão é uma operação com os
+      argumentos exatos, vale para a execução R e é consumida por um efeito. --from lê
+      {\"operations\": [{\"op\": …, \"args\": […]}]}; uma entrada marcada \"ambiguous\" é recusada
+  athc recover <arquivo.ath> --wal execução.wal --host tcp://… [--trusted confiável.json]
+               [--fuel 3] [--timeout s] [--report relatório.json] [--inspect] [--retry-escalated]
+      recupera uma execução interrompida: confere a integridade do WAL, lista as obrigações em
+      aberto, reconcilia cada uma pelo protocolo da classe do provedor (idempotent reenvia,
+      queryable consulta, opaque escala), compensa as sagas interrompidas e persiste tudo no WAL
+      --inspect   só confere e lista; não envia nada
+      --retry-escalated
+                  tenta de novo as operações escaladas cujo provedor tem protocolo (o serviço
+                  estava fora do ar, ou o programa transferiu a obrigação); opaque continua escalada
+      saída: 0 nada pendente · 3 há operações que exigem intervenção · 2 erro (WAL ilegível,
+      corrompido, ausente ou de outro programa)
   athc emit <arquivo.ath> --target py [--out programa.py]
       emite o programa para Python sobre o aletheia_runtime (segunda realização da semântica do ARX)";
 
@@ -65,7 +93,10 @@ fn parse_opts(args: &[String]) -> Result<Opts, String> {
     let mut i = 0;
     while i < args.len() {
         let a = &args[i];
-        if let Some(name) = a.strip_prefix("--") {
+        if a == "--inspect" || a == "--retry-escalated" {
+            flags.entry(a[2..].to_string()).or_default().push("true".into());
+            i += 1;
+        } else if let Some(name) = a.strip_prefix("--") {
             let v = args.get(i + 1).ok_or_else(|| format!("`--{name}` exige um valor"))?;
             flags.entry(name.to_string()).or_default().push(v.clone());
             i += 2;
@@ -122,6 +153,8 @@ fn main() -> ExitCode {
         "contract-report" => cmd_contract_report(&opts, st),
         "obligations" => cmd_obligations(&opts, st),
         "emit" => cmd_emit(&opts, st),
+        "grant" => cmd_grant(&opts),
+        "recover" => return cmd_recover(&opts, st),
         "replay" => cmd_replay(&opts, st),
         "help" | "--help" | "-h" => {
             println!("{USAGE}");
@@ -277,7 +310,11 @@ fn cmd_run(opts: &Opts, st: Style) -> Result<bool, String> {
         Some(p) => read_json(&p)?,
         None => json!({}),
     };
-    let world = SimWorld::from_json(&world_json)?;
+    let run_id = opts.one("run-id").map(String::from).unwrap_or_else(fresh_run_id);
+    let world: Box<dyn Host> = match opts.one("host") {
+        Some(addr) => Box::new(remote_host(opts, addr, &run_id)?),
+        None => Box::new(SimWorld::from_json(&world_json)?),
+    };
     let mut tape: Option<(Rc<RefCell<Vec<arx::model::Exchange>>>, serde_json::Value)> = None;
     let provider: Box<dyn ModelProvider> = if let Some(cp) = opts.one("replay") {
         let c = Cassette::load(Path::new(cp))?;
@@ -296,8 +333,12 @@ fn cmd_run(opts: &Opts, st: Style) -> Result<bool, String> {
         build_provider(opts, &path)?
     };
     let provider_name = provider.name();
-    let mut arx = Arx::new(&c.module, Box::new(world), provider);
+    let mut arx = Arx::new(&c.module, world, provider);
     arx.contracts = athc::contract_hashes(&c);
+    arx.run_id = run_id.clone();
+    if let Some(g) = opts.one("grants") {
+        arx.grants = GrantStore::open(Path::new(g))?;
+    }
     let args_src: Vec<String> = opts.flags.get("arg").cloned().unwrap_or_default();
     let event = match opts.one("on") {
         Some(e) => e.to_string(),
@@ -323,6 +364,51 @@ fn cmd_run(opts: &Opts, st: Style) -> Result<bool, String> {
             .literal_from_str(r, &p.ty)
             .ok_or_else(|| format!("`{r}` não é um literal do tipo `{ty}` (texto vai entre aspas: --arg '\"api\"')"))?;
         args.push(v);
+    }
+
+    let jpath = PathBuf::from(opts.one("journal").unwrap_or(".arx/journal.jsonl"));
+    if let Some(dir) = jpath.parent() {
+        if !dir.as_os_str().is_empty() {
+            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        }
+    }
+    if let Some(wp) = opts.one("wal") {
+        // todo efeito não reversível precisa de chave: sem ela não há intenção a persistir
+        for i in &c.module.items {
+            if let Item::Tool(t) = i {
+                let keyed = t.params.iter().any(|p| p.ty.unlabeled().base_name() == "IdemKey");
+                if t.class != ath_syntax::ast::EffClass::Reversible && !keyed {
+                    return Err(format!(
+                        "W0005: `--wal` exige uma chave (`own IdemKey`) em todo efeito não reversível; `{}` não tem",
+                        t.name.name
+                    ));
+                }
+            }
+        }
+        let mut w = Wal::open(PathBuf::from(wp)).map_err(|e| e.to_string())?;
+        if !w.log.entries.is_empty() {
+            return Err(format!(
+                "W0004: o WAL `{wp}` já registra uma execução ({} registros); use `athc recover`, não `athc run`",
+                w.log.entries.len()
+            ));
+        }
+        if let Some(k) = opts.one("kill-at") {
+            let (point, n) = k.split_once(':').ok_or("--kill-at espera ponto:N")?;
+            let point =
+                CrashPoint::parse(point).ok_or("--kill-at: ponto deve ser intent, sent, confirmed ou closed")?;
+            w.crash = Some((point, n.parse().map_err(|_| "--kill-at: N inválido")?));
+            w.crash_mode = CrashMode::Kill;
+        }
+        w.append(
+            0.0,
+            "run",
+            json!({ "run": run_id, "program": c.codex.root, "agent": agent, "event": event,
+                    "args": args.iter().map(Value::to_json).collect::<Vec<_>>() }),
+        );
+        arx.wal = Some(w);
+        arx.journal.stream_to(&jpath).map_err(|e| format!("falha ao abrir o journal: {e}"))?;
+    } else if opts.one("kill-at").is_some() {
+        return Err("`--kill-at` exige `--wal`".into());
     }
 
     let shown: Vec<String> = args.iter().map(Value::show).collect();
@@ -381,11 +467,17 @@ fn cmd_run(opts: &Opts, st: Style) -> Result<bool, String> {
     if !world.is_empty() {
         println!("  {:<9} {}", "mundo", world.join("; "));
     }
-    let jpath = PathBuf::from(opts.one("journal").unwrap_or(".arx/journal.jsonl"));
-    if let Some(dir) = jpath.parent() {
-        if !dir.as_os_str().is_empty() {
-            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-        }
+    if let Some(w) = &arx.wal {
+        let stw = WalState::of(&w.log);
+        println!(
+            "  {:<9} {} · execução {} · {} registros · {} intenção(ões), {} em aberto",
+            "wal",
+            opts.one("wal").unwrap_or_default(),
+            run_id,
+            w.log.entries.len(),
+            stw.intents.len(),
+            stw.open().len()
+        );
     }
     std::fs::write(&jpath, arx.journal.to_jsonl()).map_err(|e| format!("falha ao gravar o journal: {e}"))?;
     let chain = if Journal::verify(&arx.journal.entries).is_ok() { "cadeia íntegra" } else { "cadeia INVÁLIDA" };
@@ -457,6 +549,8 @@ fn cmd_run(opts: &Opts, st: Style) -> Result<bool, String> {
                 .collect::<Vec<_>>(),
             "spent": { "tok": arx.meter.tok, "usd": arx.meter.usd, "wall": arx.meter.wall },
             "journal_head": arx.journal.head,
+            "run": run_id,
+            "grants_spent": arx.grants.spent.iter().cloned().collect::<Vec<_>>(),
             // Rev13 (M-V): dois registros separados. O semântico é a cabeça da cadeia da vista do
             // núcleo — determinístico, sem tempo nem latência: o que o programa fez. O de
             // evidências é a cabeça do journal integral — com as medições reais: como e quando.
@@ -833,4 +927,301 @@ fn cmd_replay(opts: &Opts, st: Style) -> Result<bool, String> {
             Ok(false)
         }
     }
+}
+
+/// Uma identidade de execução nova: o instante e o processo, resumidos.
+fn fresh_run_id() -> String {
+    let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+    let h = blake3::hash(format!("{t}:{}", std::process::id()).as_bytes()).to_hex().to_string();
+    format!("run-{}", &h[..12])
+}
+
+fn remote_host(opts: &Opts, addr: &str, run: &str) -> Result<RemoteHost, String> {
+    let snapshot = match opts.one("trusted") {
+        Some(p) => RemoteHost::snapshot_from_json(&read_json(Path::new(p))?)?,
+        None => arx::host::TrustedSnapshot::default(),
+    };
+    let timeout =
+        opts.one("timeout").map(|t| t.parse::<f64>().map_err(|_| "--timeout inválido")).transpose()?.unwrap_or(3.0);
+    RemoteHost::new(addr, run, timeout, snapshot)
+}
+
+/// `athc grant`: a confirmação estruturada do principal vira concessões. Cada concessão é uma
+/// operação com os argumentos exatos; nada é combinado nem inferido.
+fn cmd_grant(opts: &Opts) -> Result<bool, String> {
+    let out = PathBuf::from(opts.one("out").ok_or("informe --out")?);
+    let run = opts.one("run").ok_or("informe --run (a execução para a qual a concessão vale)")?;
+    let origin = opts.one("origin").ok_or("informe --origin confirmation:REF (de onde vem a autoridade)")?;
+    let mut ops: Vec<(String, Vec<String>)> = Vec::new();
+    if let Some(f) = opts.one("from") {
+        let j = read_json(Path::new(f))?;
+        for (i, o) in j["operations"].as_array().ok_or("intenção sem `operations`")?.iter().enumerate() {
+            if o.get("ambiguous").is_some_and(|a| a != &json!(false)) {
+                return Err(format!(
+                    "operação {} é ambígua ({}): confirme a tupla exata com --op/--arg; nada foi concedido",
+                    i + 1,
+                    o["ambiguous"]
+                ));
+            }
+            let op = o["op"].as_str().ok_or_else(|| format!("operação {} sem `op`", i + 1))?;
+            let args: Vec<String> = o["args"]
+                .as_array()
+                .ok_or_else(|| format!("operação {} sem `args`", i + 1))?
+                .iter()
+                .map(|a| match a {
+                    serde_json::Value::String(x) => Ok(x.clone()),
+                    serde_json::Value::Number(n) => Ok(n.to_string()),
+                    _ => Err(format!("operação {}: argumento que não é texto nem número", i + 1)),
+                })
+                .collect::<Result<_, _>>()?;
+            ops.push((op.to_string(), args));
+        }
+    } else {
+        let op = opts.one("op").ok_or("informe --op e --arg…, ou --from intenção.json")?;
+        ops.push((op.to_string(), opts.flags.get("arg").cloned().unwrap_or_default()));
+    }
+    let mut doc = if out.exists() { read_json(&out)? } else { json!({ "grants": [] }) };
+    // a carga confere as que já estão no arquivo (origem, id) antes de acrescentar
+    let mut store = GrantStore::from_json(&doc)?;
+    for (op, args) in ops {
+        let mut nonce = 0;
+        let g = loop {
+            let g = Grant::new(run, &op, &args, origin, nonce);
+            if !store.grants.iter().any(|x| x.id == g.id) {
+                break g;
+            }
+            nonce += 1;
+        };
+        println!(
+            "concedido {} · {}({}) · execução {} · origem {}",
+            &g.id[..12],
+            g.op,
+            g.args.join(", "),
+            g.run,
+            g.origin
+        );
+        doc["grants"].as_array_mut().ok_or("arquivo de concessões inválido")?.push(g.to_json());
+        store.grants.push(g);
+    }
+    // a carga recusa origens sem autoridade antes de qualquer coisa ir para o disco
+    GrantStore::from_json(&doc)?;
+    let text = serde_json::to_string_pretty(&doc).map_err(|e| e.to_string())?;
+    std::fs::write(&out, text).map_err(|e| format!("falha ao gravar `{}`: {e}", out.display()))?;
+    Ok(true)
+}
+
+/// `athc recover`: retoma as obrigações de uma execução interrompida a partir do WAL.
+fn cmd_recover(opts: &Opts, st: Style) -> ExitCode {
+    match recover(opts, st) {
+        Ok(code) => ExitCode::from(code),
+        Err(e) => {
+            eprintln!("erro: {e}");
+            ExitCode::from(2)
+        }
+    }
+}
+
+fn wal_summary(log: &Journal) -> (WalState, Vec<String>, Vec<String>, Vec<u64>) {
+    let stw = WalState::of(log);
+    let open: Vec<String> = stw.open().into_iter().map(|(k, _)| k.clone()).collect();
+    let escalated: Vec<String> =
+        stw.outcome.iter().filter(|(_, v)| *v == "escalated").map(|(k, _)| k.clone()).collect();
+    let sagas: Vec<u64> = stw.sagas.iter().filter(|(_, s)| !s.ended).map(|(id, _)| *id).collect();
+    (stw, open, escalated, sagas)
+}
+
+fn stw_provider(log: &Journal, key: &str) -> String {
+    log.entries
+        .iter()
+        .find(|e| e["kind"] == "intent" && e["detail"]["key"] == key)
+        .and_then(|e| e["detail"]["provider"].as_str())
+        .unwrap_or_default()
+        .to_string()
+}
+
+fn recover(opts: &Opts, st: Style) -> Result<u8, String> {
+    let (path, src) = load(opts)?;
+    let wp = opts.one("wal").ok_or("informe --wal")?;
+    let Some(c) = compile_or_report(&path, &src, st) else { return Ok(2) };
+    // 1. integridade: qualquer falha de leitura ou de cadeia interrompe a recuperação aqui
+    let wal = Wal::open(PathBuf::from(wp)).map_err(|e| e.to_string())?;
+    if wal.read.fresh {
+        return Err(format!("W0003: o WAL `{wp}` não existe: não há execução a recuperar (confira o caminho)"));
+    }
+    let entries = wal.log.entries.len();
+    println!(
+        "{} WAL íntegro: {} · {} registros · cabeça #{}",
+        st.green("✓"),
+        wp,
+        entries,
+        &wal.log.head[..12.min(wal.log.head.len())]
+    );
+    if let Some(t) = &wal.read.torn {
+        println!(
+            "  {} última linha interrompida ({} bytes) descartada e guardada em {wp}.torn: um registro está inteiro ou ausente",
+            st.bold("!"),
+            t.len()
+        );
+    }
+    let head = wal.log.entries.first().filter(|e| e["kind"] == "run").map(|e| e["detail"].clone());
+    let Some(head) = head else {
+        return Err(format!("W0004: o WAL `{wp}` não começa com o registro da execução (`run`)"));
+    };
+    let run = head["run"].as_str().unwrap_or_default().to_string();
+    if head["program"].as_str() != Some(c.codex.root.as_str()) {
+        return Err(format!(
+            "W0004: o WAL é de outro programa (Codex #{}), não de `{path}` (Codex #{})",
+            ath_codex::short(head["program"].as_str().unwrap_or_default()),
+            ath_codex::short(&c.codex.root)
+        ));
+    }
+    println!(
+        "  execução {run} · {}.{} · Codex #{}",
+        head["agent"].as_str().unwrap_or("?"),
+        head["event"].as_str().unwrap_or("?"),
+        ath_codex::short(&c.codex.root)
+    );
+
+    // 2. as obrigações
+    let (stw, open, escalated_before, sagas) = wal_summary(&wal.log);
+    println!(
+        "  {} intenção(ões): {} fechada(s), {} em aberto, {} escalada(s) antes; {} saga(s) interrompida(s)",
+        stw.intents.len(),
+        stw.intents.len() - open.len() - escalated_before.len(),
+        open.len(),
+        escalated_before.len(),
+        sagas.len()
+    );
+    for (k, d) in stw.open() {
+        println!(
+            "  {} {k} {}({}) · provedor {} · sem desfecho",
+            st.bold("○"),
+            d["tool"].as_str().unwrap_or("?"),
+            d["args"]
+                .as_array()
+                .map(|a| a
+                    .iter()
+                    .filter(|x| x.get("cap").is_none())
+                    .map(|x| x.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", "))
+                .unwrap_or_default(),
+            d["provider"].as_str().unwrap_or("?")
+        );
+    }
+    let before = json!({ "entries": entries, "open": open, "escalated": escalated_before, "interrupted_sagas": sagas });
+    let inspect = opts.one("inspect").is_some();
+    let mut actions: Vec<serde_json::Value> = Vec::new();
+    let mut world = serde_json::Value::Null;
+    let wal = if inspect {
+        wal
+    } else {
+        // 3. os protocolos permitidos, contra o serviço real
+        let addr = opts.one("host").ok_or("informe --host (ou --inspect para só conferir)")?;
+        let host = remote_host(opts, addr, &run)?;
+        let mut arx = Arx::new(&c.module, Box::new(host), Box::new(Scripted::default()));
+        arx.run_id = run.clone();
+        arx.wal = Some(wal);
+        let fuel = opts.one("fuel").map(|f| f.parse::<u32>().map_err(|_| "--fuel inválido")).transpose()?.unwrap_or(3);
+        actions = arx.recover_with(fuel, opts.one("retry-escalated").is_some());
+        for a in &actions {
+            let d = &a["detail"];
+            let key = d["key"].as_str().unwrap_or("-");
+            match a["kind"].as_str() {
+                Some("close") => println!(
+                    "  {} {key} {} · evidência: {} ({} tentativa(s))",
+                    st.green("●"),
+                    if d["status"] == "done" { "aplicada" } else { "não aplicada" },
+                    d["evidence"].as_str().unwrap_or("?"),
+                    d["attempts"]
+                ),
+                Some("escalate") => {
+                    println!("  {} {key} ESCALADA · {}", st.red("▲"), d["reason"].as_str().unwrap_or("?"))
+                }
+                Some("compensated") => println!(
+                    "  {} saga {} · estorno de {} {key} · {}",
+                    st.bold("↩"),
+                    d["saga"],
+                    d["of"].as_str().unwrap_or("?"),
+                    if d["ok"] == json!(true) { "feito" } else { "FALHOU" }
+                ),
+                Some("saga_unlog") => {
+                    println!("  {} saga {} · {key} não aplicada: nada a estornar", st.dim("·"), d["saga"])
+                }
+                Some("saga_end") => {
+                    println!("  {} saga {} encerrada · resíduo {}", st.bold("■"), d["saga"], d["residual"])
+                }
+                Some("saga_pending") => println!(
+                    "  {} saga {} continua aberta · {}",
+                    st.red("▲"),
+                    d["saga"],
+                    d["reason"].as_str().unwrap_or("?")
+                ),
+                _ => {}
+            }
+        }
+        world = arx.host.state();
+        arx.wal.take().ok_or("wal")?
+    };
+    // 4. o que ficou
+    let (_, open, escalated, sagas) = wal_summary(&wal.log);
+    let residual: Vec<&serde_json::Value> = wal
+        .log
+        .entries
+        .iter()
+        .filter(|e| e["kind"] == "saga_end" && e["detail"]["residual"].as_u64().unwrap_or(0) > 0)
+        .collect();
+    let needs = !open.is_empty() || !escalated.is_empty() || !sagas.is_empty() || !residual.is_empty();
+    if needs && inspect {
+        println!("{} há pendências (nada foi enviado: rode `athc recover` sem --inspect):", st.bold("!"));
+    } else if needs {
+        println!("{} exige intervenção:", st.red("✗"));
+    }
+    if needs {
+        for k in &open {
+            println!("    {k}: sem desfecho (o provedor não deu resposta conclusiva; rode `athc recover` de novo quando ele voltar)");
+        }
+        for k in &escalated {
+            let opaque = stw_provider(&wal.log, k) == "opaque";
+            if opaque {
+                println!("    {k}: resultado desconhecido — o provedor é opaco: não há como saber pelo sistema se o efeito aconteceu; confira fora dele");
+            } else {
+                println!("    {k}: escalada sem resposta conclusiva — tente `athc recover --retry-escalated` com o provedor no ar");
+            }
+        }
+        for s in &sagas {
+            println!("    saga {s}: interrompida e ainda não compensada");
+        }
+        for e in &residual {
+            println!("    saga {}: {} estorno(s) não confirmado(s)", e["detail"]["saga"], e["detail"]["residual"]);
+        }
+    } else {
+        println!(
+            "{} nada pendente: toda intenção tem desfecho com evidência e nenhuma saga ficou aberta",
+            st.green("✓")
+        );
+    }
+    println!(
+        "  wal       {} registros (+{}) · cabeça #{}",
+        wal.log.entries.len(),
+        wal.log.entries.len() - entries,
+        &wal.log.head[..12.min(wal.log.head.len())]
+    );
+    if let Some(rp) = opts.one("report") {
+        let report = json!({
+            "run": run,
+            "program": c.codex.root,
+            "wal": { "path": wp, "entries": wal.log.entries.len(), "head": wal.log.head, "torn_bytes": wal.read.torn.as_ref().map(Vec::len) },
+            "before": before,
+            "actions": actions,
+            "after": { "open": open, "escalated": escalated, "interrupted_sagas": sagas,
+                       "sagas_with_residual": residual.iter().map(|e| e["detail"]["saga"].clone()).collect::<Vec<_>>() },
+            "needs_intervention": needs,
+            "inspect_only": inspect,
+            "world": world,
+        });
+        std::fs::write(rp, serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?)
+            .map_err(|e| format!("falha ao gravar o relatório: {e}"))?;
+    }
+    Ok(if needs { 3 } else { 0 })
 }

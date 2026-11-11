@@ -1,0 +1,9 @@
+{
+  "principal": "tesouraria",
+  "request": "Pague 120.00 a ACME (NF 4471) e 75.50 a BETA; agende 250.00 para BETA em 2026-12-01.",
+  "operations": [
+    { "op": "pay", "args": ["ACME", "120.00"] },
+    { "op": "pay", "args": ["BETA", "75.50"] },
+    { "op": "schedule", "args": ["BETA", "250.00"] }
+  ]
+}

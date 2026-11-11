@@ -9,11 +9,14 @@ pub const GENESIS: &str = "00000000000000000000000000000000000000000000000000000
 pub struct Journal {
     pub entries: Vec<Value>,
     pub head: String,
+    /// Onde cada entrada é gravada e sincronizada assim que nasce (`stream_to`): o journal de
+    /// evidências de um processo que morre no meio continua no disco até a última entrada.
+    sink: Option<std::fs::File>,
 }
 
 impl Default for Journal {
     fn default() -> Self {
-        Journal { entries: Vec::new(), head: GENESIS.to_string() }
+        Journal { entries: Vec::new(), head: GENESIS.to_string(), sink: None }
     }
 }
 
@@ -34,13 +37,29 @@ impl Journal {
         let mut entry = body;
         entry["hash"] = json!(h);
         self.head = h;
+        if let Some(f) = self.sink.as_mut() {
+            use std::io::Write;
+            // evidência, não obrigação: uma falha de escrita aqui não interrompe a execução
+            // (as obrigações estão no WAL, que para o processo se não puder ser escrito)
+            let _ = f.write_all(format!("{entry}\n").as_bytes()).and_then(|_| f.sync_data());
+        }
         self.entries.push(entry);
+    }
+
+    /// Passa a gravar cada entrada em `path` (truncado), sincronizada, assim que ela nasce.
+    pub fn stream_to(&mut self, path: &std::path::Path) -> std::io::Result<()> {
+        use std::io::Write;
+        let mut f = std::fs::File::create(path)?;
+        f.write_all(self.to_jsonl().as_bytes())?;
+        f.sync_data()?;
+        self.sink = Some(f);
+        Ok(())
     }
 
     /// Um journal a partir de entradas já encadeadas (lidas de disco e conferidas).
     pub fn from_entries(entries: Vec<Value>) -> Journal {
         let head = entries.last().and_then(|e| e["hash"].as_str()).unwrap_or(GENESIS).to_string();
-        Journal { entries, head }
+        Journal { entries, head, sink: None }
     }
 
     pub fn to_jsonl(&self) -> String {

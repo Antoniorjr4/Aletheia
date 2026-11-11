@@ -13,6 +13,7 @@ pub mod grant;
 pub mod host;
 pub mod journal;
 pub mod model;
+pub mod remote;
 pub mod value;
 pub mod wal;
 
@@ -896,7 +897,7 @@ impl<'m> Arx<'m> {
                 }
                 Err(e) => {
                     let msg = match e {
-                        HostError::Failed(m) => m,
+                        HostError::Failed(m) | HostError::Unreachable(m) => m,
                         HostError::Timeout { elapsed } => {
                             self.clock += elapsed;
                             format!("`{}` sem resposta em {elapsed:.1} s", comp.name.name)
@@ -1033,6 +1034,8 @@ impl<'m> Arx<'m> {
                         (Status::NotApplied, decl.latency)
                     }
                     Err(HostError::Timeout { elapsed }) => (Status::Unknown, elapsed),
+                    // o provedor não foi alcançado: o reenvio não saiu e nada se aprendeu
+                    Err(HostError::Unreachable(_)) => (Status::Unknown, 0.0),
                 },
                 ProviderClass::Queryable => self.host.status(&tool, key),
             };
@@ -1180,10 +1183,29 @@ impl<'m> Arx<'m> {
     /// mais antiga, as operações das sagas que a queda interrompeu, menos as refutadas.
     /// Devolve os registros acrescentados.
     pub fn recover(&mut self, fuel: u32) -> Vec<serde_json::Value> {
+        self.recover_with(fuel, false)
+    }
+
+    /// A recuperação, opcionalmente retomando também as operações **escaladas** de uma passagem
+    /// anterior cujo provedor tem protocolo (`idempotent`, `queryable`): o provedor estava fora
+    /// do ar, ou o programa transferiu a obrigação (`transfer p`). Um desfecho conclusivo
+    /// obtido agora é persistido depois da escalada e a substitui. `opaque` continua escalada:
+    /// não há o que perguntar. (O teorema `no_silent_loss` de `Wal.lean` fala de uma passagem;
+    /// a retomada é uma nova passagem, pedida pelo operador.)
+    pub fn recover_with(&mut self, fuel: u32, retry_escalated: bool) -> Vec<serde_json::Value> {
         let Some(w) = &self.wal else { return Vec::new() };
         let before = w.log.entries.len();
         let st = wal::WalState::of(&w.log);
-        let open: Vec<(String, serde_json::Value)> = st.open().into_iter().cloned().collect();
+        let open: Vec<(String, serde_json::Value)> = st
+            .intents
+            .iter()
+            .filter(|(k, d)| match st.outcome.get(k).map(String::as_str) {
+                None => true,
+                Some("escalated") => retry_escalated && d["provider"] != "opaque",
+                Some(_) => false,
+            })
+            .cloned()
+            .collect();
         for (key, d) in open {
             let tool = d["tool"].as_str().unwrap_or_default().to_string();
             let Some(decl) = self.tools.get(tool.as_str()).copied() else {
@@ -1205,8 +1227,10 @@ impl<'m> Arx<'m> {
                     let r = match decl.provider {
                         ProviderClass::Idempotent => match args.as_ref().map(|a| self.host.call(&tool, a)) {
                             Some(Ok(_)) => Some(true),
+                            // só uma resposta do provedor é evidência: o provedor inalcançável
+                            // (`Unreachable`) e o prazo esgotado deixam a obrigação em aberto
                             Some(Err(HostError::Failed(_))) => Some(false),
-                            _ => None,
+                            Some(Err(HostError::Unreachable(_) | HostError::Timeout { .. })) | None => None,
                         },
                         _ => match self.host.status(&tool, kn).0 {
                             Status::Done(_) => Some(true),
@@ -1240,6 +1264,7 @@ impl<'m> Arx<'m> {
                 continue;
             }
             let mut residual = 0;
+            let mut unreached = false;
             for op in sg.ops.iter().rev() {
                 let key = op["key"].as_str().map(String::from);
                 if let Some(k) = &key {
@@ -1267,9 +1292,25 @@ impl<'m> Arx<'m> {
                     .zip(op["args"].as_array().into_iter().flatten())
                     .map(|(p, j)| self.arg_from_json(j, &p.ty))
                     .collect();
-                let ok = args.is_some_and(|a| self.host.call(&comp.name.name, &a).is_ok());
+                let ok = match args.map(|a| self.host.call(&comp.name.name, &a)) {
+                    Some(Ok(_)) => true,
+                    // o provedor não foi alcançado: o estorno não saiu. A saga continua aberta
+                    // para a próxima recuperação; nada é dado por compensado nem por perdido
+                    Some(Err(HostError::Unreachable(_))) => {
+                        unreached = true;
+                        continue;
+                    }
+                    _ => false,
+                };
                 residual += usize::from(!ok);
                 self.wlog("compensated", json!({ "saga": sid, "of": tool, "key": key, "ok": ok, "via": "recovery" }));
+            }
+            if unreached {
+                self.wlog(
+                    "saga_pending",
+                    json!({ "saga": sid, "reason": "provedor inalcançável: estornos por fazer" }),
+                );
+                continue;
             }
             self.wlog("saga_end", json!({ "saga": sid, "outcome": "recovered", "residual": residual }));
         }
@@ -1543,11 +1584,15 @@ impl<'m> Arx<'m> {
         }
         let (out, lat) = match hr {
             Ok(r) => r,
-            Err(HostError::Failed(m)) => {
+            // `Unreachable` na primeira tentativa: a requisição não saiu do processo, a operação
+            // não aconteceu. A evidência registrada diz qual dos dois foi.
+            Err(e @ (HostError::Failed(_) | HostError::Unreachable(_))) => {
+                let via = if matches!(e, HostError::Unreachable(_)) { "unsent" } else { "reply" };
+                let (HostError::Failed(m) | HostError::Unreachable(m)) = e else { unreachable!() };
                 // Com chave, a recusa é um estado terminal da obrigação (`Failed`): fica no
                 // journal, como `resolved` fica na reconciliação. Sem chave, nada muda.
                 if let Some(k) = key_n {
-                    self.wclose(k, "failed", "reply");
+                    self.wclose(k, "failed", via);
                     self.journal.push(
                         self.clock,
                         "tool_failed",
