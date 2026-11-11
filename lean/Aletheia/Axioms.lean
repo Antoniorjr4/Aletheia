@@ -275,3 +275,12 @@ open Aletheia
 
 /-- info: 'Aletheia.Wal.resend_without_dedup_duplicates' does not depend on any axioms -/
 #guard_msgs in #print axioms Wal.resend_without_dedup_duplicates
+
+/-- info: 'Aletheia.Lifting.lifting_sound' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Lifting.lifting_sound
+
+/-- info: 'Aletheia.Lifting.amplified_not_discharged' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Lifting.amplified_not_discharged
+
+/-- info: 'Aletheia.Lifting.lifted_example' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Lifting.lifted_example

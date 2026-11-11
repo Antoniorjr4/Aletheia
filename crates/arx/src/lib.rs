@@ -177,6 +177,12 @@ pub struct Arx<'m> {
     next_saga: u64,
     /// O write-ahead log das operações com chave e das sagas (M-III), se ativado.
     pub wal: Option<wal::Wal>,
+    /// As obrigações `requires` levantadas para os `refine` e o destino de cada sítio (M-I).
+    obligations: ath_syntax::obligations::Obligations,
+    /// O sítio da chamada em curso (para saber se a obrigação dela está descarregada).
+    call_site: Option<ath_syntax::Span>,
+    /// As linhas das relações confiáveis que autorizaram o contrato em curso (`s.binds`).
+    auth: Vec<(String, String)>,
     /// Compensação, recuperação e reconciliação são obrigações: não pedem reserva de orçamento.
     obligation: bool,
 }
@@ -278,6 +284,9 @@ impl<'m> Arx<'m> {
             saga_ids: Vec::new(),
             next_saga: 1,
             wal: None,
+            obligations: ath_syntax::obligations::analyze(m),
+            call_site: None,
+            auth: Vec::new(),
             obligation: false,
         };
         for item in &m.items {
@@ -488,7 +497,10 @@ impl<'m> Arx<'m> {
                     .ok_or_else(|| rt("R0101", format!("campo `{}` ausente", f.name)).into()),
                 _ => Err(rt("R0101", "acesso a campo de valor sem campos").into()),
             },
-            ExprKind::Call { callee, args } => self.call(callee, args),
+            ExprKind::Call { callee, args } => {
+                let site = e.span;
+                self.call_with_site(callee, args, site)
+            }
             ExprKind::Method { recv, method, args } => {
                 // `s` é um identificador reservado, não uma variável de modelo.
                 // Os métodos contextuais leem a MESMA fotografia imutável que
@@ -506,7 +518,7 @@ impl<'m> Arx<'m> {
                             | ("member", 2)
                             | ("within", 2)
                             | ("mentions", 2)
-                    );
+                    ) || (method.name == "binds" && vals.len() >= 2);
                     if !known {
                         return Err(rt("R0108", format!("método `s.{}` desconhecido", method.name)).into());
                     }
@@ -530,6 +542,21 @@ impl<'m> Arx<'m> {
                         ("mentions", [Value::Text(k), Value::Text(x)]) => Ok(Value::Bool(self.snapshot.mentions(k, x))),
                         ("mentions", [Value::Text(k), Value::Int(n)]) => {
                             Ok(Value::Bool(self.snapshot.mentions(k, &n.to_string())))
+                        }
+                        ("binds", [Value::Text(k), rest @ ..]) => {
+                            let xs: Option<Vec<String>> = rest
+                                .iter()
+                                .map(|v| match v {
+                                    Value::Text(x) => Some(x.clone()),
+                                    Value::Int(n) => Some(n.to_string()),
+                                    _ => None,
+                                })
+                                .collect();
+                            let hit = xs.and_then(|xs| self.snapshot.binds(k, &xs));
+                            if let Some(row) = &hit {
+                                self.auth.push((k.clone(), row.clone()));
+                            }
+                            Ok(Value::Bool(hit.is_some()))
                         }
                         (m, _) => Err(rt("R0103", format!("argumentos inválidos para `s.{m}`")).into()),
                     };
@@ -630,7 +657,21 @@ impl<'m> Arx<'m> {
                             self.journal.push(self.clock, "decode_reject", json!({ "attempt": attempt }));
                         }
                         Some(v) => {
-                            if self.eval_policy(p, v.clone())? {
+                            let accepted = self.eval_policy(p, v.clone())?;
+                            // M-I: as obrigações `requires` levantadas para este `refine`, sobre o
+                            // valor proposto; uma violação é uma recusa, com retentativa e `else`
+                            if accepted {
+                                if let Some(tool) = self.lifted_violation(e.span, &v)? {
+                                    self.events[idx].verdict = Some((false, format!("viola o contrato de `{tool}`")));
+                                    self.journal.push(
+                                        self.clock,
+                                        "obligation_reject",
+                                        json!({ "policy": policy.name, "tool": tool, "attempt": attempt }),
+                                    );
+                                    continue;
+                                }
+                            }
+                            if accepted {
                                 self.events[idx].verdict = Some((true, format!("Endorsed({})", policy.name)));
                                 self.journal.push(
                                     self.clock,
@@ -1235,6 +1276,64 @@ impl<'m> Arx<'m> {
         })
     }
 
+    /// A primeira obrigação levantada para o `refine` em `site` que o valor `v` viola (o nome da
+    /// ferramenta), ou nenhuma. Percorre o caminho de cada obrigação — campos e elementos de
+    /// lista —, toma os elementos da variante e confere o contrato com os parâmetros ligados aos
+    /// campos.
+    fn lifted_violation(&mut self, site: ath_syntax::Span, v: &Value) -> R<Option<String>> {
+        use ath_syntax::obligations::Step;
+        let lifted = self.obligations.lifted_at(site).to_vec();
+        for l in lifted {
+            let mut cur = vec![v.clone()];
+            for st in &l.path {
+                cur = cur
+                    .into_iter()
+                    .flat_map(|x| match (st, x) {
+                        (Step::Field(var, f), Value::Adt { variant, fields, .. }) if &variant == var => {
+                            fields.into_iter().filter(|(k, _)| k == f).map(|(_, y)| y).collect::<Vec<_>>()
+                        }
+                        (Step::Elem, Value::List(items)) => items,
+                        _ => Vec::new(),
+                    })
+                    .collect();
+            }
+            let Some(t) = self.tools.get(l.tool.as_str()).copied() else { continue };
+            let Some(req) = &t.requires else { continue };
+            for x in cur {
+                let Value::Adt { variant, fields, .. } = x else { continue };
+                if variant != l.variant {
+                    continue;
+                }
+                let scope: Vec<(String, Value)> = l
+                    .binds
+                    .iter()
+                    .filter_map(|(p, f)| fields.iter().find(|(k, _)| k == f).map(|(_, y)| (p.clone(), y.clone())))
+                    .collect();
+                let saved = std::mem::replace(&mut self.scopes, vec![scope]);
+                let r = self.eval(req);
+                self.scopes = saved;
+                self.auth.clear();
+                if !matches!(r?, Value::Bool(true)) {
+                    return Ok(Some(l.tool.clone()));
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    fn call_with_site(&mut self, callee: &Ident, args: &[Expr], site: ath_syntax::Span) -> R<Value> {
+        if self.tools.contains_key(callee.name.as_str()) {
+            let mut vals = Vec::new();
+            for a in args {
+                vals.push(self.eval(a)?);
+            }
+            let t = self.tools[callee.name.as_str()];
+            self.call_site = Some(site);
+            return self.call_tool(t, vals);
+        }
+        self.call(callee, args)
+    }
+
     fn call(&mut self, callee: &Ident, args: &[Expr]) -> R<Value> {
         match callee.name.as_str() {
             "fit" => {
@@ -1292,6 +1391,7 @@ impl<'m> Arx<'m> {
 
     fn call_tool(&mut self, t: &'m ToolDecl, args: Vec<Value>) -> R<Value> {
         let committed = std::mem::replace(&mut self.committing, false);
+        let site = self.call_site.take();
         let name = &t.name.name;
         // Defesa em profundidade: confere a capacidade de novo, em runtime.
         let held: BTreeSet<String> =
@@ -1309,10 +1409,30 @@ impl<'m> Arx<'m> {
         if let Some(req) = &t.requires {
             let saved = std::mem::take(&mut self.scopes);
             self.scopes = vec![t.params.iter().zip(&args).map(|(p, v)| (p.name.name.clone(), v.clone())).collect()];
+            self.auth.clear();
             let r = self.eval(req);
             self.scopes = saved;
+            let discharged = site.is_some_and(|s| self.obligations.discharged(s));
             match r? {
-                Value::Bool(true) => {}
+                Value::Bool(true) => {
+                    // a identidade da autorização: a linha da relação confiável que ligou a operação
+                    if !self.auth.is_empty() {
+                        let rows: Vec<serde_json::Value> = std::mem::take(&mut self.auth)
+                            .into_iter()
+                            .map(|(rel, row)| json!({ "relation": rel, "row": row, "id": blake3::hash(row.as_bytes()).to_hex().to_string() }))
+                            .collect();
+                        self.journal.push(self.clock, "authorized", json!({ "tool": name, "by": rows }));
+                    }
+                }
+                Value::Bool(false) if discharged => {
+                    // a obrigação estava demonstrada: um `false` aqui é defeito da análise, não do plano
+                    self.journal.push(self.clock, "contract_refused", json!({ "tool": name, "discharged": true }));
+                    return Err(rt(
+                        "R0631",
+                        format!("obrigação de `{name}` descarregada e violada: defeito da análise"),
+                    )
+                    .into());
+                }
                 Value::Bool(false) => {
                     self.journal.push(self.clock, "contract_refused", json!({ "tool": name }));
                     return Err(rt("R0630", format!("o contrato `requires` de `{name}` recusou os argumentos")).into());

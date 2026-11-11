@@ -129,6 +129,8 @@ class Runtime:
         self.obligation = False
         # M-III: o write-ahead log das operações com chave e das sagas
         self.wal = None
+        # M-II: as linhas das relações confiáveis que autorizaram o contrato em curso
+        self._auth: list = []
         self.saga_ids: list = []
         self.next_saga = 1
 
@@ -286,6 +288,27 @@ class Runtime:
         v = decimal(str(x)) if type(x) in (int, str) else None
         return lim is not None and v is not None and v <= lim
 
+    def binds(self, name: str, *xs) -> bool:
+        """`s.binds("r", x1, …, xn)`: a tupla é uma linha `c1|…|cn` da relação confiável `r`
+        (decimais comparados pelo valor). A linha casada é a identidade da autorização."""
+        self._log_snapshot()
+        vals = [str(x) if type(x) is int else x for x in xs]
+        if not all(type(x) is str for x in vals):
+            return False
+
+        def same(a: str, b: str) -> bool:
+            if a == b:
+                return True
+            da, db = decimal(a), decimal(b)
+            return da is not None and db is not None and da == db
+
+        for row in self.snapshot.get("inventories", {}).get(name, []):
+            cs = row.split("|")
+            if len(cs) == len(vals) and all(same(c, x) for c, x in zip(cs, vals)):
+                self._auth.append((name, row))
+                return True
+        return False
+
     def mentions(self, name: str, x) -> bool:
         """`s.mentions("k", x)`: `x`, não vazio, aparece literalmente num texto confiável `k`."""
         self._log_snapshot()
@@ -350,7 +373,7 @@ class Runtime:
 
     # ------------------------------------------------------------ ferramentas
 
-    def call_tool(self, name: str, args: list):
+    def call_tool(self, name: str, args: list, discharged: bool = False):
         committed, self.committing = self.committing, False
         t = self.p.tools[name]
         held = set()
@@ -365,12 +388,20 @@ class Runtime:
         # o contrato `requires`: o monitor na fronteira do efeito, antes da reserva e do host
         contract = t.get("contract")
         if contract is not None:
+            self._auth = []
             ok = contract(self, *args)
             if type(ok) is not bool:
                 raise RtErr("R0109", "contrato não devolveu Bool")
+            if not ok and discharged:
+                self.journal.push(self.clock, "contract_refused", {"tool": name, "discharged": True})
+                raise RtErr("R0631", f"obrigação de `{name}` descarregada e violada: defeito da análise")
             if not ok:
                 self.journal.push(self.clock, "contract_refused", {"tool": name})
                 raise RtErr("R0630", f"o contrato `requires` de `{name}` recusou os argumentos")
+            if self._auth:
+                rows = [{"relation": rel, "row": row, "id": blake3.hexdigest(row.encode("utf-8"))} for rel, row in self._auth]
+                self._auth = []
+                self.journal.push(self.clock, "authorized", {"tool": name, "by": rows})
         # o que o medidor confere (`need`): o custo da chamada e, dentro de saga, o pior do compensador
         held_c = self._comp_reserve(t) if self.sagas else (0.0, 0.0)
         if not self.obligation:
@@ -751,7 +782,35 @@ class Runtime:
                 prompt += f"### {k}\n{val}\n"
         return Draft(model, out, spec, prompt)
 
-    def refine(self, d, policy, name: str, retry: int):
+    def _lifted_violation(self, v, lifted) -> str | None:
+        """M-I: a primeira obrigação levantada que `v` viola (a ferramenta), ou `None`."""
+        for tool, path, variant, binds, n in lifted:
+            cur = [v]
+            for st in path:
+                nxt = []
+                for x in cur:
+                    if st[0] == "e" and isinstance(x, list):
+                        nxt.extend(x)
+                    elif st[0] == "f" and isinstance(x, Adt) and x.variant == st[1]:
+                        nxt.extend(y for k, y in x.fields if k == st[2])
+                cur = nxt
+            contract = self.p.tools[tool].get("contract")
+            if contract is None:
+                continue
+            for x in cur:
+                if not isinstance(x, Adt) or x.variant != variant:
+                    continue
+                args = [None] * n
+                fields = dict(x.fields)
+                for i, f in binds:
+                    args[i] = fields.get(f)
+                ok = contract(self, *args)
+                self._auth = []
+                if ok is not True:
+                    return tool
+        return None
+
+    def refine(self, d, policy, name: str, retry: int, lifted=None):
         if not isinstance(d, Draft):
             raise RtErr("R0105", "`refine` sobre valor que não é rascunho")
         for attempt in range(1, retry + 1):
@@ -759,7 +818,13 @@ class Runtime:
             if v is _MISSING:
                 self.journal.push(self.clock, "decode_reject", {"attempt": attempt})
                 continue
-            if self._policy(policy, v):
+            accepted = self._policy(policy, v)
+            if accepted and lifted:
+                tool = self._lifted_violation(v, lifted)
+                if tool is not None:
+                    self.journal.push(self.clock, "obligation_reject", {"policy": name, "tool": tool, "attempt": attempt})
+                    continue
+            if accepted:
                 self.journal.push(self.clock, "endorse", {"policy": name, "value": to_json(v), "attempt": attempt})
                 return True, v
             self.journal.push(self.clock, "policy_reject", {"policy": name, "value": to_json(v), "attempt": attempt})

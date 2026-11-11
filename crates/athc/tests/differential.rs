@@ -2452,3 +2452,155 @@ fn wal_recovery_is_the_same_in_arx_and_python() {
     eprintln!("M-III: {compared} WALs recuperados comparados ARX × Python");
     assert!(compared as u64 >= n, "poucas quedas comparadas: {compared}");
 }
+
+// ------------------------------------------------------------------ M-I + M-II: obrigações levantadas e intenção
+
+/// O programa de `lifted_obligations_*`: o plano do modelo passa por uma política que aceita
+/// tudo; o contrato de `pay` liga operação, destinatário e valor (`s.binds`). Com `amplify`, o
+/// valor do efeito não é o campo endossado (é outro valor, como no `amplified` de
+/// `Contracts.lean`, onde o endossado é somado a uma constante).
+fn lifted_src(amplify: bool) -> String {
+    let arg = if amplify { "\"1000.00\"" } else { "amount" };
+    format!(
+        r#"module lifted
+
+type Write =
+  | Pay {{ to: Text[..8], amount: Text[..16] }}
+
+type Plan =
+  | Plan {{ writes: List[Write, 0..4], answer: Text[..64] }}
+
+model planner {{
+  id = "m"
+  provider = "groq"
+  version = "1"
+  price_in = 0.0
+  price_out = 0.0
+  ctx = 8192
+  max_out = 200
+  ttft = 1.0
+  per_tok = 0.0
+}}
+
+policy Any(p: Plan) -> Bool = true
+
+tool pay(c: Cap[Bank.Transfer], to: Text[..8] ^ Endorsed, amount: Text[..17] ^ Endorsed) -> Text
+  ! {{ Bank.Transfer }} irrevocable latency 1.0
+  requires s.binds("intents", "pay", to, amount)
+
+agent A(bank: Cap[Bank.Transfer]) budget [tok <= 100000, usd <= 1.0, wall <= 1000.0] {{
+  on go(n: Int) -> Text ! {{ Infer, Bank.Transfer }} {{
+    let d = infer planner -> Plan {{ task = "pay what the user asked" }}
+    let plan = refine d by Any retry 2 else {{ Plan {{ writes: [], answer: "nothing" }} }}
+    match plan {{
+      Plan {{ writes, answer }} => {{
+        for w in writes {{
+          match w {{
+            Pay {{ to, amount }} => commit pay(bank, to, {arg}),
+          }}
+        }}
+        answer
+      }},
+    }}
+  }}
+}}
+"#
+    )
+}
+
+/// O ARX e o Python sobre o mesmo programa: o journal completo e o relatório de erro.
+fn run_both(tag: &str, src: &str, world: &Json, models: &Json) -> (String, Option<String>, String, Option<String>) {
+    let c = compile(src).unwrap_or_else(|d| {
+        panic!("{tag}: o athc recusou\n{:?}", d.iter().map(|x| (&x.code, &x.msg)).collect::<Vec<_>>())
+    });
+    let provider = Box::new(Scripted::from_json(models).unwrap());
+    let mut arx = Arx::new(&c.module, Box::new(SimWorld::from_json(world).unwrap()), provider);
+    arx.contracts = athc::contract_hashes(&c);
+    let aerr = arx.run("A", "go", vec![Value::Int(0)]).err().map(|e| e.code);
+    let full = arx.journal.to_jsonl();
+    let dir = scratch();
+    let file = tag.replace(|ch: char| !ch.is_ascii_alphanumeric(), "_");
+    let py = ath_emit::python(&c.module, &c.check, &c.codex, &format!("{file}.ath")).expect("emissão");
+    let (pp, w, m, j, r) = (
+        dir.join(format!("{file}.py")),
+        dir.join(format!("{file}.world.json")),
+        dir.join(format!("{file}.models.json")),
+        dir.join(format!("{file}.journal.jsonl")),
+        dir.join(format!("{file}.report.json")),
+    );
+    std::fs::write(&pp, py).unwrap();
+    std::fs::write(&w, world.to_string()).unwrap();
+    std::fs::write(&m, models.to_string()).unwrap();
+    let out = Command::new("python3")
+        .env("PYTHONPATH", root().join("runtimes/python"))
+        .args(["-m", "aletheia_runtime", "run"])
+        .arg(&pp)
+        .arg("--world")
+        .arg(&w)
+        .arg("--models")
+        .arg(&m)
+        .args(["--provider", "scripted", "--agent", "A", "--on", "go", "--journal"])
+        .arg(&j)
+        .arg("--report")
+        .arg(&r)
+        .args(["--arg-json", "0"])
+        .output()
+        .expect("python3");
+    let report: Json = serde_json::from_str(
+        &std::fs::read_to_string(&r)
+            .unwrap_or_else(|_| panic!("{tag}: sem relatório\n{}", String::from_utf8_lossy(&out.stderr))),
+    )
+    .unwrap();
+    (full, aerr, std::fs::read_to_string(&j).unwrap(), report["error"]["code"].as_str().map(String::from))
+}
+
+fn kinds(jsonl: &str) -> Vec<String> {
+    jsonl.lines().map(|l| serde_json::from_str::<Json>(l).unwrap()["kind"].as_str().unwrap().to_string()).collect()
+}
+
+/// **M-I + M-II, nos dois runtimes.** O planejador propõe primeiro um pagamento a um
+/// beneficiário legítimo com o valor errado (o R3: dentro de qualquer teto), depois o pagamento
+/// que a intenção autoriza. A análise descarrega o contrato no efeito e o levanta para o
+/// `refine`: a primeira proposta é recusada ali (`obligation_reject`), a segunda executa, e o
+/// journal registra a linha da relação que a autorizou (`authorized`, com o BLAKE3 dela). Com o
+/// valor transformado depois do endosso, a obrigação não é demonstrável: a
+/// análise reporta a lacuna, o `refine` aceita, e o monitor do efeito recusa (`R0630`). Os
+/// journals do ARX e do Python são iguais byte a byte nos dois casos.
+#[test]
+fn lifted_obligations_refuse_at_refine_and_bind_the_intent() {
+    let world = json!({ "sinks": ["pay"], "inventories": { "intents": ["pay|B|10.00"] } });
+    let plan = |to: &str, amount: &str| json!({ "kind": "Plan", "writes": [{ "kind": "Pay", "to": to, "amount": amount }], "answer": "ok" });
+    let models = json!({ "planner": [plan("B", "2000.00"), plan("B", "10.0")] });
+    // com a obrigação demonstrada
+    let src = lifted_src(false);
+    let c = compile(&src).unwrap();
+    let ob = ath_syntax::obligations::analyze(&c.module);
+    assert_eq!(ob.sites.len(), 1);
+    assert!(matches!(ob.sites[0].status, ath_syntax::obligations::Status::Discharged { .. }), "{:?}", ob.sites);
+    let (a, aerr, p, perr) = run_both("lifted/demonstrada", &src, &world, &models);
+    assert_eq!((aerr.clone(), perr), (None, None), "{a}");
+    first_diff("lifted/demonstrada", "ARX × Python (journal completo)", &a, &p);
+    let k = kinds(&a);
+    let rej = k.iter().position(|x| x == "obligation_reject").expect("a primeira proposta é recusada no refine");
+    let tool = k.iter().position(|x| x == "tool").expect("a segunda executa");
+    assert!(rej < tool && k.iter().filter(|x| *x == "tool").count() == 1, "{k:?}");
+    let auth: Json =
+        a.lines().map(|l| serde_json::from_str::<Json>(l).unwrap()).find(|e| e["kind"] == "authorized").unwrap();
+    assert_eq!(auth["detail"]["by"][0]["row"], "pay|B|10.00");
+    assert_eq!(auth["detail"]["by"][0]["id"], blake3::hash(b"pay|B|10.00").to_hex().to_string());
+    // com o valor transformado: lacuna dinâmica, recusa no efeito
+    let src = lifted_src(true);
+    let c = compile(&src).unwrap();
+    let ob = ath_syntax::obligations::analyze(&c.module);
+    assert!(
+        matches!(&ob.sites[0].status, ath_syntax::obligations::Status::Dynamic { reason } if reason.contains("amount")),
+        "{:?}",
+        ob.sites
+    );
+    assert!(ob.lifted.is_empty());
+    let models = json!({ "planner": [plan("B", "1.00")] });
+    let (a, aerr, p, perr) = run_both("lifted/lacuna", &src, &world, &models);
+    assert_eq!((aerr.as_deref(), perr.as_deref()), (Some("R0630"), Some("R0630")), "{a}");
+    first_diff("lifted/lacuna", "ARX × Python (journal completo)", &a, &p);
+    assert!(!kinds(&a).iter().any(|x| x == "tool" || x == "obligation_reject"));
+}

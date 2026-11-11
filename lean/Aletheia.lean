@@ -15,3 +15,4 @@ import Aletheia.Examples
 import Aletheia.Arx
 import Aletheia.Contracts
 import Aletheia.Wal
+import Aletheia.Lifting
