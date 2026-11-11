@@ -770,6 +770,8 @@ fn lean_blake3_matches_the_reference_crate() {
 struct Tripod {
     /// a vista do núcleo do journal de cada backend
     lean: Option<String>,
+    /// o modelo do ARX em Lean (`Arx.run`, sobre o qual `Arx.sim` está provado), na mesma vista
+    lean_arx: Option<String>,
     arx: String,
     py: String,
     /// o journal completo do ARX (para contar os desfechos das sagas)
@@ -842,18 +844,22 @@ fn tripod(tag: &str, src: &str, core: &Json, world: &Json, models: &Json, args: 
     );
     let py_core = std::fs::read_to_string(&cj).unwrap();
     // Lean: o avaliador canônico
-    let lean = lean_eval().map(|bin| {
-        let pj = dir.join(format!("{file}.core.json"));
-        std::fs::write(&pj, core.to_string()).unwrap();
-        let out = Command::new(bin).arg("run").arg(&pj).output().unwrap();
-        assert!(
-            out.status.success(),
-            "{tag}: o avaliador do Lean falhou\n{}\n{src}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-        String::from_utf8(out.stdout).unwrap()
-    });
-    Tripod { lean, arx: arx_core, py: py_core, full: arx_full, arx_err, py_err }
+    let run_lean = |mode: &str| {
+        lean_eval().map(|bin| {
+            let pj = dir.join(format!("{file}.core.json"));
+            std::fs::write(&pj, core.to_string()).unwrap();
+            let out = Command::new(bin).arg(mode).arg(&pj).output().unwrap();
+            assert!(
+                out.status.success(),
+                "{tag}: o avaliador do Lean ({mode}) falhou\n{}\n{src}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            String::from_utf8(out.stdout).unwrap()
+        })
+    };
+    let lean = run_lean("run");
+    let lean_arx = run_lean("arx");
+    Tripod { lean, lean_arx, arx: arx_core, py: py_core, full: arx_full, arx_err, py_err }
 }
 
 fn assert_tripod(tag: &str, t: &Tripod) {
@@ -861,6 +867,9 @@ fn assert_tripod(tag: &str, t: &Tripod) {
     first_diff(tag, "ARX × Python (vista do núcleo)", &t.arx, &t.py);
     if let Some(lean) = &t.lean {
         first_diff(tag, "Lean × ARX (journal do núcleo)", lean, &t.arx);
+    }
+    if let Some(model) = &t.lean_arx {
+        first_diff(tag, "modelo Lean do ARX × ARX (vista do núcleo)", model, &t.arx);
     }
     let core: Vec<Json> = t.arx.lines().map(|l| serde_json::from_str(l).unwrap()).collect();
     assert_eq!(arx::journal::Journal::verify(&core), Ok(()), "{tag}: cadeia do núcleo");
@@ -1284,6 +1293,9 @@ fn assert_tripod_keys(tag: &str, t: &Tripod, fuel: usize) -> (bool, Vec<(String,
     assert_eq!(ll.len(), la.len(), "{tag}: número de ciclos de vida");
     for ((kl, tl, el), (ka, ta, ea)) in ll.iter().zip(&la) {
         assert_eq!((tl, el), (ta, ea), "{tag}: a chave {kl} do Lean e a {ka} do ARX divergem");
+    }
+    if let Some(model) = &t.lean_arx {
+        first_diff(tag, "modelo Lean do ARX × ARX (vista do núcleo)", model, &t.arx);
     }
     // sem renomeação: a identidade da operação é a mesma nos dois, evento a evento
     assert!(ml.iter().all(|(a, c)| a == c), "{tag}: chaves do Lean fora da ordem de cunhagem: {ml:?}");

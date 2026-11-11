@@ -1,4 +1,5 @@
 import Lean.Data.Json
+import Aletheia.Arx
 import Aletheia.Eval
 import Aletheia.Blake3
 
@@ -442,5 +443,20 @@ def Prog.outcome (p : Prog) : Except Err Out → Option (List String)
     some (chain (tr.map p.event ++
       [("abort", .obj [("cause", .str "probe"), ("probe", Prog.name (p.probes.map (·.name)) q)])]))
   | .error _ => none
+
+/-- O modelo do ARX (`Arx.run`) no mesmo programa, e o journal da sua vista do núcleo
+(`Arx.cvRun`), no mesmo formato. É a quarta perna do tripé: o binário do ARX contra o modelo
+sobre o qual `Arx.sim` está provado. -/
+def Prog.arxOutcome (p : Prog) : Option (List String) :=
+  let r := Arx.run p.sig p.cfg (fun _ => 0) p.exp p.env (Arx.AS.ofSt p.init)
+  let evs := ((Arx.cvRun p.sig r.2.jr).2).map p.event
+  match r.1 with
+  | .ok v => some (chain (evs ++ [("end", .obj [("value", valJson v)])]))
+  | .error (.abort v) => some (chain (evs ++ [("end", .obj [("aborted", .bool true), ("value", valJson v)])]))
+  | .error (.err (.refusedNow k)) | .error (.err (.refusedRec k)) =>
+    some (chain (evs ++ [("abort", .obj [("cause", .str "refused"), ("key", p.keyName k)])]))
+  | .error (.err (.probe q)) =>
+    some (chain (evs ++ [("abort", .obj [("cause", .str "probe"), ("probe", Prog.name (p.probes.map (·.name)) q)])]))
+  | .error (.err .other) => none
 
 end Aletheia.Exec
