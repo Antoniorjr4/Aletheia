@@ -18,8 +18,10 @@ ath-grammar.workspace = true
 arx.workspace = true
 ath-emit.workspace = true
 serde_json.workspace = true
+blake3.workspace = true
 
 [dev-dependencies]
+ath-world = { path = "../ath-world" }
 ath-grammar.workspace = true
 # o tripé diferencial confere o BLAKE3 do avaliador do Lean contra o crate de referência
 blake3.workspace = true

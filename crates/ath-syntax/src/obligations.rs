@@ -248,10 +248,16 @@ impl<'m> An<'m> {
                 self.block(els, env);
                 vec![Src::Unknown("reconciliação".into())]
             }
+            // `return` diverge: o ramo não produz valor algum para quem o cerca. Um
+            // `refine … else { return … }` só tem a origem endossada.
+            ExprKind::Return(r) => {
+                self.expr(r, env);
+                Vec::new()
+            }
             other => {
                 // percorre os filhos, para achar chamadas aninhadas; o valor é calculado
                 match other {
-                    ExprKind::Field(r, _) | ExprKind::Unary(_, r) | ExprKind::Quote(r) | ExprKind::Return(r) => {
+                    ExprKind::Field(r, _) | ExprKind::Unary(_, r) | ExprKind::Quote(r) => {
                         self.expr(r, env);
                     }
                     ExprKind::Binary(_, a, b) => {

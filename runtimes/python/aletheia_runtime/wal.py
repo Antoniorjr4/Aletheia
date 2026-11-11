@@ -17,6 +17,15 @@ class Crash(BaseException):
     """A queda simulada: atravessa todo tratador do runtime (não é `Exception`)."""
 
 
+class WalError(Exception):
+    """O WAL existe e não pôde ser lido (`W0001`) ou tem uma linha inteira inválida, fora da
+    cadeia ou adulterada (`W0002`). Nenhuma das duas falhas vira um log vazio."""
+
+    def __init__(self, code: str, msg: str):
+        super().__init__(f"{code}: {msg}")
+        self.code = code
+
+
 class Wal:
     def __init__(self, path: str | None = None):
         self.path = path
@@ -24,27 +33,63 @@ class Wal:
         self.crash = None  # (ponto, n)
         self.nth = 0
         self.ord: dict = {}
-        if path and os.path.exists(path):
-            self.log = Wal.parse(open(path, encoding="utf-8").read())
+        self.fresh = True
+        self.torn: bytes | None = None
+        if path:
+            try:
+                with open(path, "rb") as f:
+                    data = f.read()
+            except FileNotFoundError:
+                return
+            except OSError as e:
+                raise WalError("W0001", f"o WAL `{path}` existe e não pôde ser lido: {e}") from e
+            self.fresh = False
+            self.log, self.torn = Wal.read(data, path)
+            if self.torn is not None:
+                # a escrita que a queda cortou: guardada à parte, e o arquivo volta ao último
+                # registro íntegro para que o próximo continue a cadeia
+                with open(path + ".torn", "ab") as side:
+                    side.write(self.torn + b"\n")
+                    side.flush()
+                    os.fsync(side.fileno())
+                with open(path, "r+b") as f:
+                    f.truncate(len(data) - len(self.torn))
+                    f.flush()
+                    os.fsync(f.fileno())
 
     @staticmethod
-    def parse(text: str) -> Journal:
+    def read(data: bytes, path: str = "<memória>"):
+        """Cada linha terminada por `\\n` precisa ser um registro da cadeia; a primeira que não
+        for é `W0002`. Só o resto sem `\\n` no fim é uma escrita interrompida, devolvida à parte."""
         j = Journal()
         prev = GENESIS
-        for line in text.splitlines():
+        *lines, rest = data.split(b"\n")
+        for n, raw in enumerate(lines, 1):
+            def bad(reason, n=n):
+                return WalError(
+                    "W0002",
+                    f"o WAL `{path}` está corrompido na linha {n} ({reason}); "
+                    f"{len(j.entries)} registro(s) íntegro(s) antes dela",
+                )
             try:
-                e = loads(line)
+                e = loads(raw.decode("utf-8"))
+            except UnicodeDecodeError:
+                raise bad("não é UTF-8") from None
             except ValueError:
-                break
-            if not isinstance(e, dict) or "hash" not in e:
-                break
+                raise bad("não é JSON") from None
+            if not isinstance(e, dict):
+                raise bad("não é um registro")
+            if "hash" not in e:
+                raise bad("registro sem `hash`")
             body = {k: v for k, v in e.items() if k != "hash"}
-            if body.get("prev") != prev or blake3.hexdigest(dumps(body).encode("utf-8")) != e["hash"]:
-                break
+            if body.get("prev") != prev:
+                raise bad("`prev` não continua a cadeia")
+            if blake3.hexdigest(dumps(body).encode("utf-8")) != e["hash"]:
+                raise bad("o hash não confere com o conteúdo")
             j.entries.append(e)
             prev = e["hash"]
         j.head = prev
-        return j
+        return j, (rest if rest else None)
 
     def append(self, t: float, kind: str, detail: dict) -> None:
         self.log.push(t, kind, detail)

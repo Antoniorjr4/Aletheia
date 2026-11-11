@@ -284,3 +284,27 @@ open Aletheia
 
 /-- info: 'Aletheia.Lifting.lifted_example' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Lifting.lifted_example
+
+/-- info: 'Aletheia.Grant.exec_sound' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Grant.exec_sound
+
+/-- info: 'Aletheia.Grant.exec_conserves' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Grant.exec_conserves
+
+/-- info: 'Aletheia.Grant.exec_linear' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Grant.exec_linear
+
+/-- info: 'Aletheia.Grant.other_run_refused' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Grant.other_run_refused
+
+/-- info: 'Aletheia.Grant.refused_leaves_store' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Grant.refused_leaves_store
+
+/-- info: 'Aletheia.Grant.cartesian_overgrants' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Grant.cartesian_overgrants
+
+/-- info: 'Aletheia.Grant.two_payees_two_amounts' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Grant.two_payees_two_amounts
+
+/-- info: 'Aletheia.Grant.relation_is_reusable' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Grant.relation_is_reusable

@@ -459,6 +459,7 @@ impl<'m> Gen<'m> {
                         "within" if rendered.len() == 2 => "within",
                         "mentions" if rendered.len() == 2 => "mentions",
                         "binds" if rendered.len() >= 2 => "binds",
+                        "authorizes" if rendered.len() >= 2 => "authorizes",
                         _ => return Err(format!("método intrínseco s.{} inválido", method.name)),
                     };
                     self.assign("t", format!("R.{builtin}({})", rendered.join(", ")))

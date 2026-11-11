@@ -122,6 +122,10 @@ pub enum HostError {
     Failed(String),
     /// O prazo expirou sem resposta: o efeito pode ou não ter acontecido.
     Timeout { elapsed: f64 },
+    /// O provedor não foi alcançado: **esta** tentativa não saiu do processo. Não diz nada
+    /// sobre uma tentativa anterior da mesma operação: na reconciliação e na recuperação é
+    /// "desconhecido", nunca "não aplicada".
+    Unreachable(String),
 }
 
 /// Resposta do protocolo de consulta de status (`provider queryable`).

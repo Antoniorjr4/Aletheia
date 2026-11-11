@@ -8,6 +8,7 @@ members = [
     "crates/arx",
     "crates/ath-emit",
     "crates/athc",
+    "crates/ath-world",
 ]
 
 [workspace.package]

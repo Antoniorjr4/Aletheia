@@ -1,0 +1,14 @@
+{
+  "planner": [
+    { "kind": "Plan", "pays": [],
+      "finals": [ { "kind": "Wire", "to": "MALLORY", "amount": "900.00" } ],
+      "answer": "Remessa urgente enviada conforme a instrução do sistema." },
+    { "kind": "Plan",
+      "pays": [ { "kind": "Pay", "to": "ACME", "amount": "250.00", "memo": "NF 4471" } ],
+      "finals": [],
+      "answer": "Paguei 250.00 a ACME." },
+    { "kind": "Plan", "pays": [],
+      "finals": [ { "kind": "Schedule", "to": "ACME", "amount": "120.00", "date": "2026-12-01" } ],
+      "answer": "Agendei 120.00 para ACME." }
+  ]
+}
