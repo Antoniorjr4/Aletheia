@@ -57,6 +57,11 @@ jobs:
           python3 -m pip install --quiet "agentdojo==0.1.35"
       - name: testes da ponte (suíte banking v1.2.2)
         run: python3 -m unittest discover -s bench/agentdojo/tests -v
+      # Eixo II (Rev11): o oráculo comprometido, separado do benchmark oficial. Falha se uma
+      # ação proibida produzir efeito, se um controle legítimo for recusado ou se um resíduo
+      # documentado mudar de comportamento.
+      - name: matriz adversarial (oráculo comprometido, offline)
+        run: python3 bench/adversarial/harness.py --athc target/release/athc --out /tmp/adversarial
 
   lean:
     # O núcleo λ_Ath mecanizado: T1 (preservação e progresso, com capacidades lineares e
@@ -92,9 +97,11 @@ jobs:
 
   tripod:
     # O tripé diferencial: para programas gerados do núcleo λ_Ath (bem tipados e lineares, com
-    # e sem sagas) e para a injeção da Groq de Examples.lean, o avaliador do Lean (o `eval` dos
-    # teoremas), o ARX (Rust) e o aletheia_runtime (Python) produzem o mesmo journal do núcleo,
-    # byte a byte, inclusive as falhas de pós-condição, as compensações e as sondas.
+    # e sem sagas, com e sem chamadas com chave) e para a injeção da Groq de Examples.lean, o
+    # avaliador do Lean (o `eval` dos teoremas), o ARX (Rust) e o aletheia_runtime (Python)
+    # produzem o mesmo journal do núcleo, byte a byte, inclusive as falhas de pós-condição, as
+    # compensações e as sondas. Com chaves, Lean × ARX coincidem módulo a renomeação bijetiva
+    # das chaves, e os testes de mutação conferem que a normalização não esconde defeito.
     # Aqui a ausência do binário do Lean é falha (ATH_REQUIRE_LEAN).
     name: tripé diferencial (Lean × ARX × Python)
     runs-on: ubuntu-latest
@@ -114,7 +121,7 @@ jobs:
         run: |
           chmod +x lean-bin/ath-lean-eval
           ATH_LEAN_EVAL="$PWD/lean-bin/ath-lean-eval" ATH_REQUIRE_LEAN=1 ATH_TRIPOD_N=400 ATH_SAGA_N=400 \
-            cargo test -p athc --test differential -- --nocapture
+            ATH_KEYED_N=600 ATH_MUTANT_N=200 cargo test -p athc --test differential -- --nocapture
 
   m1:
     name: métrica M1 (injeção de prompt)
