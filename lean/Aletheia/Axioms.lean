@@ -180,3 +180,35 @@ open Aletheia
 
 /-- info: 'Aletheia.KeysExample.transferred_but_applied' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms KeysExample.transferred_but_applied
+
+/-! ## Rev12 -/
+
+/-- info: 'Aletheia.next_preserves' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms next_preserves
+
+/-- info: 'Aletheia.Lifecycle.pending_unique' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Lifecycle.pending_unique
+
+/-- info: 'Aletheia.Arx.recA_eq' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Arx.recA_eq
+
+/-- info: 'Aletheia.Arx.compA_sim' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Arx.compA_sim
+
+/-- info: 'Aletheia.Arx.sim' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Arx.sim
+
+/-- info: 'Aletheia.Arx.arx_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Arx.arx_refines
+
+/-- info: 'Aletheia.Arx.arx_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Arx.arx_sound
+
+/-- info: 'Aletheia.Arx.Counter.comp_cost_breaks_budget' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Arx.Counter.comp_cost_breaks_budget
+
+/-- info: 'Aletheia.Arx.Counter.impure_handler_reorders' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Arx.Counter.impure_handler_reorders
+
+/-- info: 'Aletheia.Arx.Counter.top_level_await_differs' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Arx.Counter.top_level_await_differs
