@@ -1179,7 +1179,11 @@ fn recover(opts: &Opts, st: Style) -> Result<u8, String> {
     }
     if needs {
         for k in &open {
-            println!("    {k}: sem desfecho (o provedor não deu resposta conclusiva; rode `athc recover` de novo quando ele voltar)");
+            if inspect {
+                println!("    {k}: sem desfecho");
+            } else {
+                println!("    {k}: sem desfecho (o provedor não deu resposta conclusiva; rode `athc recover` de novo quando ele voltar)");
+            }
         }
         for k in &escalated {
             let opaque = stw_provider(&wal.log, k) == "opaque";
