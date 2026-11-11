@@ -37,6 +37,18 @@ $ athc check examples/rollout.ath
 ✓ Codex              12 objetos BLAKE3, raiz #9ecbfccad097
 ```
 
+## v1.0-RC1: ponta a ponta
+
+```sh
+scripts/rc-smoke.sh
+```
+
+Um comando constrói o compilador e um serviço local com estado em SQLite, executa
+`examples/rc1/treasury.ath` contra ele e mostra: a execução legítima de uma intenção confirmada, uma
+tentativa adversarial recusada sem efeito, a morte do processo por `SIGKILL` em quatro situações e a
+recuperação por `athc recover` em outro processo, com o estado do serviço antes e depois. Requer
+Rust e um compilador C. Detalhes, hipóteses e limitações em [docs/RC1.md](docs/RC1.md).
+
 ## Começar
 
 Requer Rust ≥ 1.87 e Python ≥ 3.10 (benchmark, runtime Python e testes diferenciais). As

@@ -66,8 +66,23 @@ jobs:
       # a que aceita tudo (RS1). Falha se um efeito proibido acontecer ou um controle for recusado.
       - name: contratos de autorização (oráculo comprometido, offline)
         run: python3 bench/adversarial/harness.py --contracts --athc target/release/athc --out /tmp/adversarial
-      - name: Intenção autorizada e obrigações levantadas (Rev13, sem chamada paga)
-        run: python3 bench/adversarial/harness.py --intents --athc target/release/athc --out /tmp/adversarial
+      # v1.0-RC1: autorização por concessão. Sugestão ≠ concessão (sem produto cartesiano),
+      # delegação ≠ endosso, uma concessão vale um efeito. Sem chamada paga.
+      - name: concessões (oráculo comprometido, offline)
+        run: python3 bench/adversarial/harness.py --grants --athc target/release/athc --out /tmp/adversarial
+
+  rc-smoke:
+    # v1.0-RC1 ponta a ponta: o programa examples/rc1/treasury.ath contra o serviço local
+    # (SQLite), com SIGKILL real e `athc recover` em outro processo. Modelo roteirizado; nenhuma
+    # chamada paga, nenhum segredo.
+    name: v1.0-RC1 (ponta a ponta, SIGKILL e recuperação)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: scripts/rc-smoke.sh
+        run: NO_COLOR=1 scripts/rc-smoke.sh
 
   lean:
     # O núcleo λ_Ath mecanizado: T1 (preservação e progresso, com capacidades lineares e

@@ -171,6 +171,9 @@ class AletheiaAgent(BasePipelineElement):
         # (tarefa do usuário, tarefa de injeção): o executor o define antes de cada tarefa
         self.current: tuple[str, str] = ("unknown", "none")
         self.last: dict = {}
+        # v1.0-RC1: as concessões da execução (`s.authorizes`): `(pedido, env) -> (execução, doc)`.
+        # Vêm de uma confirmação estruturada do principal; sem o gancho, não há concessão alguma.
+        self.grants_for = None
 
     def query(
         self,
@@ -184,6 +187,9 @@ class AletheiaAgent(BasePipelineElement):
         inventories = INVENTORIES[self.suite](query, env)
         host = AgentDojoHost(self.suite, runtime, env, inventories, messages)
         rt = Runtime(self.prog, host, self.provider_factory())
+        if self.grants_for is not None:
+            rt.run_id, doc = self.grants_for(query, env)
+            rt.load_grants(doc)
         error = None
         try:
             answer = rt.run(self.agent, self.event, [query])
@@ -206,6 +212,7 @@ class AletheiaAgent(BasePipelineElement):
             "calls": host.calls,
             "inventories": inventories,
             "kinds": [e["kind"] for e in rt.journal.entries],
+            "grants": {"live": len(rt.grants), "spent": len(rt.spent)},
         }
         if self.journal_dir is not None:
             user, inj = self.current
