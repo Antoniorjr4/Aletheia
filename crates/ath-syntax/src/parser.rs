@@ -248,8 +248,12 @@ impl Parser {
         let mut provider = ProviderClass::Opaque;
         let mut latency = 0.0;
         let mut usd = 0.0;
+        let mut requires = None;
         loop {
-            if self.is_contextual("reversible") {
+            if self.is_contextual("requires") {
+                self.bump();
+                requires = Some(self.expr()?);
+            } else if self.is_contextual("reversible") {
                 class_span = self.bump().span;
                 class = EffClass::Reversible;
             } else if self.is_contextual("compensable") {
@@ -287,7 +291,7 @@ impl Parser {
                 break;
             }
         }
-        Ok(ToolDecl { name, params, ret, effects, class, class_span, compensator, provider, latency, usd })
+        Ok(ToolDecl { name, params, ret, effects, class, class_span, compensator, provider, latency, usd, requires })
     }
 
     fn policy_decl(&mut self) -> PResult<PolicyDecl> {

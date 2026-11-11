@@ -82,6 +82,16 @@ class Meter:
         self.wall += wall
 
 
+def decimal(x: str):
+    """Um decimal não negativo (`123`, `98.70`, `1,050.00`) em milionésimos; `None` se ilegível.
+    A mesma leitura do ARX (`arx::host::decimal`)."""
+    t = x.strip().replace(",", "")
+    i, _, f = t.partition(".")
+    if not i or len(i) > 18 or len(f) > 6 or not i.isascii() or not i.isdigit() or (f and not (f.isascii() and f.isdigit())):
+        return None
+    return int(i) * 1_000_000 + int(f.ljust(6, "0") or "0")
+
+
 class Program:
     """Metadados que o emissor gera a partir do programa verificado."""
 
@@ -253,6 +263,21 @@ class Runtime:
             x = str(x)
         return type(x) is str and x in self.snapshot.get("inventories", {}).get(name, [])
 
+    def within(self, name: str, x) -> bool:
+        """`s.within("k", x)`: `x` (decimal) não passa do limite confiável `k`; falha fechado."""
+        self._log_snapshot()
+        inv = self.snapshot.get("inventories", {}).get(name, [])
+        lim = decimal(inv[0]) if inv else None
+        v = decimal(str(x)) if type(x) in (int, str) else None
+        return lim is not None and v is not None and v <= lim
+
+    def mentions(self, name: str, x) -> bool:
+        """`s.mentions("k", x)`: `x`, não vazio, aparece literalmente num texto confiável `k`."""
+        self._log_snapshot()
+        if type(x) is int:
+            x = str(x)
+        return type(x) is str and x != "" and any(x in s for s in self.snapshot.get("inventories", {}).get(name, []))
+
     def managed(self) -> str:
         self._log_snapshot()
         return ", ".join(self.snapshot["managed"])
@@ -322,6 +347,15 @@ class Runtime:
                 raise RtErr("R0502", f"`{name}` exige capacidade para `{eff}`")
         if t["class"] == "irrevocable" and not committed:
             raise RtErr("R0301", f"`{name}` é irrevocable e não veio de `commit`")
+        # o contrato `requires`: o monitor na fronteira do efeito, antes da reserva e do host
+        contract = t.get("contract")
+        if contract is not None:
+            ok = contract(self, *args)
+            if type(ok) is not bool:
+                raise RtErr("R0109", "contrato não devolveu Bool")
+            if not ok:
+                self.journal.push(self.clock, "contract_refused", {"tool": name})
+                raise RtErr("R0630", f"o contrato `requires` de `{name}` recusou os argumentos")
         if not self.obligation:
             self.meter.reserve(0, t["usd"], t["latency"], name)
         key_n = next((a.n for a in args if isinstance(a, Key)), None)

@@ -1849,3 +1849,71 @@ fn keyed_scenarios_are_deterministic_on_the_three_backends() {
         }
     }
 }
+
+/// Rev12, M4: o contrato `requires` é um monitor na fronteira do efeito. Os argumentos são
+/// confiáveis (literais do programa) e nenhuma política os julga; o contrato da ferramenta
+/// recusa o valor acima do limite confiável antes do host, e os dois runtimes escrevem o mesmo
+/// journal.
+#[test]
+fn contracts_monitor() {
+    let src = r#"module contracts
+
+tool pay(c: Cap[Bank.Transfer], to: Text[..8] ^ Endorsed, amount: Text[..16] ^ Endorsed) -> Text
+  ! { Bank.Transfer } irrevocable latency 1.0
+  requires s.member("payees", to) && s.within("limit", amount)
+
+agent A(bank: Cap[Bank.Transfer]) budget [usd <= 1.0, wall <= 100.0] {
+  on go(n: Int) -> Text ! { Bank.Transfer } {
+    let r = commit pay(bank, "A", "50.00")
+    commit pay(bank, "A", "500.00")
+  }
+}
+"#;
+    let world = json!({ "sinks": ["pay"], "inventories": { "payees": ["A"], "limit": ["100.00"] } });
+    let models = json!({});
+    let c = compile(src)
+        .unwrap_or_else(|d| panic!("o athc recusou\n{:?}", d.iter().map(|x| (&x.code, &x.msg)).collect::<Vec<_>>()));
+    let provider = Box::new(Scripted::from_json(&models).unwrap());
+    let mut arx = Arx::new(&c.module, Box::new(SimWorld::from_json(&world).unwrap()), provider);
+    arx.contracts = athc::contract_hashes(&c);
+    let err = arx.run("A", "go", vec![Value::Int(0)]).expect_err("o segundo pagamento passa do limite");
+    assert_eq!(err.code, "R0630", "{}", err.msg);
+    let full = arx.journal.to_jsonl();
+    let kinds: Vec<String> =
+        full.lines().map(|l| serde_json::from_str::<Json>(l).unwrap()["kind"].as_str().unwrap().to_string()).collect();
+    assert_eq!(kinds.iter().filter(|k| *k == "tool").count(), 1, "só o pagamento dentro do contrato chega ao host");
+    assert_eq!(kinds.iter().filter(|k| *k == "contract_refused").count(), 1);
+    let refused = kinds.iter().position(|k| k == "contract_refused").unwrap();
+    assert!(kinds[refused + 1..].iter().all(|k| k != "tool"), "nada executa depois da recusa");
+    // Python, sobre o código emitido: o mesmo journal, byte a byte
+    let dir = scratch();
+    let py = ath_emit::python(&c.module, &c.check, &c.codex, "contracts.ath").expect("emissão");
+    let (pp, w, m, j, r) = (
+        dir.join("contracts.py"),
+        dir.join("contracts.world.json"),
+        dir.join("contracts.models.json"),
+        dir.join("contracts.journal.jsonl"),
+        dir.join("contracts.report.json"),
+    );
+    std::fs::write(&pp, py).unwrap();
+    std::fs::write(&w, world.to_string()).unwrap();
+    std::fs::write(&m, models.to_string()).unwrap();
+    let out = Command::new("python3")
+        .env("PYTHONPATH", root().join("runtimes/python"))
+        .args(["-m", "aletheia_runtime", "run"])
+        .arg(&pp)
+        .arg("--world")
+        .arg(&w)
+        .arg("--models")
+        .arg(&m)
+        .args(["--provider", "scripted", "--agent", "A", "--on", "go", "--journal"])
+        .arg(&j)
+        .arg("--report")
+        .arg(&r)
+        .args(["--arg-json", "0"])
+        .output()
+        .expect("python3");
+    let report: Json = serde_json::from_str(&std::fs::read_to_string(&r).unwrap()).unwrap();
+    assert_eq!(report["error"]["code"].as_str(), Some("R0630"), "{}", String::from_utf8_lossy(&out.stderr));
+    first_diff("contratos", "ARX × Python (journal completo)", &full, &std::fs::read_to_string(&j).unwrap());
+}

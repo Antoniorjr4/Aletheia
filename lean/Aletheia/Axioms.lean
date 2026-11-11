@@ -227,3 +227,9 @@ open Aletheia
 
 /-- info: 'Aletheia.KeyedSagaExample.bound_compensator_restores' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms KeyedSagaExample.bound_compensator_restores
+
+/-- info: 'Aletheia.ContractsExample.amplified_typed' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms ContractsExample.amplified_typed
+
+/-- info: 'Aletheia.ContractsExample.policyOk_but_not_contract' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms ContractsExample.policyOk_but_not_contract

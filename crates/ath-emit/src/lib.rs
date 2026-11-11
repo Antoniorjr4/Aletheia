@@ -48,6 +48,24 @@ pub fn python(m: &Module, _check: &CheckResult, codex: &Codex, source: &str) -> 
         }
     }
 
+    // Os contratos `requires`: uma função por ferramenta, ligada à entrada da ferramenta.
+    for item in &m.items {
+        if let Item::Tool(t) = item {
+            let Some(req) = &t.requires else { continue };
+            g.reset();
+            g.env.push(Vec::new());
+            let params: Vec<String> = t.params.iter().map(|x| g.bind(&x.name.name)).collect();
+            g.line(format!("def contract_{}(R, {}):", ident(&t.name.name), params.join(", ")));
+            g.ind += 1;
+            let a = g.expr(req)?;
+            g.line(format!("return {a}"));
+            g.ind -= 1;
+            g.env.pop();
+            g.line(format!("TOOLS[{}][\"contract\"] = contract_{}", py_str(&t.name.name), ident(&t.name.name)));
+            funcs.push(g.take());
+        }
+    }
+
     let mut agents = String::from("AGENTS = {\n");
     for item in &m.items {
         let Item::Agent(a) = item else { continue };
@@ -423,6 +441,8 @@ impl<'m> Gen<'m> {
                         "scale_justified" if rendered.len() == 2 => "scale_justified",
                         "inventory" if rendered.len() == 1 => "inventory",
                         "member" if rendered.len() == 2 => "member",
+                        "within" if rendered.len() == 2 => "within",
+                        "mentions" if rendered.len() == 2 => "mentions",
                         _ => return Err(format!("método intrínseco s.{} inválido", method.name)),
                     };
                     self.assign("t", format!("R.{builtin}({})", rendered.join(", ")))

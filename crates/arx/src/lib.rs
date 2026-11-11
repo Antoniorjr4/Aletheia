@@ -462,6 +462,8 @@ impl<'m> Arx<'m> {
                             | ("scale_justified", 2)
                             | ("inventory", 1)
                             | ("member", 2)
+                            | ("within", 2)
+                            | ("mentions", 2)
                     );
                     if !known {
                         return Err(rt("R0108", format!("método `s.{}` desconhecido", method.name)).into());
@@ -478,6 +480,14 @@ impl<'m> Arx<'m> {
                         ("member", [Value::Text(k), Value::Text(x)]) => Ok(Value::Bool(self.snapshot.member(k, x))),
                         ("member", [Value::Text(k), Value::Int(n)]) => {
                             Ok(Value::Bool(self.snapshot.member(k, &n.to_string())))
+                        }
+                        ("within", [Value::Text(k), Value::Text(x)]) => Ok(Value::Bool(self.snapshot.within(k, x))),
+                        ("within", [Value::Text(k), Value::Int(n)]) => {
+                            Ok(Value::Bool(self.snapshot.within(k, &n.to_string())))
+                        }
+                        ("mentions", [Value::Text(k), Value::Text(x)]) => Ok(Value::Bool(self.snapshot.mentions(k, x))),
+                        ("mentions", [Value::Text(k), Value::Int(n)]) => {
+                            Ok(Value::Bool(self.snapshot.mentions(k, &n.to_string())))
                         }
                         (m, _) => Err(rt("R0103", format!("argumentos inválidos para `s.{m}`")).into()),
                     };
@@ -1025,6 +1035,22 @@ impl<'m> Arx<'m> {
         }
         if t.class == EffClass::Irrevocable && !committed {
             return Err(rt("R0301", format!("`{name}` é irrevocable e não veio de `commit`")).into());
+        }
+        // O contrato de autorização (`requires`): o monitor na fronteira do efeito. Avaliado
+        // sobre os argumentos reais, antes da reserva e do host; falso, nada acontece no mundo.
+        if let Some(req) = &t.requires {
+            let saved = std::mem::take(&mut self.scopes);
+            self.scopes = vec![t.params.iter().zip(&args).map(|(p, v)| (p.name.name.clone(), v.clone())).collect()];
+            let r = self.eval(req);
+            self.scopes = saved;
+            match r? {
+                Value::Bool(true) => {}
+                Value::Bool(false) => {
+                    self.journal.push(self.clock, "contract_refused", json!({ "tool": name }));
+                    return Err(rt("R0630", format!("o contrato `requires` de `{name}` recusou os argumentos")).into());
+                }
+                _ => return Err(rt("R0109", "contrato não devolveu Bool").into()),
+            }
         }
         if !self.obligation {
             self.meter.reserve(0, t.usd, t.latency, name)?;

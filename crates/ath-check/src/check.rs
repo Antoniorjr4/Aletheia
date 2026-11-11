@@ -706,6 +706,38 @@ impl<'m> Ctx<'m> {
             self.push(Diag::new(E0, "E0030", "latência e custo devem ser ≥ 0", t.name.span, "contrato Δ inválido"));
         }
         self.check_compensator(t);
+        self.check_requires(t);
+    }
+
+    /// `requires φ`: o contrato de autorização. É conferido como o corpo de uma política (puro:
+    /// nada de ferramenta, inferência ou `commit`; só os parâmetros e o estado confiável) e
+    /// precisa ser `Bool`. O runtime o avalia sobre os argumentos reais antes do efeito.
+    fn check_requires(&mut self, t: &'m ToolDecl) {
+        let Some(req) = &t.requires else { return };
+        self.in_policy = true;
+        self.scopes = vec![vec![]];
+        self.pc = Label::Trusted;
+        self.pc_span = None;
+        self.used.clear();
+        self.ret = None;
+        for prm in &t.params {
+            let (pt, _) = self.resolve(&prm.ty);
+            if !matches!(pt, Ty::Cap(_)) && !pt.is_linear() {
+                self.bind(&prm.name.name, LTy::trusted(pt));
+            }
+        }
+        let body = self.expr(req);
+        if !assignable(&body.ty, &Ty::Bool) {
+            self.push(Diag::new(
+                E0,
+                "E0430",
+                "o contrato `requires` é uma condição",
+                req.span,
+                format!("`{}` exige `Bool`, encontrado `{}`", t.name.name, body.ty.show()),
+            ));
+        }
+        self.in_policy = false;
+        self.scopes.clear();
     }
 
     /// `compensable by c`: `c` existe, não é a própria ferramenta, recebe os mesmos parâmetros
@@ -1484,8 +1516,10 @@ impl<'m> Ctx<'m> {
                     }
                     return LTy::trusted(Ty::Bool);
                 }
-                "inventory" | "member" => {
-                    let member = method.name == "member";
+                "inventory" | "member" | "within" | "mentions" => {
+                    // `s.within("k", x)`: `x` (decimal) ≤ o limite confiável `k`; `s.mentions("k", x)`:
+                    // `x` aparece literalmente num texto confiável `k` (Rev12, contratos `requires`)
+                    let member = method.name != "inventory";
                     check_args(self, if member { 2 } else { 1 });
                     if member && !self.in_policy {
                         self.push(
@@ -1494,7 +1528,7 @@ impl<'m> Ctx<'m> {
                                 "E0423",
                                 "sonda contextual fora de política",
                                 method.span,
-                                "`s.member` só decide dentro de `policy`",
+                                format!("`s.{}` só decide dentro de `policy` ou de `requires`", method.name),
                             )
                             .help("leve a decisão para a política aplicada pelo `refine`"),
                         );
