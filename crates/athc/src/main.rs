@@ -395,16 +395,18 @@ fn cmd_run(opts: &Opts, st: Style) -> Result<bool, String> {
         if let Some(k) = opts.one("kill-at") {
             let (point, n) = k.split_once(':').ok_or("--kill-at espera ponto:N")?;
             let point = CrashPoint::parse(point)
-                .ok_or("--kill-at: ponto deve ser authorized, intent, sent, confirmed ou closed")?;
+                .ok_or("--kill-at: ponto deve ser authorized, logged, intent, sent, confirmed ou closed")?;
             w.crash = Some((point, n.parse().map_err(|_| "--kill-at: N inválido")?));
             w.crash_mode = CrashMode::Kill;
         }
-        w.append(
-            0.0,
-            "run",
-            json!({ "run": run_id, "program": c.codex.root, "agent": agent, "event": event,
-                    "args": args.iter().map(Value::to_json).collect::<Vec<_>>() }),
-        );
+        let mut head = json!({ "run": run_id, "program": c.codex.root, "agent": agent, "event": event,
+                    "args": args.iter().map(Value::to_json).collect::<Vec<_>>() });
+        // o registro de consumo que as intenções desta execução vão citar: a recuperação o lê
+        if let Some(l) = arx.grants.ledger() {
+            let abs = std::path::absolute(l).unwrap_or_else(|_| l.to_path_buf());
+            head["ledger"] = json!(abs.display().to_string());
+        }
+        w.append(0.0, "run", head);
         arx.wal = Some(w);
         arx.journal.stream_to(&jpath).map_err(|e| format!("falha ao abrir o journal: {e}"))?;
     } else if opts.one("kill-at").is_some() {
@@ -1121,6 +1123,21 @@ fn recover(opts: &Opts, st: Style) -> Result<u8, String> {
         let host = remote_host(opts, addr, &run)?;
         let mut arx = Arx::new(&c.module, Box::new(host), Box::new(Scripted::default()));
         arx.run_id = run.clone();
+        // as intenções que citam concessões só se decidem com o registro de consumo
+        let cites = stw.open().iter().any(|(_, d)| d["grants"].as_array().is_some_and(|a| !a.is_empty()));
+        let ledger = opts.one("grants").map(|g| format!("{g}.spent")).or(head["ledger"].as_str().map(String::from));
+        if cites || ledger.is_some() {
+            let l = ledger.ok_or(
+                "W0007: há intenção em aberto que cita concessões e o WAL não registra o registro de consumo; informe --grants",
+            )?;
+            match arx::grant::ledger_owners(Path::new(&l)) {
+                Ok(v) => arx.spent_view = Some(v),
+                Err(e) if cites => {
+                    return Err(format!("W0007: {e}; sem ele não há como saber se a operação saiu (nada foi enviado)"))
+                }
+                Err(_) => {}
+            }
+        }
         arx.wal = Some(wal);
         let fuel = opts.one("fuel").map(|f| f.parse::<u32>().map_err(|_| "--fuel inválido")).transpose()?.unwrap_or(3);
         actions = arx.recover_with(fuel, opts.one("retry-escalated").is_some());
@@ -1128,6 +1145,11 @@ fn recover(opts: &Opts, st: Style) -> Result<u8, String> {
             let d = &a["detail"];
             let key = d["key"].as_str().unwrap_or("-");
             match a["kind"].as_str() {
+                Some("close") if d["evidence"] == "recovery:unspent" => println!(
+                    "  {} {key} não enviada · a intenção existia, o consumo não: {} concessão(ões) continua(m) livre(s)",
+                    st.green("●"),
+                    d["released"].as_array().map_or(0, |a| a.len())
+                ),
                 Some("close") => println!(
                     "  {} {key} {} · evidência: {} ({} tentativa(s))",
                     st.green("●"),

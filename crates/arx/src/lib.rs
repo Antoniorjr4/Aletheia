@@ -12,6 +12,7 @@ pub mod cassette;
 pub mod grant;
 pub mod host;
 pub mod journal;
+pub mod lock;
 pub mod model;
 pub mod remote;
 pub mod value;
@@ -193,6 +194,9 @@ pub struct Arx<'m> {
     /// O contrato em curso consultou uma concessão: a sua recusa é linear, não defeito da análise.
     linear: bool,
     grants_logged: bool,
+    /// O registro de consumo, lido sob a trava, para a recuperação decidir sobre as intenções
+    /// que citam concessões (`athc recover`).
+    pub spent_view: Option<std::collections::BTreeMap<String, grant::Owner>>,
     /// Compensação, recuperação e reconciliação são obrigações: não pedem reserva de orçamento.
     obligation: bool,
 }
@@ -302,6 +306,7 @@ impl<'m> Arx<'m> {
             claim: Vec::new(),
             linear: false,
             grants_logged: false,
+            spent_view: None,
             obligation: false,
         };
         for item in &m.items {
@@ -1213,6 +1218,38 @@ impl<'m> Arx<'m> {
                 continue;
             };
             let kn: u64 = key.strip_prefix('k').and_then(|x| x.parse().ok()).unwrap_or_default();
+            // **Intenção que cita concessões** (`Txn.lean`, `recover`). O envio só acontece
+            // depois do consumo persistido, e o consumo cita o hash desta intenção. Logo:
+            //   consumo presente → a operação pode ter saído: segue o protocolo do provedor;
+            //   consumo ausente  → a operação não saiu do processo, com certeza: é fechada como
+            //                      não enviada e a concessão continua livre (nada é reenviado
+            //                      com uma autoridade que não chegou a ser gasta);
+            //   registro ilegível → não há como saber: escala, sem enviar.
+            let cited: Vec<String> =
+                d["grants"].as_array().into_iter().flatten().filter_map(|x| x.as_str().map(String::from)).collect();
+            if !cited.is_empty() {
+                let mine = st.hashes.get(&key);
+                match &self.spent_view {
+                    None => {
+                        self.wlog(
+                            "escalate",
+                            json!({ "key": key, "reason": "registro de consumo indisponível", "attempts": 0 }),
+                        );
+                        continue;
+                    }
+                    Some(view) => {
+                        let paid = cited.iter().all(|id| view.get(id).is_some_and(|o| o.intent.as_ref() == mine));
+                        if !paid {
+                            self.wlog(
+                                "close",
+                                json!({ "key": key, "status": "failed", "evidence": "recovery:unspent",
+                                        "attempts": 0, "released": cited }),
+                            );
+                            continue;
+                        }
+                    }
+                }
+            }
             let args: Option<Vec<Value>> = decl
                 .params
                 .iter()
@@ -1499,6 +1536,8 @@ impl<'m> Arx<'m> {
         }
         // O contrato de autorização (`requires`): o monitor na fronteira do efeito. Avaliado
         // sobre os argumentos reais, antes da reserva e do host; falso, nada acontece no mundo.
+        let mut claims: Vec<usize> = Vec::new();
+        let mut auth_rows: Vec<serde_json::Value> = Vec::new();
         if let Some(req) = &t.requires {
             let saved = std::mem::take(&mut self.scopes);
             self.scopes = vec![t.params.iter().zip(&args).map(|(p, v)| (p.name.name.clone(), v.clone())).collect()];
@@ -1511,20 +1550,10 @@ impl<'m> Arx<'m> {
             let claimed = std::mem::take(&mut self.claim);
             match r? {
                 Value::Bool(true) => {
-                    // a identidade da autorização: a linha da relação confiável que ligou a
-                    // operação e as concessões que ela consome. O consumo é persistido aqui,
-                    // antes da reserva, da intenção e do efeito: uma concessão vale um efeito.
-                    let mut rows: Vec<serde_json::Value> = std::mem::take(&mut self.auth);
-                    for i in claimed {
-                        self.grants.consume(i, name);
-                        let g = &self.grants.grants[i];
-                        rows.push(
-                            json!({ "grant": g.id, "op": g.op, "args": g.args, "origin": g.origin, "run": g.run }),
-                        );
-                    }
-                    if !rows.is_empty() {
-                        self.journal.push(self.clock, "authorized", json!({ "tool": name, "by": rows }));
-                    }
+                    // a linha da relação confiável que ligou a operação; as concessões só são
+                    // consumidas na seção crítica, junto com a intenção (mais abaixo)
+                    auth_rows = std::mem::take(&mut self.auth);
+                    claims = claimed;
                 }
                 // uma recusa que consultou as concessões é linear (a concessão não existe ou já
                 // foi consumida), não um defeito da análise: a checagem no `refine` adianta a
@@ -1562,20 +1591,65 @@ impl<'m> Arx<'m> {
         let shown: Vec<String> = args.iter().map(|v| v.show()).collect();
         let key_n = args.iter().find_map(|v| if let Value::Key(k) = v { Some(*k) } else { None });
         let key = key_n.map(|k| format!("k{k}"));
-        // M-III: a intenção é persistida antes do envio
-        if let (Some(k), true) = (key_n, self.wal.is_some()) {
-            let sid = self.saga_ids.last().copied();
+        // **A seção crítica da autorização (v1.0-RC2, `lean/Aletheia/Txn.lean`).** A ordem é
+        // intenção → consumo → envio, sob a trava do registro de consumo:
+        //   1. trava o registro e confere, relendo, que as concessões continuam livres;
+        //   2. persiste a intenção no WAL, citando as concessões que ela vai consumir;
+        //   3. persiste o consumo, citando a intenção; solta a trava;
+        //   4. envia.
+        // Em nenhum instante existe consumo sem intenção. Uma intenção sem consumo é, com
+        // certeza, uma operação que não saiu do processo: a recuperação a fecha como não
+        // enviada e a concessão continua livre.
+        let walled = key_n.filter(|_| self.wal.is_some());
+        if let Some(k) = walled {
             if let Some(w) = self.wal.as_mut() {
                 w.nth += 1;
                 let n = w.nth;
                 w.ord.insert(k, n);
             }
             self.wcrash(wal::CrashPoint::Authorized, k);
-            self.wlog(
-                "intent",
-                json!({ "key": format!("k{k}"), "tool": name, "provider": t.provider.name(), "obligation": "reconcile",
-                        "saga": sid, "args": args.iter().map(|v| v.to_json()).collect::<Vec<_>>() }),
-            );
+        }
+        let guard = match self.grants.begin(&claims) {
+            Ok(g) => g,
+            Err(grant::SpendError::Taken(id)) => {
+                self.journal.push(self.clock, "contract_refused", json!({ "tool": name, "linear": true, "taken": id }));
+                return Err(rt(
+                    "R0632",
+                    format!("`{name}`: a concessão que autorizava estes argumentos foi consumida por outro executor"),
+                )
+                .into());
+            }
+            Err(grant::SpendError::Ledger(m)) => return Err(rt("R0633", m).into()),
+        };
+        let ids: Vec<String> = claims.iter().map(|&i| self.grants.grants[i].id.clone()).collect();
+        let mut intent_hash = None;
+        if let Some(k) = walled {
+            let sid = self.saga_ids.last().copied();
+            let mut d = json!({ "key": format!("k{k}"), "tool": name, "provider": t.provider.name(),
+                                "obligation": "reconcile", "saga": sid,
+                                "args": args.iter().map(|v| v.to_json()).collect::<Vec<_>>() });
+            if !ids.is_empty() {
+                d["grants"] = json!(ids);
+            }
+            self.wlog("intent", d);
+            intent_hash = self.wal.as_ref().and_then(|w| w.last_hash());
+            self.wcrash(wal::CrashPoint::Logged, k);
+        }
+        let owner = grant::Owner {
+            run: self.run_id.clone(),
+            tool: name.to_string(),
+            key: walled.map(|k| format!("k{k}")),
+            intent: intent_hash,
+        };
+        self.grants.commit(guard, &claims, owner);
+        for &i in &claims {
+            let g = &self.grants.grants[i];
+            auth_rows.push(json!({ "grant": g.id, "op": g.op, "args": g.args, "origin": g.origin, "run": g.run }));
+        }
+        if !auth_rows.is_empty() {
+            self.journal.push(self.clock, "authorized", json!({ "tool": name, "by": auth_rows }));
+        }
+        if let Some(k) = walled {
             self.wcrash(wal::CrashPoint::Intent, k);
         }
         let t0 = self.clock;

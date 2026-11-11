@@ -31,6 +31,9 @@ use std::path::{Path, PathBuf};
 pub enum CrashPoint {
     /// o contrato autorizou; nada da operação está no WAL ainda
     Authorized,
+    /// a intenção (que cita as concessões) está no WAL; o consumo ainda não está no registro
+    Logged,
+    /// a intenção e o consumo estão persistidos; nada foi enviado
     Intent,
     Sent,
     Confirmed,
@@ -41,6 +44,7 @@ impl CrashPoint {
     pub fn parse(s: &str) -> Option<CrashPoint> {
         Some(match s {
             "authorized" => CrashPoint::Authorized,
+            "logged" => CrashPoint::Logged,
             "intent" => CrashPoint::Intent,
             "sent" => CrashPoint::Sent,
             "confirmed" => CrashPoint::Confirmed,
@@ -51,6 +55,7 @@ impl CrashPoint {
     pub fn name(self) -> &'static str {
         match self {
             CrashPoint::Authorized => "authorized",
+            CrashPoint::Logged => "logged",
             CrashPoint::Intent => "intent",
             CrashPoint::Sent => "sent",
             CrashPoint::Confirmed => "confirmed",
@@ -83,6 +88,8 @@ pub enum WalError {
     /// cadeia de hashes: corrupção ou adulteração. `line` conta a partir de 1; `valid` é quantos
     /// registros íntegros a precedem.
     Corrupt { path: String, line: usize, valid: usize, reason: String },
+    /// outro processo detém a trava do WAL: um executor por WAL
+    Busy { path: String },
 }
 
 impl WalError {
@@ -91,6 +98,7 @@ impl WalError {
         match self {
             WalError::Io { .. } => "W0001",
             WalError::Corrupt { .. } => "W0002",
+            WalError::Busy { .. } => "W0006",
         }
     }
 }
@@ -104,6 +112,11 @@ impl std::fmt::Display for WalError {
             WalError::Corrupt { path, line, valid, reason } => write!(
                 f,
                 "{}: o WAL `{path}` está corrompido na linha {line} ({reason}); {valid} registro(s) íntegro(s) antes dela",
+                self.code()
+            ),
+            WalError::Busy { path } => write!(
+                f,
+                "{}: outro processo está executando ou recuperando o WAL `{path}`; um executor por WAL",
                 self.code()
             ),
         }
@@ -132,6 +145,9 @@ pub struct Wal {
     pub ord: std::collections::HashMap<u64, u32>,
     /// o que a abertura encontrou
     pub read: WalRead,
+    /// a trava exclusiva (`<wal>.lock`), mantida enquanto o `Wal` vive; o núcleo a solta se o
+    /// processo morre
+    lock: Option<std::fs::File>,
 }
 
 #[cfg(unix)]
@@ -168,13 +184,24 @@ impl Wal {
     /// * última linha interrompida (sem `\n`): descartada, guardada em `<wal>.torn`, e o arquivo
     ///   é truncado no último registro íntegro, para que o próximo registro continue a cadeia.
     pub fn open(path: PathBuf) -> Result<Wal, WalError> {
+        // a trava vem antes de qualquer leitura: reparar o rabo rasgado já é escrever
+        let lp = PathBuf::from(format!("{}.lock", path.display()));
+        let lf = std::fs::OpenOptions::new().create(true).append(true).open(&lp).map_err(|e| io_err(&path, &e))?;
+        match crate::lock::exclusive(&lf, false) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                return Err(WalError::Busy { path: path.display().to_string() })
+            }
+            Err(e) => return Err(io_err(&path, &e)),
+        }
+        let lock = Some(lf);
         let bytes = match std::fs::read(&path) {
             Ok(b) => Some(b),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
             Err(e) => return Err(io_err(&path, &e)),
         };
         let Some(bytes) = bytes else {
-            return Ok(Wal { path: Some(path), read: WalRead { fresh: true, torn: None }, ..Wal::default() });
+            return Ok(Wal { path: Some(path), lock, read: WalRead { fresh: true, torn: None }, ..Wal::default() });
         };
         let (log, torn) = Wal::read(&bytes, &path.display().to_string())?;
         if let Some(t) = &torn {
@@ -191,7 +218,7 @@ impl Wal {
             };
             fix().map_err(|e| io_err(&path, &e))?;
         }
-        Ok(Wal { log, path: Some(path), read: WalRead { fresh: false, torn }, ..Wal::default() })
+        Ok(Wal { log, path: Some(path), lock, read: WalRead { fresh: false, torn }, ..Wal::default() })
     }
 
     /// Um log só em memória (testes).
@@ -242,6 +269,16 @@ impl Wal {
 
     /// Acrescenta um registro e o sincroniza no disco antes de voltar. Se o log não pode ser
     /// escrito, o processo para aqui: nenhum efeito sai sem a intenção persistida.
+    /// Este processo detém a trava exclusiva do WAL (falso só para um WAL em memória).
+    pub fn locked(&self) -> bool {
+        self.lock.is_some()
+    }
+
+    /// O hash do último registro: a identidade de uma intenção para o registro de consumo.
+    pub fn last_hash(&self) -> Option<String> {
+        self.log.entries.last().and_then(|e| e["hash"].as_str().map(String::from))
+    }
+
     pub fn append(&mut self, t: f64, kind: &str, detail: Json) {
         self.log.push(t, kind, detail);
         if let Some(p) = &self.path {
@@ -384,6 +421,10 @@ mod tests {
         assert_eq!(w.log.entries.len(), 1);
         assert!(!w.read.fresh);
         w.append(1.0, "escalate", json!({ "key": "k1" }));
+        // um executor por WAL: enquanto `w` vive, uma segunda abertura é recusada (W0006)
+        let busy = Wal::open(p.clone()).unwrap_err();
+        assert_eq!(busy.code(), "W0006");
+        drop(w);
         let st = WalState::of(&Wal::open(p).unwrap().log);
         assert_eq!(st.outcome.get("k1").map(String::as_str), Some("escalated"));
         assert!(st.open().is_empty());
@@ -401,6 +442,7 @@ mod tests {
         assert!(w.read.torn.is_some());
         assert!(PathBuf::from(format!("{}.torn", p.display())).exists());
         w.append(3.0, "escalate", json!({ "key": "k9" }));
+        drop(w);
         let again = Wal::open(p).unwrap();
         assert_eq!(again.log.entries.len(), 3);
         assert_eq!(again.read.torn, None);
@@ -426,6 +468,8 @@ pub struct WalState {
     pub outcome: std::collections::BTreeMap<String, String>,
     /// saga → (terminou, operações registradas em ordem, chaves tiradas do registro, compensações feitas)
     pub sagas: std::collections::BTreeMap<u64, SagaRec>,
+    /// chave → hash do registro `intent` (a identidade que o registro de consumo cita)
+    pub hashes: std::collections::BTreeMap<String, String>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -446,6 +490,7 @@ impl WalState {
             match e["kind"].as_str() {
                 Some("intent") => {
                     s.intents.push((key(), d.clone()));
+                    s.hashes.insert(key(), e["hash"].as_str().unwrap_or_default().to_string());
                     // uma operação com chave dentro de saga pertence a ela desde a intenção: a
                     // queda pode vir antes de o quadro registrá-la (`saga_op`)
                     if let Some(sid) = d["saga"].as_u64() {
