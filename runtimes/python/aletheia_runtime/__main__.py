@@ -10,6 +10,8 @@
   --replay cassete.json     reproduz as respostas gravadas (requisições idênticas exigidas)
   --agent A --on evento     (padrão: o primeiro agente e o primeiro handler)
   --arg-json JSON           argumento do evento no formato `Value::to_json` (repetível)
+  --grants concessões.json --run-id R
+                            as concessões (`s.authorizes`) e a identidade da execução
   --journal saída.jsonl     journal encadeado
   --core-journal saída.jsonl
                             a vista do núcleo λ_Ath do journal (act, endorse, end), reencadeada
@@ -110,7 +112,7 @@ def crash(argv: list) -> int:
     # o reinício: um processo novo, o WAL que sobrou e o mesmo provedor remoto
     rt2 = Runtime(prog, world, Scripted(models))
     rt2.wal = Wal()
-    rt2.wal.log = Wal.parse(rt.wal.to_jsonl())
+    rt2.wal.log, _ = Wal.read(rt.wal.to_jsonl().encode("utf-8"))
     rt2.recover(int(opts.get("fuel", "3")))
     with open(opts["wal"], "w", encoding="utf-8", newline="\n") as f:
         f.write(rt2.wal.to_jsonl())
@@ -155,6 +157,9 @@ def main(argv: list) -> int:
     raw = [json.loads(a) for a in opts.get("arg-json", [])]
     args = [from_arg(shape, j) if shape is not None else j for (_, shape, _), j in zip(params, raw)]
     rt = Runtime(prog, world, provider)
+    if one("grants"):
+        rt.run_id = one("run-id") or ""
+        rt.load_grants(json.load(open(one("grants"), encoding="utf-8")))
     result, error = None, None
     try:
         result = to_json(rt.run(agent, event, args))

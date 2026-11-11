@@ -131,6 +131,14 @@ class Runtime:
         self.wal = None
         # M-II: as linhas das relações confiáveis que autorizaram o contrato em curso
         self._auth: list = []
+        # v1.0-RC1: as concessões desta execução (`s.authorizes`), o que já foi consumido, o que
+        # a avaliação em curso reivindicou e a identidade da execução
+        self.grants: list = []
+        self.spent: set = set()
+        self.run_id = ""
+        self._claim: list = []
+        self._linear = False
+        self._grants_logged = False
         self.saga_ids: list = []
         self.next_saga = 1
 
@@ -305,9 +313,56 @@ class Runtime:
         for row in self.snapshot.get("inventories", {}).get(name, []):
             cs = row.split("|")
             if len(cs) == len(vals) and all(same(c, x) for c, x in zip(cs, vals)):
-                self._auth.append((name, row))
+                self._auth.append({"relation": name, "row": row, "id": blake3.hexdigest(row.encode("utf-8"))})
                 return True
         return False
+
+    def authorizes(self, op: str, *xs) -> bool:
+        """`s.authorizes("op", x1, …, xn)`: há uma concessão livre desta execução para a tupla
+        inteira. A avaliação a reivindica; o efeito a consome (`arx::grant`)."""
+        self._log_snapshot()
+        self._linear = True
+        if not self._grants_logged:
+            self._grants_logged = True
+            live = [dict(g) for g in self.grants if g["run"] == self.run_id and g["id"] not in self.spent]
+            self.journal.push(self.clock, "grants", {"run": self.run_id, "live": live})
+        vals = [str(x) if type(x) is int else x for x in xs]
+        if not all(type(x) is str for x in vals):
+            return False
+
+        def same(a: str, b: str) -> bool:
+            if a == b:
+                return True
+            da, db = decimal(a), decimal(b)
+            return da is not None and db is not None and da == db
+
+        for i, g in enumerate(self.grants):
+            if g["run"] != self.run_id or g["id"] in self.spent or i in self._claim or g["op"] != op:
+                continue
+            if len(g["args"]) == len(vals) and all(same(c, x) for c, x in zip(g["args"], vals)):
+                self._claim.append(i)
+                return True
+        return False
+
+    def load_grants(self, doc: dict) -> None:
+        """Carrega `{"grants": [...]}` com as mesmas recusas de `arx::grant::GrantStore`."""
+        for n, g in enumerate(doc.get("grants") or [], 1):
+            op, origin, run = g.get("op"), g.get("origin"), g.get("run")
+            if not (op and origin and run) or not isinstance(g.get("args"), list):
+                raise ValueError(f"concessão {n}: campo ausente")
+            if origin.split(":")[0] not in ("confirmation", "standing"):
+                raise ValueError(f"concessão {n}: a origem `{origin}` não confere autoridade")
+            args = [str(a) if type(a) is int else a for a in g["args"]]
+            if not all(type(a) is str for a in args):
+                raise ValueError(f"concessão {n}: argumento que não é texto nem número")
+            nonce = g.get("nonce", 0)
+            canon = f"{run}\x1f{op}\x1f" + "\x1e".join(args) + f"\x1f{origin}\x1f{nonce}"
+            gid = blake3.hexdigest(canon.encode("utf-8"))
+            if g.get("id") not in (None, gid):
+                raise ValueError(f"concessão {n}: o `id` não confere com o conteúdo")
+            if any(x["id"] == gid for x in self.grants):
+                raise ValueError(f"concessão {n}: repetida")
+            self.grants.append({"id": gid, "op": op, "args": args, "origin": origin, "run": run, "nonce": nonce})
 
     def mentions(self, name: str, x) -> bool:
         """`s.mentions("k", x)`: `x`, não vazio, aparece literalmente num texto confiável `k`."""
@@ -389,18 +444,27 @@ class Runtime:
         contract = t.get("contract")
         if contract is not None:
             self._auth = []
+            self._claim = []
+            self._linear = False
             ok = contract(self, *args)
+            claimed, self._claim = self._claim, []
             if type(ok) is not bool:
                 raise RtErr("R0109", "contrato não devolveu Bool")
+            if not ok and self._linear:
+                self.journal.push(self.clock, "contract_refused", {"tool": name, "linear": True})
+                raise RtErr("R0632", f"`{name}`: nenhuma concessão livre desta execução autoriza estes argumentos")
             if not ok and discharged:
                 self.journal.push(self.clock, "contract_refused", {"tool": name, "discharged": True})
                 raise RtErr("R0631", f"obrigação de `{name}` descarregada e violada: defeito da análise")
             if not ok:
                 self.journal.push(self.clock, "contract_refused", {"tool": name})
                 raise RtErr("R0630", f"o contrato `requires` de `{name}` recusou os argumentos")
-            if self._auth:
-                rows = [{"relation": rel, "row": row, "id": blake3.hexdigest(row.encode("utf-8"))} for rel, row in self._auth]
-                self._auth = []
+            rows, self._auth = self._auth, []
+            for i in claimed:
+                g = self.grants[i]
+                self.spent.add(g["id"])
+                rows.append({"grant": g["id"], "op": g["op"], "args": g["args"], "origin": g["origin"], "run": g["run"]})
+            if rows:
                 self.journal.push(self.clock, "authorized", {"tool": name, "by": rows})
         # o que o medidor confere (`need`): o custo da chamada e, dentro de saga, o pior do compensador
         held_c = self._comp_reserve(t) if self.sagas else (0.0, 0.0)
@@ -783,7 +847,15 @@ class Runtime:
         return Draft(model, out, spec, prompt)
 
     def _lifted_violation(self, v, lifted) -> str | None:
-        """M-I: a primeira obrigação levantada que `v` viola (a ferramenta), ou `None`."""
+        """M-I: a primeira obrigação levantada que `v` viola (a ferramenta), ou `None`. As
+        concessões reivindicadas acumulam ao longo da proposta: duas operações iguais pedem duas."""
+        self._claim = []
+        try:
+            return self._lifted_violation_in(v, lifted)
+        finally:
+            self._claim = []
+
+    def _lifted_violation_in(self, v, lifted) -> str | None:
         for tool, path, variant, binds, n in lifted:
             cur = [v]
             for st in path:

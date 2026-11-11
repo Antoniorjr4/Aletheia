@@ -186,6 +186,8 @@ pub struct Ctx<'m> {
     ret: Option<Ty>,
     ret_refn: Option<Refn>,
     in_policy: bool,
+    /// dentro de um contrato `requires` (onde `s.authorizes` é permitido)
+    in_requires: bool,
     commit_ok: bool,
     /// Pilha de blocos `atomic` abertos; cada um guarda as chamadas compensáveis que contém.
     atomic_stack: Vec<Vec<Span>>,
@@ -218,6 +220,7 @@ impl<'m> Ctx<'m> {
             ret: None,
             ret_refn: None,
             in_policy: false,
+            in_requires: false,
             commit_ok: false,
             atomic_stack: Vec::new(),
             in_handle: false,
@@ -726,7 +729,9 @@ impl<'m> Ctx<'m> {
                 self.bind(&prm.name.name, LTy::trusted(pt));
             }
         }
+        self.in_requires = true;
         let body = self.expr(req);
+        self.in_requires = false;
         if !assignable(&body.ty, &Ty::Bool) {
             self.push(Diag::new(
                 E0,
@@ -1516,13 +1521,29 @@ impl<'m> Ctx<'m> {
                     }
                     return LTy::trusted(Ty::Bool);
                 }
-                "inventory" | "member" | "within" | "mentions" | "binds" => {
+                "inventory" | "member" | "within" | "mentions" | "binds" | "authorizes" => {
                     // `s.within("k", x)`: `x` (decimal) ≤ o limite confiável `k`; `s.mentions("k", x)`:
                     // `x` aparece literalmente num texto confiável `k` (Rev12, contratos `requires`);
                     // `s.binds("r", x1, …, xn)`: a tupla é uma linha da relação confiável `r` (Rev13:
                     // a intenção autorizada liga operação, destinatário e valor)
+                    // `s.authorizes("op", x1, …, xn)`: há uma concessão livre desta execução para a
+                    // tupla inteira, e o efeito a consome (v1.0-RC1). É linear: só existe no
+                    // contrato de uma ferramenta, onde há um efeito para consumi-la. Uma política
+                    // é pura e pode ser avaliada várias vezes; não decide com concessões.
                     let member = method.name != "inventory";
-                    if method.name == "binds" {
+                    if method.name == "authorizes" && !self.in_requires {
+                        self.push(
+                            Diag::new(
+                                E2,
+                                "E0425",
+                                "autorização linear fora de `requires`",
+                                method.span,
+                                "`s.authorizes` só existe no contrato `requires` de uma ferramenta",
+                            )
+                            .help("uma concessão é consumida pelo efeito que ela autoriza: declare-a no `requires` da ferramenta"),
+                        );
+                    }
+                    if matches!(method.name.as_str(), "binds" | "authorizes") {
                         if args.len() < 2 {
                             check_args(self, 2);
                         }

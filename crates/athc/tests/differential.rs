@@ -2510,12 +2510,27 @@ agent A(bank: Cap[Bank.Transfer]) budget [tok <= 100000, usd <= 1.0, wall <= 100
 
 /// O ARX e o Python sobre o mesmo programa: o journal completo e o relatório de erro.
 fn run_both(tag: &str, src: &str, world: &Json, models: &Json) -> (String, Option<String>, String, Option<String>) {
+    run_both_with(tag, src, world, models, None)
+}
+
+/// Como `run_both`, com as concessões da execução `run` (`s.authorizes`).
+fn run_both_with(
+    tag: &str,
+    src: &str,
+    world: &Json,
+    models: &Json,
+    grants: Option<(&str, &Json)>,
+) -> (String, Option<String>, String, Option<String>) {
     let c = compile(src).unwrap_or_else(|d| {
         panic!("{tag}: o athc recusou\n{:?}", d.iter().map(|x| (&x.code, &x.msg)).collect::<Vec<_>>())
     });
     let provider = Box::new(Scripted::from_json(models).unwrap());
     let mut arx = Arx::new(&c.module, Box::new(SimWorld::from_json(world).unwrap()), provider);
     arx.contracts = athc::contract_hashes(&c);
+    if let Some((run, g)) = grants {
+        arx.run_id = run.to_string();
+        arx.grants = arx::grant::GrantStore::from_json(g).unwrap();
+    }
     let aerr = arx.run("A", "go", vec![Value::Int(0)]).err().map(|e| e.code);
     let full = arx.journal.to_jsonl();
     let dir = scratch();
@@ -2531,10 +2546,16 @@ fn run_both(tag: &str, src: &str, world: &Json, models: &Json) -> (String, Optio
     std::fs::write(&pp, py).unwrap();
     std::fs::write(&w, world.to_string()).unwrap();
     std::fs::write(&m, models.to_string()).unwrap();
-    let out = Command::new("python3")
+    let mut cmd = Command::new("python3");
+    if let Some((run, g)) = grants {
+        let gp = dir.join(format!("{file}.grants.json"));
+        std::fs::write(&gp, g.to_string()).unwrap();
+        cmd.arg("-m").arg("aletheia_runtime").arg("run").arg(&pp).arg("--grants").arg(&gp).args(["--run-id", run]);
+    } else {
+        cmd.args(["-m", "aletheia_runtime", "run"]).arg(&pp);
+    }
+    let out = cmd
         .env("PYTHONPATH", root().join("runtimes/python"))
-        .args(["-m", "aletheia_runtime", "run"])
-        .arg(&pp)
         .arg("--world")
         .arg(&w)
         .arg("--models")
@@ -2690,4 +2711,177 @@ fn digests_separate_semantics_from_evidence() {
     }
     eprintln!("M-V: {n} programas · o registro de evidências mudou com as latências em {moved}");
     assert!(moved * 2 >= n as usize, "as latências quase nunca aparecem nas evidências: {moved}/{n}");
+}
+
+// ------------------------------------------------------------------ v1.0-RC1: concessões lineares
+
+/// O programa das concessões: `send` e `schedule` exigem uma concessão da tupla inteira.
+fn grants_src() -> String {
+    r#"module grants
+
+type Write =
+  | Send { to: Text[..8], amount: Text[..16] }
+  | Schedule { to: Text[..8], amount: Text[..16] }
+
+type Plan =
+  | Plan { writes: List[Write, 0..4], answer: Text[..64] }
+
+model planner {
+  id = "m"
+  provider = "groq"
+  version = "1"
+  price_in = 0.0
+  price_out = 0.0
+  ctx = 8192
+  max_out = 300
+  ttft = 1.0
+  per_tok = 0.0
+}
+
+policy Any(p: Plan) -> Bool = true
+
+tool send(c: Cap[Bank.Transfer], to: Text[..8] ^ Endorsed, amount: Text[..16] ^ Endorsed) -> Text
+  ! { Bank.Transfer } irrevocable latency 1.0
+  requires s.authorizes("send", to, amount)
+
+tool schedule(c: Cap[Bank.Transfer], to: Text[..8] ^ Endorsed, amount: Text[..16] ^ Endorsed) -> Text
+  ! { Bank.Transfer } irrevocable latency 1.0
+  requires s.authorizes("schedule", to, amount)
+
+agent A(bank: Cap[Bank.Transfer]) budget [tok <= 100000, usd <= 1.0, wall <= 1000.0] {
+  on go(n: Int) -> Text ! { Infer, Bank.Transfer } {
+    let d = infer planner -> Plan { task = "do what the user confirmed" }
+    let plan = refine d by Any retry 1 else { Plan { writes: [], answer: "nothing" } }
+    match plan {
+      Plan { writes, answer } => {
+        for w in writes {
+          match w {
+            Send { to, amount } => commit send(bank, to, amount),
+            Schedule { to, amount } => commit schedule(bank, to, amount),
+          }
+        }
+        answer
+      },
+    }
+  }
+}
+"#
+    .to_string()
+}
+
+/// **A. Sem produto cartesiano, sem repetição.** O principal confirmou duas operações:
+/// `send 100.00 → A` e `schedule 250.00 → B`. A relação da Rev13 (`intents_of`: todo IBAN × todo
+/// valor × as duas operações) autorizava as oito combinações; as concessões autorizam as duas
+/// confirmadas, uma vez cada. Cada tentativa adversarial é recusada **no `refine`** (a obrigação
+/// é levantada) e nenhuma ferramenta executa; o plano legítimo executa as duas e consome as duas
+/// concessões; repetir uma operação confirmada pede uma segunda concessão. Os journals do ARX e
+/// do Python são iguais byte a byte em todos os casos.
+#[test]
+fn grants_are_whole_tuples_bound_to_the_run_and_spent_once() {
+    let src = grants_src();
+    let c = compile(&src).unwrap();
+    let ob = ath_syntax::obligations::analyze(&c.module);
+    assert_eq!(ob.sites.len(), 2);
+    assert!(
+        ob.sites.iter().all(|s| matches!(s.status, ath_syntax::obligations::Status::Discharged { .. })),
+        "{:?}",
+        ob.sites
+    );
+    let world = json!({ "sinks": ["send", "schedule"] });
+    let g = |op: &str, to: &str, amount: &str, nonce: u64| json!({ "op": op, "args": [to, amount], "origin": "confirmation:teste", "run": "run-1", "nonce": nonce });
+    let grants = json!({ "grants": [g("send", "A", "100.00", 0), g("schedule", "B", "250.00", 0)] });
+    let w = |kind: &str, to: &str, amount: &str| json!({ "kind": kind, "to": to, "amount": amount });
+    let plan = |ws: Vec<Json>| json!({ "planner": [{ "kind": "Plan", "writes": ws, "answer": "ok" }] });
+    let tools = |j: &str| kinds(j).iter().filter(|k| *k == "tool").count();
+
+    // o plano legítimo: as duas operações confirmadas, cada uma com a sua concessão no journal
+    let (a, aerr, p, perr) = run_both_with(
+        "grants/legitimo",
+        &src,
+        &world,
+        &plan(vec![w("Send", "A", "100.0"), w("Schedule", "B", "250.00")]),
+        Some(("run-1", &grants)),
+    );
+    assert_eq!((aerr, perr), (None, None), "{a}");
+    first_diff("grants/legitimo", "ARX × Python (journal completo)", &a, &p);
+    assert_eq!(tools(&a), 2);
+    let auth: Vec<Json> =
+        a.lines().map(|l| serde_json::from_str::<Json>(l).unwrap()).filter(|e| e["kind"] == "authorized").collect();
+    assert_eq!(auth.len(), 2);
+    assert_eq!(auth[0]["detail"]["by"][0]["op"], "send");
+    assert_eq!(auth[0]["detail"]["by"][0]["origin"], "confirmation:teste");
+    assert_eq!(auth[0]["detail"]["by"][0]["run"], "run-1");
+    assert_ne!(auth[0]["detail"]["by"][0]["grant"], auth[1]["detail"]["by"][0]["grant"]);
+
+    // dois beneficiários, dois valores, duas operações: as seis combinações nunca confirmadas
+    let attacks = [
+        ("Send", "A", "250.00"),
+        ("Send", "B", "100.00"),
+        ("Send", "B", "250.00"),
+        ("Schedule", "A", "100.00"),
+        ("Schedule", "A", "250.00"),
+        ("Schedule", "B", "100.00"),
+    ];
+    for (i, (kind, to, amount)) in attacks.iter().enumerate() {
+        let tag = format!("grants/cartesiano{i}");
+        let (a, aerr, p, perr) =
+            run_both_with(&tag, &src, &world, &plan(vec![w(kind, to, amount)]), Some(("run-1", &grants)));
+        assert_eq!((aerr, perr), (None, None), "{a}");
+        first_diff(&tag, "ARX × Python (journal completo)", &a, &p);
+        assert_eq!(tools(&a), 0, "{kind} {to} {amount} executou\n{a}");
+        assert!(kinds(&a).iter().any(|k| k == "obligation_reject"), "{a}");
+    }
+
+    // a mesma operação confirmada, duas vezes na proposta: uma concessão não paga duas
+    let twice = plan(vec![w("Send", "A", "100.00"), w("Send", "A", "100.00")]);
+    let (a, _, p, _) = run_both_with("grants/repetida", &src, &world, &twice, Some(("run-1", &grants)));
+    first_diff("grants/repetida", "ARX × Python (journal completo)", &a, &p);
+    assert_eq!(tools(&a), 0, "{a}");
+    // com duas concessões confirmadas (nonce), as duas executam
+    let two = json!({ "grants": [g("send", "A", "100.00", 0), g("send", "A", "100.00", 1)] });
+    let (a, _, p, _) = run_both_with("grants/duas", &src, &world, &twice, Some(("run-1", &two)));
+    first_diff("grants/duas", "ARX × Python (journal completo)", &a, &p);
+    assert_eq!(tools(&a), 2, "{a}");
+
+    // a concessão é desta execução: outra execução não a usa
+    let (a, _, p, _) = run_both_with(
+        "grants/outra-execucao",
+        &src,
+        &world,
+        &plan(vec![w("Send", "A", "100.00")]),
+        Some(("run-2", &grants)),
+    );
+    first_diff("grants/outra-execucao", "ARX × Python (journal completo)", &a, &p);
+    assert_eq!(tools(&a), 0, "{a}");
+
+    // sem concessão alguma, nada executa (falha fechado)
+    let (a, _, _, _) = run_both("grants/nenhuma", &src, &world, &plan(vec![w("Send", "A", "100.00")]));
+    assert_eq!(tools(&a), 0, "{a}");
+}
+
+/// A fronteira do efeito decide mesmo quando a checagem no `refine` não cobre o sítio: o mesmo
+/// elemento endossado executado duas vezes consome a concessão na primeira e é recusado na
+/// segunda com `R0632` (recusa linear), não `R0631` (defeito da análise). E `s.authorizes` fora
+/// de `requires` é erro estático (`E0425`): uma política é pura e não consome concessões.
+#[test]
+fn a_grant_is_consumed_by_the_effect_and_only_exists_in_requires() {
+    let src = grants_src().replace(
+        "Send { to, amount } => commit send(bank, to, amount),",
+        "Send { to, amount } => { commit send(bank, to, amount)\n commit send(bank, to, amount) },",
+    );
+    let world = json!({ "sinks": ["send", "schedule"] });
+    let grants =
+        json!({ "grants": [{ "op": "send", "args": ["A", "100.00"], "origin": "confirmation:teste", "run": "r" }] });
+    let models = json!({ "planner": [{ "kind": "Plan", "writes": [{ "kind": "Send", "to": "A", "amount": "100.00" }], "answer": "ok" }] });
+    let (a, aerr, p, perr) = run_both_with("grants/linear", &src, &world, &models, Some(("r", &grants)));
+    assert_eq!((aerr.as_deref(), perr.as_deref()), (Some("R0632"), Some("R0632")), "{a}");
+    first_diff("grants/linear", "ARX × Python (journal completo)", &a, &p);
+    assert_eq!(kinds(&a).iter().filter(|k| *k == "tool").count(), 1, "{a}");
+
+    let bad = grants_src().replace(
+        "policy Any(p: Plan) -> Bool = true",
+        "policy Any(p: Plan) -> Bool = s.authorizes(\"send\", \"A\", \"1\")",
+    );
+    let diags = compile(&bad).err().expect("E0425");
+    assert!(diags.iter().any(|d| d.code == "E0425"), "{:?}", diags.iter().map(|d| &d.code).collect::<Vec<_>>());
 }

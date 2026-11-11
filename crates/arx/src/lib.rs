@@ -9,6 +9,7 @@
 //! - todo efeito e toda amostra vão para um journal encadeado por hash.
 
 pub mod cassette;
+pub mod grant;
 pub mod host;
 pub mod journal;
 pub mod model;
@@ -182,7 +183,15 @@ pub struct Arx<'m> {
     /// O sítio da chamada em curso (para saber se a obrigação dela está descarregada).
     call_site: Option<ath_syntax::Span>,
     /// As linhas das relações confiáveis que autorizaram o contrato em curso (`s.binds`).
-    auth: Vec<(String, String)>,
+    auth: Vec<serde_json::Value>,
+    /// As concessões desta execução (`s.authorizes`) e a identidade da execução.
+    pub grants: grant::GrantStore,
+    pub run_id: String,
+    /// As concessões reivindicadas pela avaliação em curso (ainda não consumidas).
+    claim: Vec<usize>,
+    /// O contrato em curso consultou uma concessão: a sua recusa é linear, não defeito da análise.
+    linear: bool,
+    grants_logged: bool,
     /// Compensação, recuperação e reconciliação são obrigações: não pedem reserva de orçamento.
     obligation: bool,
 }
@@ -287,6 +296,11 @@ impl<'m> Arx<'m> {
             obligations: ath_syntax::obligations::analyze(m),
             call_site: None,
             auth: Vec::new(),
+            grants: grant::GrantStore::default(),
+            run_id: String::new(),
+            claim: Vec::new(),
+            linear: false,
+            grants_logged: false,
             obligation: false,
         };
         for item in &m.items {
@@ -518,7 +532,7 @@ impl<'m> Arx<'m> {
                             | ("member", 2)
                             | ("within", 2)
                             | ("mentions", 2)
-                    ) || (method.name == "binds" && vals.len() >= 2);
+                    ) || (matches!(method.name.as_str(), "binds" | "authorizes") && vals.len() >= 2);
                     if !known {
                         return Err(rt("R0108", format!("método `s.{}` desconhecido", method.name)).into());
                     }
@@ -554,7 +568,36 @@ impl<'m> Arx<'m> {
                                 .collect();
                             let hit = xs.and_then(|xs| self.snapshot.binds(k, &xs));
                             if let Some(row) = &hit {
-                                self.auth.push((k.clone(), row.clone()));
+                                self.auth.push(json!({ "relation": k, "row": row, "id": blake3::hash(row.as_bytes()).to_hex().to_string() }));
+                            }
+                            Ok(Value::Bool(hit.is_some()))
+                        }
+                        // `s.authorizes("op", x1, …, xn)`: há uma concessão livre desta execução
+                        // para a tupla inteira. A avaliação a reivindica; o efeito a consome.
+                        ("authorizes", [Value::Text(op), rest @ ..]) => {
+                            let xs: Option<Vec<String>> = rest
+                                .iter()
+                                .map(|v| match v {
+                                    Value::Text(x) => Some(x.clone()),
+                                    Value::Int(n) => Some(n.to_string()),
+                                    _ => None,
+                                })
+                                .collect();
+                            self.linear = true;
+                            if !self.grants_logged {
+                                self.grants_logged = true;
+                                let live: Vec<serde_json::Value> = self
+                                    .grants
+                                    .grants
+                                    .iter()
+                                    .filter(|g| g.run == self.run_id && !self.grants.spent.contains(&g.id))
+                                    .map(|g| g.to_json())
+                                    .collect();
+                                self.journal.push(self.clock, "grants", json!({ "run": self.run_id, "live": live }));
+                            }
+                            let hit = xs.and_then(|xs| self.grants.find(&self.run_id, op, &xs, &self.claim));
+                            if let Some(i) = hit {
+                                self.claim.push(i);
                             }
                             Ok(Value::Bool(hit.is_some()))
                         }
@@ -1281,8 +1324,17 @@ impl<'m> Arx<'m> {
     /// lista —, toma os elementos da variante e confere o contrato com os parâmetros ligados aos
     /// campos.
     fn lifted_violation(&mut self, site: ath_syntax::Span, v: &Value) -> R<Option<String>> {
-        use ath_syntax::obligations::Step;
         let lifted = self.obligations.lifted_at(site).to_vec();
+        // as concessões reivindicadas acumulam ao longo da proposta inteira: duas operações
+        // iguais pedem duas concessões
+        self.claim.clear();
+        let r = self.lifted_violation_in(v, lifted);
+        self.claim.clear();
+        r
+    }
+
+    fn lifted_violation_in(&mut self, v: &Value, lifted: Vec<ath_syntax::obligations::Lifted>) -> R<Option<String>> {
+        use ath_syntax::obligations::Step;
         for l in lifted {
             let mut cur = vec![v.clone()];
             for st in &l.path {
@@ -1410,19 +1462,39 @@ impl<'m> Arx<'m> {
             let saved = std::mem::take(&mut self.scopes);
             self.scopes = vec![t.params.iter().zip(&args).map(|(p, v)| (p.name.name.clone(), v.clone())).collect()];
             self.auth.clear();
+            self.claim.clear();
+            self.linear = false;
             let r = self.eval(req);
             self.scopes = saved;
             let discharged = site.is_some_and(|s| self.obligations.discharged(s));
+            let claimed = std::mem::take(&mut self.claim);
             match r? {
                 Value::Bool(true) => {
-                    // a identidade da autorização: a linha da relação confiável que ligou a operação
-                    if !self.auth.is_empty() {
-                        let rows: Vec<serde_json::Value> = std::mem::take(&mut self.auth)
-                            .into_iter()
-                            .map(|(rel, row)| json!({ "relation": rel, "row": row, "id": blake3::hash(row.as_bytes()).to_hex().to_string() }))
-                            .collect();
+                    // a identidade da autorização: a linha da relação confiável que ligou a
+                    // operação e as concessões que ela consome. O consumo é persistido aqui,
+                    // antes da reserva, da intenção e do efeito: uma concessão vale um efeito.
+                    let mut rows: Vec<serde_json::Value> = std::mem::take(&mut self.auth);
+                    for i in claimed {
+                        self.grants.consume(i, name);
+                        let g = &self.grants.grants[i];
+                        rows.push(
+                            json!({ "grant": g.id, "op": g.op, "args": g.args, "origin": g.origin, "run": g.run }),
+                        );
+                    }
+                    if !rows.is_empty() {
                         self.journal.push(self.clock, "authorized", json!({ "tool": name, "by": rows }));
                     }
+                }
+                // uma recusa que consultou as concessões é linear (a concessão não existe ou já
+                // foi consumida), não um defeito da análise: a checagem no `refine` adianta a
+                // recusa, e a fronteira do efeito continua sendo a que decide
+                Value::Bool(false) if self.linear => {
+                    self.journal.push(self.clock, "contract_refused", json!({ "tool": name, "linear": true }));
+                    return Err(rt(
+                        "R0632",
+                        format!("`{name}`: nenhuma concessão livre desta execução autoriza estes argumentos"),
+                    )
+                    .into());
                 }
                 Value::Bool(false) if discharged => {
                     // a obrigação estava demonstrada: um `false` aqui é defeito da análise, não do plano
