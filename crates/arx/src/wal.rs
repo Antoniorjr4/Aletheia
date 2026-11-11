@@ -29,6 +29,8 @@ use std::path::{Path, PathBuf};
 /// antes de persisti-lo, ou depois de persisti-lo.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CrashPoint {
+    /// o contrato autorizou; nada da operação está no WAL ainda
+    Authorized,
     Intent,
     Sent,
     Confirmed,
@@ -38,6 +40,7 @@ pub enum CrashPoint {
 impl CrashPoint {
     pub fn parse(s: &str) -> Option<CrashPoint> {
         Some(match s {
+            "authorized" => CrashPoint::Authorized,
             "intent" => CrashPoint::Intent,
             "sent" => CrashPoint::Sent,
             "confirmed" => CrashPoint::Confirmed,
@@ -47,6 +50,7 @@ impl CrashPoint {
     }
     pub fn name(self) -> &'static str {
         match self {
+            CrashPoint::Authorized => "authorized",
             CrashPoint::Intent => "intent",
             CrashPoint::Sent => "sent",
             CrashPoint::Confirmed => "confirmed",

@@ -1570,6 +1570,7 @@ impl<'m> Arx<'m> {
                 let n = w.nth;
                 w.ord.insert(k, n);
             }
+            self.wcrash(wal::CrashPoint::Authorized, k);
             self.wlog(
                 "intent",
                 json!({ "key": format!("k{k}"), "tool": name, "provider": t.provider.name(), "obligation": "reconcile",

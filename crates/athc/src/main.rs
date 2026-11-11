@@ -394,8 +394,8 @@ fn cmd_run(opts: &Opts, st: Style) -> Result<bool, String> {
         }
         if let Some(k) = opts.one("kill-at") {
             let (point, n) = k.split_once(':').ok_or("--kill-at espera ponto:N")?;
-            let point =
-                CrashPoint::parse(point).ok_or("--kill-at: ponto deve ser intent, sent, confirmed ou closed")?;
+            let point = CrashPoint::parse(point)
+                .ok_or("--kill-at: ponto deve ser authorized, intent, sent, confirmed ou closed")?;
             w.crash = Some((point, n.parse().map_err(|_| "--kill-at: N inválido")?));
             w.crash_mode = CrashMode::Kill;
         }
