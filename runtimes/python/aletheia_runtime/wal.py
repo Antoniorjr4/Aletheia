@@ -112,6 +112,7 @@ class WalState:
         self.intents: list = []
         self.outcome: dict = {}
         self.sagas: dict = {}
+        self.hashes: dict = {}
 
     def _saga(self, sid):
         return self.sagas.setdefault(sid, {"ended": False, "ops": [], "unlogged": [], "compensated": 0})
@@ -124,6 +125,7 @@ class WalState:
             kind = e.get("kind")
             if kind == "intent":
                 s.intents.append((d.get("key"), d))
+                s.hashes[d.get("key")] = e.get("hash")
                 if d.get("saga") is not None:
                     s._saga(d["saga"])["ops"].append(d)
             elif kind == "close":

@@ -135,6 +135,9 @@ class Runtime:
         # a avaliação em curso reivindicou e a identidade da execução
         self.grants: list = []
         self.spent: set = set()
+        # concessão → hash da intenção do WAL que o consumo paga (o registro de consumo do ARX)
+        self.owners: dict = {}
+        self.spent_view = None
         self.run_id = ""
         self._claim: list = []
         self._linear = False
@@ -460,12 +463,8 @@ class Runtime:
                 self.journal.push(self.clock, "contract_refused", {"tool": name})
                 raise RtErr("R0630", f"o contrato `requires` de `{name}` recusou os argumentos")
             rows, self._auth = self._auth, []
-            for i in claimed:
-                g = self.grants[i]
-                self.spent.add(g["id"])
-                rows.append({"grant": g["id"], "op": g["op"], "args": g["args"], "origin": g["origin"], "run": g["run"]})
-            if rows:
-                self.journal.push(self.clock, "authorized", {"tool": name, "by": rows})
+        else:
+            claimed, rows = [], []
         # o que o medidor confere (`need`): o custo da chamada e, dentro de saga, o pior do compensador
         held_c = self._comp_reserve(t) if self.sagas else (0.0, 0.0)
         if not self.obligation:
@@ -474,13 +473,35 @@ class Runtime:
         key = f"k{key_n}" if key_n is not None else None
         from .world import HostFailed, HostTimeout
 
-        # M-III: a intenção é persistida antes do envio
-        if key_n is not None and self.wal is not None:
+        # A seção crítica da autorização (v1.0-RC2, `lean/Aletheia/Txn.lean`), na ordem do ARX:
+        # intenção (citando as concessões) → consumo → envio. Este runtime é a referência
+        # semântica da ordem; o registro durável do consumo e as travas entre processos são do ARX.
+        walled = key_n is not None and self.wal is not None
+        if walled:
             self.wal.nth += 1
             self.wal.ord[key_n] = self.wal.nth
-            self._wlog("intent", {"key": f"k{key_n}", "tool": name, "provider": t["provider"], "obligation": "reconcile",
-                                  "saga": self.saga_ids[-1] if self.saga_ids else None,
-                                  "args": [to_json(a) for a in args]})
+            self._wcrash("authorized", key_n)
+        taken = next((self.grants[i]["id"] for i in claimed if self.grants[i]["id"] in self.spent), None)
+        if taken is not None:
+            self.journal.push(self.clock, "contract_refused", {"tool": name, "linear": True, "taken": taken})
+            raise RtErr("R0632", f"`{name}`: a concessão que autorizava estes argumentos foi consumida por outro executor")
+        ids = [self.grants[i]["id"] for i in claimed]
+        if walled:
+            d = {"key": f"k{key_n}", "tool": name, "provider": t["provider"], "obligation": "reconcile",
+                 "saga": self.saga_ids[-1] if self.saga_ids else None, "args": [to_json(a) for a in args]}
+            if ids:
+                d["grants"] = ids
+            self._wlog("intent", d)
+            self._wcrash("logged", key_n)
+        intent_hash = self.wal.log.entries[-1].get("hash") if walled else None
+        for i in claimed:
+            g = self.grants[i]
+            self.spent.add(g["id"])
+            self.owners[g["id"]] = intent_hash
+            rows.append({"grant": g["id"], "op": g["op"], "args": g["args"], "origin": g["origin"], "run": g["run"]})
+        if rows:
+            self.journal.push(self.clock, "authorized", {"tool": name, "by": rows})
+        if walled:
             self._wcrash("intent", key_n)
         try:
             try:
@@ -572,6 +593,17 @@ class Runtime:
                 self._wlog("escalate", {"key": key, "reason": "ferramenta ausente do programa"})
                 continue
             kn = int(key[1:])
+            # intenção que cita concessões: sem o consumo, a operação não saiu (`Txn.lean`)
+            cited = d.get("grants") or []
+            if cited:
+                if self.spent_view is None:
+                    self._wlog("escalate", {"key": key, "reason": "registro de consumo indisponível", "attempts": 0})
+                    continue
+                mine = st.hashes.get(key)
+                if not all(g in self.spent_view and self.spent_view[g] == mine for g in cited):
+                    self._wlog("close", {"key": key, "status": "failed", "evidence": "recovery:unspent",
+                                         "attempts": 0, "released": cited})
+                    continue
             args = [self._arg_from_wal(k, j) for k, j in zip(decl.get("params", []), d.get("args", []))]
             outcome, tries = None, 0
             if decl["provider"] != "opaque":

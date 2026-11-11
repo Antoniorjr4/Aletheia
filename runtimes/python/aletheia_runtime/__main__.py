@@ -85,7 +85,7 @@ def replay(argv: list) -> int:
 
 def crash(argv: list) -> int:
     """`crash programa.py --world w.json --models m.json --at ponto:n --wal saída.jsonl [--fuel 3]`:
-    roda com a queda injetada no ponto `ponto` (intent, sent, confirmed, closed) da `n`-ésima
+    roda com a queda injetada no ponto `ponto` (authorized, logged, intent, sent, confirmed, closed) da `n`-ésima
     operação com chave; reinicia com o WAL persistido e o mesmo provedor e recupera. Escreve o
     WAL final. Código 4 se o programa terminou antes da queda."""
     from .wal import Crash, Wal
@@ -99,6 +99,9 @@ def crash(argv: list) -> int:
     rt = Runtime(prog, world, Scripted(models))
     rt.wal = Wal()
     rt.wal.crash = (point, int(nth))
+    if "grants" in opts:
+        rt.run_id = opts.get("run-id", "")
+        rt.load_grants(json.load(open(opts["grants"], encoding="utf-8")))
     agent = opts.get("agent") or next(iter(prog.agents))
     event = opts.get("on") or next(iter(prog.agents[agent]["handlers"]))
     try:
@@ -113,6 +116,8 @@ def crash(argv: list) -> int:
     rt2 = Runtime(prog, world, Scripted(models))
     rt2.wal = Wal()
     rt2.wal.log, _ = Wal.read(rt.wal.to_jsonl().encode("utf-8"))
+    # o registro de consumo é durável: sobrevive à queda junto com o WAL
+    rt2.spent_view = dict(rt.owners) if "grants" in opts else None
     rt2.recover(int(opts.get("fuel", "3")))
     with open(opts["wal"], "w", encoding="utf-8", newline="\n") as f:
         f.write(rt2.wal.to_jsonl())

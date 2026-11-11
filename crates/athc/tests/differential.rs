@@ -2885,3 +2885,130 @@ fn a_grant_is_consumed_by_the_effect_and_only_exists_in_requires() {
     let diags = compile(&bad).err().expect("E0425");
     assert!(diags.iter().any(|d| d.code == "E0425"), "{:?}", diags.iter().map(|d| &d.code).collect::<Vec<_>>());
 }
+
+// ------------------------------------------------------------------ v1.0-RC2: concessão e intenção, uma transação
+
+/// Três operações com chave, uma por classe de provedor, cada uma paga por uma concessão.
+fn grant_txn_src() -> &'static str {
+    r#"module txn
+
+tool send(c: Cap[Bank.Transfer], to: Text[..8], amount: Text[..16], k: own IdemKey) -> Unit
+  ! { Bank.Transfer } irrevocable provider idempotent latency 1.0
+  requires s.authorizes("send", to, amount)
+
+tool schedule(c: Cap[Bank.Transfer], to: Text[..8], amount: Text[..16], k: own IdemKey) -> Unit
+  ! { Bank.Transfer } irrevocable provider queryable latency 1.0
+  requires s.authorizes("schedule", to, amount)
+
+tool wire(c: Cap[Bank.Transfer], to: Text[..8], amount: Text[..16], k: own IdemKey) -> Unit
+  ! { Bank.Transfer } irrevocable provider opaque latency 1.0
+  requires s.authorizes("wire", to, amount)
+
+agent A(bank: Cap[Bank.Transfer], keys: Cap[IdemKey.Mint]) budget [tok <= 1000, usd <= 1.0, wall <= 1000.0] {
+  on go() -> Text ! { Bank.Transfer, TimeoutUnknown } {
+    commit send(bank, "A", "100.00", keys.mint())
+    commit schedule(bank, "B", "250.00", keys.mint())
+    commit wire(bank, "C", "300.00", keys.mint())
+    "feito"
+  }
+
+  handle timeout_unknown(p: own Pending[_]) -> Text {
+    reconcile p fuel 3 else {
+      transfer p
+      "pendente"
+    }
+  }
+}
+"#
+}
+
+/// **RC2, ARX × Python na fronteira da autorização.** O mesmo programa, as mesmas concessões e
+/// os mesmos pontos de queda (incluídos os dois novos: `authorized`, antes de qualquer
+/// persistência, e `logged`, entre a intenção e o consumo) nos dois runtimes: o WAL depois da
+/// recuperação é o mesmo, byte a byte. E as decisões são as de `lean/Aletheia/Txn.lean`:
+/// intenção sem consumo fecha como não enviada (`recovery:unspent`), para as três classes de
+/// provedor; intenção com consumo segue o protocolo da classe.
+#[test]
+fn the_grant_transaction_is_the_same_in_arx_and_python() {
+    use arx::wal::{CrashPoint, WalState};
+    quiet_crashes();
+    let dir = scratch();
+    let c = compile(grant_txn_src()).unwrap();
+    let py = ath_emit::python(&c.module, &c.check, &c.codex, "txn.ath").expect("emissão");
+    let world = json!({ "sinks": ["send", "schedule", "wire"] });
+    let g = |op: &str, to: &str, amount: &str| json!({ "op": op, "args": [to, amount], "origin": "confirmation:t", "run": "r1", "nonce": 0 });
+    let grants = json!({ "grants": [g("send", "A", "100.00"), g("schedule", "B", "250.00"), g("wire", "C", "300.00")] });
+    let (pp, wp, gp) = (dir.join("txn.py"), dir.join("txn.world.json"), dir.join("txn.grants.json"));
+    std::fs::write(&pp, py).unwrap();
+    std::fs::write(&wp, world.to_string()).unwrap();
+    std::fs::write(&gp, grants.to_string()).unwrap();
+    let mut compared = 0;
+    for at in [CrashPoint::Authorized, CrashPoint::Logged, CrashPoint::Intent, CrashPoint::Sent] {
+        for nth in 1..=3u32 {
+            let tag = format!("txn/{}/{nth}", at.name());
+            // ARX: a queda, e o reinício com o WAL e o registro de consumo que sobraram
+            let mut a = Arx::new(&c.module, Box::new(SimWorld::from_json(&world).unwrap()), Box::new(Scripted::default()));
+            a.run_id = "r1".into();
+            a.grants = arx::grant::GrantStore::from_json(&grants).unwrap();
+            let mut w = arx::wal::Wal::memory();
+            w.crash = Some((at, nth));
+            a.wal = Some(w);
+            let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let _ = a.run("A", "go", vec![]);
+            }));
+            assert!(r.is_err(), "{tag}: o programa terminou antes da queda");
+            let host = std::mem::replace(&mut a.host, Box::new(SimWorld::from_json(&json!({})).unwrap()));
+            let crashed = arx::journal::Journal::from_entries(a.wal.take().unwrap().log.entries);
+            // o invariante: todo consumo cita uma intenção que está no WAL
+            let hashes: Vec<&str> =
+                crashed.entries.iter().filter(|e| e["kind"] == "intent").filter_map(|e| e["hash"].as_str()).collect();
+            for (id, o) in &a.grants.owners {
+                assert!(o.intent.as_deref().is_some_and(|h| hashes.contains(&h)), "{tag}: consumo de {id} sem intenção");
+            }
+            let mut b = Arx::new(&c.module, host, Box::new(Scripted::default()));
+            b.run_id = "r1".into();
+            b.spent_view = Some(a.grants.owners.clone());
+            b.wal = Some(arx::wal::Wal::resume(arx::journal::Journal::from_entries(crashed.entries.clone())));
+            b.recover(3);
+            let after = arx::journal::Journal::from_entries(b.wal.take().unwrap().log.entries);
+            // a decisão sobre a operação interrompida
+            let key = format!("k{nth}");
+            let st = WalState::of(&after);
+            let ev = after
+                .entries
+                .iter()
+                .rev()
+                .find(|e| (e["kind"] == "close" || e["kind"] == "escalate") && e["detail"]["key"] == key.as_str())
+                .map(|e| e["detail"]["evidence"].as_str().unwrap_or("escalated").to_string());
+            let expect = match (at, nth) {
+                (CrashPoint::Authorized, _) => None,
+                (CrashPoint::Logged, _) => Some("recovery:unspent"),
+                (_, 1) => Some("recovery:resend"),
+                (_, 2) => Some("recovery:status"),
+                _ => Some("escalated"),
+            };
+            assert_eq!(ev.as_deref(), expect, "{tag}");
+            assert!(st.open().is_empty(), "{tag}: intenção sem desfecho");
+            // Python: o mesmo WAL, byte a byte
+            let out = dir.join(format!("txn-{}-{nth}.jsonl", at.name()));
+            let _ = std::fs::remove_file(&out);
+            let r = Command::new("python3")
+                .env("PYTHONPATH", root().join("runtimes/python"))
+                .args(["-m", "aletheia_runtime", "crash"])
+                .arg(&pp)
+                .arg("--world")
+                .arg(&wp)
+                .arg("--grants")
+                .arg(&gp)
+                .args(["--run-id", "r1", "--at", &format!("{}:{nth}", at.name()), "--wal"])
+                .arg(&out)
+                .args(["--agent", "A", "--on", "go"])
+                .output()
+                .unwrap();
+            assert_eq!(r.status.code(), Some(0), "{tag}: {}", String::from_utf8_lossy(&r.stderr));
+            first_diff(&tag, "WAL recuperado ARX × Python", &after.to_jsonl(), &std::fs::read_to_string(&out).unwrap());
+            compared += 1;
+        }
+    }
+    assert_eq!(compared, 12);
+}
