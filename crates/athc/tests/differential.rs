@@ -1311,11 +1311,29 @@ fn keyed_tripod_lean_arx_python_agree_on_generated_programs() {
         raw_equal += usize::from(raw);
         // os cenários, pelo roteiro do provedor de cada chave que de fato rodou
         let runs = p.key_runs();
+        // a ferramenta de cada chave do ARX, pelo journal completo (a recusa na hora não diz a
+        // ferramenta na vista do núcleo; `tool_failed` diz)
+        let arx_tool: std::collections::BTreeMap<String, String> = t
+            .full
+            .lines()
+            .filter_map(|l| {
+                let e: Json = serde_json::from_str(l).unwrap();
+                matches!(e["kind"].as_str(), Some("tool" | "tool_failed" | "timeout_unknown"))
+                    .then(|| {
+                        Some((e["detail"]["key"].as_str()?.to_string(), e["detail"]["tool"].as_str()?.to_string()))
+                    })
+                    .flatten()
+            })
+            .collect();
         for (key, tool, end) in &life {
-            // no Lean a chave é a capacidade que a carrega: `c{i}` é a da ferramenta com chave
-            // da capacidade `i`, e só ela
-            let cap: usize = key[1..].parse().unwrap();
-            let ti = p.tools.iter().position(|t| t.key.as_ref().is_some_and(|k| k.cap == cap)).unwrap();
+            let ti = if t.lean.is_some() {
+                // no Lean a chave é a capacidade que a carrega: `c{i}` é a da ferramenta com
+                // chave da capacidade `i`, e só ela
+                let cap: usize = key[1..].parse().unwrap();
+                p.tools.iter().position(|t| t.key.as_ref().is_some_and(|k| k.cap == cap)).unwrap()
+            } else {
+                arx_tool[key][1..].parse().unwrap()
+            };
             if let Some(tool) = tool {
                 assert_eq!(tool, &format!("t{ti}"), "{tag}: a chave {key} apareceu na ferramenta {tool}");
             }
