@@ -213,8 +213,26 @@ open Aletheia
 /-- info: 'Aletheia.Arx.Counter.top_level_await_differs' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Arx.Counter.top_level_await_differs
 
-/-- info: 'Aletheia.T6_keys' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Aletheia.T6_keys' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms T6_keys
+
+/-- info: 'Aletheia.loggedK_preserves' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms loggedK_preserves
+
+/-- info: 'Aletheia.KeyedSagaExample.refuted_not_compensated' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms KeyedSagaExample.refuted_not_compensated
+
+/-- info: 'Aletheia.KeyedSagaExample.dishonest_refusal_strands' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms KeyedSagaExample.dishonest_refusal_strands
+
+/-- info: 'Aletheia.Arx.arx_budget_closed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Arx.arx_budget_closed
+
+/-- info: 'Aletheia.Arx.Counter.comp_cost_reserved' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Arx.Counter.comp_cost_reserved
+
+/-- info: 'Aletheia.Arx.call_refuted' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Arx.call_refuted
 
 /-- info: 'Aletheia.compensate_restoresK' depends on axioms: [propext] -/
 #guard_msgs in #print axioms compensate_restoresK
@@ -233,3 +251,36 @@ open Aletheia
 
 /-- info: 'Aletheia.ContractsExample.policyOk_but_not_contract' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms ContractsExample.policyOk_but_not_contract
+
+/-- info: 'Aletheia.Wal.no_silent_loss' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Wal.no_silent_loss
+
+/-- info: 'Aletheia.Wal.evidence' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Wal.evidence
+
+/-- info: 'Aletheia.Wal.at_most_once' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Wal.at_most_once
+
+/-- info: 'Aletheia.Wal.opaque_escalates' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Wal.opaque_escalates
+
+/-- info: 'Aletheia.Wal.registry_after_recovery' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Wal.registry_after_recovery
+
+/-- info: 'Aletheia.Wal.opaque_not_exactly_once' does not depend on any axioms -/
+#guard_msgs in #print axioms Wal.opaque_not_exactly_once
+
+/-- info: 'Aletheia.Wal.idempotent_exactly_once' does not depend on any axioms -/
+#guard_msgs in #print axioms Wal.idempotent_exactly_once
+
+/-- info: 'Aletheia.Wal.resend_without_dedup_duplicates' does not depend on any axioms -/
+#guard_msgs in #print axioms Wal.resend_without_dedup_duplicates
+
+/-- info: 'Aletheia.Lifting.lifting_sound' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Lifting.lifting_sound
+
+/-- info: 'Aletheia.Lifting.amplified_not_discharged' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Lifting.amplified_not_discharged
+
+/-- info: 'Aletheia.Lifting.lifted_example' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Lifting.lifted_example

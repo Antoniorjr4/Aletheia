@@ -120,6 +120,7 @@ fn main() -> ExitCode {
         "grammar" => cmd_grammar(&opts, st),
         "verify-journal" => cmd_verify(&opts, st),
         "contract-report" => cmd_contract_report(&opts, st),
+        "obligations" => cmd_obligations(&opts, st),
         "emit" => cmd_emit(&opts, st),
         "replay" => cmd_replay(&opts, st),
         "help" | "--help" | "-h" => {
@@ -166,6 +167,66 @@ fn cmd_check(opts: &Opts, st: Style) -> Result<bool, String> {
     let Some(c) = compile_or_report(&path, &src, st) else { return Ok(false) };
     println!("$ athc check {path}");
     print!("{}", summary(&c, st));
+    Ok(true)
+}
+
+/// `athc obligations prog.ath [--json]`: o destino de cada contrato `requires` (Rev13, M-I) —
+/// descarregado estaticamente (levantado para um `refine`) ou lacuna dinâmica, com o motivo.
+fn cmd_obligations(opts: &Opts, st: Style) -> Result<bool, String> {
+    let (path, src) = load(opts)?;
+    let Some(c) = compile_or_report(&path, &src, st) else { return Ok(false) };
+    let ob = ath_syntax::obligations::analyze(&c.module);
+    let line = |sp: ath_syntax::Span| src[..sp.lo as usize].matches('\n').count() + 1;
+    let mut rows = Vec::new();
+    for s in &ob.sites {
+        let (status, why) = match &s.status {
+            ath_syntax::obligations::Status::Discharged { refines } => (
+                "descarregada",
+                format!(
+                    "levantada para o refine em {}",
+                    refines.iter().map(|r| format!("L{}", line(*r))).collect::<Vec<_>>().join(", ")
+                ),
+            ),
+            ath_syntax::obligations::Status::Dynamic { reason } => ("dinâmica", reason.clone()),
+        };
+        rows.push(serde_json::json!({ "tool": s.tool, "line": line(s.call), "status": status, "reason": why }));
+    }
+    let lifted: Vec<serde_json::Value> = ob
+        .lifted
+        .iter()
+        .flat_map(|((lo, _), ls)| {
+            let l = src[..*lo as usize].matches('\n').count() + 1;
+            ls.iter().map(move |x| {
+                serde_json::json!({ "refine_line": l, "tool": x.tool, "variant": x.variant,
+                "path": x.path.iter().map(|p| match p { ath_syntax::obligations::Step::Elem => "[*]".to_string(),
+                    ath_syntax::obligations::Step::Field(v, f) => format!("{v}.{f}") }).collect::<Vec<_>>(),
+                "binds": x.binds })
+            })
+        })
+        .collect();
+    if opts.one("format") == Some("json") {
+        println!("{}", serde_json::to_string_pretty(&serde_json::json!({ "sites": rows, "lifted": lifted })).unwrap());
+        return Ok(true);
+    }
+    println!("$ athc obligations {path}");
+    for r in &rows {
+        println!(
+            "  L{:<4} {:<24} {:<13} {}",
+            r["line"],
+            r["tool"].as_str().unwrap_or(""),
+            r["status"].as_str().unwrap_or(""),
+            r["reason"].as_str().unwrap_or("")
+        );
+    }
+    for l in &lifted {
+        println!(
+            "  refine L{} ⇐ {} ({} em {})",
+            l["refine_line"],
+            l["tool"].as_str().unwrap_or(""),
+            l["variant"].as_str().unwrap_or(""),
+            l["path"]
+        );
+    }
     Ok(true)
 }
 
@@ -396,6 +457,13 @@ fn cmd_run(opts: &Opts, st: Style) -> Result<bool, String> {
                 .collect::<Vec<_>>(),
             "spent": { "tok": arx.meter.tok, "usd": arx.meter.usd, "wall": arx.meter.wall },
             "journal_head": arx.journal.head,
+            // Rev13 (M-V): dois registros separados. O semântico é a cabeça da cadeia da vista do
+            // núcleo — determinístico, sem tempo nem latência: o que o programa fez. O de
+            // evidências é a cabeça do journal integral — com as medições reais: como e quando.
+            "digests": {
+                "semantic": arx::journal::Journal::core_view_with(&arx.journal.entries, &athc::compensable_tools(&c.module)).head,
+                "evidence": arx.journal.head,
+            },
         });
         let text = serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?;
         std::fs::write(rp, text).map_err(|e| format!("falha ao gravar o relatório: {e}"))?;

@@ -151,6 +151,12 @@ pub fn python(m: &Module, _check: &CheckResult, codex: &Codex, source: &str) -> 
                         "provider": t.provider.name(),
                         "latency": t.latency,
                         "usd": t.usd,
+                        // a forma dos argumentos, para a recuperação ler as intenções do WAL
+                        "params": t.params.iter().map(|p| match p.ty.unlabeled() {
+                            ath_syntax::ast::TypeExpr::Cap(..) => "cap",
+                            t if t.base_name() == "IdemKey" => "key",
+                            _ => "val",
+                        }).collect::<Vec<_>>(),
                     }),
                 );
             }
@@ -262,6 +268,10 @@ fn py(j: &Json) -> String {
 
 struct Gen<'m> {
     m: &'m Module,
+    /// as obrigações `requires` levantadas para os `refine` e os sítios descarregados (M-I)
+    ob: ath_syntax::obligations::Obligations,
+    /// o sítio da expressão em emissão (para marcar a chamada descarregada)
+    site: Option<ath_syntax::Span>,
     tools: HashSet<String>,
     policies: HashSet<String>,
     variants: HashMap<String, String>,
@@ -275,6 +285,8 @@ struct Gen<'m> {
 impl<'m> Gen<'m> {
     fn new(m: &'m Module) -> Self {
         let mut g = Gen {
+            ob: ath_syntax::obligations::analyze(m),
+            site: None,
             m,
             tools: HashSet::new(),
             policies: HashSet::new(),
@@ -430,7 +442,10 @@ impl<'m> Gen<'m> {
                 let r = self.expr(r)?;
                 self.assign("t", format!("R.field({r}, {})", py_str(&f.name)))
             }
-            ExprKind::Call { callee, args } => self.call(callee, args)?,
+            ExprKind::Call { callee, args } => {
+                self.site = Some(e.span);
+                self.call(callee, args)?
+            }
             ExprKind::Method { recv, method, args } => {
                 if matches!(&recv.kind, ExprKind::Var(name) if name == "s") {
                     let rendered: Vec<String> = args.iter().map(|a| self.expr(a)).collect::<Result<_, _>>()?;
@@ -443,6 +458,7 @@ impl<'m> Gen<'m> {
                         "member" if rendered.len() == 2 => "member",
                         "within" if rendered.len() == 2 => "within",
                         "mentions" if rendered.len() == 2 => "mentions",
+                        "binds" if rendered.len() >= 2 => "binds",
                         _ => return Err(format!("método intrínseco s.{} inválido", method.name)),
                     };
                     self.assign("t", format!("R.{builtin}({})", rendered.join(", ")))
@@ -578,8 +594,50 @@ impl<'m> Gen<'m> {
                 let ok = self.fresh("ok");
                 let v = self.fresh("v");
                 let t = self.fresh("t");
+                // M-I: as obrigações levantadas para este `refine`, como dados
+                let lifted = self.ob.lifted_at(e.span).to_vec();
+                let extra = if lifted.is_empty() {
+                    String::new()
+                } else {
+                    let specs: Vec<String> = lifted
+                        .iter()
+                        .map(|l| {
+                            let tool = self.m.items.iter().find_map(|i| match i {
+                                Item::Tool(t) if t.name.name == l.tool => Some(t),
+                                _ => None,
+                            });
+                            let path: Vec<String> = l
+                                .path
+                                .iter()
+                                .map(|s| match s {
+                                    ath_syntax::obligations::Step::Elem => "(\"e\",)".to_string(),
+                                    ath_syntax::obligations::Step::Field(v, f) => {
+                                        format!("(\"f\", {}, {})", py_str(v), py_str(f))
+                                    }
+                                })
+                                .collect();
+                            let binds: Vec<String> = l
+                                .binds
+                                .iter()
+                                .filter_map(|(p, f)| {
+                                    let i = tool?.params.iter().position(|x| &x.name.name == p)?;
+                                    Some(format!("({i}, {})", py_str(f)))
+                                })
+                                .collect();
+                            let n = tool.map_or(0, |t| t.params.len());
+                            format!(
+                                "({}, [{}], {}, [{}], {n})",
+                                py_str(&l.tool),
+                                path.join(", "),
+                                py_str(&l.variant),
+                                binds.join(", ")
+                            )
+                        })
+                        .collect();
+                    format!(", lifted=[{}]", specs.join(", "))
+                };
                 self.line(format!(
-                    "{ok}, {v} = R.refine({d}, policy_{}, {}, {retry})",
+                    "{ok}, {v} = R.refine({d}, policy_{}, {}, {retry}{extra})",
                     ident(&policy.name),
                     py_str(&policy.name)
                 ));
@@ -679,6 +737,8 @@ impl<'m> Gen<'m> {
     }
 
     fn call(&mut self, callee: &Ident, args: &[Expr]) -> Result<String, String> {
+        // o sítio desta chamada, antes que os argumentos (que podem ter chamadas) o troquem
+        let site = self.site.take();
         match callee.name.as_str() {
             "fit" => {
                 let a = self.expr(&args[0])?;
@@ -700,6 +760,13 @@ impl<'m> Gen<'m> {
         }
         if self.tools.contains(&callee.name) {
             let a = self.atoms(args)?;
+            let discharged = site.is_some_and(|s| self.ob.discharged(s));
+            if discharged {
+                return Ok(self.assign(
+                    "t",
+                    format!("R.call_tool({}, [{}], discharged=True)", py_str(&callee.name), a.join(", ")),
+                ));
+            }
             return Ok(self.assign("t", format!("R.call_tool({}, [{}])", py_str(&callee.name), a.join(", "))));
         }
         if self.policies.contains(&callee.name) {

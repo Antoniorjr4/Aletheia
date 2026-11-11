@@ -231,13 +231,31 @@ def transferOnly (k : Nat) (tr : List Ev) : Bool :=
 capacidade `id` (autoridade) e a chave `kid` (identidade) consumidas, o custo, e o mundo com
 o efeito se `b` (aplicado). -/
 def callSt (S : Sig) (t id kid : Nat) (v : Val) (st : St) (b : Bool) : St :=
-  ⟨kid :: id :: st.used, st.spent + S.cost t, st.calls, if b then S.step t v st.w else st.w,
+  ⟨kid :: id :: st.used, st.spent + S.acost t, st.calls, if b then S.step t v st.w else st.w,
     logAct S t v st.comp, st.next, st.keys⟩
+
+/-- O registro depois de uma reconciliação conclusiva. A operação que a reconciliação
+confirmou **não aplicada** (`Failed`, o `R0611` do ARX) sai do registro: não há efeito a
+estornar, e compensá-la seria um efeito novo sem causa. As outras continuam nele. -/
+def recLog (S : Sig) (t : Nat) (v : Val) (e : KEnd) (comp : List (Nat × Val)) : List (Nat × Val) :=
+  match e with
+  | .failed => comp
+  | _ => logAct S t v comp
+
+/-- O estado depois de `TimeoutUnknown` e de uma reconciliação que terminou em `e`: a
+capacidade e a chave consumidas, o custo, o mundo com a verdade oculta da aplicação e o
+registro segundo `recLog`. -/
+def recSt (S : Sig) (t id kid : Nat) (v : Val) (st : St) (e : KEnd) : St :=
+  ⟨kid :: id :: st.used, st.spent + S.acost t, st.calls,
+    if S.applied t kid then S.step t v st.w else st.w, recLog S t v e st.comp, st.next, st.keys⟩
+
+@[simp] theorem recSt_done (S : Sig) (t id kid : Nat) (v : Val) (st : St) :
+    recSt S t id kid v st .done = callSt S t id kid v st (S.applied t kid) := rfl
 
 /-- O estado depois de uma chamada recusada na hora: a capacidade e a chave consumidas e o
 custo; nada no mundo, nada no registro. -/
 def callSt0 (S : Sig) (t id kid : Nat) (st : St) : St :=
-  ⟨kid :: id :: st.used, st.spent + S.cost t, st.calls, st.w, st.comp, st.next, st.keys⟩
+  ⟨kid :: id :: st.used, st.spent + S.acost t, st.calls, st.w, st.comp, st.next, st.keys⟩
 
 /-- A aposentadoria da chave `k` na saída do seu `mint`: ela sai do conjunto consumido e
 entra no das chaves aposentadas, que nenhuma chamada aceita de novo. -/
@@ -258,8 +276,8 @@ def doAct (S : Sig) (c : Cfg) (t : Nat) (cv : Option Val) (o : Out) : Except Err
   | some (.cap id) =>
     if S.effect t ∈ c.grants id then
       if id ∈ o.st.used then .error .reuse
-      else if ble (o.st.spent + S.cost t) c.limit then
-        .ok ⟨.unit, ⟨id :: o.st.used, o.st.spent + S.cost t, o.st.calls, actW S t id o.v o.st.w,
+      else if ble (o.st.spent + S.acost t) c.limit then
+        .ok ⟨.unit, ⟨id :: o.st.used, o.st.spent + S.acost t, o.st.calls, actW S t id o.v o.st.w,
           actC S t id o.v o.st.comp, o.st.next, o.st.keys⟩, o.tr ++ actEvs S t id o.v⟩
       else .error .budget
     else .error .noCap
@@ -270,7 +288,8 @@ As guardas são as de `act`. A resposta do provedor decide: aplicada (`Done`), r
 (`Failed`, uma falha que a saga captura) ou sem resposta, quando nasce `Pending[k]` e roda a
 reconciliação. Esgotado o combustível, o tratador `h` recebe a obrigação; ele precisa
 transferi-la, e o seu valor encerra o evento (`abort`). A operação em aberto entra no
-registro da saga (compensar é total sobre "aconteceu" e "não aconteceu", como no ARX). -/
+registro da saga (compensar é total sobre "aconteceu" e "não aconteceu", como no ARX), a
+menos que a reconciliação confirme que ela não foi aplicada (`recLog`). -/
 def doCall (S : Sig) (c : Cfg) (t : Nat) (cv kv : Option Val) (n : Nat)
     (h : Nat → St → Except Err Out) (o : Out) : Except Err Out :=
   match cv, kv with
@@ -278,7 +297,7 @@ def doCall (S : Sig) (c : Cfg) (t : Nat) (cv kv : Option Val) (n : Nat)
     if S.effect t ∈ c.grants id then
       if id ∈ o.st.used then .error .reuse
       else if kid ∈ id :: o.st.used ∨ kid ∈ o.st.keys then .error .reuse
-      else if ble (o.st.spent + S.cost t) c.limit then
+      else if ble (o.st.spent + S.acost t) c.limit then
         match S.reply t kid 0 with
         | .done =>
           .ok ⟨.unit, callSt S t id kid o.v o.st true, o.tr ++ [.act t id o.v, .settle kid .done]⟩
@@ -286,10 +305,10 @@ def doCall (S : Sig) (c : Cfg) (t : Nat) (cv kv : Option Val) (n : Nat)
         | .unknown =>
           match (reconcile S t kid 1 n).2 with
           | .done =>
-            .ok ⟨.unit, callSt S t id kid o.v o.st (S.applied t kid),
+            .ok ⟨.unit, recSt S t id kid o.v o.st .done,
               o.tr ++ (.pending t kid o.v :: ((reconcile S t kid 1 n).1 ++ [.settle kid .done]))⟩
           | .failed =>
-            .error (.timeout (.refused kid) (callSt S t id kid o.v o.st (S.applied t kid))
+            .error (.timeout (.refused kid) (recSt S t id kid o.v o.st .failed)
               (.pending t kid o.v :: ((reconcile S t kid 1 n).1 ++ [.settle kid .failed])))
           | .transferred =>
             match h kid (callSt S t id kid o.v o.st (S.applied t kid)) with
@@ -502,8 +521,8 @@ theorem cond_eq {α : Type} {b : Bool} {x y r : Except Err α} (h : cond b x y =
 theorem doAct_ok {S : Sig} {c : Cfg} {t : Nat} {cv : Option Val} {o r : Out}
     (h : doAct S c t cv o = .ok r) :
     ∃ id, cv = some (.cap id) ∧ S.effect t ∈ c.grants id ∧ id ∉ o.st.used ∧
-      ble (o.st.spent + S.cost t) c.limit = true ∧
-      r = ⟨.unit, ⟨id :: o.st.used, o.st.spent + S.cost t, o.st.calls, actW S t id o.v o.st.w,
+      ble (o.st.spent + S.acost t) c.limit = true ∧
+      r = ⟨.unit, ⟨id :: o.st.used, o.st.spent + S.acost t, o.st.calls, actW S t id o.v o.st.w,
         actC S t id o.v o.st.comp, o.st.next, o.st.keys⟩, o.tr ++ actEvs S t id o.v⟩ := by
   unfold doAct at h
   split at h
@@ -511,7 +530,7 @@ theorem doAct_ok {S : Sig} {c : Cfg} {t : Nat} {cv : Option Val} {o r : Out}
     by_cases hg : S.effect t ∈ c.grants id
     · by_cases hu : id ∈ o.st.used
       · simp [hg, hu] at h
-      · by_cases hb : ble (o.st.spent + S.cost t) c.limit = true
+      · by_cases hb : ble (o.st.spent + S.acost t) c.limit = true
         · simp [hg, hu, hb] at h
           exact ⟨id, rfl, hg, hu, hb, h.symm⟩
         · simp [hg, hu, hb] at h
@@ -564,7 +583,7 @@ theorem doCall_ok {S : Sig} {c : Cfg} {t : Nat} {cv kv : Option Val} {n : Nat}
     {h : Nat → St → Except Err Out} {o r : Out} (hc : doCall S c t cv kv n h o = .ok r) :
     ∃ id kid, cv = some (.cap id) ∧ kv = some (.cap kid) ∧ S.effect t ∈ c.grants id ∧
       id ∉ o.st.used ∧ kid ∉ id :: o.st.used ∧ kid ∉ o.st.keys ∧
-      ble (o.st.spent + S.cost t) c.limit = true ∧
+      ble (o.st.spent + S.acost t) c.limit = true ∧
       ((S.reply t kid 0 = .done ∧
           r = ⟨.unit, callSt S t id kid o.v o.st true, o.tr ++ [.act t id o.v, .settle kid .done]⟩) ∨
        (S.reply t kid 0 = .unknown ∧ (reconcile S t kid 1 n).2 = .done ∧
@@ -582,7 +601,7 @@ theorem doCall_ok {S : Sig} {c : Cfg} {t : Nat} {cv kv : Option Val} {n : Nat}
         · rw [if_pos hk] at hc; cases hc
         · rw [if_neg hk] at hc
           obtain ⟨hk₁, hk₂⟩ := not_or.mp hk
-          by_cases hb : ble (o.st.spent + S.cost t) c.limit = true
+          by_cases hb : ble (o.st.spent + S.acost t) c.limit = true
           · rw [if_pos hb] at hc
             refine ⟨id, kid, rfl, rfl, hg, hu, hk₁, hk₂, hb, ?_⟩
             split at hc
@@ -604,11 +623,11 @@ theorem doCall_timeout {S : Sig} {c : Cfg} {t : Nat} {cv kv : Option Val} {n : N
     (hc : doCall S c t cv kv n h o = .error (.timeout q s₁ tr)) :
     ∃ id kid, cv = some (.cap id) ∧ kv = some (.cap kid) ∧ S.effect t ∈ c.grants id ∧
       id ∉ o.st.used ∧ kid ∉ id :: o.st.used ∧ kid ∉ o.st.keys ∧
-      ble (o.st.spent + S.cost t) c.limit = true ∧
+      ble (o.st.spent + S.acost t) c.limit = true ∧
       ((S.reply t kid 0 = .failed ∧ q = .refused kid ∧ s₁ = callSt0 S t id kid o.st ∧
           tr = [.settle kid .failed]) ∨
        (S.reply t kid 0 = .unknown ∧ (reconcile S t kid 1 n).2 = .failed ∧ q = .refused kid ∧
-          s₁ = callSt S t id kid o.v o.st (S.applied t kid) ∧
+          s₁ = recSt S t id kid o.v o.st .failed ∧
           tr = .pending t kid o.v :: ((reconcile S t kid 1 n).1 ++ [.settle kid .failed])) ∨
        (S.reply t kid 0 = .unknown ∧ (reconcile S t kid 1 n).2 = .transferred ∧
           ∃ oh, h kid (callSt S t id kid o.v o.st (S.applied t kid)) = .ok oh ∧
@@ -627,7 +646,7 @@ theorem doCall_timeout {S : Sig} {c : Cfg} {t : Nat} {cv kv : Option Val} {n : N
         · rw [if_pos hk] at hc; cases hc
         · rw [if_neg hk] at hc
           obtain ⟨hk₁, hk₂⟩ := not_or.mp hk
-          by_cases hb : ble (o.st.spent + S.cost t) c.limit = true
+          by_cases hb : ble (o.st.spent + S.acost t) c.limit = true
           · rw [if_pos hb] at hc
             refine ⟨id, kid, rfl, rfl, hg, hu, hk₁, hk₂, hb, ?_⟩
             split at hc
@@ -926,7 +945,7 @@ structure Preserves (S : Sig) (c : Cfg) (sagas keys : Prop) (R : St → St → L
   endorse : ∀ {s : St} {p : Nat} {v : Val}, S.pol p v = true → R s s [.endorse p (some v)]
   reject  : ∀ {s : St} {p : Nat}, R s s [.endorse p none]
   act     : ∀ {s : St} {t id : Nat} {v : Val}, S.effect t ∈ c.grants id → id ∉ s.used →
-    R s ⟨id :: s.used, s.spent + S.cost t, s.calls, actW S t id v s.w, actC S t id v s.comp, s.next,
+    R s ⟨id :: s.used, s.spent + S.acost t, s.calls, actW S t id v s.w, actC S t id v s.comp, s.next,
       s.keys⟩ (actEvs S t id v)
   drop    : ∀ {s : St} {id : Nat}, id ∉ s.used →
     R s ⟨id :: s.used, s.spent, s.calls, s.w, s.comp, s.next, s.keys⟩ []
@@ -952,7 +971,7 @@ structure Preserves (S : Sig) (c : Cfg) (sagas keys : Prop) (R : St → St → L
   callRec : keys → ∀ {s : St} {t id kid n : Nat} {v : Val} {e : KEnd}, S.effect t ∈ c.grants id →
     id ∉ s.used → kid ∉ id :: s.used → kid ∉ s.keys →
     (reconcile S t kid 1 n).2 = e → e ≠ .transferred →
-    R s (callSt S t id kid v s (S.applied t kid))
+    R s (recSt S t id kid v s e)
       (.pending t kid v :: ((reconcile S t kid 1 n).1 ++ [.settle kid e]))
   /-- `TimeoutUnknown`, combustível esgotado e o tratador, que transferiu a obrigação -/
   callAbort : keys → ∀ {s s₃ : St} {t id kid n : Nat} {v : Val} {tr : List Ev}, S.effect t ∈ c.grants id →

@@ -5,6 +5,7 @@ use serde_json::{json, Value};
 
 pub const GENESIS: &str = "0000000000000000000000000000000000000000000000000000000000000000";
 
+#[derive(Debug)]
 pub struct Journal {
     pub entries: Vec<Value>,
     pub head: String,
@@ -16,7 +17,7 @@ impl Default for Journal {
     }
 }
 
-fn entry_hash(body: &Value) -> String {
+pub(crate) fn entry_hash(body: &Value) -> String {
     blake3::hash(body.to_string().as_bytes()).to_hex().to_string()
 }
 
@@ -34,6 +35,12 @@ impl Journal {
         entry["hash"] = json!(h);
         self.head = h;
         self.entries.push(entry);
+    }
+
+    /// Um journal a partir de entradas já encadeadas (lidas de disco e conferidas).
+    pub fn from_entries(entries: Vec<Value>) -> Journal {
+        let head = entries.last().and_then(|e| e["hash"].as_str()).unwrap_or(GENESIS).to_string();
+        Journal { entries, head }
     }
 
     pub fn to_jsonl(&self) -> String {
@@ -162,6 +169,10 @@ impl Journal {
                 Some("resolved") => {
                     if d["status"] == "failed" {
                         refused = d["key"].clone();
+                        // `R0611`: a operação refutada sai da pilha de compensações
+                        if d["tool"].as_str().is_some_and(|t| compensable.contains(t)) {
+                            comp.pop();
+                        }
                     }
                     j.push_untimed("settle", json!({ "key": d["key"], "status": d["status"] }));
                 }

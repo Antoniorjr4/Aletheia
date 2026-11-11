@@ -66,6 +66,8 @@ jobs:
       # a que aceita tudo (RS1). Falha se um efeito proibido acontecer ou um controle for recusado.
       - name: contratos de autorização (oráculo comprometido, offline)
         run: python3 bench/adversarial/harness.py --contracts --athc target/release/athc --out /tmp/adversarial
+      - name: Intenção autorizada e obrigações levantadas (Rev13, sem chamada paga)
+        run: python3 bench/adversarial/harness.py --intents --athc target/release/athc --out /tmp/adversarial
 
   lean:
     # O núcleo λ_Ath mecanizado: T1 (preservação e progresso, com capacidades lineares e

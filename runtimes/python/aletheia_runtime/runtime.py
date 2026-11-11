@@ -64,6 +64,9 @@ class Meter:
         self.tok = 0
         self.usd = 0.0
         self.wall = 0.0
+        # a reserva de compensação (Rev13, M-IV), como no ARX
+        self.held_usd = 0.0
+        self.held_wall = 0.0
 
     def reserve(self, tok: int, usd: float, wall: float, what: str) -> None:
         def over(name: str, need: str, left: str):
@@ -71,15 +74,23 @@ class Meter:
 
         if self.lim_tok is not None and self.tok + tok > self.lim_tok:
             raise over("tokens", f"{tok} tok", f"{self.lim_tok - self.tok} tok")
-        if self.lim_usd is not None and self.usd + usd > self.lim_usd + 1e-12:
-            raise over("dólares", f"US$ {usd:.4f}", f"US$ {self.lim_usd - self.usd:.4f}")
-        if self.lim_wall is not None and self.wall + wall > self.lim_wall + 1e-9:
-            raise over("tempo", f"{wall:.1f} s", f"{self.lim_wall - self.wall:.1f} s")
+        if self.lim_usd is not None and self.usd + self.held_usd + usd > self.lim_usd + 1e-12:
+            raise over("dólares", f"US$ {usd:.4f}", f"US$ {self.lim_usd - self.usd - self.held_usd:.4f}")
+        if self.lim_wall is not None and self.wall + self.held_wall + wall > self.lim_wall + 1e-9:
+            raise over("tempo", f"{wall:.1f} s", f"{self.lim_wall - self.wall - self.held_wall:.1f} s")
 
     def settle(self, tok: int, usd: float, wall: float) -> None:
         self.tok += tok
         self.usd += usd
         self.wall += wall
+
+    def hold(self, usd: float, wall: float) -> None:
+        self.held_usd += usd
+        self.held_wall += wall
+
+    def release(self, usd: float, wall: float) -> None:
+        self.held_usd = max(self.held_usd - usd, 0.0)
+        self.held_wall = max(self.held_wall - wall, 0.0)
 
 
 def decimal(x: str):
@@ -116,6 +127,12 @@ class Runtime:
         self.agent = None
         self.sagas: list = []
         self.obligation = False
+        # M-III: o write-ahead log das operações com chave e das sagas
+        self.wal = None
+        # M-II: as linhas das relações confiáveis que autorizaram o contrato em curso
+        self._auth: list = []
+        self.saga_ids: list = []
+        self.next_saga = 1
 
     # ------------------------------------------------------------ entrada
 
@@ -271,6 +288,27 @@ class Runtime:
         v = decimal(str(x)) if type(x) in (int, str) else None
         return lim is not None and v is not None and v <= lim
 
+    def binds(self, name: str, *xs) -> bool:
+        """`s.binds("r", x1, …, xn)`: a tupla é uma linha `c1|…|cn` da relação confiável `r`
+        (decimais comparados pelo valor). A linha casada é a identidade da autorização."""
+        self._log_snapshot()
+        vals = [str(x) if type(x) is int else x for x in xs]
+        if not all(type(x) is str for x in vals):
+            return False
+
+        def same(a: str, b: str) -> bool:
+            if a == b:
+                return True
+            da, db = decimal(a), decimal(b)
+            return da is not None and db is not None and da == db
+
+        for row in self.snapshot.get("inventories", {}).get(name, []):
+            cs = row.split("|")
+            if len(cs) == len(vals) and all(same(c, x) for c, x in zip(cs, vals)):
+                self._auth.append((name, row))
+                return True
+        return False
+
     def mentions(self, name: str, x) -> bool:
         """`s.mentions("k", x)`: `x`, não vazio, aparece literalmente num texto confiável `k`."""
         self._log_snapshot()
@@ -335,7 +373,7 @@ class Runtime:
 
     # ------------------------------------------------------------ ferramentas
 
-    def call_tool(self, name: str, args: list):
+    def call_tool(self, name: str, args: list, discharged: bool = False):
         committed, self.committing = self.committing, False
         t = self.p.tools[name]
         held = set()
@@ -350,23 +388,46 @@ class Runtime:
         # o contrato `requires`: o monitor na fronteira do efeito, antes da reserva e do host
         contract = t.get("contract")
         if contract is not None:
+            self._auth = []
             ok = contract(self, *args)
             if type(ok) is not bool:
                 raise RtErr("R0109", "contrato não devolveu Bool")
+            if not ok and discharged:
+                self.journal.push(self.clock, "contract_refused", {"tool": name, "discharged": True})
+                raise RtErr("R0631", f"obrigação de `{name}` descarregada e violada: defeito da análise")
             if not ok:
                 self.journal.push(self.clock, "contract_refused", {"tool": name})
                 raise RtErr("R0630", f"o contrato `requires` de `{name}` recusou os argumentos")
+            if self._auth:
+                rows = [{"relation": rel, "row": row, "id": blake3.hexdigest(row.encode("utf-8"))} for rel, row in self._auth]
+                self._auth = []
+                self.journal.push(self.clock, "authorized", {"tool": name, "by": rows})
+        # o que o medidor confere (`need`): o custo da chamada e, dentro de saga, o pior do compensador
+        held_c = self._comp_reserve(t) if self.sagas else (0.0, 0.0)
         if not self.obligation:
-            self.meter.reserve(0, t["usd"], t["latency"], name)
+            self.meter.reserve(0, t["usd"] + held_c[0], t["latency"] + held_c[1], name)
         key_n = next((a.n for a in args if isinstance(a, Key)), None)
         key = f"k{key_n}" if key_n is not None else None
         from .world import HostFailed, HostTimeout
 
+        # M-III: a intenção é persistida antes do envio
+        if key_n is not None and self.wal is not None:
+            self.wal.nth += 1
+            self.wal.ord[key_n] = self.wal.nth
+            self._wlog("intent", {"key": f"k{key_n}", "tool": name, "provider": t["provider"], "obligation": "reconcile",
+                                  "saga": self.saga_ids[-1] if self.saga_ids else None,
+                                  "args": [to_json(a) for a in args]})
+            self._wcrash("intent", key_n)
         try:
-            out, lat = self.host.call(name, args)
+            try:
+                out, lat = self.host.call(name, args)
+            finally:
+                if key_n is not None:
+                    self._wcrash("sent", key_n)
         except HostFailed as e:
             # com chave, a recusa é um estado terminal da obrigação (`Failed`), como no ARX
             if key_n is not None:
+                self._wclose(key_n, "failed", "reply")
                 self.journal.push(self.clock, "tool_failed", {"tool": name, "key": f"k{key_n}", "error": e.msg})
             raise RtErr("R0600", e.msg) from None
         except HostTimeout as e:
@@ -375,15 +436,17 @@ class Runtime:
             self.meter.settle(0, t["usd"], elapsed)
             if key_n is None:
                 raise RtErr("R0601", f"`{name}` sem resposta em {elapsed:.1f} s") from None
-            if t["class"] == "compensable" and self.sagas:
-                self.sagas[-1].append((name, list(args)))
+            if t["class"] == "compensable":
+                self._push_op(name, args, held_c)
             self.journal.push(self.clock, "timeout_unknown",
                               {"tool": name, "key": f"k{key_n}", "provider": t["provider"], "elapsed": elapsed})
             return self._on_timeout(name, args, key_n)
         self.clock += lat
         self.meter.settle(0, t["usd"], lat)
-        if t["class"] == "compensable" and self.sagas:
-            self.sagas[-1].append((name, list(args)))
+        if t["class"] == "compensable":
+            self._push_op(name, args, held_c)
+        if key_n is not None:
+            self._wclose(key_n, "done", "reply")
         self.journal.push(self.clock, "tool", {
             "tool": name,
             "class": t["class"],
@@ -397,6 +460,133 @@ class Runtime:
             self.journal.push(self.clock, "contract_breach", {"tool": name, "declared": t["latency"], "observed": lat})
             raise RtErr("R0701", f"ContractBreach: `{name}` levou {lat:.2f} s; o contrato Δ declara {t['latency']:.2f} s")
         return out
+
+    # ------------------------------------------------------------ WAL (M-III)
+
+    def _wlog(self, kind: str, detail: dict) -> None:
+        if self.wal is not None:
+            self.wal.append(self.clock, kind, detail)
+
+    def _wcrash(self, at: str, key: int) -> None:
+        if self.wal is not None:
+            self.wal.maybe_crash(at, key)
+
+    def _wclose(self, key: int, status: str, via: str) -> None:
+        if self.wal is not None:
+            self._wcrash("confirmed", key)
+            self._wlog("close", {"key": f"k{key}", "status": status, "evidence": via})
+            self._wcrash("closed", key)
+
+    def _push_op(self, name: str, args: list, held_c: tuple) -> None:
+        if self.sagas:
+            self.sagas[-1].append((name, list(args), held_c))
+            self.meter.hold(*held_c)
+            sid = self.saga_ids[-1] if self.saga_ids else 0
+            key = next((f"k{a.n}" for a in args if isinstance(a, Key)), None)
+            self._wlog("saga_op", {"saga": sid, "tool": name, "key": key, "args": [to_json(a) for a in args]})
+
+    def _arg_from_wal(self, kind: str, j):
+        if kind == "cap":
+            return Cap(j["cap"])
+        if kind == "key":
+            return Key(int(j[1:]))
+        return j
+
+    def recover(self, fuel: int) -> list:
+        """A recuperação depois do reinício (`Arx::recover`, `lean/Aletheia/Wal.lean`)."""
+        from .wal import WalState
+        from .world import HostFailed, HostTimeout
+
+        if self.wal is None:
+            return []
+        before = len(self.wal.log.entries)
+        st = WalState.of(self.wal.log.entries)
+        for key, d in st.open():
+            tool = d.get("tool")
+            decl = self.p.tools.get(tool)
+            if decl is None:
+                self._wlog("escalate", {"key": key, "reason": "ferramenta ausente do programa"})
+                continue
+            kn = int(key[1:])
+            args = [self._arg_from_wal(k, j) for k, j in zip(decl.get("params", []), d.get("args", []))]
+            outcome, tries = None, 0
+            if decl["provider"] != "opaque":
+                for _ in range(fuel):
+                    tries += 1
+                    r = None
+                    if decl["provider"] == "idempotent":
+                        try:
+                            self.host.call(tool, args)
+                            r = True
+                        except HostFailed:
+                            r = False
+                        except HostTimeout:
+                            r = None
+                    else:
+                        status, _ = self.host.status(tool, kn)
+                        r = {"done": True, "not_applied": False}.get(status[0])
+                    if r is not None:
+                        outcome = r
+                        break
+            via = "recovery:resend" if decl["provider"] == "idempotent" else "recovery:status"
+            if outcome is not None:
+                self._wlog("close", {"key": key, "status": "done" if outcome else "failed", "evidence": via,
+                                     "attempts": tries})
+            else:
+                reason = "opaque: sem protocolo" if decl["provider"] == "opaque" else "sem resposta conclusiva"
+                self._wlog("escalate", {"key": key, "reason": reason, "attempts": tries})
+        st = WalState.of(self.wal.log.entries)
+        for sid in sorted(st.sagas, reverse=True):
+            sg = st.sagas[sid]
+            if sg["ended"]:
+                continue
+            residual = 0
+            for op in reversed(sg["ops"]):
+                key = op.get("key")
+                if key is not None:
+                    if key in sg["unlogged"]:
+                        continue
+                    if st.outcome.get(key) == "failed":
+                        self._wlog("saga_unlog", {"saga": sid, "key": key})
+                        continue
+                tool = op.get("tool")
+                decl = self.p.tools.get(tool)
+                if decl is None or decl["class"] != "compensable":
+                    continue
+                comp = decl.get("compensator")
+                if comp is None or comp not in self.p.tools:
+                    residual += 1
+                    continue
+                cdecl = self.p.tools[comp]
+                args = [self._arg_from_wal(k, j) for k, j in zip(cdecl.get("params", []), op.get("args", []))]
+                try:
+                    self.host.call(comp, args)
+                    ok = True
+                except (HostFailed, HostTimeout):
+                    ok = False
+                residual += 0 if ok else 1
+                self._wlog("compensated", {"saga": sid, "of": tool, "key": key, "ok": ok, "via": "recovery"})
+            self._wlog("saga_end", {"saga": sid, "outcome": "recovered", "residual": residual})
+        return self.wal.log.entries[before:]
+
+    def _comp_reserve(self, t: dict) -> tuple:
+        """A reserva do compensador de `t`: custo e latência declarados de `compensable by`."""
+        if t["class"] != "compensable":
+            return (0.0, 0.0)
+        c = self.p.tools.get(t.get("compensator") or "")
+        return (c["usd"], c["latency"]) if c is not None else (0.0, 0.0)
+
+    def _unlog(self, key: int) -> None:
+        """`R0611`: tira dos quadros abertos a operação de chave `key` e libera a reserva."""
+        for fi in range(len(self.sagas) - 1, -1, -1):
+            frame = self.sagas[fi]
+            for i in range(len(frame) - 1, -1, -1):
+                if any(isinstance(a, Key) and a.n == key for a in frame[i][1]):
+                    op = frame.pop(i)
+                    self.meter.release(*op[2])
+                    sid = self.saga_ids[fi] if fi < len(self.saga_ids) else 0
+                    self._wlog("saga_unlog", {"saga": sid, "key": f"k{key}"})
+                    return
 
     def _on_timeout(self, tool: str, args: list, key: int):
         h = self.agent["handles"].get("timeout_unknown") if self.agent else None
@@ -415,17 +605,29 @@ class Runtime:
 
     def atomic(self, recover, body, on_failure, on_cf):
         self.sagas.append([])
+        sid = self.next_saga
+        self.next_saga += 1
+        self.saga_ids.append(sid)
+        self._wlog("saga_begin", {"saga": sid})
         cause = None
         try:
             v = body()
         except (Ret, Resume):
-            self.sagas.pop()
+            for op in self.sagas.pop():
+                self.meter.release(*op[2])
+            self.saga_ids.pop()
+            self._wlog("saga_end", {"saga": sid, "outcome": "exit"})
             raise
         except (RtErr, Abort) as e:
             cause = e
         ops = self.sagas.pop()
+        self.saga_ids.pop()
+        # o quadro fecha: as reservas voltam ao saldo; as compensações liquidam o custo real
+        for op in ops:
+            self.meter.release(*op[2])
         if cause is None:
             self.journal.push(self.clock, "saga_commit", {"compensable_ops": len(ops)})
+            self._wlog("saga_end", {"saga": sid, "outcome": "commit"})
             return v
         reason = f"{cause.code} {cause.msg}" if isinstance(cause, RtErr) else "obrigação transferida durante a saga"
         self.journal.push(self.clock, "saga_abort", {"reason": reason, "compensable_ops": len(ops)})
@@ -433,7 +635,7 @@ class Runtime:
 
         prev, self.obligation = self.obligation, True
         residual = []
-        for tool, args in reversed(ops):
+        for tool, args, held_op in reversed(ops):
             comp = self.p.tools[tool]["compensator"]
             if comp is None or comp not in self.p.tools:
                 residual.append(f"{tool}: sem compensador")
@@ -449,10 +651,16 @@ class Runtime:
             else:
                 self.clock += lat
                 self.meter.settle(0, self.p.tools[comp]["usd"], lat)
+                if self.p.tools[comp]["usd"] > held_op[0] + 1e-12 or lat > held_op[1] + 1e-9:
+                    self.journal.push(self.clock, "compensation_overrun",
+                                      {"tool": comp, "held_usd": held_op[0], "held_wall": held_op[1],
+                                       "usd": self.p.tools[comp]["usd"], "wall": lat})
                 self.journal.push(self.clock, "compensate",
                                   {"of": tool, "tool": comp, "key": key, "ok": True, "result": to_json(out)})
+                self._wlog("compensated", {"saga": sid, "of": tool, "key": key, "ok": True})
                 continue
             self.journal.push(self.clock, "compensate", {"of": tool, "tool": comp, "key": key, "ok": False, "error": msg})
+            self._wlog("compensated", {"saga": sid, "of": tool, "key": key, "ok": False})
             residual.append(msg)
         try:
             r = recover()
@@ -464,6 +672,7 @@ class Runtime:
             restored = False
         self.obligation = prev
         if not residual and restored:
+            self._wlog("saga_end", {"saga": sid, "outcome": "abort", "residual": 0})
             self.journal.push(self.clock, "saga_recovered", {})
             if isinstance(cause, Abort):
                 raise cause
@@ -473,6 +682,7 @@ class Runtime:
         if not restored and not residual:
             residual.append("a sonda de recuperação não observou o invariante")
         cf = "; ".join(residual)
+        self._wlog("saga_end", {"saga": sid, "outcome": "abort", "residual": len(residual)})
         self.journal.push(self.clock, "compensation_failed", {"residual": residual, "cause": reason})
         if on_cf is not None:
             return on_cf(cf)
@@ -540,10 +750,14 @@ class Runtime:
                 self.meter.settle(0, 0.0, RECONCILE_BACKOFF)
         self.obligation = prev
         if outcome is not None and outcome[0] == "ok":
+            self._wclose(p.key, "done", "reconcile")
             self.journal.push(self.clock, "resolved", {"key": k, "status": "done"})
             raise Resume(outcome[1])
         if outcome is not None:
-            self.journal.push(self.clock, "resolved", {"key": k, "status": "failed"})
+            # `R0611`: a operação refutada sai do quadro e a reserva dela é liberada
+            self._wclose(p.key, "failed", "reconcile")
+            self._unlog(p.key)
+            self.journal.push(self.clock, "resolved", {"key": k, "tool": p.tool, "status": "failed"})
             raise RtErr("R0611", f"`{p.tool}` não aplicada (reconciliado): {outcome[1]}")
         self.journal.push(self.clock, "reconcile_exhausted", {"key": k, "fuel": fuel})
 
@@ -551,6 +765,8 @@ class Runtime:
         if not isinstance(p, Pending):
             raise RtErr("R0940", "`transfer` sobre valor que não é obrigação")
         self.journal.push(self.clock, "transfer", {"key": f"k{p.key}", "tool": p.tool})
+        # a obrigação sai do processo sem desfecho conclusivo: o WAL a escala
+        self._wlog("escalate", {"key": f"k{p.key}", "reason": "transferred"})
 
     # ------------------------------------------------------------ inferência
 
@@ -566,7 +782,35 @@ class Runtime:
                 prompt += f"### {k}\n{val}\n"
         return Draft(model, out, spec, prompt)
 
-    def refine(self, d, policy, name: str, retry: int):
+    def _lifted_violation(self, v, lifted) -> str | None:
+        """M-I: a primeira obrigação levantada que `v` viola (a ferramenta), ou `None`."""
+        for tool, path, variant, binds, n in lifted:
+            cur = [v]
+            for st in path:
+                nxt = []
+                for x in cur:
+                    if st[0] == "e" and isinstance(x, list):
+                        nxt.extend(x)
+                    elif st[0] == "f" and isinstance(x, Adt) and x.variant == st[1]:
+                        nxt.extend(y for k, y in x.fields if k == st[2])
+                cur = nxt
+            contract = self.p.tools[tool].get("contract")
+            if contract is None:
+                continue
+            for x in cur:
+                if not isinstance(x, Adt) or x.variant != variant:
+                    continue
+                args = [None] * n
+                fields = dict(x.fields)
+                for i, f in binds:
+                    args[i] = fields.get(f)
+                ok = contract(self, *args)
+                self._auth = []
+                if ok is not True:
+                    return tool
+        return None
+
+    def refine(self, d, policy, name: str, retry: int, lifted=None):
         if not isinstance(d, Draft):
             raise RtErr("R0105", "`refine` sobre valor que não é rascunho")
         for attempt in range(1, retry + 1):
@@ -574,7 +818,13 @@ class Runtime:
             if v is _MISSING:
                 self.journal.push(self.clock, "decode_reject", {"attempt": attempt})
                 continue
-            if self._policy(policy, v):
+            accepted = self._policy(policy, v)
+            if accepted and lifted:
+                tool = self._lifted_violation(v, lifted)
+                if tool is not None:
+                    self.journal.push(self.clock, "obligation_reject", {"policy": name, "tool": tool, "attempt": attempt})
+                    continue
+            if accepted:
                 self.journal.push(self.clock, "endorse", {"policy": name, "value": to_json(v), "attempt": attempt})
                 return True, v
             self.journal.push(self.clock, "policy_reject", {"policy": name, "value": to_json(v), "attempt": attempt})

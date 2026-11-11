@@ -54,6 +54,22 @@ impl TrustedSnapshot {
         }
     }
 
+    /// `s.binds("r", x1, …, xn)`: a linha da relação confiável `r` que liga a tupla, se houver.
+    /// Cada linha é `c1|c2|…|cn`; dois componentes casam se são o mesmo texto ou, quando os dois
+    /// são decimais, o mesmo valor (`10.00` = `10.0`). A linha casada é a identidade da
+    /// autorização que o journal registra no efeito.
+    pub fn binds(&self, name: &str, xs: &[String]) -> Option<String> {
+        let same = |a: &str, b: &str| a == b || matches!((decimal(a), decimal(b)), (Some(x), Some(y)) if x == y);
+        self.inventories
+            .get(name)?
+            .iter()
+            .find(|row| {
+                let cs: Vec<&str> = row.split('|').collect();
+                cs.len() == xs.len() && cs.iter().zip(xs).all(|(c, x)| same(c, x))
+            })
+            .cloned()
+    }
+
     /// `s.mentions("k", x)`: `x`, não vazio, aparece literalmente num texto confiável `k`.
     pub fn mentions(&self, name: &str, x: &str) -> bool {
         !x.is_empty() && self.inventories.get(name).is_some_and(|v| v.iter().any(|s| s.contains(x)))
@@ -124,6 +140,11 @@ pub trait Host {
         (Status::Unknown, 0.0)
     }
     fn summary(&self) -> Vec<String>;
+    /// A verdade do provedor sobre a operação de chave `key` da ferramenta `tool`: o efeito
+    /// existe? `None` se o host não sabe dizer (só os testes de queda a consultam).
+    fn applied(&self, _tool: &str, _key: u64) -> Option<bool> {
+        None
+    }
     /// Estado observável do mundo, em JSON (para relatórios e benchmarks).
     fn state(&self) -> Json {
         Json::Null
@@ -475,6 +496,10 @@ impl Host for SimWorld {
 
     fn state(&self) -> Json {
         serde_json::json!({ "replicas": self.replicas, "restarts": self.restarts, "outbox": self.outbox })
+    }
+
+    fn applied(&self, tool: &str, key: u64) -> Option<bool> {
+        Some(self.applied.contains_key(&(tool.to_string(), key)))
     }
 
     fn summary(&self) -> Vec<String> {

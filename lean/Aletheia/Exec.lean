@@ -132,6 +132,11 @@ structure Tool where
   keyed : Bool := false
   /-- a classe do provedor -/
   provider : Prov := .queryable
+  /-- o custo declarado da chamada, em unidades inteiras de US$ (o gerador usa 1/1024 US$, exato
+  em ponto flutuante) -/
+  usd : Nat := 0
+  /-- o custo declarado do compensador (`compensable by u`), na mesma unidade -/
+  cusd : Nat := 0
 
 /-- Sonda de célula: `lo ≤ w[cell] ≤ hi`. -/
 structure Probe where
@@ -159,6 +164,8 @@ structure Prog where
   replies : List (Nat × Array Reply) := []
   /-- as ferramentas cuja operação teve o efeito aplicado no mundo -/
   applied : List Nat := []
+  /-- o limite do agente em US$, na unidade dos custos; sem ele, ilimitado -/
+  limit : Option Nat := none
 
 abbrev P := Except String
 
@@ -266,9 +273,15 @@ def prog (j : Json) : P Prog := do
     let prov ← match t.getObjVal? "provider" with
       | .ok q => provider q
       | .error _ => pure .queryable
+    let usd ← match t.getObjVal? "usd" with
+      | .ok u => nat u
+      | .error _ => pure 0
+    let cusd ← match t.getObjVal? "cusd" with
+      | .ok u => nat u
+      | .error _ => pure 0
     return { name := ← str (← field t "name"), effect := ← nat (← field t "effect"),
              arg := ← ty (← field t "arg"), cell, compensable := flag t "compensable",
-             undoFails := flag t "undo_fails", keyed := flag t "keyed", provider := prov : Tool }
+             undoFails := flag t "undo_fails", keyed := flag t "keyed", provider := prov, usd, cusd : Tool }
   let probes ← match j.getObjVal? "probes" with
     | .ok ps => (← arr ps).mapM fun q => do
         return { name := ← str (← field q "name"), cell := ← nat (← field q "cell"),
@@ -286,15 +299,22 @@ def prog (j : Json) : P Prog := do
   let applied ← match j.getObjVal? "applied" with
     | .ok xs => (← arr xs).toList.mapM nat
     | .error _ => pure []
+  let limit ← match j.getObjVal? "limit" with
+    | .ok l => some <$> nat l
+    | .error _ => pure none
   return { effects, tools, policies, grants, env := env.toList, oracle, exp := ← exp (← field j "exp"),
-           probes, replies, applied }
+           probes, replies, applied, limit }
 
 /-! ## A assinatura, o oráculo e a configuração -/
 
-/-- A assinatura Δ do programa. Os custos são zero: o diferencial compara eventos e journal,
-não as unidades de orçamento, que o ARX mede em tokens, dólares e segundos. -/
+/-- O custo de uma ferramenta na dimensão US$, zero nas outras. -/
+def usdOnly (n : Nat) : Budget := fun d => match d with | .usd => n | _ => 0
+
+/-- A assinatura Δ do programa. Os custos ficam na dimensão US$ (as outras são zero): a da
+ferramenta e a do seu compensador, que o λ_Ath contabiliza na chamada e o ARX reserva. -/
 def Prog.sig (p : Prog) : Sig where
-  cost := fun _ => 0
+  cost := fun t => usdOnly ((p.tools[t]?.map (·.usd)).getD 0)
+  ccost := fun t => usdOnly ((p.tools[t]?.map (·.cusd)).getD 0)
   mcost := fun _ => 0
   arg := fun t => (p.tools[t]?.map (·.arg)).getD .unit
   effect := fun t => (p.tools[t]?.map (·.effect)).getD 0
@@ -338,7 +358,7 @@ def Prog.oracle' (p : Prog) : Oracle := fun i _ t _ =>
 
 def Prog.cfg (p : Prog) : Cfg where
   oracle := p.oracle'
-  limit := 0
+  limit := usdOnly (p.limit.getD 1000000000000000)
   grants := fun id => p.grants[id]?.getD []
 
 /-- A primeira chave: acima de toda capacidade do ambiente, como o `KF` do T1 exige (o contador
@@ -448,7 +468,7 @@ def Prog.outcome (p : Prog) : Except Err Out → Option (List String)
 (`Arx.cvRun`), no mesmo formato. É a quarta perna do tripé: o binário do ARX contra o modelo
 sobre o qual `Arx.sim` está provado. -/
 def Prog.arxOutcome (p : Prog) : Option (List String) :=
-  let r := Arx.run p.sig p.cfg (fun _ => 0) p.exp p.env (Arx.AS.ofSt p.init)
+  let r := Arx.run p.sig p.cfg p.sig.ccost p.exp p.env (Arx.AS.ofSt p.init)
   let evs := ((Arx.cvRun p.sig r.2.jr).2).map p.event
   match r.1 with
   | .ok v => some (chain (evs ++ [("end", .obj [("value", valJson v)])]))
@@ -458,5 +478,21 @@ def Prog.arxOutcome (p : Prog) : Option (List String) :=
   | .error (.err (.probe q)) =>
     some (chain (evs ++ [("abort", .obj [("cause", .str "probe"), ("probe", Prog.name (p.probes.map (·.name)) q)])]))
   | .error (.err .other) => none
+
+/-- O medidor das duas semânticas: o gasto contabilizado pelo λ_Ath (quando ele termina com
+valor ou falha capturável) e o gasto e a reserva do modelo do ARX, com cada compensador cobrando
+exatamente o declarado. É o que o diferencial do M-IV compara com o medidor dos runtimes. -/
+def Prog.meter (p : Prog) : J :=
+  let r := Arx.run p.sig p.cfg p.sig.ccost p.exp p.env (Arx.AS.ofSt p.init)
+  let ev : J := match p.run with
+    | .ok o => .obj [("outcome", .str "ok"), ("spent", .int (o.st.spent .usd))]
+    | .error (.timeout _ s _) => .obj [("outcome", .str "timeout"), ("spent", .int (s.spent .usd))]
+    | .error .budget => .obj [("outcome", .str "budget")]
+    | .error _ => .obj [("outcome", .str "error")]
+  let ao : String := match r.1 with
+    | .ok _ => "ok" | .error (.abort _) => "abort" | .error (.err .other) => "other" | .error _ => "refused"
+  .obj [("arx", .obj [("outcome", .str ao), ("resv", .int (Arx.resv p.sig r.2.frames .usd)),
+      ("spent", .int (r.2.spent .usd))]),
+    ("eval", ev), ("limit", .int ((p.cfg.limit) .usd))]
 
 end Aletheia.Exec

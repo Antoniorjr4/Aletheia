@@ -13,6 +13,7 @@ pub mod host;
 pub mod journal;
 pub mod model;
 pub mod value;
+pub mod wal;
 
 use ath_grammar::Shape;
 use ath_syntax::ast::*;
@@ -48,6 +49,16 @@ enum Unwind {
 struct SagaOp<'m> {
     tool: &'m ToolDecl,
     args: Vec<Value>,
+    /// A reserva do compensador (US$, s): separada do saldo quando o efeito entrou no quadro e
+    /// liberada quando a saga fecha, quando a compensação é liquidada ou quando a reconciliação
+    /// refuta a operação (`R0611`).
+    held: (f64, f64),
+}
+
+impl SagaOp<'_> {
+    fn key(&self) -> Option<u64> {
+        self.args.iter().find_map(|v| if let Value::Key(k) = v { Some(*k) } else { None })
+    }
 }
 
 /// Recuo entre tentativas de reconciliação, em segundos.
@@ -71,10 +82,17 @@ pub struct Meter {
     pub tok: u64,
     pub usd: f64,
     pub wall: f64,
+    /// A reserva de compensação (Rev13, M-IV): o pior custo declarado dos compensadores das
+    /// operações em sagas abertas. Não é gasto, mas não está disponível: toda reserva nova
+    /// confere `gasto + reserva + custo ≤ limite`, e a recuperação de uma falha encontra o que
+    /// precisa já separado.
+    pub held_usd: f64,
+    pub held_wall: f64,
 }
 
 impl Meter {
-    /// Reserva antes, liquida depois: se o pior custo não cabe no saldo, a chamada não começa.
+    /// Reserva antes, liquida depois: se o pior custo não cabe no saldo (o limite menos o gasto
+    /// e menos a reserva de compensação), a chamada não começa.
     pub fn reserve(&self, tok: u64, usd: f64, wall: f64, what: &str) -> Result<(), RtError> {
         let over = |name: &str, need: String, left: String| {
             rt("R0801", format!("BudgetExhausted: reserva de {need} para `{what}` excede o saldo de {name} ({left})"))
@@ -85,16 +103,32 @@ impl Meter {
             }
         }
         if let Some(l) = self.lim_usd {
-            if self.usd + usd > l + 1e-12 {
-                return Err(over("dólares", format!("US$ {usd:.4}"), format!("US$ {:.4}", l - self.usd)));
+            if self.usd + self.held_usd + usd > l + 1e-12 {
+                return Err(over(
+                    "dólares",
+                    format!("US$ {usd:.4}"),
+                    format!("US$ {:.4}", l - self.usd - self.held_usd),
+                ));
             }
         }
         if let Some(l) = self.lim_wall {
-            if self.wall + wall > l + 1e-9 {
-                return Err(over("tempo", format!("{wall:.1} s"), format!("{:.1} s", l - self.wall)));
+            if self.wall + self.held_wall + wall > l + 1e-9 {
+                return Err(over("tempo", format!("{wall:.1} s"), format!("{:.1} s", l - self.wall - self.held_wall)));
             }
         }
         Ok(())
+    }
+
+    /// Separa a reserva de um compensador.
+    pub fn hold(&mut self, usd: f64, wall: f64) {
+        self.held_usd += usd;
+        self.held_wall += wall;
+    }
+
+    /// Libera a reserva de um compensador.
+    pub fn release(&mut self, usd: f64, wall: f64) {
+        self.held_usd = (self.held_usd - usd).max(0.0);
+        self.held_wall = (self.held_wall - wall).max(0.0);
     }
 
     pub fn settle(&mut self, tok: u64, usd: f64, wall: f64) {
@@ -138,6 +172,17 @@ pub struct Arx<'m> {
     committing: bool,
     agent: Option<&'m AgentDecl>,
     sagas: Vec<Vec<SagaOp<'m>>>,
+    /// A identidade de cada saga aberta, no WAL (paralela a `sagas`).
+    saga_ids: Vec<u64>,
+    next_saga: u64,
+    /// O write-ahead log das operações com chave e das sagas (M-III), se ativado.
+    pub wal: Option<wal::Wal>,
+    /// As obrigações `requires` levantadas para os `refine` e o destino de cada sítio (M-I).
+    obligations: ath_syntax::obligations::Obligations,
+    /// O sítio da chamada em curso (para saber se a obrigação dela está descarregada).
+    call_site: Option<ath_syntax::Span>,
+    /// As linhas das relações confiáveis que autorizaram o contrato em curso (`s.binds`).
+    auth: Vec<(String, String)>,
     /// Compensação, recuperação e reconciliação são obrigações: não pedem reserva de orçamento.
     obligation: bool,
 }
@@ -236,6 +281,12 @@ impl<'m> Arx<'m> {
             committing: false,
             agent: None,
             sagas: Vec::new(),
+            saga_ids: Vec::new(),
+            next_saga: 1,
+            wal: None,
+            obligations: ath_syntax::obligations::analyze(m),
+            call_site: None,
+            auth: Vec::new(),
             obligation: false,
         };
         for item in &m.items {
@@ -446,7 +497,10 @@ impl<'m> Arx<'m> {
                     .ok_or_else(|| rt("R0101", format!("campo `{}` ausente", f.name)).into()),
                 _ => Err(rt("R0101", "acesso a campo de valor sem campos").into()),
             },
-            ExprKind::Call { callee, args } => self.call(callee, args),
+            ExprKind::Call { callee, args } => {
+                let site = e.span;
+                self.call_with_site(callee, args, site)
+            }
             ExprKind::Method { recv, method, args } => {
                 // `s` é um identificador reservado, não uma variável de modelo.
                 // Os métodos contextuais leem a MESMA fotografia imutável que
@@ -464,7 +518,7 @@ impl<'m> Arx<'m> {
                             | ("member", 2)
                             | ("within", 2)
                             | ("mentions", 2)
-                    );
+                    ) || (method.name == "binds" && vals.len() >= 2);
                     if !known {
                         return Err(rt("R0108", format!("método `s.{}` desconhecido", method.name)).into());
                     }
@@ -488,6 +542,21 @@ impl<'m> Arx<'m> {
                         ("mentions", [Value::Text(k), Value::Text(x)]) => Ok(Value::Bool(self.snapshot.mentions(k, x))),
                         ("mentions", [Value::Text(k), Value::Int(n)]) => {
                             Ok(Value::Bool(self.snapshot.mentions(k, &n.to_string())))
+                        }
+                        ("binds", [Value::Text(k), rest @ ..]) => {
+                            let xs: Option<Vec<String>> = rest
+                                .iter()
+                                .map(|v| match v {
+                                    Value::Text(x) => Some(x.clone()),
+                                    Value::Int(n) => Some(n.to_string()),
+                                    _ => None,
+                                })
+                                .collect();
+                            let hit = xs.and_then(|xs| self.snapshot.binds(k, &xs));
+                            if let Some(row) = &hit {
+                                self.auth.push((k.clone(), row.clone()));
+                            }
+                            Ok(Value::Bool(hit.is_some()))
                         }
                         (m, _) => Err(rt("R0103", format!("argumentos inválidos para `s.{m}`")).into()),
                     };
@@ -588,7 +657,21 @@ impl<'m> Arx<'m> {
                             self.journal.push(self.clock, "decode_reject", json!({ "attempt": attempt }));
                         }
                         Some(v) => {
-                            if self.eval_policy(p, v.clone())? {
+                            let accepted = self.eval_policy(p, v.clone())?;
+                            // M-I: as obrigações `requires` levantadas para este `refine`, sobre o
+                            // valor proposto; uma violação é uma recusa, com retentativa e `else`
+                            if accepted {
+                                if let Some(tool) = self.lifted_violation(e.span, &v)? {
+                                    self.events[idx].verdict = Some((false, format!("viola o contrato de `{tool}`")));
+                                    self.journal.push(
+                                        self.clock,
+                                        "obligation_reject",
+                                        json!({ "policy": policy.name, "tool": tool, "attempt": attempt }),
+                                    );
+                                    continue;
+                                }
+                            }
+                            if accepted {
                                 self.events[idx].verdict = Some((true, format!("Endorsed({})", policy.name)));
                                 self.journal.push(
                                     self.clock,
@@ -634,6 +717,8 @@ impl<'m> Arx<'m> {
                     return Err(rt("R0940", "`transfer` sobre valor que não é obrigação").into());
                 };
                 self.journal.push(self.clock, "transfer", json!({ "key": format!("k{key}"), "tool": tool }));
+                // a obrigação sai do processo sem desfecho conclusivo: o WAL a escala
+                self.wlog("escalate", json!({ "key": format!("k{key}"), "reason": "transferred" }));
                 self.events.push(Event {
                     t: self.clock,
                     dt: 0.0,
@@ -701,15 +786,32 @@ impl<'m> Arx<'m> {
         on_cf: Option<&(Ident, Block)>,
     ) -> R<Value> {
         self.sagas.push(Vec::new());
+        let sid = self.next_saga;
+        self.next_saga += 1;
+        self.saga_ids.push(sid);
+        self.wlog("saga_begin", json!({ "saga": sid }));
         let r = self.block(body);
         let ops = self.sagas.pop().unwrap_or_default();
+        self.saga_ids.pop();
+        // O quadro fecha: as reservas dele voltam ao saldo. Se a saga falhou, cada compensação
+        // é liquidada a seguir com o custo real, que a reserva liberada cobre (`cc ≤ ccost`).
+        for op in &ops {
+            self.meter.release(op.held.0, op.held.1);
+        }
         let cause = match r {
             Ok(v) => {
                 self.journal.push(self.clock, "saga_commit", json!({ "compensable_ops": ops.len() }));
+                self.wlog("saga_end", json!({ "saga": sid, "outcome": "commit" }));
                 return Ok(v);
             }
-            Err(Unwind::Ret(v)) => return Err(Unwind::Ret(v)),
-            Err(Unwind::Resume(v)) => return Err(Unwind::Resume(v)),
+            Err(Unwind::Ret(v)) => {
+                self.wlog("saga_end", json!({ "saga": sid, "outcome": "exit" }));
+                return Err(Unwind::Ret(v));
+            }
+            Err(Unwind::Resume(v)) => {
+                self.wlog("saga_end", json!({ "saga": sid, "outcome": "exit" }));
+                return Err(Unwind::Resume(v));
+            }
             Err(other) => other,
         };
         let reason = match &cause {
@@ -731,11 +833,22 @@ impl<'m> Arx<'m> {
                 Ok((out, lat)) => {
                     self.clock += lat;
                     self.meter.settle(0, comp.usd, lat);
+                    if comp.usd > op.held.0 + 1e-12 || lat > op.held.1 + 1e-9 {
+                        // A hipótese `cc ≤ ccost` falhou: o compensador custou mais do que o
+                        // contrato reservou. Fica no journal; o orçamento não é mais garantido.
+                        self.journal.push(
+                            self.clock,
+                            "compensation_overrun",
+                            json!({ "tool": comp.name.name, "held_usd": op.held.0, "held_wall": op.held.1,
+                                    "usd": comp.usd, "wall": lat }),
+                        );
+                    }
                     self.journal.push(
                         self.clock,
                         "compensate",
                         json!({ "of": op.tool.name.name, "tool": comp.name.name, "key": key, "ok": true, "result": out.to_json() }),
                     );
+                    self.wlog("compensated", json!({ "saga": sid, "of": op.tool.name.name, "key": key, "ok": true }));
                     self.line(format!("↩ {}({})", comp.name.name, key.unwrap_or_default()), out.show(), lat, None);
                 }
                 Err(e) => {
@@ -751,6 +864,7 @@ impl<'m> Arx<'m> {
                         "compensate",
                         json!({ "of": op.tool.name.name, "tool": comp.name.name, "key": key, "ok": false, "error": msg }),
                     );
+                    self.wlog("compensated", json!({ "saga": sid, "of": op.tool.name.name, "key": key, "ok": false }));
                     self.line(
                         format!("↩ {}({})", comp.name.name, key.unwrap_or_default()),
                         msg.clone(),
@@ -772,6 +886,7 @@ impl<'m> Arx<'m> {
         };
         self.obligation = prev;
         if residual.is_empty() && restored {
+            self.wlog("saga_end", json!({ "saga": sid, "outcome": "abort", "residual": 0 }));
             self.journal.push(self.clock, "saga_recovered", json!({}));
             self.line("invariante de recuperação", "observado pela sonda", 0.0, Some((true, "recuperado".into())));
             return match (cause, on_failure) {
@@ -784,6 +899,7 @@ impl<'m> Arx<'m> {
             residual.push("a sonda de recuperação não observou o invariante".into());
         }
         let cf = residual.join("; ");
+        self.wlog("saga_end", json!({ "saga": sid, "outcome": "abort", "residual": residual.len() }));
         self.journal.push(self.clock, "compensation_failed", json!({ "residual": residual, "cause": reason }));
         self.line("CompensationFailed", cf.clone(), 0.0, Some((false, "estado não recuperado".into())));
         match on_cf {
@@ -910,6 +1026,7 @@ impl<'m> Arx<'m> {
         self.obligation = prev;
         match outcome {
             Some(Ok(v)) => {
+                self.wclose(key, "done", "reconcile");
                 self.journal.push(self.clock, "resolved", json!({ "key": format!("k{key}"), "status": "done" }));
                 self.line(
                     format!("Pending[k{key}] resolvida"),
@@ -920,7 +1037,17 @@ impl<'m> Arx<'m> {
                 Err(Unwind::Resume(v))
             }
             Some(Err(m)) => {
-                self.journal.push(self.clock, "resolved", json!({ "key": format!("k{key}"), "status": "failed" }));
+                // `R0611`: a reconciliação provou que a operação não aconteceu. Ela sai do quadro
+                // da saga (não há o que estornar) e a reserva do compensador é liberada. O campo
+                // `tool` só aparece aqui, para a vista do núcleo desempilhar; o `resolved` de
+                // `Done` fica como era, e os journals gravados continuam reproduzíveis.
+                self.wclose(key, "failed", "reconcile");
+                self.unlog(key);
+                self.journal.push(
+                    self.clock,
+                    "resolved",
+                    json!({ "key": format!("k{key}"), "tool": tool, "status": "failed" }),
+                );
                 self.line(format!("Pending[k{key}] resolvida"), m.clone(), 0.0, Some((false, "Failed".into())));
                 Err(rt("R0611", format!("`{tool}` não aplicada (reconciliado): {m}")).into())
             }
@@ -935,6 +1062,188 @@ impl<'m> Arx<'m> {
                 self.block(els)
             }
         }
+    }
+
+    /// Tira dos quadros abertos a operação de chave `key` (a mais interna primeiro) e libera a
+    /// reserva dela.
+    fn unlog(&mut self, key: u64) {
+        for (fi, frame) in self.sagas.iter_mut().enumerate().rev() {
+            if let Some(i) = frame.iter().rposition(|op| op.key() == Some(key)) {
+                let op = frame.remove(i);
+                self.meter.release(op.held.0, op.held.1);
+                let sid = self.saga_ids.get(fi).copied().unwrap_or_default();
+                self.wlog("saga_unlog", json!({ "saga": sid, "key": format!("k{key}") }));
+                return;
+            }
+        }
+    }
+
+    /// Acrescenta um registro ao WAL, se ativado.
+    fn wlog(&mut self, kind: &str, detail: serde_json::Value) {
+        let t = self.clock;
+        if let Some(w) = self.wal.as_mut() {
+            w.append(t, kind, detail);
+        }
+    }
+
+    /// A queda injetada no ponto `at` da operação de chave `key`.
+    fn wcrash(&self, at: wal::CrashPoint, key: u64) {
+        if let Some(w) = &self.wal {
+            w.maybe_crash_key(at, key);
+        }
+    }
+
+    /// Registra a operação no quadro da saga corrente (e no WAL).
+    fn push_op(&mut self, t: &'m ToolDecl, args: &[Value], held: (f64, f64)) {
+        if let Some(frame) = self.sagas.last_mut() {
+            frame.push(SagaOp { tool: t, args: args.to_vec(), held });
+            self.meter.hold(held.0, held.1);
+            let sid = self.saga_ids.last().copied().unwrap_or_default();
+            let key = args.iter().find_map(|v| if let Value::Key(k) = v { Some(format!("k{k}")) } else { None });
+            self.wlog(
+                "saga_op",
+                json!({ "saga": sid, "tool": t.name.name, "key": key,
+                        "args": args.iter().map(|v| v.to_json()).collect::<Vec<_>>() }),
+            );
+        }
+    }
+
+    /// O desfecho com evidência de uma operação com chave, no WAL, entre os pontos de queda
+    /// `confirmed` (o desfecho é conhecido) e `closed` (o desfecho está persistido).
+    fn wclose(&mut self, key: u64, status: &str, via: &str) {
+        if self.wal.is_some() {
+            self.wcrash(wal::CrashPoint::Confirmed, key);
+            self.wlog("close", json!({ "key": format!("k{key}"), "status": status, "evidence": via }));
+            self.wcrash(wal::CrashPoint::Closed, key);
+        }
+    }
+
+    /// Um argumento de ferramenta lido do WAL, no tipo do parâmetro.
+    fn arg_from_json(&self, j: &serde_json::Value, te: &TypeExpr) -> Option<Value> {
+        match te.unlabeled() {
+            TypeExpr::Cap(..) => {
+                Some(Value::Cap(j["cap"].as_array()?.iter().filter_map(|x| x.as_str().map(String::from)).collect()))
+            }
+            t if t.base_name() == "IdemKey" => j.as_str()?.strip_prefix('k')?.parse().ok().map(Value::Key),
+            _ => self.value_from_json(j, te),
+        }
+    }
+
+    /// **A recuperação depois do reinício** (`lean/Aletheia/Wal.lean`). Para cada intenção em
+    /// aberto no WAL, reconcilia pelo protocolo do provedor — `idempotent` reenvia com a mesma
+    /// chave, `queryable` consulta o status, `opaque` não tem protocolo — com até `fuel`
+    /// tentativas, e persiste o desfecho com a evidência: `close done`, `close failed` ou
+    /// `escalate`. Nunca fecha sem resposta, nunca descarta. Depois compensa, da mais recente à
+    /// mais antiga, as operações das sagas que a queda interrompeu, menos as refutadas.
+    /// Devolve os registros acrescentados.
+    pub fn recover(&mut self, fuel: u32) -> Vec<serde_json::Value> {
+        let Some(w) = &self.wal else { return Vec::new() };
+        let before = w.log.entries.len();
+        let st = wal::WalState::of(&w.log);
+        let open: Vec<(String, serde_json::Value)> = st.open().into_iter().cloned().collect();
+        for (key, d) in open {
+            let tool = d["tool"].as_str().unwrap_or_default().to_string();
+            let Some(decl) = self.tools.get(tool.as_str()).copied() else {
+                self.wlog("escalate", json!({ "key": key, "reason": "ferramenta ausente do programa" }));
+                continue;
+            };
+            let kn: u64 = key.strip_prefix('k').and_then(|x| x.parse().ok()).unwrap_or_default();
+            let args: Option<Vec<Value>> = decl
+                .params
+                .iter()
+                .zip(d["args"].as_array().into_iter().flatten())
+                .map(|(p, j)| self.arg_from_json(j, &p.ty))
+                .collect();
+            let mut outcome: Option<bool> = None;
+            let mut tries = 0;
+            if decl.provider != ProviderClass::Opaque {
+                for _ in 0..fuel {
+                    tries += 1;
+                    let r = match decl.provider {
+                        ProviderClass::Idempotent => match args.as_ref().map(|a| self.host.call(&tool, a)) {
+                            Some(Ok(_)) => Some(true),
+                            Some(Err(HostError::Failed(_))) => Some(false),
+                            _ => None,
+                        },
+                        _ => match self.host.status(&tool, kn).0 {
+                            Status::Done(_) => Some(true),
+                            Status::NotApplied => Some(false),
+                            Status::Unknown => None,
+                        },
+                    };
+                    if r.is_some() {
+                        outcome = r;
+                        break;
+                    }
+                }
+            }
+            let via = if decl.provider == ProviderClass::Idempotent { "recovery:resend" } else { "recovery:status" };
+            match outcome {
+                Some(b) => self.wlog(
+                    "close",
+                    json!({ "key": key, "status": if b { "done" } else { "failed" }, "evidence": via, "attempts": tries }),
+                ),
+                None => {
+                    let reason =
+                        if decl.provider == ProviderClass::Opaque { "opaque: sem protocolo" } else { "sem resposta conclusiva" };
+                    self.wlog("escalate", json!({ "key": key, "reason": reason, "attempts": tries }))
+                }
+            }
+        }
+        // as sagas interrompidas: compensa o que foi ou pode ter sido aplicado, menos o refutado
+        let st = wal::WalState::of(&self.wal.as_ref().expect("wal").log);
+        for (sid, sg) in st.sagas.iter().rev() {
+            if sg.ended {
+                continue;
+            }
+            let mut residual = 0;
+            for op in sg.ops.iter().rev() {
+                let key = op["key"].as_str().map(String::from);
+                if let Some(k) = &key {
+                    if sg.unlogged.contains(k) {
+                        continue;
+                    }
+                    if st.outcome.get(k).map(String::as_str) == Some("failed") {
+                        self.wlog("saga_unlog", json!({ "saga": sid, "key": k }));
+                        continue;
+                    }
+                }
+                let tool = op["tool"].as_str().unwrap_or_default();
+                let Some(decl) = self.tools.get(tool).copied() else { continue };
+                if decl.class != EffClass::Compensable {
+                    continue;
+                }
+                let Some(comp) = decl.compensator.as_ref().and_then(|c| self.tools.get(c.name.as_str()).copied())
+                else {
+                    residual += 1;
+                    continue;
+                };
+                let args: Option<Vec<Value>> = comp
+                    .params
+                    .iter()
+                    .zip(op["args"].as_array().into_iter().flatten())
+                    .map(|(p, j)| self.arg_from_json(j, &p.ty))
+                    .collect();
+                let ok = args.is_some_and(|a| self.host.call(&comp.name.name, &a).is_ok());
+                residual += usize::from(!ok);
+                self.wlog("compensated", json!({ "saga": sid, "of": tool, "key": key, "ok": ok, "via": "recovery" }));
+            }
+            self.wlog("saga_end", json!({ "saga": sid, "outcome": "recovered", "residual": residual }));
+        }
+        self.wal.as_ref().map(|w| w.log.entries[before..].to_vec()).unwrap_or_default()
+    }
+
+    /// A reserva do compensador de `t`: o custo e a latência declarados da ferramenta nomeada em
+    /// `compensable by`.
+    fn comp_reserve(&self, t: &ToolDecl) -> (f64, f64) {
+        if t.class != EffClass::Compensable {
+            return (0.0, 0.0);
+        }
+        t.compensator
+            .as_ref()
+            .and_then(|c| self.tools.get(c.name.as_str()))
+            .map(|c| (c.usd, c.latency))
+            .unwrap_or((0.0, 0.0))
     }
 
     fn binary(&mut self, op: BinOp, l: &Expr, r: &Expr) -> R<Value> {
@@ -965,6 +1274,64 @@ impl<'m> Arx<'m> {
             (BinOp::Ge, Value::Int(a), Value::Int(b)) => Value::Bool(a >= b),
             _ => return Err(rt("R0103", format!("operandos inválidos para `{}`", op.symbol())).into()),
         })
+    }
+
+    /// A primeira obrigação levantada para o `refine` em `site` que o valor `v` viola (o nome da
+    /// ferramenta), ou nenhuma. Percorre o caminho de cada obrigação — campos e elementos de
+    /// lista —, toma os elementos da variante e confere o contrato com os parâmetros ligados aos
+    /// campos.
+    fn lifted_violation(&mut self, site: ath_syntax::Span, v: &Value) -> R<Option<String>> {
+        use ath_syntax::obligations::Step;
+        let lifted = self.obligations.lifted_at(site).to_vec();
+        for l in lifted {
+            let mut cur = vec![v.clone()];
+            for st in &l.path {
+                cur = cur
+                    .into_iter()
+                    .flat_map(|x| match (st, x) {
+                        (Step::Field(var, f), Value::Adt { variant, fields, .. }) if &variant == var => {
+                            fields.into_iter().filter(|(k, _)| k == f).map(|(_, y)| y).collect::<Vec<_>>()
+                        }
+                        (Step::Elem, Value::List(items)) => items,
+                        _ => Vec::new(),
+                    })
+                    .collect();
+            }
+            let Some(t) = self.tools.get(l.tool.as_str()).copied() else { continue };
+            let Some(req) = &t.requires else { continue };
+            for x in cur {
+                let Value::Adt { variant, fields, .. } = x else { continue };
+                if variant != l.variant {
+                    continue;
+                }
+                let scope: Vec<(String, Value)> = l
+                    .binds
+                    .iter()
+                    .filter_map(|(p, f)| fields.iter().find(|(k, _)| k == f).map(|(_, y)| (p.clone(), y.clone())))
+                    .collect();
+                let saved = std::mem::replace(&mut self.scopes, vec![scope]);
+                let r = self.eval(req);
+                self.scopes = saved;
+                self.auth.clear();
+                if !matches!(r?, Value::Bool(true)) {
+                    return Ok(Some(l.tool.clone()));
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    fn call_with_site(&mut self, callee: &Ident, args: &[Expr], site: ath_syntax::Span) -> R<Value> {
+        if self.tools.contains_key(callee.name.as_str()) {
+            let mut vals = Vec::new();
+            for a in args {
+                vals.push(self.eval(a)?);
+            }
+            let t = self.tools[callee.name.as_str()];
+            self.call_site = Some(site);
+            return self.call_tool(t, vals);
+        }
+        self.call(callee, args)
     }
 
     fn call(&mut self, callee: &Ident, args: &[Expr]) -> R<Value> {
@@ -1024,6 +1391,7 @@ impl<'m> Arx<'m> {
 
     fn call_tool(&mut self, t: &'m ToolDecl, args: Vec<Value>) -> R<Value> {
         let committed = std::mem::replace(&mut self.committing, false);
+        let site = self.call_site.take();
         let name = &t.name.name;
         // Defesa em profundidade: confere a capacidade de novo, em runtime.
         let held: BTreeSet<String> =
@@ -1041,10 +1409,30 @@ impl<'m> Arx<'m> {
         if let Some(req) = &t.requires {
             let saved = std::mem::take(&mut self.scopes);
             self.scopes = vec![t.params.iter().zip(&args).map(|(p, v)| (p.name.name.clone(), v.clone())).collect()];
+            self.auth.clear();
             let r = self.eval(req);
             self.scopes = saved;
+            let discharged = site.is_some_and(|s| self.obligations.discharged(s));
             match r? {
-                Value::Bool(true) => {}
+                Value::Bool(true) => {
+                    // a identidade da autorização: a linha da relação confiável que ligou a operação
+                    if !self.auth.is_empty() {
+                        let rows: Vec<serde_json::Value> = std::mem::take(&mut self.auth)
+                            .into_iter()
+                            .map(|(rel, row)| json!({ "relation": rel, "row": row, "id": blake3::hash(row.as_bytes()).to_hex().to_string() }))
+                            .collect();
+                        self.journal.push(self.clock, "authorized", json!({ "tool": name, "by": rows }));
+                    }
+                }
+                Value::Bool(false) if discharged => {
+                    // a obrigação estava demonstrada: um `false` aqui é defeito da análise, não do plano
+                    self.journal.push(self.clock, "contract_refused", json!({ "tool": name, "discharged": true }));
+                    return Err(rt(
+                        "R0631",
+                        format!("obrigação de `{name}` descarregada e violada: defeito da análise"),
+                    )
+                    .into());
+                }
                 Value::Bool(false) => {
                     self.journal.push(self.clock, "contract_refused", json!({ "tool": name }));
                     return Err(rt("R0630", format!("o contrato `requires` de `{name}` recusou os argumentos")).into());
@@ -1052,19 +1440,42 @@ impl<'m> Arx<'m> {
                 _ => return Err(rt("R0109", "contrato não devolveu Bool").into()),
             }
         }
+        // O que o medidor confere (`need` do modelo): o custo da chamada e, se ela vai entrar
+        // num quadro de saga, o pior custo do seu compensador. Fora de saga não há o que compensar.
+        let held = if self.sagas.is_empty() { (0.0, 0.0) } else { self.comp_reserve(t) };
         if !self.obligation {
-            self.meter.reserve(0, t.usd, t.latency, name)?;
+            self.meter.reserve(0, t.usd + held.0, t.latency + held.1, name)?;
         }
         let shown: Vec<String> = args.iter().map(|v| v.show()).collect();
         let key_n = args.iter().find_map(|v| if let Value::Key(k) = v { Some(*k) } else { None });
         let key = key_n.map(|k| format!("k{k}"));
+        // M-III: a intenção é persistida antes do envio
+        if let (Some(k), true) = (key_n, self.wal.is_some()) {
+            let sid = self.saga_ids.last().copied();
+            if let Some(w) = self.wal.as_mut() {
+                w.nth += 1;
+                let n = w.nth;
+                w.ord.insert(k, n);
+            }
+            self.wlog(
+                "intent",
+                json!({ "key": format!("k{k}"), "tool": name, "provider": t.provider.name(), "obligation": "reconcile",
+                        "saga": sid, "args": args.iter().map(|v| v.to_json()).collect::<Vec<_>>() }),
+            );
+            self.wcrash(wal::CrashPoint::Intent, k);
+        }
         let t0 = self.clock;
-        let (out, lat) = match self.host.call(name, &args) {
+        let hr = self.host.call(name, &args);
+        if let Some(k) = key_n {
+            self.wcrash(wal::CrashPoint::Sent, k);
+        }
+        let (out, lat) = match hr {
             Ok(r) => r,
             Err(HostError::Failed(m)) => {
                 // Com chave, a recusa é um estado terminal da obrigação (`Failed`): fica no
                 // journal, como `resolved` fica na reconciliação. Sem chave, nada muda.
                 if let Some(k) = key_n {
+                    self.wclose(k, "failed", "reply");
                     self.journal.push(
                         self.clock,
                         "tool_failed",
@@ -1082,9 +1493,7 @@ impl<'m> Arx<'m> {
                 };
                 // Compensar é total sobre "aconteceu" e "não aconteceu": a operação em aberto entra na saga.
                 if t.class == EffClass::Compensable {
-                    if let Some(frame) = self.sagas.last_mut() {
-                        frame.push(SagaOp { tool: t, args: args.clone() });
-                    }
+                    self.push_op(t, &args, held);
                 }
                 self.journal.push(
                     self.clock,
@@ -1105,9 +1514,10 @@ impl<'m> Arx<'m> {
         self.clock += lat;
         self.meter.settle(0, t.usd, lat);
         if t.class == EffClass::Compensable {
-            if let Some(frame) = self.sagas.last_mut() {
-                frame.push(SagaOp { tool: t, args: args.clone() });
-            }
+            self.push_op(t, &args, held);
+        }
+        if let Some(k) = key_n {
+            self.wclose(k, "done", "reply");
         }
         self.journal.push(
             self.clock,

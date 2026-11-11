@@ -252,6 +252,10 @@ pub struct Tool {
     pub undo_fails: bool,
     /// ferramenta com chave (`k: own IdemKey`) e o seu provedor
     pub key: Option<KeySpec>,
+    /// o custo declarado da chamada, em 1/1024 US$ (exato em ponto flutuante)
+    pub usd: u64,
+    /// o custo declarado do compensador `u<i>`, na mesma unidade
+    pub cusd: u64,
 }
 
 /// Sonda de célula: `lo ≤ w[cell] ≤ hi`.
@@ -282,6 +286,8 @@ pub struct Prog {
     pub fuel: usize,
     /// o valor com que o tratador encerra o evento depois de transferir a obrigação
     pub hval: V,
+    /// o limite em US$ do agente, em 1/1024 US$; `None` é o 1.0 de sempre
+    pub limit: Option<u64>,
 }
 
 impl Prog {
@@ -842,7 +848,8 @@ fn generate_with(seed: u64, sagas: bool, keyed: bool) -> Prog {
         .map(|_| {
             let effect = rng.below(effects);
             let arg = if rng.chance(3, 4) { Ty::Int } else { Ty::Bool };
-            let mut t = Tool { effect, arg, cell: None, compensable: false, undo_fails: false, key: None };
+            let mut t =
+                Tool { effect, arg, cell: None, compensable: false, undo_fails: false, key: None, usd: 0, cusd: 0 };
             if sagas && t.arg == Ty::Int && rng.chance(3, 4) {
                 t.cell = Some(rng.below(ncells));
                 t.compensable = rng.chance(4, 5);
@@ -864,6 +871,8 @@ fn generate_with(seed: u64, sagas: bool, keyed: bool) -> Prog {
                 compensable: true,
                 undo_fails: rng.chance(1, 3),
                 key: None,
+                usd: 0,
+                cusd: 0,
             });
         }
     }
@@ -876,7 +885,16 @@ fn generate_with(seed: u64, sagas: bool, keyed: bool) -> Prog {
             let cell = rng.chance(3, 4).then(|| rng.below(ncells));
             let compensable = cell.is_some() && rng.chance(1, 2);
             let undo_fails = compensable && rng.chance(1, 3);
-            tools.push(Tool { effect: i, arg: Ty::Int, cell, compensable, undo_fails, key: Some(spec) });
+            tools.push(Tool {
+                effect: i,
+                arg: Ty::Int,
+                cell,
+                compensable,
+                undo_fails,
+                key: Some(spec),
+                usd: 0,
+                cusd: 0,
+            });
         }
     }
     let probes: Vec<Probe> = if sagas {
@@ -938,7 +956,34 @@ fn generate_with(seed: u64, sagas: bool, keyed: bool) -> Prog {
     } else {
         (0, V::Unit)
     };
-    Prog { seed, effects, tools, policies, caps, oracle, exp, ret, probes, fuel, hval }
+    Prog { seed, effects, tools, policies, caps, oracle, exp, ret, probes, fuel, hval, limit: None }
+}
+
+/// O programa da semente `seed` com custos (M-IV): as mesmas sagas (com chaves nas sementes
+/// ímpares), cada ferramenta e cada compensador com um custo exato em 1/1024 US$, e um limite
+/// sorteado na faixa em que o medidor ora deixa tudo rodar, ora recusa antes do efeito, ora
+/// fica no fio. Os custos vêm de um gerador à parte: o programa é o mesmo das outras suítes.
+pub fn generate_paid(seed: u64) -> Prog {
+    let mut p = if seed % 2 == 1 { generate_keyed(seed) } else { generate_saga(seed) };
+    let mut rng = Rng::new(seed ^ 0x5eed_c057);
+    for t in &mut p.tools {
+        t.usd = rng.below(9) as u64;
+        if t.compensable {
+            t.cusd = 1 + rng.below(8) as u64;
+        }
+    }
+    p.limit = Some(rng.below(41) as u64);
+    p
+}
+
+/// `k/1024` como literal decimal exato.
+pub fn usd_lit(k: u64) -> String {
+    let x = k as f64 / 1024.0;
+    if k == 0 {
+        "0.0".into()
+    } else {
+        format!("{x}")
+    }
 }
 
 // ------------------------------------------------------------------ JSON para o `ath-lean-eval`
@@ -997,7 +1042,7 @@ impl Prog {
 
     /// O programa no formato de `lean/Aletheia/Exec.lean`.
     pub fn to_json(&self) -> Json {
-        json!({
+        let mut out = json!({
             "effects": (0..self.effects).map(Prog::effect_name).collect::<Vec<_>>(),
             "tools": self.tools.iter().enumerate().map(|(i, t)| {
                 let mut j = json!({
@@ -1007,6 +1052,12 @@ impl Prog {
                 if let Some(k) = &t.key {
                     j["keyed"] = json!(true);
                     j["provider"] = json!(k.provider.name());
+                }
+                if t.usd > 0 {
+                    j["usd"] = json!(t.usd);
+                }
+                if t.cusd > 0 {
+                    j["cusd"] = json!(t.cusd);
                 }
                 j
             }).collect::<Vec<_>>(),
@@ -1021,7 +1072,11 @@ impl Prog {
             // por ferramenta com chave), não ao nome da chave
             "replies": self.key_runs().iter().map(|(t, _, r)| json!({ "tool": t, "replies": r.replies })).collect::<Vec<_>>(),
             "applied": self.key_runs().iter().filter(|(_, _, r)| r.applied).map(|(t, _, _)| t).collect::<Vec<_>>(),
-        })
+        });
+        if let Some(l) = self.limit {
+            out["limit"] = json!(l);
+        }
+        out
     }
 
     /// O mundo dos runtimes, de latência zero: cada ferramenta sem célula é um sumidouro; as
@@ -1270,32 +1325,35 @@ impl Prog {
         for (i, t) in self.tools.iter().enumerate() {
             let e = Prog::effect_name(t.effect);
             let a = surface_ty(&t.arg);
+            // os custos (M-IV), só quando há: os programas sem custo continuam byte a byte iguais
+            let cu = if t.usd > 0 { format!(" usd {}", usd_lit(t.usd)) } else { String::new() };
+            let cc = if t.cusd > 0 { format!(" usd {}", usd_lit(t.cusd)) } else { String::new() };
             if let Some(k) = &t.key {
                 let pv = k.provider.name();
                 if t.compensable {
                     s.push_str(&format!(
-                        "tool t{i}(c: Cap[{e}], v: {a} ^ Endorsed, k: own IdemKey) -> Unit ! {{ {e} }} compensable by u{i} provider {pv} latency 0.0\n"
+                        "tool t{i}(c: Cap[{e}], v: {a} ^ Endorsed, k: own IdemKey) -> Unit ! {{ {e} }} compensable by u{i} provider {pv} latency 0.0{cu}\n"
                     ));
                     s.push_str(&format!(
-                        "tool u{i}(c: Cap[{e}], v: {a} ^ Endorsed, k: own IdemKey) -> Unit ! {{ {e} }} reversible provider idempotent latency 0.0\n"
+                        "tool u{i}(c: Cap[{e}], v: {a} ^ Endorsed, k: own IdemKey) -> Unit ! {{ {e} }} reversible provider idempotent latency 0.0{cc}\n"
                     ));
                 } else {
                     s.push_str(&format!(
-                        "tool t{i}(c: Cap[{e}], v: {a} ^ Endorsed, k: own IdemKey) -> Unit ! {{ {e} }} reversible provider {pv} latency 0.0\n"
+                        "tool t{i}(c: Cap[{e}], v: {a} ^ Endorsed, k: own IdemKey) -> Unit ! {{ {e} }} reversible provider {pv} latency 0.0{cu}\n"
                     ));
                 }
                 continue;
             }
             if t.compensable {
                 s.push_str(&format!(
-                    "tool t{i}(c: Cap[{e}], v: {a} ^ Endorsed) -> Unit ! {{ {e} }} compensable by u{i} latency 0.0\n"
+                    "tool t{i}(c: Cap[{e}], v: {a} ^ Endorsed) -> Unit ! {{ {e} }} compensable by u{i} latency 0.0{cu}\n"
                 ));
                 s.push_str(&format!(
-                    "tool u{i}(c: Cap[{e}], v: {a} ^ Endorsed) -> Unit ! {{ {e} }} reversible latency 0.0\n"
+                    "tool u{i}(c: Cap[{e}], v: {a} ^ Endorsed) -> Unit ! {{ {e} }} reversible latency 0.0{cc}\n"
                 ));
             } else {
                 s.push_str(&format!(
-                    "tool t{i}(c: Cap[{e}], v: {a} ^ Endorsed) -> Unit ! {{ {e} }} reversible latency 0.0\n"
+                    "tool t{i}(c: Cap[{e}], v: {a} ^ Endorsed) -> Unit ! {{ {e} }} reversible latency 0.0{cu}\n"
                 ));
             }
         }
@@ -1323,8 +1381,9 @@ impl Prog {
         if calls {
             row.push("TimeoutUnknown".into());
         }
+        let lim = self.limit.map_or("1.0".to_string(), usd_lit);
         s.push_str(&format!(
-            "\nagent A({}) budget [tok <= 100000000, usd <= 1.0, wall <= 1000.0] {{\n  on go() -> {} ! {{ {} }} ",
+            "\nagent A({}) budget [tok <= 100000000, usd <= {lim}, wall <= 1000.0] {{\n  on go() -> {} ! {{ {} }} ",
             params.join(", "),
             surface_ty(&self.ret),
             row.join(", ")

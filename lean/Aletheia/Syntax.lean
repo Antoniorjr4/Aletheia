@@ -230,6 +230,17 @@ structure Sig where
   /-- o tipo do valor com que o tratador de `TimeoutUnknown` encerra o evento (o tipo de
   retorno do agente, como em `handle timeout_unknown(p) -> T`) -/
   ret   : Ty := .unit
+  /-- o pior custo declarado do compensador de cada ferramenta `compensable` (o custo da
+  ferramenta nomeada em `compensable by …`). O ARX o reserva junto com a chamada, para que a
+  recuperação de uma falha nunca encontre o orçamento esgotado (Rev13, M-IV) -/
+  ccost : Nat → Budget := fun _ => 0
+
+/-- O custo contabilizado de uma ferramenta: o dela e, se ela entra no registro da saga, o
+pior custo do seu compensador. É o que o tipo gradua, o que o λ_Ath debita e o que o ARX
+reserva antes de chamar: uma execução que cabe neste custo cabe no orçamento mesmo quando
+precisa compensar. -/
+def Sig.acost (S : Sig) (t : Nat) : Budget :=
+  S.cost t + (if S.compensable t then S.ccost t else 0)
 
 /-- O oráculo de inferência: `O i m t v` é a resposta da `i`-ésima chamada ao modelo `m`,
 pedida no tipo `t`, com o prompt `v`. Ele é arbitrário e, portanto, adversarial. -/

@@ -34,7 +34,7 @@ def amplified : Exp :=
 
 /-- **Bem tipado.** O argumento da ação tem rótulo `E ⊓ T = E`: endossado. -/
 theorem amplified_typed :
-    HasType S Γ .T amplified .unit .T ((0 + S.mcost 0) + ((0 + 0) + ((0 + 0) + S.cost 0))) :=
+    HasType S Γ .T amplified .unit .T ((0 + S.mcost 0) + ((0 + 0) + ((0 + 0) + S.acost 0))) :=
   .let_ (.infer (.var rfl))
     (.let_ (.endorse (by decide) (.var rfl) (.val .int))
       (.act (by decide) rfl (by decide) (.prim (.var rfl) (.val .int)) (by decide)))

@@ -1612,6 +1612,8 @@ fn ktool(cap: usize, provider: lambda_ath::Prov, faults: Vec<(u32, &'static str)
         compensable: false,
         undo_fails: false,
         key: Some(lambda_ath::KeySpec { cap, provider, faults, unknown }),
+        usd: 0,
+        cusd: 0,
     }
 }
 
@@ -1638,6 +1640,7 @@ fn key_prog(
         probes,
         fuel,
         hval,
+        limit: None,
     }
 }
 
@@ -1815,7 +1818,16 @@ fn keyed_scenarios_are_deterministic_on_the_three_backends() {
                 8,
                 vec![
                     ktool(0, Prov::Queryable, vec![(1, "timeout_lost")], 5),
-                    Tool { effect: 1, arg: Ty::Int, cell: Some(1), compensable: true, undo_fails: true, key: None },
+                    Tool {
+                        effect: 1,
+                        arg: Ty::Int,
+                        cell: Some(1),
+                        compensable: true,
+                        undo_fails: true,
+                        key: None,
+                        usd: 0,
+                        cusd: 0,
+                    },
                 ],
                 vec![cell(1, 0)],
                 saga(let_(E::Act(1, 0, Box::new(int(3))), let_(call(0, 2, 5), int(0)))),
@@ -1916,4 +1928,766 @@ agent A(bank: Cap[Bank.Transfer]) budget [usd <= 1.0, wall <= 100.0] {
     let report: Json = serde_json::from_str(&std::fs::read_to_string(&r).unwrap()).unwrap();
     assert_eq!(report["error"]["code"].as_str(), Some("R0630"), "{}", String::from_utf8_lossy(&out.stderr));
     first_diff("contratos", "ARX × Python (journal completo)", &full, &std::fs::read_to_string(&j).unwrap());
+}
+
+// ------------------------------------------------------------------ M-IV: orçamento com compensações pagas
+
+/// O `athc` sem o estrato E6: o programa como o ARX o executaria se o orçamento estático não
+/// tivesse sido conferido. É assim que o diferencial exercita o medidor do runtime também em
+/// programas que o `athc` recusaria (B02xx): o invariante `arx_budget_closed` não depende de
+/// tipagem.
+fn compile_unbudgeted(src: &str) -> Compiled {
+    let module = ath_syntax::parse_module(src).unwrap_or_else(|e| panic!("parse: {}\n{src}", e.msg));
+    let mut check = ath_check::check_module(&module);
+    check.diags.retain(|d| !d.code.starts_with("B02"));
+    assert!(
+        check.ok(),
+        "o athc recusou por outro motivo: {:?}\n{src}",
+        check.diags.iter().map(|d| (&d.code, &d.msg)).collect::<Vec<_>>()
+    );
+    let codex = ath_codex::address(&module).unwrap();
+    Compiled { module, check, codex }
+}
+
+/// O que cada backend mediu num programa com custos.
+#[derive(Debug)]
+struct Paid {
+    /// gasto do ARX, do Python e do modelo do ARX em Lean, em 1/1024 US$
+    arx: u64,
+    py: u64,
+    model: u64,
+    /// a reserva que sobrou no modelo no fim (os quadros fecharam: zero)
+    model_resv: u64,
+    /// o gasto contabilizado pelo λ_Ath, se ele terminou com valor ou falha capturável
+    eval: Option<u64>,
+    eval_budget: bool,
+    model_outcome: String,
+    arx_err: Option<String>,
+    py_err: Option<String>,
+    arx_core: String,
+    py_core: String,
+    lean_arx: Option<String>,
+    lean_run: Option<String>,
+    full: String,
+}
+
+fn units(x: f64) -> u64 {
+    let u = x * 1024.0;
+    assert!((u - u.round()).abs() < 1e-9 && u >= 0.0, "gasto fora da grade de 1/1024 US$: {x}");
+    u.round() as u64
+}
+
+fn paid_run(tag: &str, p: &lambda_ath::Prog) -> Paid {
+    let src = p.to_ath();
+    let c = compile_unbudgeted(&src);
+    let (core, world, models) = (p.to_json(), p.world(), p.models());
+    let provider = Box::new(Scripted::from_json(&models).unwrap());
+    let mut arx = Arx::new(&c.module, Box::new(SimWorld::from_json(&world).unwrap()), provider);
+    arx.contracts = athc::contract_hashes(&c);
+    let arx_err = match arx.run("A", "go", vec![]) {
+        Ok(_) => None,
+        Err(e) if ["R0600", "R0611", "R0801"].contains(&e.code.as_str()) => Some(e.code.clone()),
+        Err(e) => panic!("{tag}: o ARX abortou ({} {})\n{src}", e.code, e.msg),
+    };
+    let arx_spent = units(arx.meter.usd);
+    assert!(arx.meter.held_usd.abs() < 1e-12, "{tag}: reserva do ARX não liberada: {}", arx.meter.held_usd);
+    let arx_core =
+        arx::journal::Journal::core_view_with(&arx.journal.entries, &athc::compensable_tools(&c.module)).to_jsonl();
+    let full = arx.journal.to_jsonl();
+    // Python
+    let dir = scratch();
+    let file = tag.replace(|ch: char| !ch.is_ascii_alphanumeric(), "_");
+    let py = ath_emit::python(&c.module, &c.check, &c.codex, &format!("{file}.ath")).expect("emissão");
+    let (pp, w, m, j, cj, r) = (
+        dir.join(format!("{file}.py")),
+        dir.join(format!("{file}.world.json")),
+        dir.join(format!("{file}.models.json")),
+        dir.join(format!("{file}.journal.jsonl")),
+        dir.join(format!("{file}.core.jsonl")),
+        dir.join(format!("{file}.report.json")),
+    );
+    std::fs::write(&pp, py).unwrap();
+    std::fs::write(&w, world.to_string()).unwrap();
+    std::fs::write(&m, models.to_string()).unwrap();
+    let out = Command::new("python3")
+        .env("PYTHONPATH", root().join("runtimes/python"))
+        .args(["-m", "aletheia_runtime", "run"])
+        .arg(&pp)
+        .arg("--world")
+        .arg(&w)
+        .arg("--models")
+        .arg(&m)
+        .args(["--provider", "scripted", "--agent", "A", "--on", "go", "--journal"])
+        .arg(&j)
+        .arg("--core-journal")
+        .arg(&cj)
+        .arg("--report")
+        .arg(&r)
+        .output()
+        .expect("python3");
+    let report: Json = serde_json::from_str(&std::fs::read_to_string(&r).unwrap_or_else(|_| {
+        panic!("{tag}: o Python não escreveu o relatório\n{}", String::from_utf8_lossy(&out.stderr))
+    }))
+    .unwrap();
+    let py_err = report["error"]["code"].as_str().map(String::from);
+    let py_spent = units(report["spent"]["usd"].as_f64().unwrap());
+    let py_core = std::fs::read_to_string(&cj).unwrap();
+    // Lean
+    let lean = lean_eval().expect("o diferencial do M-IV precisa do avaliador do Lean");
+    let pj = dir.join(format!("{file}.core.json"));
+    std::fs::write(&pj, core.to_string()).unwrap();
+    let call = |mode: &str| Command::new(&lean).arg(mode).arg(&pj).output().unwrap();
+    let mo = call("meter");
+    assert!(mo.status.success(), "{tag}: meter: {}", String::from_utf8_lossy(&mo.stderr));
+    let meter: Json = serde_json::from_slice(&mo.stdout).unwrap();
+    let ok = |o: std::process::Output| o.status.success().then(|| String::from_utf8(o.stdout).unwrap());
+    Paid {
+        arx: arx_spent,
+        py: py_spent,
+        model: meter["arx"]["spent"].as_u64().unwrap(),
+        model_resv: meter["arx"]["resv"].as_u64().unwrap(),
+        eval: meter["eval"]["spent"].as_u64(),
+        eval_budget: meter["eval"]["outcome"] == "budget",
+        model_outcome: meter["arx"]["outcome"].as_str().unwrap().to_string(),
+        arx_err,
+        py_err,
+        arx_core,
+        py_core,
+        lean_arx: ok(call("arx")),
+        lean_run: ok(call("run")),
+        full,
+    }
+}
+
+/// **M-IV, o diferencial do medidor.** Programas gerados com sagas (e chaves nas sementes
+/// ímpares), cada ferramenta e cada compensador com custo positivo exato, e um limite sorteado.
+/// Para cada um:
+///
+/// * o gasto do modelo do ARX em Lean, do ARX e do Python coincidem exatamente, e nenhum passa
+///   do limite — inclusive quando a saga falha e liquida compensadores pagos;
+/// * a reserva termina zerada nos três;
+/// * a vista do núcleo do ARX e a do Python coincidem byte a byte, e com a do modelo quando o
+///   modelo termina (o ARX recusa no topo com `R0801` exatamente quando o modelo recusa);
+/// * quando o λ_Ath termina sem erro de orçamento, o journal dele é o do ARX e o gasto do ARX não
+///   passa do contabilizado (`arx_refines`).
+///
+/// A cobertura exige compensações pagas, recusas pela reserva e execuções no fio do limite.
+/// `ATH_PAID_N` muda o número de sementes (padrão 200).
+#[test]
+fn paid_compensation_meter_agrees_and_never_exceeds_the_limit() {
+    if lean_eval().is_none() {
+        return;
+    }
+    let n: u64 = std::env::var("ATH_PAID_N").ok().and_then(|v| v.parse().ok()).unwrap_or(200);
+    let mut seen = std::collections::BTreeMap::<&str, usize>::new();
+    for seed in 0..n {
+        let p = lambda_ath::generate_paid(seed);
+        p.check().unwrap_or_else(|e| panic!("semente {seed}: {e}"));
+        let lim = p.limit.unwrap();
+        let tag = format!("paid/{seed}");
+        let r = paid_run(&tag, &p);
+        assert_eq!(r.arx_err, r.py_err, "{tag}: desfecho do ARX × Python");
+        assert_eq!(
+            (r.model, r.arx, r.py),
+            (r.model, r.model, r.model),
+            "{tag}: gasto modelo × ARX × Python\n{}",
+            p.to_ath()
+        );
+        assert!(r.model <= lim, "{tag}: o gasto {} passou do limite {lim}", r.model);
+        assert_eq!(r.model_resv, 0, "{tag}: a reserva do modelo não fechou");
+        first_diff(&tag, "ARX × Python (vista do núcleo)", &r.arx_core, &r.py_core);
+        if r.arx_err.as_deref() == Some("R0801") {
+            assert_eq!(r.model_outcome, "other", "{tag}: o ARX recusou pelo orçamento e o modelo não");
+            assert!(r.lean_arx.is_none(), "{tag}: o modelo produziu journal de um desfecho recusado");
+            *seen.entry("recusa no topo pela reserva").or_default() += 1;
+        } else {
+            let model =
+                r.lean_arx.as_ref().unwrap_or_else(|| panic!("{tag}: o modelo não terminou ({})", r.model_outcome));
+            first_diff(&tag, "modelo Lean do ARX × ARX (vista do núcleo)", model, &r.arx_core);
+        }
+        if r.eval_budget {
+            *seen.entry("λ_Ath recusa antes (custo contabilizado)").or_default() += 1;
+        } else if let Some(e) = r.eval {
+            assert!(r.model <= e && e <= lim, "{tag}: ARX {} ≤ λ_Ath {e} ≤ limite {lim}", r.model);
+            if let Some(run) = &r.lean_run {
+                first_diff(&tag, "Lean × ARX (journal do núcleo)", run, &r.arx_core);
+            }
+            *seen.entry("λ_Ath termina").or_default() += 1;
+        }
+        let mut paid_comp = false;
+        for l in r.full.lines() {
+            let e: Json = serde_json::from_str(l).unwrap();
+            match e["kind"].as_str().unwrap() {
+                "compensate" if e["detail"]["ok"] == json!(true) => {
+                    let comp = &p.tools[e["detail"]["of"].as_str().unwrap()[1..].parse::<usize>().unwrap()];
+                    paid_comp |= comp.cusd > 0;
+                }
+                "saga_abort" if e["detail"]["reason"].as_str().is_some_and(|x| x.starts_with("R0801")) => {
+                    *seen.entry("recusa pela reserva dentro da saga").or_default() += 1;
+                }
+                "resolved" if e["detail"]["status"] == "failed" => {
+                    *seen.entry("R0611 (reserva liberada)").or_default() += 1;
+                }
+                "compensation_overrun" => panic!("{tag}: compensador acima do declarado"),
+                _ => {}
+            }
+        }
+        if paid_comp {
+            *seen.entry("compensação paga").or_default() += 1;
+        }
+        if r.model == lim && lim > 0 {
+            *seen.entry("no fio do limite").or_default() += 1;
+        }
+    }
+    eprintln!("M-IV: {n} programas · {seen:?}");
+    for (k, den) in
+        [("compensação paga", 20), ("recusa no topo pela reserva", 20), ("λ_Ath termina", 4), ("no fio do limite", 50)]
+    {
+        assert!(seen.get(k).copied().unwrap_or(0) * den >= n as usize, "cobertura fraca de `{k}`: {seen:?}");
+    }
+}
+
+/// **O contraexemplo da Rev12, nos runtimes.** `atomic { t0(c, 1); await p0 } recover p0`, com
+/// `t0` de US$ 1 compensável por `u0` de US$ 1 e uma sonda que nunca confirma: na Rev12 o ARX
+/// terminava em US$ 2 sob limite US$ 1 (`Arx.Counter.comp_cost_breaks_budget`). Agora, sob
+/// limite 1, o `athc` recusa (B0202) e, sem a conferência estática, o medidor recusa antes do
+/// efeito: nada é feito, nada é gasto. Sob limite 2 a saga compensa e os três param em 2.
+#[test]
+fn rev12_paid_compensation_counterexample_is_closed() {
+    if lean_eval().is_none() {
+        return;
+    }
+    use lambda_ath::{Probe, Tool, Ty, E, V};
+    let mk = |limit: u64| {
+        let mut p = key_prog(
+            0,
+            vec![Tool {
+                effect: 0,
+                arg: Ty::Int,
+                cell: Some(0),
+                compensable: true,
+                undo_fails: false,
+                key: None,
+                usd: 1024,
+                cusd: 1024,
+            }],
+            vec![Probe { cell: 0, lo: 7, hi: 7 }],
+            E::Atomic(
+                Box::new(E::Let(Box::new(E::Act(0, 0, Box::new(E::Val(V::Int(1))))), Box::new(E::Await(0)))),
+                0,
+                Box::new(E::Val(V::Unit)),
+                Box::new(E::Val(V::Unit)),
+            ),
+            Ty::Unit,
+            0,
+            V::Unit,
+        );
+        p.limit = Some(limit);
+        p
+    };
+    let p1 = mk(1024);
+    let diags = compile(&p1.to_ath()).err().expect("o athc precisa recusar o limite 1");
+    assert!(diags.iter().any(|d| d.code == "B0202"), "{:?}", diags.iter().map(|d| &d.code).collect::<Vec<_>>());
+    let r1 = paid_run("rev12/limite-1", &p1);
+    assert_eq!((r1.model, r1.arx, r1.py), (0, 0, 0), "nada é gasto: {r1:?}");
+    assert!(r1.eval_budget, "o λ_Ath recusa pelo custo contabilizado (ação + estorno = 2)");
+    assert!(r1.full.contains("R0801"), "o medidor do ARX recusa pela reserva:\n{}", r1.full);
+    let p2 = mk(2048);
+    assert!(compile(&p2.to_ath()).is_ok(), "sob limite 2 o programa é aceito");
+    let r2 = paid_run("rev12/limite-2", &p2);
+    assert_eq!((r2.model, r2.arx, r2.py, r2.eval), (2048, 2048, 2048, Some(2048)), "{r2:?}");
+    first_diff("rev12/limite-2", "modelo × ARX", r2.lean_arx.as_ref().unwrap(), &r2.arx_core);
+    first_diff("rev12/limite-2", "λ_Ath × ARX", r2.lean_run.as_ref().unwrap(), &r2.arx_core);
+    assert!(r2.arx_core.contains("\"undo\""), "a saga compensou");
+}
+
+// ------------------------------------------------------------------ M-III: WAL, queda e recuperação
+
+/// As chamadas `(ferramenta, chave)` que um host recebeu.
+type Calls = std::rc::Rc<std::cell::RefCell<Vec<(String, Option<u64>)>>>;
+
+/// O host da recuperação, que registra cada chamada `(ferramenta, chave)`: a recuperação só pode
+/// reenviar a um provedor `idempotent`.
+struct Counting<'a> {
+    inner: Box<dyn arx::host::Host + 'a>,
+    calls: Calls,
+}
+
+impl arx::host::Host for Counting<'_> {
+    fn call(&mut self, tool: &str, args: &[Value]) -> Result<(Value, f64), arx::host::HostError> {
+        let key = args.iter().find_map(|v| if let Value::Key(k) = v { Some(*k) } else { None });
+        self.calls.borrow_mut().push((tool.to_string(), key));
+        self.inner.call(tool, args)
+    }
+    fn status(&mut self, tool: &str, key: u64) -> (arx::host::Status, f64) {
+        self.inner.status(tool, key)
+    }
+    fn summary(&self) -> Vec<String> {
+        self.inner.summary()
+    }
+    fn applied(&self, tool: &str, key: u64) -> Option<bool> {
+        self.inner.applied(tool, key)
+    }
+}
+
+fn quiet_crashes() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        let prev = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            let msg = info.payload().downcast_ref::<String>().map(String::as_str).unwrap_or("");
+            if !msg.starts_with(arx::wal::CRASH) {
+                prev(info);
+            }
+        }));
+    });
+}
+
+/// Uma execução com queda injetada e o reinício: o WAL que sobrou, o WAL depois da recuperação,
+/// o host que sobreviveu (o provedor) e as chamadas da recuperação. `None` se o programa
+/// terminou antes de chegar ao ponto de queda.
+#[allow(clippy::type_complexity)]
+fn crash_and_recover<'m>(
+    c: &'m Compiled,
+    p: &lambda_ath::Prog,
+    at: arx::wal::CrashPoint,
+    nth: u32,
+) -> Option<(arx::journal::Journal, arx::journal::Journal, Box<dyn arx::host::Host + 'm>, Vec<(String, Option<u64>)>)> {
+    quiet_crashes();
+    let provider = Box::new(Scripted::from_json(&p.models()).unwrap());
+    let mut a = Arx::new(&c.module, Box::new(SimWorld::from_json(&p.world()).unwrap()), provider);
+    let mut w = arx::wal::Wal::memory();
+    w.crash = Some((at, nth));
+    a.wal = Some(w);
+    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = a.run("A", "go", vec![]);
+    }));
+    match r {
+        Ok(()) => return None,
+        Err(e) => {
+            let msg = e.downcast_ref::<String>().cloned().unwrap_or_default();
+            assert!(msg.starts_with(arx::wal::CRASH), "pânico inesperado: {msg}");
+        }
+    }
+    // o reinício: um processo novo, o WAL persistido e o mesmo provedor remoto
+    let host = std::mem::replace(&mut a.host, Box::new(SimWorld::from_json(&json!({})).unwrap()));
+    let crashed = arx::journal::Journal::from_entries(a.wal.take().unwrap().log.entries);
+    let calls = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let provider = Box::new(Scripted::from_json(&p.models()).unwrap());
+    let mut b = Arx::new(&c.module, Box::new(Counting { inner: host, calls: calls.clone() }), provider);
+    b.wal = Some(arx::wal::Wal::resume(arx::journal::Journal::from_entries(crashed.entries.clone())));
+    b.recover(3);
+    let after = arx::journal::Journal::from_entries(b.wal.take().unwrap().log.entries);
+    let host = std::mem::replace(&mut b.host, Box::new(SimWorld::from_json(&json!({})).unwrap()));
+    let calls = calls.borrow().clone();
+    Some((crashed, after, host, calls))
+}
+
+/// **M-III, a queda em cada ponto.** Programas gerados com chamadas com chave (os três
+/// provedores, falhas na chamada e nos reenvios, consultas inconclusivas) e sagas, com a queda do
+/// processo injetada em cada ponto do protocolo — depois de persistir a intenção, depois do envio,
+/// com o desfecho conhecido e ainda não persistido, e depois de persisti-lo — de cada uma das
+/// primeiras operações com chave. Depois do reinício e da recuperação:
+///
+/// * toda intenção tem **exatamente um** desfecho (`close` ou `escalate`): nenhuma obrigação some;
+/// * `close done` só com o efeito presente no provedor e `close failed` só com ele ausente;
+/// * a recuperação só reenvia ao provedor `idempotent`; `queryable` é consultado e `opaque`, se a
+///   queda o deixou em aberto, é escalado;
+/// * toda saga interrompida é encerrada, e nenhuma operação refutada é compensada.
+///
+/// `ATH_WAL_N` muda o número de sementes (padrão 120).
+#[test]
+fn wal_crash_recovery_never_loses_an_obligation() {
+    use arx::wal::{CrashPoint, WalState};
+    let n: u64 = std::env::var("ATH_WAL_N").ok().and_then(|v| v.parse().ok()).unwrap_or(120);
+    let mut seen = std::collections::BTreeMap::<String, usize>::new();
+    for seed in 0..n {
+        let p = lambda_ath::generate_keyed(seed);
+        let src = p.to_ath();
+        let c = compile(&src).unwrap_or_else(|d| panic!("{seed}: {:?}", d.iter().map(|x| &x.code).collect::<Vec<_>>()));
+        let prov: std::collections::HashMap<String, String> = c
+            .module
+            .items
+            .iter()
+            .filter_map(|i| match i {
+                ath_syntax::ast::Item::Tool(t) => Some((t.name.name.clone(), t.provider.name().to_string())),
+                _ => None,
+            })
+            .collect();
+        for at in [CrashPoint::Intent, CrashPoint::Sent, CrashPoint::Confirmed, CrashPoint::Closed] {
+            for nth in 1..=3 {
+                let tag = format!("wal/{seed}/{}/{nth}", at.name());
+                let Some((crashed, after, host, calls)) = crash_and_recover(&c, &p, at, nth) else { continue };
+                *seen.entry(format!("queda em {}", at.name())).or_default() += 1;
+                assert_eq!(arx::journal::Journal::verify(&after.entries), Ok(()), "{tag}: cadeia do WAL");
+                let before = WalState::of(&crashed);
+                let st = WalState::of(&after);
+                assert!(st.open().is_empty(), "{tag}: intenções em aberto depois da recuperação: {:?}", st.open());
+                for (k, d) in &st.intents {
+                    let outs = after
+                        .entries
+                        .iter()
+                        .filter(|e| {
+                            matches!(e["kind"].as_str(), Some("close" | "escalate")) && e["detail"]["key"] == json!(k)
+                        })
+                        .count();
+                    assert_eq!(outs, 1, "{tag}: {k} tem {outs} desfechos\n{}", after.to_jsonl());
+                    let tool = d["tool"].as_str().unwrap();
+                    let kn: u64 = k[1..].parse().unwrap();
+                    let truth = host.applied(tool, kn).unwrap();
+                    match st.outcome[k].as_str() {
+                        "done" => assert!(truth, "{tag}: {k} fechada `done` sem o efeito no provedor"),
+                        "failed" => assert!(!truth, "{tag}: {k} fechada `failed` com o efeito no provedor"),
+                        _ => {}
+                    }
+                    let was_open = before.open().iter().any(|(x, _)| x == k);
+                    if was_open {
+                        let p = prov[tool].as_str();
+                        *seen.entry(format!("recuperada ({p} → {})", st.outcome[k])).or_default() += 1;
+                        if p != "idempotent" {
+                            assert!(
+                                !calls.iter().any(|(t, key)| t == tool && *key == Some(kn)),
+                                "{tag}: a recuperação reenviou {k} a um provedor {p}"
+                            );
+                        }
+                        if p == "opaque" {
+                            assert_eq!(st.outcome[k], "escalated", "{tag}: {k} opaco fechado sem evidência");
+                        }
+                    }
+                }
+                for (sid, sg) in &st.sagas {
+                    assert!(sg.ended, "{tag}: saga {sid} sem encerramento");
+                    if !before.sagas.get(sid).is_some_and(|s| s.ended) {
+                        *seen.entry("saga interrompida encerrada".into()).or_default() += 1;
+                    }
+                }
+                for e in &after.entries {
+                    if e["kind"] == "compensated" {
+                        if let Some(k) = e["detail"]["key"].as_str() {
+                            assert_ne!(
+                                st.outcome.get(k).map(String::as_str),
+                                Some("failed"),
+                                "{tag}: {k} refutada e compensada"
+                            );
+                        }
+                    }
+                    if e["kind"] == "saga_unlog" && e["seq"].as_u64().unwrap_or(0) as usize >= crashed.entries.len() {
+                        *seen.entry("refutada fora do registro na recuperação".into()).or_default() += 1;
+                    }
+                }
+            }
+        }
+    }
+    eprintln!("M-III: {n} programas · {seen:?}");
+    for k in
+        ["queda em intent", "queda em sent", "queda em confirmed", "queda em closed", "saga interrompida encerrada"]
+    {
+        assert!(seen.get(k).copied().unwrap_or(0) >= 10, "cobertura fraca de `{k}`: {seen:?}");
+    }
+    assert!(seen.keys().any(|k| k.contains("opaque → escalated")), "{seen:?}");
+    assert!(seen.keys().any(|k| k.contains("idempotent → done")), "{seen:?}");
+    assert!(seen.keys().any(|k| k.contains("queryable → failed")), "{seen:?}");
+}
+
+/// **M-III, ARX × Python na recuperação.** Os mesmos programas e os mesmos pontos de queda no
+/// runtime Python emitido: o WAL depois da recuperação é o mesmo, byte a byte (as intenções, os
+/// desfechos com evidência, as escaladas, as compensações das sagas interrompidas, a cadeia).
+/// `ATH_WAL_PY_N` muda o número de sementes (padrão 40).
+#[test]
+fn wal_recovery_is_the_same_in_arx_and_python() {
+    use arx::wal::CrashPoint;
+    let n: u64 = std::env::var("ATH_WAL_PY_N").ok().and_then(|v| v.parse().ok()).unwrap_or(40);
+    let dir = scratch();
+    let mut compared = 0;
+    for seed in 0..n {
+        let p = lambda_ath::generate_keyed(seed);
+        let src = p.to_ath();
+        let c = compile(&src).unwrap();
+        let py = ath_emit::python(&c.module, &c.check, &c.codex, "wal.ath").expect("emissão");
+        let (pp, w, m) = (
+            dir.join(format!("wal{seed}.py")),
+            dir.join(format!("wal{seed}.world.json")),
+            dir.join(format!("wal{seed}.models.json")),
+        );
+        std::fs::write(&pp, py).unwrap();
+        std::fs::write(&w, p.world().to_string()).unwrap();
+        std::fs::write(&m, p.models().to_string()).unwrap();
+        for at in [CrashPoint::Intent, CrashPoint::Sent, CrashPoint::Confirmed, CrashPoint::Closed] {
+            for nth in 1..=2 {
+                let tag = format!("wal-py/{seed}/{}/{nth}", at.name());
+                let out = dir.join(format!("wal{seed}-{}-{nth}.jsonl", at.name()));
+                let _ = std::fs::remove_file(&out);
+                let r = Command::new("python3")
+                    .env("PYTHONPATH", root().join("runtimes/python"))
+                    .args(["-m", "aletheia_runtime", "crash"])
+                    .arg(&pp)
+                    .arg("--world")
+                    .arg(&w)
+                    .arg("--models")
+                    .arg(&m)
+                    .arg("--at")
+                    .arg(format!("{}:{nth}", at.name()))
+                    .arg("--wal")
+                    .arg(&out)
+                    .args(["--agent", "A", "--on", "go"])
+                    .output()
+                    .unwrap();
+                let rust = crash_and_recover(&c, &p, at, nth);
+                match (r.status.code(), rust) {
+                    (Some(4), None) => {}
+                    (Some(0), Some((_, after, _, _))) => {
+                        let pyw = std::fs::read_to_string(&out).unwrap();
+                        first_diff(&tag, "WAL recuperado ARX × Python", &after.to_jsonl(), &pyw);
+                        compared += 1;
+                    }
+                    (code, rust) => panic!(
+                        "{tag}: desfecho difere (Python {code:?}, ARX {})\n{}",
+                        if rust.is_some() { "caiu" } else { "terminou" },
+                        String::from_utf8_lossy(&r.stderr)
+                    ),
+                }
+            }
+        }
+    }
+    eprintln!("M-III: {compared} WALs recuperados comparados ARX × Python");
+    assert!(compared as u64 >= n, "poucas quedas comparadas: {compared}");
+}
+
+// ------------------------------------------------------------------ M-I + M-II: obrigações levantadas e intenção
+
+/// O programa de `lifted_obligations_*`: o plano do modelo passa por uma política que aceita
+/// tudo; o contrato de `pay` liga operação, destinatário e valor (`s.binds`). Com `amplify`, o
+/// valor do efeito não é o campo endossado (é outro valor, como no `amplified` de
+/// `Contracts.lean`, onde o endossado é somado a uma constante).
+fn lifted_src(amplify: bool) -> String {
+    let arg = if amplify { "\"1000.00\"" } else { "amount" };
+    format!(
+        r#"module lifted
+
+type Write =
+  | Pay {{ to: Text[..8], amount: Text[..16] }}
+
+type Plan =
+  | Plan {{ writes: List[Write, 0..4], answer: Text[..64] }}
+
+model planner {{
+  id = "m"
+  provider = "groq"
+  version = "1"
+  price_in = 0.0
+  price_out = 0.0
+  ctx = 8192
+  max_out = 200
+  ttft = 1.0
+  per_tok = 0.0
+}}
+
+policy Any(p: Plan) -> Bool = true
+
+tool pay(c: Cap[Bank.Transfer], to: Text[..8] ^ Endorsed, amount: Text[..17] ^ Endorsed) -> Text
+  ! {{ Bank.Transfer }} irrevocable latency 1.0
+  requires s.binds("intents", "pay", to, amount)
+
+agent A(bank: Cap[Bank.Transfer]) budget [tok <= 100000, usd <= 1.0, wall <= 1000.0] {{
+  on go(n: Int) -> Text ! {{ Infer, Bank.Transfer }} {{
+    let d = infer planner -> Plan {{ task = "pay what the user asked" }}
+    let plan = refine d by Any retry 2 else {{ Plan {{ writes: [], answer: "nothing" }} }}
+    match plan {{
+      Plan {{ writes, answer }} => {{
+        for w in writes {{
+          match w {{
+            Pay {{ to, amount }} => commit pay(bank, to, {arg}),
+          }}
+        }}
+        answer
+      }},
+    }}
+  }}
+}}
+"#
+    )
+}
+
+/// O ARX e o Python sobre o mesmo programa: o journal completo e o relatório de erro.
+fn run_both(tag: &str, src: &str, world: &Json, models: &Json) -> (String, Option<String>, String, Option<String>) {
+    let c = compile(src).unwrap_or_else(|d| {
+        panic!("{tag}: o athc recusou\n{:?}", d.iter().map(|x| (&x.code, &x.msg)).collect::<Vec<_>>())
+    });
+    let provider = Box::new(Scripted::from_json(models).unwrap());
+    let mut arx = Arx::new(&c.module, Box::new(SimWorld::from_json(world).unwrap()), provider);
+    arx.contracts = athc::contract_hashes(&c);
+    let aerr = arx.run("A", "go", vec![Value::Int(0)]).err().map(|e| e.code);
+    let full = arx.journal.to_jsonl();
+    let dir = scratch();
+    let file = tag.replace(|ch: char| !ch.is_ascii_alphanumeric(), "_");
+    let py = ath_emit::python(&c.module, &c.check, &c.codex, &format!("{file}.ath")).expect("emissão");
+    let (pp, w, m, j, r) = (
+        dir.join(format!("{file}.py")),
+        dir.join(format!("{file}.world.json")),
+        dir.join(format!("{file}.models.json")),
+        dir.join(format!("{file}.journal.jsonl")),
+        dir.join(format!("{file}.report.json")),
+    );
+    std::fs::write(&pp, py).unwrap();
+    std::fs::write(&w, world.to_string()).unwrap();
+    std::fs::write(&m, models.to_string()).unwrap();
+    let out = Command::new("python3")
+        .env("PYTHONPATH", root().join("runtimes/python"))
+        .args(["-m", "aletheia_runtime", "run"])
+        .arg(&pp)
+        .arg("--world")
+        .arg(&w)
+        .arg("--models")
+        .arg(&m)
+        .args(["--provider", "scripted", "--agent", "A", "--on", "go", "--journal"])
+        .arg(&j)
+        .arg("--report")
+        .arg(&r)
+        .args(["--arg-json", "0"])
+        .output()
+        .expect("python3");
+    let report: Json = serde_json::from_str(
+        &std::fs::read_to_string(&r)
+            .unwrap_or_else(|_| panic!("{tag}: sem relatório\n{}", String::from_utf8_lossy(&out.stderr))),
+    )
+    .unwrap();
+    (full, aerr, std::fs::read_to_string(&j).unwrap(), report["error"]["code"].as_str().map(String::from))
+}
+
+fn kinds(jsonl: &str) -> Vec<String> {
+    jsonl.lines().map(|l| serde_json::from_str::<Json>(l).unwrap()["kind"].as_str().unwrap().to_string()).collect()
+}
+
+/// **M-I + M-II, nos dois runtimes.** O planejador propõe primeiro um pagamento a um
+/// beneficiário legítimo com o valor errado (o R3: dentro de qualquer teto), depois o pagamento
+/// que a intenção autoriza. A análise descarrega o contrato no efeito e o levanta para o
+/// `refine`: a primeira proposta é recusada ali (`obligation_reject`), a segunda executa, e o
+/// journal registra a linha da relação que a autorizou (`authorized`, com o BLAKE3 dela). Com o
+/// valor transformado depois do endosso, a obrigação não é demonstrável: a
+/// análise reporta a lacuna, o `refine` aceita, e o monitor do efeito recusa (`R0630`). Os
+/// journals do ARX e do Python são iguais byte a byte nos dois casos.
+#[test]
+fn lifted_obligations_refuse_at_refine_and_bind_the_intent() {
+    let world = json!({ "sinks": ["pay"], "inventories": { "intents": ["pay|B|10.00"] } });
+    let plan = |to: &str, amount: &str| json!({ "kind": "Plan", "writes": [{ "kind": "Pay", "to": to, "amount": amount }], "answer": "ok" });
+    let models = json!({ "planner": [plan("B", "2000.00"), plan("B", "10.0")] });
+    // com a obrigação demonstrada
+    let src = lifted_src(false);
+    let c = compile(&src).unwrap();
+    let ob = ath_syntax::obligations::analyze(&c.module);
+    assert_eq!(ob.sites.len(), 1);
+    assert!(matches!(ob.sites[0].status, ath_syntax::obligations::Status::Discharged { .. }), "{:?}", ob.sites);
+    let (a, aerr, p, perr) = run_both("lifted/demonstrada", &src, &world, &models);
+    assert_eq!((aerr.clone(), perr), (None, None), "{a}");
+    first_diff("lifted/demonstrada", "ARX × Python (journal completo)", &a, &p);
+    let k = kinds(&a);
+    let rej = k.iter().position(|x| x == "obligation_reject").expect("a primeira proposta é recusada no refine");
+    let tool = k.iter().position(|x| x == "tool").expect("a segunda executa");
+    assert!(rej < tool && k.iter().filter(|x| *x == "tool").count() == 1, "{k:?}");
+    let auth: Json =
+        a.lines().map(|l| serde_json::from_str::<Json>(l).unwrap()).find(|e| e["kind"] == "authorized").unwrap();
+    assert_eq!(auth["detail"]["by"][0]["row"], "pay|B|10.00");
+    assert_eq!(auth["detail"]["by"][0]["id"], blake3::hash(b"pay|B|10.00").to_hex().to_string());
+    // com o valor transformado: lacuna dinâmica, recusa no efeito
+    let src = lifted_src(true);
+    let c = compile(&src).unwrap();
+    let ob = ath_syntax::obligations::analyze(&c.module);
+    assert!(
+        matches!(&ob.sites[0].status, ath_syntax::obligations::Status::Dynamic { reason } if reason.contains("amount")),
+        "{:?}",
+        ob.sites
+    );
+    assert!(ob.lifted.is_empty());
+    let models = json!({ "planner": [plan("B", "1.00")] });
+    let (a, aerr, p, perr) = run_both("lifted/lacuna", &src, &world, &models);
+    assert_eq!((aerr.as_deref(), perr.as_deref()), (Some("R0630"), Some("R0630")), "{a}");
+    first_diff("lifted/lacuna", "ARX × Python (journal completo)", &a, &p);
+    assert!(!kinds(&a).iter().any(|x| x == "tool" || x == "obligation_reject"));
+}
+
+// ------------------------------------------------------------------ M-V: os dois registros
+
+/// **M-V, semântica × evidência.** Para cada programa gerado (sagas, chaves, os três provedores),
+/// o mesmo programa roda no ARX com as latências do mundo simulado e com latências diferentes, e
+/// no Python. O registro **semântico** (a cabeça da cadeia da vista do núcleo, sem tempo) é o
+/// mesmo nos três: é o que o programa fez. O registro de **evidências** (a cabeça do journal
+/// integral) é o mesmo entre ARX e Python sob o mesmo relógio simulado e muda quando as latências
+/// mudam: é como e quando, com a cadeia de custódia das medições. Nenhum dos dois substitui o
+/// outro. `ATH_DIGEST_N` muda o número de sementes (padrão 80).
+#[test]
+fn digests_separate_semantics_from_evidence() {
+    let n: u64 = std::env::var("ATH_DIGEST_N").ok().and_then(|v| v.parse().ok()).unwrap_or(80);
+    let dir = scratch();
+    let mut moved = 0;
+    for seed in 0..n {
+        let p = if seed % 2 == 0 { lambda_ath::generate_saga(seed) } else { lambda_ath::generate_keyed(seed) };
+        // a latência declarada com folga (5 s): as medições mudam sem que nenhuma passe do
+        // contrato Δ — uma latência acima do declarado é semântica (`R0701`), não ruído
+        let src = p.to_ath().replace("latency 0.0", "latency 5.0");
+        let c = compile(&src).unwrap();
+        let comp = athc::compensable_tools(&c.module);
+        let run = |world: &Json| {
+            let provider = Box::new(Scripted::from_json(&p.models()).unwrap());
+            let mut a = Arx::new(&c.module, Box::new(SimWorld::from_json(world).unwrap()), provider);
+            a.contracts = athc::contract_hashes(&c);
+            let _ = a.run("A", "go", vec![]);
+            let cv = arx::journal::Journal::core_view_with(&a.journal.entries, &comp);
+            if std::env::var("ATH_DIGEST_DEBUG").is_ok() {
+                eprintln!("{}\n---", cv.to_jsonl());
+            }
+            (cv.head, a.journal.head.clone())
+        };
+        let w0 = p.world();
+        let mut w1 = w0.clone();
+        let tools: serde_json::Map<String, Json> = c
+            .module
+            .items
+            .iter()
+            .filter_map(|i| match i {
+                ath_syntax::ast::Item::Tool(t) => Some((t.name.name.clone(), json!(1.75))),
+                _ => None,
+            })
+            .collect();
+        w1["latency"] = Json::Object(tools);
+        let (s0, e0) = run(&w0);
+        let (s1, e1) = run(&w1);
+        assert_eq!(s0, s1, "semente {seed}: o registro semântico mudou com as latências\n{src}");
+        if e0 != e1 {
+            moved += 1;
+        } else if std::env::var("ATH_DIGEST_DEBUG").is_ok() {
+            eprintln!("semente {seed}: evidências iguais");
+        }
+        // Python, com o mundo original
+        let py = ath_emit::python(&c.module, &c.check, &c.codex, "d.ath").expect("emissão");
+        let (pp, w, m, r) = (
+            dir.join(format!("dg{seed}.py")),
+            dir.join(format!("dg{seed}.world.json")),
+            dir.join(format!("dg{seed}.models.json")),
+            dir.join(format!("dg{seed}.report.json")),
+        );
+        std::fs::write(&pp, py).unwrap();
+        std::fs::write(&w, w0.to_string()).unwrap();
+        std::fs::write(&m, p.models().to_string()).unwrap();
+        let out = Command::new("python3")
+            .env("PYTHONPATH", root().join("runtimes/python"))
+            .args(["-m", "aletheia_runtime", "run"])
+            .arg(&pp)
+            .arg("--world")
+            .arg(&w)
+            .arg("--models")
+            .arg(&m)
+            .args(["--provider", "scripted", "--agent", "A", "--on", "go", "--report"])
+            .arg(&r)
+            .output()
+            .unwrap();
+        let rep: Json = serde_json::from_str(
+            &std::fs::read_to_string(&r)
+                .unwrap_or_else(|_| panic!("semente {seed}: sem relatório\n{}", String::from_utf8_lossy(&out.stderr))),
+        )
+        .unwrap();
+        assert_eq!(rep["digests"]["semantic"].as_str(), Some(s0.as_str()), "semente {seed}: semântico ARX × Python");
+        assert_eq!(rep["digests"]["evidence"].as_str(), Some(e0.as_str()), "semente {seed}: evidências ARX × Python");
+    }
+    eprintln!("M-V: {n} programas · o registro de evidências mudou com as latências em {moved}");
+    assert!(moved * 2 >= n as usize, "as latências quase nunca aparecem nas evidências: {moved}/{n}");
 }

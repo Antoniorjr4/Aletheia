@@ -1516,11 +1516,19 @@ impl<'m> Ctx<'m> {
                     }
                     return LTy::trusted(Ty::Bool);
                 }
-                "inventory" | "member" | "within" | "mentions" => {
+                "inventory" | "member" | "within" | "mentions" | "binds" => {
                     // `s.within("k", x)`: `x` (decimal) ≤ o limite confiável `k`; `s.mentions("k", x)`:
-                    // `x` aparece literalmente num texto confiável `k` (Rev12, contratos `requires`)
+                    // `x` aparece literalmente num texto confiável `k` (Rev12, contratos `requires`);
+                    // `s.binds("r", x1, …, xn)`: a tupla é uma linha da relação confiável `r` (Rev13:
+                    // a intenção autorizada liga operação, destinatário e valor)
                     let member = method.name != "inventory";
-                    check_args(self, if member { 2 } else { 1 });
+                    if method.name == "binds" {
+                        if args.len() < 2 {
+                            check_args(self, 2);
+                        }
+                    } else {
+                        check_args(self, if member { 2 } else { 1 });
+                    }
                     if member && !self.in_policy {
                         self.push(
                             Diag::new(
@@ -1548,7 +1556,7 @@ impl<'m> Ctx<'m> {
                     }
                     for (i, arg) in args.iter().enumerate() {
                         let t = self.expr(arg);
-                        if i == 1 && !assignable(&t.ty, &Ty::Text) && !assignable(&t.ty, &Ty::Int) {
+                        if i >= 1 && !assignable(&t.ty, &Ty::Text) && !assignable(&t.ty, &Ty::Int) {
                             self.mismatch(arg.span, &Ty::Text, &t.ty);
                         }
                     }
