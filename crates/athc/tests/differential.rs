@@ -1260,13 +1260,12 @@ fn lifecycle(jsonl: &str, fuel: usize) -> Result<Vec<(String, Option<String>, Ke
     Ok(out)
 }
 
-/// Compara os três backends num programa com chaves: ARX × Python byte a byte (os dois
-/// nomeiam a chave pela ordem de cunhagem) e Lean × ARX de duas formas independentes:
-/// (1) os journals com as chaves renomeadas canonicamente, byte a byte, e (2) o ciclo de vida
-/// de cada chave (o verificador acima), comparado chave a chave pela ferramenta e pelo
-/// desfecho. Devolve se os bytes crus do Lean e do ARX coincidem (não coincidem quando há
-/// chaves: o Lean nomeia a chave pela capacidade que a carrega, `c3`, e o ARX pela cunhagem,
-/// `k0`) e o ciclo de vida das chaves.
+/// Compara os três backends num programa com chaves: ARX × Python byte a byte, e Lean × ARX
+/// byte a byte também (Rev12): o λ_Ath cunha a chave com `mint` e a nomeia pela ordem de
+/// cunhagem, como o ARX e o runtime Python. A comparação canônica (chaves renomeadas pela
+/// primeira aparição) e o verificador do ciclo de vida continuam como critérios independentes
+/// da representação. Devolve se os bytes crus do Lean e do ARX coincidem e o ciclo de vida das
+/// chaves.
 fn assert_tripod_keys(tag: &str, t: &Tripod, fuel: usize) -> (bool, Vec<(String, Option<String>, KeyEnd)>) {
     assert_eq!(t.arx_err, t.py_err, "{tag}: desfecho do ARX × Python");
     first_diff(tag, "ARX × Python (vista do núcleo)", &t.arx, &t.py);
@@ -1286,6 +1285,9 @@ fn assert_tripod_keys(tag: &str, t: &Tripod, fuel: usize) -> (bool, Vec<(String,
     for ((kl, tl, el), (ka, ta, ea)) in ll.iter().zip(&la) {
         assert_eq!((tl, el), (ta, ea), "{tag}: a chave {kl} do Lean e a {ka} do ARX divergem");
     }
+    // sem renomeação: a identidade da operação é a mesma nos dois, evento a evento
+    assert!(ml.iter().all(|(a, c)| a == c), "{tag}: chaves do Lean fora da ordem de cunhagem: {ml:?}");
+    first_diff(tag, "Lean × ARX (journal do núcleo, bytes crus)", lean, &t.arx);
     (lean == &t.arx, ll)
 }
 
@@ -1326,14 +1328,9 @@ fn keyed_tripod_lean_arx_python_agree_on_generated_programs() {
             })
             .collect();
         for (key, tool, end) in &life {
-            let ti = if t.lean.is_some() {
-                // no Lean a chave é a capacidade que a carrega: `c{i}` é a da ferramenta com
-                // chave da capacidade `i`, e só ela
-                let cap: usize = key[1..].parse().unwrap();
-                p.tools.iter().position(|t| t.key.as_ref().is_some_and(|k| k.cap == cap)).unwrap()
-            } else {
-                arx_tool[key][1..].parse().unwrap()
-            };
+            // os nomes das chaves são os mesmos nos três backends (Rev12): a ferramenta de cada
+            // chave sai do journal completo do ARX
+            let ti: usize = arx_tool[key][1..].parse().unwrap();
             if let Some(tool) = tool {
                 assert_eq!(tool, &format!("t{ti}"), "{tag}: a chave {key} apareceu na ferramenta {tool}");
             }
@@ -1402,6 +1399,7 @@ fn keyed_tripod_lean_arx_python_agree_on_generated_programs() {
     eprintln!(
         "tripé com chaves: {n} programas ({with_lean} com o Lean; {with_keys} com chaves; {raw_equal} com os bytes crus Lean = ARX) · cobertura {seen:?}"
     );
+    assert_eq!(raw_equal, with_lean, "Lean × ARX: bytes crus em todo programa com o Lean");
     for k in [
         "Done na hora",
         "Failed na hora",
@@ -1437,7 +1435,7 @@ fn rechain(evs: Vec<(String, Json)>) -> String {
 }
 
 fn is_key_event(k: &str) -> bool {
-    matches!(k, "pending" | "query" | "settle" | "transfer")
+    matches!(k, "mint" | "pending" | "query" | "settle" | "transfer")
 }
 
 /// A normalização das chaves não esconde defeito. Sobre journals reais do tripé com chaves, o
@@ -1631,8 +1629,9 @@ fn key_prog(
     }
 }
 
-/// Os sete cenários determinísticos da Fase 4, cada um com o journal do núcleo esperado (com as
-/// chaves na forma canônica), conferido nos três backends:
+/// Os sete cenários determinísticos da Fase 4, cada um com o journal do núcleo esperado,
+/// conferido nos três backends byte a byte (a cunhagem `mint` abre o ciclo de vida de cada
+/// chave):
 ///
 /// 1. timeout antes da aplicação: a consulta diz que não aconteceu, `Failed`; a sonda de
 ///    recuperação observa o mundo intacto;
@@ -1667,7 +1666,8 @@ fn keyed_scenarios_are_deterministic_on_the_three_backends() {
                 2,
                 V::Int(9),
             ),
-            json!([["pending", {"key": "k1", "tool": "t0"}],
+            json!([["mint", {"key": "k1"}],
+                   ["pending", {"key": "k1", "tool": "t0"}],
                    ["query", {"attempt": 1, "key": "k1", "status": "not_applied"}],
                    ["settle", {"key": "k1", "status": "failed"}],
                    ["fail", {"cause": "refused", "key": "k1"}],
@@ -1686,7 +1686,8 @@ fn keyed_scenarios_are_deterministic_on_the_three_backends() {
                 2,
                 V::Int(9),
             ),
-            json!([["pending", {"key": "k1", "tool": "t0"}],
+            json!([["mint", {"key": "k1"}],
+                   ["pending", {"key": "k1", "tool": "t0"}],
                    ["query", {"attempt": 1, "key": "k1", "status": "done"}],
                    ["settle", {"key": "k1", "status": "done"}],
                    ["end", {"value": 0}]]),
@@ -1703,7 +1704,8 @@ fn keyed_scenarios_are_deterministic_on_the_three_backends() {
                 2,
                 V::Int(9),
             ),
-            json!([["pending", {"key": "k1", "tool": "t0"}],
+            json!([["mint", {"key": "k1"}],
+                   ["pending", {"key": "k1", "tool": "t0"}],
                    ["query", {"attempt": 1, "key": "k1", "status": "done"}],
                    ["settle", {"key": "k1", "status": "done"}],
                    ["end", {"value": 0}]]),
@@ -1720,7 +1722,8 @@ fn keyed_scenarios_are_deterministic_on_the_three_backends() {
                 3,
                 V::Unit,
             ),
-            json!([["pending", {"key": "k1", "tool": "t0"}],
+            json!([["mint", {"key": "k1"}],
+                   ["pending", {"key": "k1", "tool": "t0"}],
                    ["query", {"attempt": 1, "key": "k1", "status": "unknown"}],
                    ["query", {"attempt": 2, "key": "k1", "status": "done"}],
                    ["settle", {"key": "k1", "status": "done"}],
@@ -1738,7 +1741,8 @@ fn keyed_scenarios_are_deterministic_on_the_three_backends() {
                 3,
                 V::Unit,
             ),
-            json!([["pending", {"key": "k1", "tool": "t0"}],
+            json!([["mint", {"key": "k1"}],
+                   ["pending", {"key": "k1", "tool": "t0"}],
                    ["query", {"attempt": 1, "key": "k1", "status": "unknown"}],
                    ["query", {"attempt": 2, "key": "k1", "status": "unknown"}],
                    ["query", {"attempt": 3, "key": "k1", "status": "not_applied"}],
@@ -1762,7 +1766,8 @@ fn keyed_scenarios_are_deterministic_on_the_three_backends() {
                 2,
                 V::Int(9),
             ),
-            json!([["pending", {"key": "k1", "tool": "t0"}],
+            json!([["mint", {"key": "k1"}],
+                   ["pending", {"key": "k1", "tool": "t0"}],
                    ["query", {"attempt": 1, "key": "k1", "status": "unknown"}],
                    ["query", {"attempt": 2, "key": "k1", "status": "unknown"}],
                    ["transfer", {"key": "k1"}],
@@ -1781,7 +1786,8 @@ fn keyed_scenarios_are_deterministic_on_the_three_backends() {
                 2,
                 V::Int(9),
             ),
-            json!([["pending", {"key": "k1", "tool": "t0"}],
+            json!([["mint", {"key": "k1"}],
+                   ["pending", {"key": "k1", "tool": "t0"}],
                    ["query", {"attempt": 1, "key": "k1", "status": "unknown"}],
                    ["query", {"attempt": 2, "key": "k1", "status": "unknown"}],
                    ["transfer", {"key": "k1"}],
@@ -1806,6 +1812,7 @@ fn keyed_scenarios_are_deterministic_on_the_three_backends() {
                 V::Int(9),
             ),
             json!([["act", {"args": [3], "cap": ["Core.E1"], "tool": "t1"}],
+                   ["mint", {"key": "k1"}],
                    ["pending", {"key": "k1", "tool": "t0"}],
                    ["query", {"attempt": 1, "key": "k1", "status": "unknown"}],
                    ["transfer", {"key": "k1"}],
@@ -1826,7 +1833,7 @@ fn keyed_scenarios_are_deterministic_on_the_three_backends() {
         let got: Vec<Json> = events_of(&canon_keys(&t.arx).0).into_iter().map(|(k, d)| json!([k, d])).collect();
         assert_eq!(Json::Array(got), want, "{tag}: journal do núcleo");
         if let Some(lean) = &t.lean {
-            assert_eq!(canon_keys(lean).0, canon_keys(&t.arx).0, "{tag}: Lean × ARX");
+            assert_eq!(lean, &t.arx, "{tag}: Lean × ARX, bytes crus");
         }
     }
 }
