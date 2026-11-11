@@ -314,49 +314,165 @@ theorem Within.step (s a : Budget) : Within s (s + a) a := fun d => by simp
 
 /-! ## Os dois desfechos -/
 
+/-- A causa de uma falha bem tipada: se for o encerramento pelo tratador de
+`TimeoutUnknown`, o valor tem o tipo de retorno do agente. -/
+def CauseOk (S : Sig) : Cause → Prop
+  | .abort v => HasTy v S.ret
+  | _ => True
+
 /-- O desfecho de uma avaliação bem tipada. Ou ela termina com um valor do tipo estático,
-dentro do orçamento e com consumo exato; ou uma pós-condição (`await`) falhou fora de
-qualquer saga, e o `timeout` sobe com o gasto dentro do orçamento e um consumo parcial. -/
-abbrev Sound (ρ : List Val) (f : Nat → Option Nat) (τ : Ty) (β : Budget) (s : St)
+dentro do orçamento e com consumo exato; ou ela falha por uma causa que uma saga captura
+(pós-condição não observada, operação de chave recusada, encerramento pelo tratador), e a
+falha sobe com o gasto dentro do orçamento, um consumo parcial e, no encerramento, um valor
+do tipo de retorno do agente. -/
+abbrev Sound (S : Sig) (ρ : List Val) (f : Nat → Option Nat) (τ : Ty) (β : Budget) (s : St)
     (r : Except Err Out) : Prop :=
   (∃ o, r = .ok o ∧ HasTy o.v τ ∧ Within s.spent o.st.spent β ∧ Consumed ρ f s.used o.st.used) ∨
-  (∃ q s₁ tr, r = .error (.timeout q s₁ tr) ∧ Within s.spent s₁.spent β ∧ Partial ρ f s.used s₁.used)
+  (∃ q s₁ tr, r = .error (.timeout q s₁ tr) ∧ Within s.spent s₁.spent β ∧ Partial ρ f s.used s₁.used ∧
+    CauseOk S q)
 
 /-! ## O laço -/
 
 /-- Um laço cujo corpo não consome capacidade de fora gasta no máximo `n • β(corpo)` e não
 altera o conjunto consumido, termine ele normalmente ou num `timeout`. -/
-theorem loop_sound {f : Val → St → Except Err Out} {τ : Ty} {βb L : Budget}
+theorem loop_sound {S : Sig} {f : Val → St → Except Err Out} {τ : Ty} {βb L : Budget}
     (hf : ∀ v (s : St), HasTy v τ → s.spent + βb ≤ L →
       (∃ o, f v s = .ok o ∧ Within s.spent o.st.spent βb ∧ o.st.used = s.used) ∨
       (∃ q s₁ tr, f v s = .error (.timeout q s₁ tr) ∧ Within s.spent s₁.spent βb ∧
-        s₁.used = s.used)) :
+        s₁.used = s.used ∧ CauseOk S q)) :
     ∀ (n : Nat) (vs : List Val) (s : St), vs.length ≤ n → (∀ v ∈ vs, HasTy v τ) →
       s.spent + n • βb ≤ L →
       (∃ s' tr, loop f vs s = .ok (s', tr) ∧ Within s.spent s'.spent (n • βb) ∧ s'.used = s.used) ∨
       (∃ q s₁ tr, loop f vs s = .error (.timeout q s₁ tr) ∧ Within s.spent s₁.spent (n • βb) ∧
-        s₁.used = s.used)
+        s₁.used = s.used ∧ CauseOk S q)
   | n, [], s, _, _, _ => .inl ⟨s, [], rfl, Within.refl _ _, rfl⟩
   | n, v :: vs, s, hlen, hall, hB => by
     obtain ⟨n', rfl⟩ : ∃ n', n = n' + 1 := ⟨n - 1, by simp at hlen; omega⟩
     have hB₁ : s.spent + βb ≤ L := fun d => by
       have := hB d; simp only [add_apply, scale_apply, Nat.add_mul, Nat.one_mul] at this ⊢; omega
-    rcases hf v s (hall v (List.mem_cons_self ..)) hB₁ with ⟨o, he, hw, hu⟩ | ⟨q, s₁, tr, he, hw, hu⟩
+    rcases hf v s (hall v (List.mem_cons_self ..)) hB₁ with ⟨o, he, hw, hu⟩ | ⟨q, s₁, tr, he, hw, hu, hq⟩
     · have hB₂ : o.st.spent + n' • βb ≤ L := fun d => by
         have := hB d; have := (hw d).2
         simp only [add_apply, scale_apply, Nat.add_mul, Nat.one_mul] at *; omega
       rcases loop_sound hf n' vs o.st (by simp at hlen; omega)
           (fun x hx => hall x (List.mem_cons_of_mem _ hx)) hB₂ with
-        ⟨s', tr, hl, hw', hu'⟩ | ⟨q, s₁, tr, hl, hw', hu'⟩
+        ⟨s', tr, hl, hw', hu'⟩ | ⟨q, s₁, tr, hl, hw', hu', hq⟩
       · refine .inl ⟨s', o.tr ++ tr, by simp [loop, he, hl], ?_, by rw [hu', hu]⟩
         refine (hw.trans hw').mono fun d => ?_
         simp only [add_apply, scale_apply, Nat.add_mul, Nat.one_mul]; omega
       · refine .inr ⟨q, s₁, o.tr ++ tr, by simp only [loop, he, hl, bnd_ok, bnd_error] <;> rfl, ?_,
-          by rw [hu', hu]⟩
+          by rw [hu', hu], hq⟩
         refine (hw.trans hw').mono fun d => ?_
         simp only [add_apply, scale_apply, Nat.add_mul, Nat.one_mul]; omega
-    · refine .inr ⟨q, s₁, tr, by simp only [loop, he, bnd_error], hw.mono fun d => ?_, hu⟩
+    · refine .inr ⟨q, s₁, tr, by simp only [loop, he, bnd_error], hw.mono fun d => ?_, hu, hq⟩
       simp only [scale_apply, Nat.add_mul, Nat.one_mul]; omega
+
+/-! ## O tratador puro
+
+O tratador de `TimeoutUnknown` roda num ambiente fechado: dados ligados por `let` sobre a
+obrigação, que fica no fundo. Bem tipado e puro, ele termina, não mexe no estado, e cada
+`transfer` que executa fecha a obrigação. Quantos executa, diz `consumes`: com o E1 (uma vez
+em todo caminho), exatamente um. É a ponte entre a regra estática (`consumes e 0 = some 1`) e
+a guarda dinâmica (`transferOnly`) do avaliador. -/
+
+theorem pure_handler {S : Sig} {c : Cfg} {t id : Nat} {Γ : List Bind} {pc : Lab} {e : Exp}
+    {τ : Ty} {ι : Lab} {β : Budget} (h : HasType S Γ pc e τ ι β) :
+    pureH e = true → ∀ {Γd : List Bind} {ds : List Val} {s : St} {m : Nat}, Γ = Γd ++ [.pend] →
+      EnvOk Γd ds → (∀ j : Nat, Γd[j]? ≠ some Bind.pend) → consumes e ds.length = some m →
+      ∃ o, eval S c e (ds ++ [.pend t id]) s = .ok o ∧ o.st = s ∧ HasTy o.v τ ∧
+        o.tr = List.replicate m (.handoff id) := by
+  induction h with
+  | val hv =>
+    intro _ Γd ds s m _ _ _ hm
+    simp [consumes] at hm; subst hm
+    exact ⟨⟨_, s, []⟩, rfl, rfl, hv, rfl⟩
+  | @var Γ pc k τ ι hk =>
+    intro _ Γd ds s m hΓ hE hnp hm
+    simp [consumes] at hm; subst hm; subst hΓ
+    have hlt : k < Γd.length := by
+      rcases Nat.lt_or_ge k Γd.length with hlt | hge
+      · exact hlt
+      · have : (Γd ++ [Bind.pend])[k]? = [Bind.pend][k - Γd.length]? :=
+          List.getElem?_append_right hge
+        rw [this] at hk
+        cases hkd : k - Γd.length with
+        | zero => simp [hkd] at hk
+        | succ x => simp [hkd] at hk
+    have hk' : Γd[k]? = some (.data τ ι) := by rwa [List.getElem?_append_left hlt] at hk
+    obtain ⟨v, hv, hty⟩ := hE.data_lookup hk'
+    have hlen : ds.length = Γd.length := hE.length
+    refine ⟨⟨v, s, []⟩, ?_, rfl, hty, rfl⟩
+    simp only [eval]
+    rw [List.getElem?_append_left (by omega), hv]
+  | @let_ Γ pc e₁ e₂ τ₁ τ₂ ι₁ ι₂ β₁ β₂ _ _ ih₁ ih₂ =>
+    intro hp Γd ds s m hΓ hE hnp hm
+    simp only [pureH, Bool.and_eq_true] at hp
+    obtain ⟨x, y, hx, hy, rfl⟩ := Count.add_eq hm
+    obtain ⟨o₁, he₁, hs₁, hv₁, ht₁⟩ := ih₁ hp.1 hΓ hE hnp hx
+    have hnp' : ∀ j : Nat, (Bind.data τ₁ ι₁ :: Γd)[j]? ≠ some Bind.pend := by
+      intro j; cases j with
+      | zero => simp
+      | succ j => simpa using hnp j
+    obtain ⟨o₂, he₂, hs₂, hv₂, ht₂⟩ := ih₂ hp.2 (Γd := .data τ₁ ι₁ :: Γd) (ds := o₁.v :: ds) (s := o₁.st)
+      (by simp [hΓ]) (.data hv₁ hE) hnp' (by simpa using hy)
+    refine ⟨⟨o₂.v, o₂.st, o₁.tr ++ o₂.tr⟩, ?_, by rw [hs₂, hs₁], hv₂, by rw [ht₁, ht₂, List.replicate_append_replicate]⟩
+    simp only [eval, he₁, bnd_ok]
+    rw [show o₁.v :: (ds ++ [Val.pend t id]) = (o₁.v :: ds) ++ [Val.pend t id] by simp, he₂]
+    simp [pre]
+  | @ite Γ pc cnd tb fb τ ιc ιt ιf βc βt βf _ _ _ ihc iht ihf =>
+    intro hp Γd ds s m hΓ hE hnp hm
+    simp only [pureH, Bool.and_eq_true] at hp
+    obtain ⟨x, y, hx, hy, rfl⟩ := Count.add_eq hm
+    obtain ⟨hyt, hyf⟩ := Count.same_eq hy
+    obtain ⟨oc, hec, hsc, hvc, htc⟩ := ihc hp.1.1 hΓ hE hnp hx
+    obtain ⟨b, hb⟩ := hvc.bool_inv
+    cases b with
+    | true =>
+      obtain ⟨o', he', hs', hv', ht'⟩ := iht hp.1.2 (s := oc.st) hΓ hE hnp hyt
+      refine ⟨⟨o'.v, o'.st, oc.tr ++ o'.tr⟩, ?_, by rw [hs', hsc], hv', by rw [htc, ht', List.replicate_append_replicate]⟩
+      simp [eval, hec, hb, he', pre]
+    | false =>
+      obtain ⟨o', he', hs', hv', ht'⟩ := ihf hp.2 (s := oc.st) hΓ hE hnp hyf
+      refine ⟨⟨o'.v, o'.st, oc.tr ++ o'.tr⟩, ?_, by rw [hs', hsc], hv', by rw [htc, ht', List.replicate_append_replicate]⟩
+      simp [eval, hec, hb, he', pre]
+  | @prim Γ pc op a b ιa ιb βa βb _ _ iha ihb =>
+    intro hp Γd ds s m hΓ hE hnp hm
+    simp only [pureH, Bool.and_eq_true] at hp
+    obtain ⟨x, y, hx, hy, rfl⟩ := Count.add_eq hm
+    obtain ⟨oa, hea, hsa, hva, hta⟩ := iha hp.1 hΓ hE hnp hx
+    obtain ⟨ob, heb, hsb, hvb, htb⟩ := ihb hp.2 (s := oa.st) hΓ hE hnp hy
+    obtain ⟨u, hu⟩ := hva.int_inv
+    obtain ⟨w, hw⟩ := hvb.int_inv
+    refine ⟨⟨op.apply u w, ob.st, oa.tr ++ ob.tr⟩, ?_, by rw [hsb, hsa], op.apply_ty u w,
+      by rw [hta, htb, List.replicate_append_replicate]⟩
+    simp [eval, hea, heb, hu, hw, pre]
+  | @transfer Γ pc q _ hq =>
+    intro _ Γd ds s m hΓ hE hnp hm
+    subst hΓ
+    have hlen : ds.length = Γd.length := hE.length
+    have hqe : q = Γd.length := by
+      rcases Nat.lt_or_ge q Γd.length with hlt | hge
+      · rw [List.getElem?_append_left hlt] at hq; exact absurd hq (hnp q)
+      · have : (Γd ++ [Bind.pend])[q]? = [Bind.pend][q - Γd.length]? :=
+          List.getElem?_append_right hge
+        rw [this] at hq
+        cases hkd : q - Γd.length with
+        | zero => omega
+        | succ x => simp [hkd] at hq
+    subst hqe
+    simp [consumes, hlen] at hm; subst hm
+    refine ⟨⟨.unit, s, [.handoff id]⟩, ?_, rfl, .unit, rfl⟩
+    simp only [eval]
+    rw [show (ds ++ [Val.pend t id])[Γd.length]? = some (Val.pend t id) by
+      rw [← hlen]; simp]
+  | act => intro hp; simp [pureH] at hp
+  | drop => intro hp; simp [pureH] at hp
+  | endorse => intro hp; simp [pureH] at hp
+  | for_ => intro hp; simp [pureH] at hp
+  | infer => intro hp; simp [pureH] at hp
+  | await => intro hp; simp [pureH] at hp
+  | atomic => intro hp; simp [pureH] at hp
+  | call => intro hp; simp [pureH] at hp
 
 /-! ## O teorema -/
 
@@ -367,7 +483,7 @@ theorem sound (hO : c.oracle.Ok) {Γ : List Bind} {pc : Lab} {e : Exp} {τ : Ty}
     {β : Budget} (h : HasType S Γ pc e τ ι β) :
     ∀ {ρ : List Val} {s : St}, EnvOk Γ ρ → CapsDistinct ρ → Granted c.grants Γ ρ →
       Lin ρ s.used (consumes e) → s.spent + β ≤ c.limit →
-      Sound ρ (consumes e) τ β s (eval S c e ρ s) := by
+      Sound S ρ (consumes e) τ β s (eval S c e ρ s) := by
   induction h with
   | val hv =>
     intro ρ s _ _ _ _ _
@@ -381,88 +497,88 @@ theorem sound (hO : c.oracle.Ok) {Γ : List Bind} {pc : Lab} {e : Exp} {τ : Ty}
     intro ρ s hE hD hG hL hB
     have hs := splits_let e₁ e₂
     rcases ih₁ hE hD hG (hL.left hs) (fun d => by have := hB d; simp at this ⊢; omega) with
-      ⟨o₁, he₁, hv₁, hw₁, hc₁⟩ | ⟨q, s₁, tr, he₁, hw₁, hp₁⟩
+      ⟨o₁, he₁, hv₁, hw₁, hc₁⟩ | ⟨q, s₁, tr, he₁, hw₁, hp₁, hq₁⟩
     · have hvc := hv₁.not_cap
       rcases ih₂ (.data hv₁ hE) (hD.cons hvc) hG.cons (Lin.cons hvc (hL.seq hs hD hc₁))
           (fun d => by have := hB d; have := (hw₁ d).2; simp at *; omega) with
-        ⟨o₂, he₂, hv₂, hw₂, hc₂⟩ | ⟨q, s₂, tr, he₂, hw₂, hp₂⟩
+        ⟨o₂, he₂, hv₂, hw₂, hc₂⟩ | ⟨q, s₂, tr, he₂, hw₂, hp₂, hq₂⟩
       · exact .inl ⟨⟨o₂.v, o₂.st, o₁.tr ++ o₂.tr⟩, by simp [eval, he₁, he₂], hv₂, hw₁.trans hw₂,
           Consumed.seq hs hL hc₁ (hc₂.uncons hvc)⟩
       · exact .inr ⟨q, s₂, o₁.tr ++ tr, by simp only [eval, he₁, he₂, bnd_ok, bnd_error] <;> rfl,
-          hw₁.trans hw₂, Partial.seq hs hL hc₁.toPartial (hp₂.uncons hvc)⟩
+          hw₁.trans hw₂, Partial.seq hs hL hc₁.toPartial (hp₂.uncons hvc), hq₂⟩
     · exact .inr ⟨q, s₁, tr, by simp only [eval, he₁, bnd_error], hw₁.mono fun d => by simp,
-        hp₁.left hs hL⟩
+        hp₁.left hs hL, hq₁⟩
   | @ite Γ pc cnd t f τ ιc ιt ιf βc βt βf _ _ _ ihc iht ihf =>
     intro ρ s hE hD hG hL hB
     have hst := splits_ite_t cnd t f
     have hsf := splits_ite_f cnd t f
     rcases ihc hE hD hG (hL.left hst) (fun d => by have := hB d; simp at this ⊢; omega) with
-      ⟨oc, hec, hvc, hwc, hcc⟩ | ⟨q, s₁, tr, hec, hwc, hpc⟩
+      ⟨oc, hec, hvc, hwc, hcc⟩ | ⟨q, s₁, tr, hec, hwc, hpc, hqc⟩
     · obtain ⟨b, hb⟩ := hvc.bool_inv
       cases b with
       | true =>
         rcases iht hE hD hG (hL.seq hst hD hcc)
             (fun d => by have := hB d; have := (hwc d).2; simp at *; omega) with
-          ⟨o', he', hv', hw', hc'⟩ | ⟨q, s₁, tr, he', hw', hp'⟩
+          ⟨o', he', hv', hw', hc'⟩ | ⟨q, s₁, tr, he', hw', hp', hq'⟩
         · refine .inl ⟨⟨o'.v, o'.st, oc.tr ++ o'.tr⟩, by simp [eval, hec, hb, he'], hv', ?_,
             Consumed.seq hst hL hcc hc'⟩
           exact (hwc.trans hw').mono fun d => by simp; omega
         · refine .inr ⟨q, s₁, oc.tr ++ tr, by simp [eval, hec, hb, he', pre] <;> rfl, ?_,
-            Partial.seq hst hL hcc.toPartial hp'⟩
+            Partial.seq hst hL hcc.toPartial hp', hq'⟩
           exact (hwc.trans hw').mono fun d => by simp; omega
       | false =>
         rcases ihf hE hD hG (hL.seq hsf hD hcc)
             (fun d => by have := hB d; have := (hwc d).2; simp at *; omega) with
-          ⟨o', he', hv', hw', hc'⟩ | ⟨q, s₁, tr, he', hw', hp'⟩
+          ⟨o', he', hv', hw', hc'⟩ | ⟨q, s₁, tr, he', hw', hp', hq'⟩
         · refine .inl ⟨⟨o'.v, o'.st, oc.tr ++ o'.tr⟩, by simp [eval, hec, hb, he'], hv', ?_,
             Consumed.seq hsf hL hcc hc'⟩
           exact (hwc.trans hw').mono fun d => by simp; omega
         · refine .inr ⟨q, s₁, oc.tr ++ tr, by simp [eval, hec, hb, he', pre] <;> rfl, ?_,
-            Partial.seq hsf hL hcc.toPartial hp'⟩
+            Partial.seq hsf hL hcc.toPartial hp', hq'⟩
           exact (hwc.trans hw').mono fun d => by simp; omega
     · exact .inr ⟨q, s₁, tr, by simp only [eval, hec, bnd_error], hwc.mono fun d => by simp,
-        hpc.left hst hL⟩
+        hpc.left hst hL, hqc⟩
   | @prim Γ pc op a b ιa ιb βa βb _ _ iha ihb =>
     intro ρ s hE hD hG hL hB
     have hs := splits_prim op a b
     rcases iha hE hD hG (hL.left hs) (fun d => by have := hB d; simp at this ⊢; omega) with
-      ⟨oa, hea, hva, hwa, hca⟩ | ⟨q, s₁, tr, hea, hwa, hpa⟩
+      ⟨oa, hea, hva, hwa, hca⟩ | ⟨q, s₁, tr, hea, hwa, hpa, hqa⟩
     · rcases ihb hE hD hG (hL.seq hs hD hca)
           (fun d => by have := hB d; have := (hwa d).2; simp at *; omega) with
-        ⟨ob, heb, hvb, hwb, hcb⟩ | ⟨q, s₁, tr, heb, hwb, hpb⟩
+        ⟨ob, heb, hvb, hwb, hcb⟩ | ⟨q, s₁, tr, heb, hwb, hpb, hqb⟩
       · obtain ⟨x, hx⟩ := hva.int_inv
         obtain ⟨y, hy⟩ := hvb.int_inv
         exact .inl ⟨⟨op.apply x y, ob.st, oa.tr ++ ob.tr⟩, by simp [eval, hea, heb, hx, hy],
           op.apply_ty x y, hwa.trans hwb, Consumed.seq hs hL hca hcb⟩
       · exact .inr ⟨q, s₁, oa.tr ++ tr, by simp only [eval, hea, heb, bnd_ok, bnd_error] <;> rfl,
-          hwa.trans hwb, Partial.seq hs hL hca.toPartial hpb⟩
+          hwa.trans hwb, Partial.seq hs hL hca.toPartial hpb, hqb⟩
     · exact .inr ⟨q, s₁, tr, by simp only [eval, hea, bnd_error], hwa.mono fun d => by simp,
-        hpa.left hs hL⟩
+        hpa.left hs hL, hqa⟩
   | @endorse Γ pc p e d τ ιe ιd βe βd _ _ _ ihe ihd =>
     intro ρ s hE hD hG hL hB
     have hsd := splits_endorse_d p e d
     have hse := splits_endorse_e p e d
     rcases ihe hE hD hG (hL.left hsd) (fun d => by have := hB d; simp at this ⊢; omega) with
-      ⟨oe, hee, hve, hwe, hce⟩ | ⟨q, s₁, tr, hee, hwe, hpe⟩
+      ⟨oe, hee, hve, hwe, hce⟩ | ⟨q, s₁, tr, hee, hwe, hpe, hqe⟩
     · by_cases hp : S.pol p oe.v = true
       · exact .inl ⟨⟨oe.v, oe.st, oe.tr ++ [.endorse p (some oe.v)]⟩, by simp [eval, hee, hp], hve,
           hwe.mono fun d => by simp,
           Consumed.seq hse hL hce (Consumed.nil fun _ _ _ => by simp)⟩
       · rcases ihd hE hD hG (hL.seq hsd hD hce)
             (fun d => by have := hB d; have := (hwe d).2; simp at *; omega) with
-          ⟨od, hed, hvd, hwd, hcd⟩ | ⟨q, s₁, tr, hed, hwd, hpd⟩
+          ⟨od, hed, hvd, hwd, hcd⟩ | ⟨q, s₁, tr, hed, hwd, hpd, hqd⟩
         · exact .inl ⟨⟨od.v, od.st, oe.tr ++ .endorse p none :: od.tr⟩, by simp [eval, hee, hp, hed],
             hvd, hwe.trans hwd, Consumed.seq hsd hL hce hcd⟩
         · exact .inr ⟨q, s₁, oe.tr ++ ([.endorse p none] ++ tr),
             by simp [eval, hee, hp, hed, pre] <;> rfl, hwe.trans hwd,
-            Partial.seq hsd hL hce.toPartial hpd⟩
+            Partial.seq hsd hL hce.toPartial hpd, hqd⟩
     · exact .inr ⟨q, s₁, tr, by simp only [eval, hee, bnd_error], hwe.mono fun d => by simp,
-        hpe.left hsd hL⟩
+        hpe.left hsd hL, hqe⟩
   | @act Γ pc t j a ιa βa E _ hk heff _ _ iha =>
     intro ρ s hE hD hG hL hB
     have hs := splits_act t j a
     rcases iha hE hD hG (hL.left hs) (fun d => by have := hB d; simp at this ⊢; omega) with
-      ⟨oa, hea, _, hwa, hca⟩ | ⟨q, s₁, tr, hea, hwa, hpa⟩
+      ⟨oa, hea, _, hwa, hca⟩ | ⟨q, s₁, tr, hea, hwa, hpa, hqa⟩
     · obtain ⟨id, hid⟩ := hE.cap_lookup hk
       have hgrant : S.effect t ∈ c.grants id := hG j E id hk hid _ heff
       have hfree : id ∉ oa.st.used := by
@@ -475,7 +591,7 @@ theorem sound (hO : c.oracle.Ok) {Γ : List Bind} {pc : Lab} {e : Exp} {τ : Ty}
         by simp [eval, hea, doAct, hid, hgrant, hfree, hble], .unit, hwa.trans (Within.step _ _),
         Consumed.seq hs hL hca (Consumed.single hid)⟩
     · exact .inr ⟨q, s₁, tr, by simp only [eval, hea, bnd_error], hwa.mono fun d => by simp,
-        hpa.left hs hL⟩
+        hpa.left hs hL, hqa⟩
   | @drop Γ pc j E hk =>
     intro ρ s hE _ _ hL _
     obtain ⟨id, hid⟩ := hE.cap_lookup hk
@@ -489,46 +605,46 @@ theorem sound (hO : c.oracle.Ok) {Γ : List Bind} {pc : Lab} {e : Exp} {τ : Ty}
     have hs := splits_for n xs body
     rcases ihx hE hD hG (hL.left hs)
         (fun d => by have := hB d; simp only [add_apply] at this ⊢; omega) with
-      ⟨ox, hex, hvx, hwx, hcx⟩ | ⟨q, s₁, tr, hex, hwx, hpx⟩
+      ⟨ox, hex, hvx, hwx, hcx⟩ | ⟨q, s₁, tr, hex, hwx, hpx, hqx⟩
     · obtain ⟨vs, hvs, hall, hlen⟩ := hvx.list_inv
       have hzero := for_body_zero hL
       have hf : ∀ v (s' : St), HasTy v τ → s'.spent + βb ≤ c.limit →
           (∃ o, eval S c body (v :: ρ) s' = .ok o ∧ Within s'.spent o.st.spent βb ∧
             o.st.used = s'.used) ∨
           (∃ q s₁ tr, eval S c body (v :: ρ) s' = .error (.timeout q s₁ tr) ∧
-            Within s'.spent s₁.spent βb ∧ s₁.used = s'.used) := by
+            Within s'.spent s₁.spent βb ∧ s₁.used = s'.used ∧ CauseOk S q) := by
         intro v s' hv hb
         have hvc := hv.not_cap
         have hLb : Lin (v :: ρ) s'.used (consumes body) :=
           Lin.cons hvc fun k id hk => ⟨0, hzero k id hk, by omega, by omega⟩
         rcases ihb (.data hv hE) (hD.cons hvc) hG.cons hLb hb with
-          ⟨o, he, _, hw, hcb⟩ | ⟨q, s₁, tr, he, hw, hpb⟩
+          ⟨o, he, _, hw, hcb⟩ | ⟨q, s₁, tr, he, hw, hpb, hqb⟩
         · exact .inl ⟨o, he, hw, (hcb.uncons hvc).unchanged fun k id hk => by simp [hzero k id hk]⟩
         · exact .inr ⟨q, s₁, tr, he, hw,
-            (hpb.uncons hvc).unchanged fun k id hk => by simp [hzero k id hk]⟩
+            (hpb.uncons hvc).unchanged fun k id hk => by simp [hzero k id hk], hqb⟩
       rcases loop_sound hf n vs ox.st hlen hall
           (fun d => by have := hB d; have := (hwx d).2; simp only [add_apply, scale_apply] at *; omega) with
-        ⟨s', tr, hl, hwl, hul⟩ | ⟨q, s₁, tr, hl, hwl, hul⟩
+        ⟨s', tr, hl, hwl, hul⟩ | ⟨q, s₁, tr, hl, hwl, hul, hql⟩
       · refine .inl ⟨⟨.unit, s', ox.tr ++ tr⟩, by simp [eval, hex, hvs, hl], .unit, hwx.trans hwl, ?_⟩
         exact Consumed.seq hs hL hcx (by rw [hul]; exact Consumed.nil fun _ _ _ => by simp)
-      · refine .inr ⟨q, s₁, ox.tr ++ tr, by simp [eval, hex, hvs, hl, pre] <;> rfl, hwx.trans hwl, ?_⟩
+      · refine .inr ⟨q, s₁, ox.tr ++ tr, by simp [eval, hex, hvs, hl, pre] <;> rfl, hwx.trans hwl, ?_, hql⟩
         exact Partial.seq hs hL hcx.toPartial (by rw [hul]; exact Partial.refl _ _ _)
     · exact .inr ⟨q, s₁, tr, by simp only [eval, hex, bnd_error], hwx.mono fun d => by simp,
-        hpx.left hs hL⟩
+        hpx.left hs hL, hqx⟩
   | @infer Γ pc m t a τa ιa βa _ iha =>
     intro ρ s hE hD hG hL hB
     rcases iha hE hD hG hL (fun d => by have := hB d; simp at this ⊢; omega) with
-      ⟨oa, hea, _, hwa, hca⟩ | ⟨q, s₁, tr, hea, hwa, hpa⟩
+      ⟨oa, hea, _, hwa, hca⟩ | ⟨q, s₁, tr, hea, hwa, hpa, hqa⟩
     · have hble : ble (oa.st.spent + S.mcost m) c.limit = true :=
         ble_iff.mpr fun d => by have := hB d; have := (hwa d).2; simp at *; omega
       exact .inl ⟨⟨c.oracle oa.st.calls m t oa.v, ⟨oa.st.used, oa.st.spent + S.mcost m,
         oa.st.calls + 1, oa.st.w, oa.st.comp⟩, oa.tr⟩,
         by simp [eval, hea, doInfer, hble], hO _ _ _ _, hwa.trans (Within.step _ _), hca⟩
-    · exact .inr ⟨q, s₁, tr, by simp only [eval, hea, bnd_error], hwa.mono fun d => by simp, hpa⟩
+    · exact .inr ⟨q, s₁, tr, by simp only [eval, hea, bnd_error], hwa.mono fun d => by simp, hpa, hqa⟩
   | @await Γ pc q _ =>
     intro ρ s _ _ _ _ _
     cases hq : S.probe q s.w
-    · exact .inr ⟨q, s, [], by simp [eval, hq], Within.refl _ _, Partial.refl _ _ _⟩
+    · exact .inr ⟨.probe q, s, [], by simp [eval, hq], Within.refl _ _, Partial.refl _ _ _, trivial⟩
     · exact .inl ⟨⟨.unit, s, []⟩, by simp [eval, hq], .unit, Within.refl _ _,
         Consumed.nil fun _ _ _ => by simp [consumes]⟩
   | @atomic Γ pc body r f g τ ιb ιf ιg βb βf βg _ _ _ _ ihb ihf ihg =>
@@ -537,23 +653,27 @@ theorem sound (hO : c.oracle.Ok) {Γ : List Bind} {pc : Lab} {e : Exp} {τ : Ty}
     have hsg := splits_atomic_g body r f g
     rcases ihb (s := { s with comp := [] }) hE hD hG (hL.left hsf)
         (fun d => by have := hB d; simp at this ⊢; omega) with
-      ⟨o, he, hv, hw, hc⟩ | ⟨q, s₁, tr, he, hw, hp⟩
+      ⟨o, he, hv, hw, hc⟩ | ⟨q, s₁, tr, he, hw, hp, hq⟩
     · -- commit: o corpo consumiu sua parte, a saída revoga a dos tratadores
       exact .inl ⟨_, eval_atomic_ok he, hv, hw.mono fun d => by simp,
         (hc.toPartial.left hsf hL).exit hL⟩
-    · -- falha: compensa, roda um tratador; a saída revoga o que o caminho não consumiu
-      rw [eval_atomic_fail he]
+    · by_cases hy : (q.isAbort && ((compensate S s₁.comp s₁.w).ok && S.probe r (compensate S s₁.comp s₁.w).w)) = true
+      · -- o encerramento pelo tratador atravessa a saga recuperada
+        rw [eval_atomic_reraise he hy]
+        exact .inr ⟨_, _, _, rfl, hw.mono fun d => by simp, hp.left hsf hL, hq⟩
+      -- falha: compensa, roda um tratador; a saída revoga o que o caminho não consumiu
+      rw [eval_atomic_fail he (by simpa using hy)]
       have fin : ∀ (evs : List Ev) (hd : Exp) (βh : Budget) (r' : Except Err Out),
           Splits (consumes (.atomic body r f g)) (consumes body) (consumes hd) → βh ≤ βf ⊔ βg →
-          Sound ρ (consumes hd) τ βh { s₁ with w := (compensate S s₁.comp s₁.w).w, comp := s.comp } r' →
-          Sound ρ (consumes (.atomic body r f g)) τ (βb + (βf ⊔ βg)) s
+          Sound S ρ (consumes hd) τ βh { s₁ with w := (compensate S s₁.comp s₁.w).w, comp := s.comp } r' →
+          Sound S ρ (consumes (.atomic body r f g)) τ (βb + (βf ⊔ βg)) s
             (pre evs (bnd r' fun o' => .ok ⟨o'.v, exitSaga ρ (.atomic body r f g) o'.st, evs ++ o'.tr⟩)) := by
         intro evs hd βh r' hs hβ hr
-        rcases hr with ⟨o', rfl, hv', hw', hc'⟩ | ⟨q', s₃, tr', rfl, hw', hp'⟩
+        rcases hr with ⟨o', rfl, hv', hw', hc'⟩ | ⟨q', s₃, tr', rfl, hw', hp', hq'⟩
         · refine .inl ⟨⟨o'.v, exitSaga ρ (.atomic body r f g) o'.st, evs ++ o'.tr⟩, rfl, hv', ?_,
             (Partial.seq hs hL hp hc'.toPartial).exit hL⟩
           exact (hw.trans hw').mono fun d => by have := hβ d; simp at *; omega
-        · refine .inr ⟨q', s₃, evs ++ tr', rfl, ?_, Partial.seq hs hL hp hp'⟩
+        · refine .inr ⟨q', s₃, evs ++ tr', rfl, ?_, Partial.seq hs hL hp hp', hq'⟩
           exact (hw.trans hw').mono fun d => by have := hβ d; simp at *; omega
       cases (compensate S s₁.comp s₁.w).ok && S.probe r (compensate S s₁.comp s₁.w).w
       · exact fin _ g βg _ hsg (le_join_right _ _)
@@ -564,6 +684,68 @@ theorem sound (hO : c.oracle.Ok) {Γ : List Bind} {pc : Lab} {e : Exp} {τ : Ty}
           (ihf (s := { s₁ with w := (compensate S s₁.comp s₁.w).w, comp := s.comp }) hE hD hG
             (Lin.seqP hsf hD hL hp)
             (fun d => by have := hB d; have := (hw d).2; simp at *; omega))
+  | @call Γ pc t j a n e ιa βa E ιe βe _ hk heff _ _ hte hpure hcons iha _ =>
+    intro ρ s hE hD hG hL hB
+    have hs : Splits (consumes (.call t j a n e)) (consumes a) (fun k => some (if j = k then 1 else 0)) :=
+      fun _ _ h => Count.add_eq h
+    rcases iha hE hD hG (hL.left hs) (fun d => by have := hB d; simp at this ⊢; omega) with
+      ⟨oa, hea, _, hwa, hca⟩ | ⟨q, s₁, tr, hea, hwa, hpa, hqa⟩
+    · obtain ⟨id, hid⟩ := hE.cap_lookup hk
+      have hgrant : S.effect t ∈ c.grants id := hG j E id hk hid _ heff
+      have hfree : id ∉ oa.st.used := by
+        obtain ⟨m, hm, _, hm1⟩ := hL.seq hs hD hca j id hid
+        simp at hm; subst hm; exact hm1 rfl
+      have hble : ble (oa.st.spent + S.cost t) c.limit = true :=
+        ble_iff.mpr fun d => by have := hB d; have := (hwa d).2; simp at *; omega
+      have hcon : Consumed ρ (consumes (.call t j a n e)) s.used (id :: oa.st.used) :=
+        Consumed.seq hs hL hca (Consumed.single hid)
+      have hwc : Within s.spent (oa.st.spent + S.cost t) (βa + S.cost t) := hwa.trans (Within.step _ _)
+      have hev : ∀ (f : Out → Except Err Out),
+          eval S c (.call t j a n e) ρ s = bnd (eval S c a ρ s) (fun o => doCall S c t ρ[j]? n
+            (fun id s' => eval S c e [.pend t id] s') o) := fun _ => rfl
+      rw [hev (fun _ => .error .stuck), hea, bnd_ok]
+      unfold doCall
+      simp only [hid, hgrant, hfree, hble, if_true, if_false]
+      cases hr0 : S.reply id 0 with
+      | done =>
+        exact .inl ⟨_, rfl, .unit, hwc, hcon⟩
+      | failed =>
+        exact .inr ⟨.refused id, callSt0 S t id oa.st, oa.tr ++ [.settle id .failed],
+          by simp [pre] <;> rfl, hwc, hcon.toPartial, trivial⟩
+      | unknown =>
+        simp only
+        cases hr : (reconcile S (S.prov t) id 1 n).2 with
+        | done => exact .inl ⟨_, rfl, .unit, hwc, hcon⟩
+        | failed =>
+          exact .inr ⟨.refused id, callSt S t id oa.v oa.st (S.applied id),
+            oa.tr ++ (.pending t id oa.v :: ((reconcile S (S.prov t) id 1 n).1 ++ [.settle id .failed])),
+            by simp [pre] <;> rfl, hwc, hcon.toPartial, trivial⟩
+        | transferred =>
+          simp only
+          obtain ⟨oh, heh, hsh, hvh, hth⟩ := pure_handler (c := c) (t := t) (id := id) hte hpure
+            (Γd := []) (ds := []) (s := callSt S t id oa.v oa.st (S.applied id)) (m := 1)
+            (by simp) .nil (by simp) (by simpa using hcons)
+          have heh' : eval S c e [.pend t id] (callSt S t id oa.v oa.st (S.applied id)) = .ok oh := by
+            simpa using heh
+          rw [heh']
+          have hto : transferOnly id oh.tr = true := by
+            simp [transferOnly, hth, kevs, keyOf, handoffs]
+          simp only [hto, if_true]
+          refine .inr ⟨.abort oh.v, oh.st,
+            oa.tr ++ (.pending t id oa.v :: ((reconcile S (S.prov t) id 1 n).1 ++ (oh.tr ++ [.settle id .transferred]))),
+            by simp [pre] <;> rfl, ?_, ?_, hvh⟩
+          · rw [hsh]; exact hwc
+          · rw [hsh]; exact hcon.toPartial
+    · exact .inr ⟨q, s₁, tr, by simp only [eval, hea, bnd_error], hwa.mono fun d => by simp,
+        hpa.left hs hL, hqa⟩
+  | @transfer Γ pc p _ hp =>
+    intro ρ s hE _ _ _ _
+    obtain ⟨t, id, hid⟩ := hE.pend_lookup hp
+    refine .inl ⟨⟨.unit, s, [.handoff id]⟩, by simp [eval, hid], .unit, Within.refl _ _,
+      Consumed.nil fun k id' hk => ?_⟩
+    by_cases hpk : p = k
+    · subst hpk; rw [hid] at hk; cases hk
+    · simp [consumes, hpk]
 
 /-! ## Enunciados -/
 
@@ -584,12 +766,13 @@ theorem linear_lin {Γ : List Bind} {ρ : List Val} {s : St} {e : Exp} (hE : Env
   exact ⟨1, h k E hE', Nat.le_refl _, fun _ => hfresh k id hk⟩
 
 /-- **T1 nos dois desfechos.** Vale para todo programa bem tipado e linear, com ou sem
-sagas. Ou ele termina com um valor do tipo estático, dentro de β e tendo consumido
-exatamente as capacidades do agente; ou uma pós-condição falhou fora de qualquer saga, e o
-`timeout` sobe com o gasto dentro de β e tendo consumido só capacidades do agente, cada uma
-no máximo uma vez. Em particular, os dois ramos de uma saga (confirmação e compensação)
-respeitam a linearidade de `Cap[E]`: o que o caminho percorrido não consumiu é revogado na
-saída. -/
+sagas e com ou sem chamadas com chave. Ou ele termina com um valor do tipo estático, dentro
+de β e tendo consumido exatamente as capacidades do agente; ou ele falha por uma causa que
+uma saga captura, com o gasto dentro de β e tendo consumido só capacidades do agente, cada
+uma no máximo uma vez. Se a causa for o encerramento pelo tratador de `TimeoutUnknown`, o
+valor tem o tipo de retorno do agente. Em particular, os dois ramos de uma saga (confirmação
+e compensação) respeitam a linearidade de `Cap[E]`: o que o caminho percorrido não consumiu é
+revogado na saída. -/
 theorem soundness_total (hO : c.oracle.Ok) {Γ : List Bind} {pc : Lab} {e : Exp} {τ : Ty}
     {ι : Lab} {β : Budget} {ρ : List Val} {s : St} (h : HasType S Γ pc e τ ι β)
     (hlin : Linear Γ e) (h0 : Start c.grants Γ ρ s) (hB : s.spent + β ≤ c.limit) :
@@ -597,44 +780,187 @@ theorem soundness_total (hO : c.oracle.Ok) {Γ : List Bind} {pc : Lab} {e : Exp}
       ∃ new : List Nat, o.st.used = new ++ s.used ∧
         ∀ id : Nat, id ∈ new ↔ ∃ k : Nat, ρ[k]? = some (Val.cap id)) ∨
     (∃ q s₁ tr, eval S c e ρ s = .error (.timeout q s₁ tr) ∧ Within s.spent s₁.spent β ∧
-      ∃ new : List Nat, s₁.used = new ++ s.used ∧
-        ∀ id ∈ new, ∃ k : Nat, ρ[k]? = some (Val.cap id)) := by
+      (∃ new : List Nat, s₁.used = new ++ s.used ∧
+        ∀ id ∈ new, ∃ k : Nat, ρ[k]? = some (Val.cap id)) ∧ CauseOk S q) := by
   rcases sound hO h h0.env h0.caps h0.granted (linear_lin h0.env h0.fresh hlin) hB with
-    ⟨o, he, hv, hw, new, hnew, hmem⟩ | ⟨q, s₁, tr, he, hw, new, hnew, hmem⟩
+    ⟨o, he, hv, hw, new, hnew, hmem⟩ | ⟨q, s₁, tr, he, hw, ⟨new, hnew, hmem⟩, hq⟩
   · refine .inl ⟨o, he, hv, hw, new, hnew, fun id => ⟨fun hin => ?_, fun ⟨k, hk⟩ => ?_⟩⟩
     · obtain ⟨k, hk, _⟩ := (hmem id).mp hin
       exact ⟨k, hk⟩
     · obtain ⟨E, hE'⟩ := h0.env.cap_pos hk
       exact (hmem id).mpr ⟨k, hk, hlin k E hE'⟩
-  · refine .inr ⟨q, s₁, tr, he, hw, new, hnew, fun id hin => ?_⟩
+  · refine .inr ⟨q, s₁, tr, he, hw, ⟨new, hnew, fun id hin => ?_⟩, hq⟩
     obtain ⟨k, hk, _⟩ := hmem id hin
     exact ⟨k, hk⟩
 
 /-- **Teorema T1 (solidez).** Um programa bem tipado e linear, com todo `await` dentro de
-uma saga (`Guarded`) e cujo orçamento estático cabe no teto, executa sem erro a partir de
-um ponto de partida válido. O valor final tem o tipo estático, o gasto real fica dentro de
-β em cada dimensão, e o conjunto consumido ganha exatamente as capacidades do agente. -/
+uma saga (`Guarded`) e cujo orçamento estático cabe no teto, executa a partir de um ponto de
+partida válido e chega a um de três desfechos, nenhum deles um erro de programa:
+
+* termina com um valor do tipo estático, dentro de β em cada dimensão, e o conjunto
+  consumido ganha exatamente as capacidades do agente;
+* o provedor recusou uma operação com chave (`Failed`, na chamada ou na reconciliação), fora
+  de qualquer saga que a capturasse;
+* o tratador de `TimeoutUnknown` transferiu a obrigação e encerrou o evento com um valor do
+  tipo de retorno do agente.
+
+Uma pós-condição nunca falha fora de uma saga. Sem chamadas com chave, só o primeiro
+desfecho existe (`soundness_keyless`). -/
 theorem soundness (hO : c.oracle.Ok) {Γ : List Bind} {pc : Lab} {e : Exp} {τ : Ty} {ι : Lab}
     {β : Budget} {ρ : List Val} {s : St} (h : HasType S Γ pc e τ ι β) (hlin : Linear Γ e)
     (hg : Guarded e) (h0 : Start c.grants Γ ρ s) (hB : s.spent + β ≤ c.limit) :
-    ∃ o, eval S c e ρ s = .ok o ∧ HasTy o.v τ ∧ Within s.spent o.st.spent β ∧
+    (∃ o, eval S c e ρ s = .ok o ∧ HasTy o.v τ ∧ Within s.spent o.st.spent β ∧
       ∃ new : List Nat, o.st.used = new ++ s.used ∧
-        ∀ id : Nat, id ∈ new ↔ ∃ k : Nat, ρ[k]? = some (Val.cap id) := by
-  rcases soundness_total hO h hlin h0 hB with hok | ⟨q, s₁, tr, he, _⟩
-  · exact hok
-  · exact absurd he (guarded_no_timeout e hg ρ s q s₁ tr)
+        ∀ id : Nat, id ∈ new ↔ ∃ k : Nat, ρ[k]? = some (Val.cap id)) ∨
+    (∃ k s₁ tr, eval S c e ρ s = .error (.timeout (.refused k) s₁ tr)) ∨
+    (∃ v s₁ tr, eval S c e ρ s = .error (.timeout (.abort v) s₁ tr) ∧ HasTy v S.ret) := by
+  rcases soundness_total hO h hlin h0 hB with hok | ⟨q, s₁, tr, he, _, _, hq⟩
+  · exact .inl hok
+  · cases q with
+    | probe q => exact absurd he (guarded_no_timeout e hg ρ s q s₁ tr)
+    | refused k => exact .inr (.inl ⟨k, s₁, tr, he⟩)
+    | abort v => exact .inr (.inr ⟨v, s₁, tr, he, hq⟩)
 
-/-- **T1, progresso.** Nenhum dos quatro erros acontece: `stuck`, efeito sem capacidade ou
-sem concessão (`noCap`), reuso de capacidade linear (`reuse`) e estouro de orçamento
-(`budget`). -/
+/-- **T1, progresso.** Nenhum dos quatro erros de programa acontece: `stuck`, efeito sem
+capacidade ou sem concessão (`noCap`), reuso ou descarte de recurso linear (`reuse`) e estouro
+de orçamento (`budget`). Toda falha que sobe é uma recusa do provedor ou o encerramento pelo
+tratador; nenhuma é uma pós-condição. -/
 theorem progress (hO : c.oracle.Ok) {Γ : List Bind} {pc : Lab} {e : Exp} {τ : Ty} {ι : Lab}
     {β : Budget} {ρ : List Val} {s : St} (h : HasType S Γ pc e τ ι β) (hlin : Linear Γ e)
     (hg : Guarded e) (h0 : Start c.grants Γ ρ s) (hB : s.spent + β ≤ c.limit) :
-    ∀ err, eval S c e ρ s ≠ .error err := by
+    ∀ err, eval S c e ρ s = .error err →
+      ∃ q s₁ tr, err = .timeout q s₁ tr ∧ ((∃ k, q = .refused k) ∨ ∃ v, q = .abort v) := by
   intro err herr
-  obtain ⟨o, ho, _⟩ := soundness hO h hlin hg h0 hB
-  rw [ho] at herr
-  cases herr
+  rcases soundness hO h hlin hg h0 hB with ⟨o, ho, _⟩ | ⟨k, s₁, tr, ho⟩ | ⟨v, s₁, tr, ho, _⟩
+  · rw [ho] at herr; cases herr
+  · rw [ho] at herr; cases herr; exact ⟨_, _, _, rfl, .inl ⟨k, rfl⟩⟩
+  · rw [ho] at herr; cases herr; exact ⟨_, _, _, rfl, .inr ⟨v, rfl⟩⟩
+
+theorem loop_probe_only {f : Val → St → Except Err Out}
+    (hf : ∀ v s q s₁ tr, f v s = .error (.timeout q s₁ tr) → ∃ q', q = .probe q') :
+    ∀ (vs : List Val) (s : St) (q : Cause) (s₁ : St) (tr : List Ev),
+      loop f vs s = .error (.timeout q s₁ tr) → ∃ q', q = .probe q'
+  | [], s, q, s₁, tr, h => by simp [loop] at h
+  | v :: vs, s, q, s₁, tr, h => by
+    simp only [loop] at h
+    rcases bnd_eq_timeout h with h₀ | ⟨o, t, _, h₁, _⟩
+    · exact hf v s q s₁ tr h₀
+    · rcases bnd_eq_timeout h₁ with h₂ | ⟨_, _, _, h₃, _⟩
+      · exact loop_probe_only hf vs _ q s₁ _ h₂
+      · cases h₃
+
+/-- Sem chamadas com chave, a única causa de falha é uma pós-condição. -/
+theorem keyless_probe_only : ∀ (e : Exp), keyless e = true →
+    ∀ (ρ : List Val) (s : St) (q : Cause) (s₁ : St) (tr : List Ev),
+      eval S c e ρ s = .error (.timeout q s₁ tr) → ∃ q', q = .probe q'
+  | .val _, _, ρ, s, q, s₁, tr, h => by simp [eval] at h
+  | .var k, _, ρ, s, q, s₁, tr, h => by
+    simp only [eval] at h; split at h <;> cases h
+  | .let_ e₁ e₂, hg, ρ, s, q, s₁, tr, h => by
+    simp only [keyless, Bool.and_eq_true] at hg
+    simp only [eval] at h
+    rcases bnd_eq_timeout h with h₀ | ⟨o₁, t, _, h₁, _⟩
+    · exact keyless_probe_only e₁ hg.1 _ _ _ _ _ h₀
+    · rcases bnd_eq_timeout h₁ with h₂ | ⟨_, _, _, h₃, _⟩
+      · exact keyless_probe_only e₂ hg.2 _ _ _ _ _ h₂
+      · cases h₃
+  | .ite x t f, hg, ρ, s, q, s₁, tr, h => by
+    simp only [keyless, Bool.and_eq_true] at hg
+    simp only [eval] at h
+    rcases bnd_eq_timeout h with h₀ | ⟨o, tr', _, h₁, _⟩
+    · exact keyless_probe_only x hg.1.1 _ _ _ _ _ h₀
+    · revert h₁; split
+      · intro h₁
+        rcases bnd_eq_timeout h₁ with h₂ | ⟨_, _, _, h₃, _⟩
+        · rcases cond_eq h₂ with ⟨_, h₄⟩ | ⟨_, h₄⟩
+          · exact keyless_probe_only t hg.1.2 _ _ _ _ _ h₄
+          · exact keyless_probe_only f hg.2 _ _ _ _ _ h₄
+        · cases h₃
+      · intro h₁; cases h₁
+  | .prim op a b, hg, ρ, s, q, s₁, tr, h => by
+    simp only [keyless, Bool.and_eq_true] at hg
+    simp only [eval] at h
+    rcases bnd_eq_timeout h with h₀ | ⟨o₁, t, _, h₁, _⟩
+    · exact keyless_probe_only a hg.1 _ _ _ _ _ h₀
+    · rcases bnd_eq_timeout h₁ with h₂ | ⟨_, _, _, h₃, _⟩
+      · exact keyless_probe_only b hg.2 _ _ _ _ _ h₂
+      · revert h₃; split <;> intro h₃ <;> cases h₃
+  | .endorse p e d, hg, ρ, s, q, s₁, tr, h => by
+    simp only [keyless, Bool.and_eq_true] at hg
+    simp only [eval] at h
+    rcases bnd_eq_timeout h with h₀ | ⟨oe, t, _, h₁, _⟩
+    · exact keyless_probe_only e hg.1 _ _ _ _ _ h₀
+    · revert h₁; split
+      · intro h₁; cases h₁
+      · intro h₁
+        obtain ⟨t', h₂, _⟩ := pre_eq_timeout h₁
+        rcases bnd_eq_timeout h₂ with h₃ | ⟨_, _, _, h₄, _⟩
+        · exact keyless_probe_only d hg.2 _ _ _ _ _ h₃
+        · cases h₄
+  | .act t k a, hg, ρ, s, q, s₁, tr, h => by
+    simp only [keyless] at hg
+    simp only [eval] at h
+    rcases bnd_eq_timeout h with h₀ | ⟨_, _, _, h₁, _⟩
+    · exact keyless_probe_only a hg _ _ _ _ _ h₀
+    · exact absurd h₁ doAct_ne_timeout
+  | .drop k, _, ρ, s, q, s₁, tr, h => by
+    simp only [eval] at h; exact absurd h doDrop_ne_timeout
+  | .for_ n xs body, hg, ρ, s, q, s₁, tr, h => by
+    simp only [keyless, Bool.and_eq_true] at hg
+    simp only [eval] at h
+    rcases bnd_eq_timeout h with h₀ | ⟨ox, t, _, h₁, _⟩
+    · exact keyless_probe_only xs hg.1 _ _ _ _ _ h₀
+    · revert h₁; split
+      · intro h₁
+        rcases bnd_eq_timeout h₁ with h₂ | ⟨_, _, _, h₃, _⟩
+        · exact loop_probe_only (fun v s' => keyless_probe_only body hg.2 (v :: ρ) s') _ _ _ _ _ h₂
+        · cases h₃
+      · intro h₁; cases h₁
+  | .infer m t a, hg, ρ, s, q, s₁, tr, h => by
+    simp only [keyless] at hg
+    simp only [eval] at h
+    rcases bnd_eq_timeout h with h₀ | ⟨_, _, _, h₁, _⟩
+    · exact keyless_probe_only a hg _ _ _ _ _ h₀
+    · exact absurd h₁ doInfer_ne_timeout
+  | .await q', _, ρ, s, q, s₁, tr, h => by
+    simp only [eval] at h; split at h
+    · cases h
+    · cases h; exact ⟨q', rfl⟩
+  | .atomic body r f g, hg, ρ, s, q, s₁, tr, h => by
+    simp only [keyless, Bool.and_eq_true] at hg
+    simp only [eval] at h
+    split at h
+    · cases h
+    · rename_i q₀ s₀ t₀ hb
+      obtain ⟨q', rfl⟩ := keyless_probe_only body hg.1.1 _ _ _ _ _ hb
+      split at h
+      · rename_i hy; simp [Cause.isAbort] at hy
+      · obtain ⟨t', h₁, _⟩ := pre_eq_timeout h
+        rcases bnd_eq_timeout h₁ with h₂ | ⟨_, _, _, h₃, _⟩
+        · rcases cond_eq h₂ with ⟨_, h₄⟩ | ⟨_, h₄⟩
+          · exact keyless_probe_only f hg.1.2 _ _ _ _ _ h₄
+          · exact keyless_probe_only g hg.2 _ _ _ _ _ h₄
+        · cases h₃
+    · rename_i hne _
+      cases h
+      exact absurd rfl (hne _ _ _)
+  | .call .., hg, _, _, _, _, _, _ => by simp [keyless] at hg
+  | .transfer p, _, ρ, s, q, s₁, tr, h => by
+    simp only [eval] at h; split at h <;> cases h
+
+/-- **T1 sem chamadas com chave**, o enunciado das versões anteriores, intacto: um programa
+bem tipado, linear e `Guarded`, sem `call`, executa sem erro nenhum. -/
+theorem soundness_keyless (hO : c.oracle.Ok) {Γ : List Bind} {pc : Lab} {e : Exp} {τ : Ty}
+    {ι : Lab} {β : Budget} {ρ : List Val} {s : St} (h : HasType S Γ pc e τ ι β)
+    (hlin : Linear Γ e) (hg : Guarded e) (hk : keyless e = true) (h0 : Start c.grants Γ ρ s)
+    (hB : s.spent + β ≤ c.limit) :
+    ∃ o, eval S c e ρ s = .ok o ∧ HasTy o.v τ ∧ Within s.spent o.st.spent β ∧
+      ∃ new : List Nat, o.st.used = new ++ s.used ∧
+        ∀ id : Nat, id ∈ new ↔ ∃ k : Nat, ρ[k]? = some (Val.cap id) := by
+  rcases soundness hO h hlin hg h0 hB with hok | ⟨k, s₁, tr, he⟩ | ⟨v, s₁, tr, he, _⟩
+  · exact hok
+  · obtain ⟨q', hq'⟩ := keyless_probe_only e hk ρ s _ s₁ tr he; cases hq'
+  · obtain ⟨q', hq'⟩ := keyless_probe_only e hk ρ s _ s₁ tr he; cases hq'
 
 /-- **T1, preservação.** Se a execução termina, o valor tem o tipo estático, o gasto real
 fica dentro de β e, portanto, dentro do teto do agente. Vale com ou sem sagas. -/
@@ -692,6 +1018,11 @@ theorem fresh_preserves : Preserves S c True (fun s s' _ => Fresh s.used s'.used
   commit _ := fun h => h
   revoke _ := fun ids hd hf h => h.trans ⟨ids, rfl, hd, hf⟩
   abort _ := fun _ _ _ h => h
+  callDone := by intro _ s t id v _ hfree; exact Fresh.cons hfree
+  callFailed := by intro _ s t id _ hfree; exact Fresh.cons hfree
+  callRec := by intro _ s t id n v e _ hfree _ _; exact Fresh.cons hfree
+  callAbort := by intro _ s s₃ t id n v tr _ hfree _ h _; exact (Fresh.cons hfree).trans h
+  transfer := Fresh.refl _
 
 /-- Por construção, o avaliador só acrescenta ao conjunto consumido identidades que ainda
 não estavam lá, e nunca a mesma duas vezes. -/

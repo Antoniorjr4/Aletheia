@@ -337,7 +337,7 @@ fn cmd_run(opts: &Opts, st: Style) -> Result<bool, String> {
         chain
     );
     if let Some(cp) = opts.one("core-journal") {
-        let core = Journal::core_view(&arx.journal.entries);
+        let core = Journal::core_view_with(&arx.journal.entries, &athc::compensable_tools(&c.module));
         std::fs::write(cp, core.to_jsonl()).map_err(|e| format!("falha ao gravar o journal do núcleo: {e}"))?;
         println!(
             "  {:<9} {cp} · {} entradas · cabeça #{} (vista do núcleo λ_Ath)",

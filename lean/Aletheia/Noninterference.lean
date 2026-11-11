@@ -39,6 +39,7 @@ inductive LowEq : List Bind → List Val → List Val → Prop where
   | data {Γ ρ₁ ρ₂ v₁ v₂ τ ι} :
       (low ι → v₁ = v₂) → LowEq Γ ρ₁ ρ₂ → LowEq (.data τ ι :: Γ) (v₁ :: ρ₁) (v₂ :: ρ₂)
   | cap {Γ ρ₁ ρ₂ v E} : LowEq Γ ρ₁ ρ₂ → LowEq (.cap E :: Γ) (v :: ρ₁) (v :: ρ₂)
+  | pend {Γ ρ₁ ρ₂ v} : LowEq Γ ρ₁ ρ₂ → LowEq (.pend :: Γ) (v :: ρ₁) (v :: ρ₂)
 
 theorem LowEq.data_eq {Γ : List Bind} {ρ₁ ρ₂ : List Val} (h : LowEq Γ ρ₁ ρ₂) :
     ∀ {k : Nat} {τ : Ty} {ι : Lab}, Γ[k]? = some (Bind.data τ ι) → low ι → ρ₁[k]? = ρ₂[k]? := by
@@ -50,6 +51,11 @@ theorem LowEq.data_eq {Γ : List Bind} {ρ₁ ρ₂ : List Val} (h : LowEq Γ ρ
     | zero => simp at hk ⊢; obtain ⟨rfl, rfl⟩ := hk; exact hv hl
     | succ k => simpa using ih (by simpa using hk) hl
   | cap _ ih =>
+    intro k τ ι hk hl
+    cases k with
+    | zero => simp at hk
+    | succ k => simpa using ih (by simpa using hk) hl
+  | pend _ ih =>
     intro k τ ι hk hl
     cases k with
     | zero => simp at hk
@@ -66,6 +72,32 @@ theorem LowEq.cap_eq {Γ : List Bind} {ρ₁ ρ₂ : List Val} (h : LowEq Γ ρ�
     | succ k => simpa using ih (by simpa using hk)
   | cap _ ih =>
     intro k E hk
+    cases k with
+    | zero => rfl
+    | succ k => simpa using ih (by simpa using hk)
+  | pend _ ih =>
+    intro k E hk
+    cases k with
+    | zero => simp at hk
+    | succ k => simpa using ih (by simpa using hk)
+
+/-- As obrigações dos dois ambientes coincidem. -/
+theorem LowEq.pend_eq {Γ : List Bind} {ρ₁ ρ₂ : List Val} (h : LowEq Γ ρ₁ ρ₂) :
+    ∀ {k : Nat}, Γ[k]? = some Bind.pend → ρ₁[k]? = ρ₂[k]? := by
+  induction h with
+  | nil => intro k hk; simp at hk
+  | data _ _ ih =>
+    intro k hk
+    cases k with
+    | zero => simp at hk
+    | succ k => simpa using ih (by simpa using hk)
+  | cap _ ih =>
+    intro k hk
+    cases k with
+    | zero => simp at hk
+    | succ k => simpa using ih (by simpa using hk)
+  | pend _ ih =>
+    intro k hk
     cases k with
     | zero => rfl
     | succ k => simpa using ih (by simpa using hk)
@@ -205,6 +237,8 @@ theorem confine {Γ : List Bind} {pc : Lab} {e : Exp} {τ : Ty} {ι : Lab} {β :
     have := iha hpc ha; exact this
   | await hl => intro hpc; exact absurd hl hpc
   | atomic hl _ _ _ _ _ _ => intro hpc; exact absurd hl hpc
+  | call hl _ _ _ _ _ _ _ _ _ => intro hpc; exact absurd hl hpc
+  | transfer hl _ => intro hpc; exact absurd hl hpc
 
 /-! ## O teorema -/
 
@@ -429,6 +463,44 @@ theorem noninterference {c₁ c₂ : Cfg} {Γ : List Bind} {pc : Lab} {e : Exp} 
     split at h₁ <;> split at h₂ <;> cases h₁ <;> cases h₂
     exact .inl ⟨rfl, fun _ => rfl⟩
   | atomic _ _ _ _ _ _ _ => intro hsf; simp [sagaFree] at hsf
+  | @call Γ pc t k a n e ιa βa E ιe βe _ hk _ _ hla _ _ _ iha _ =>
+    intro hsf ρ₁ ρ₂ s₁ s₂ o₁ o₂ hl h₁ h₂
+    simp only [sagaFree, Bool.and_eq_true] at hsf
+    simp only [eval, bnd_eq_ok] at h₁ h₂
+    obtain ⟨a₁, ha₁, h₁⟩ := h₁
+    obtain ⟨a₂, ha₂, h₂⟩ := h₂
+    obtain ⟨id₁, hid₁, _, _, _, hc₁⟩ := doCall_ok h₁
+    obtain ⟨id₂, hid₂, _, _, _, hc₂⟩ := doCall_ok h₂
+    have hcap := hl.cap_eq hk
+    rw [hid₁, hid₂] at hcap
+    cases hcap
+    -- a mesma capacidade, a mesma chave: o provedor responde igual às duas execuções
+    have hagree : a₁.tr = a₂.tr ∧ a₁.v = a₂.v ∨ Diverge a₁.tr a₂.tr := by
+      rcases iha hsf.1 hl ha₁ ha₂ with ⟨htr, hv⟩ | hd
+      · exact .inl ⟨htr, hv hla⟩
+      · exact .inr hd
+    rcases hc₁ with ⟨hr₁, rfl⟩ | ⟨hr₁, _, rfl⟩ <;> rcases hc₂ with ⟨hr₂, rfl⟩ | ⟨hr₂, _, rfl⟩
+    · rcases hagree with ⟨htr, hv⟩ | hd
+      · exact .inl ⟨by simp [htr, hv], fun _ => rfl⟩
+      · exact .inr (hd.append _ _)
+    · rw [hr₁] at hr₂; cases hr₂
+    · rw [hr₁] at hr₂; cases hr₂
+    · rcases hagree with ⟨htr, hv⟩ | hd
+      · exact .inl ⟨by simp [htr, hv], fun _ => rfl⟩
+      · exact .inr (hd.append _ _)
+  | transfer _ hp =>
+    intro _ ρ₁ ρ₂ s₁ s₂ o₁ o₂ hl h₁ h₂
+    have hpe := hl.pend_eq hp
+    simp only [eval] at h₁ h₂
+    split at h₁
+    next t₁ k₁ hρ₁ =>
+      split at h₂
+      next t₂ k₂ hρ₂ =>
+        rw [hρ₁, hρ₂] at hpe
+        cases hpe; cases h₁; cases h₂
+        exact .inl ⟨rfl, fun _ => rfl⟩
+      next => cases h₂
+    next => cases h₁
 
 /-! ## Consequências -/
 
@@ -480,16 +552,20 @@ theorem actions_agree_until_endorsement {c₁ c₂ : Cfg} {Γ : List Bind} {pc :
   · exact .inr hd
 
 /-- **T1 + T3.** A não-interferência não depende de as duas execuções terminarem bem: para um
-programa bem tipado e linear, com o orçamento estático dentro dos dois tetos, o T1 garante as
-duas execuções. A conclusão do T3 vale, portanto, sem hipótese sobre o resultado. -/
+programa bem tipado e linear, sem chamadas com chave e com o orçamento estático dentro dos
+dois tetos, o T1 garante as duas execuções. A conclusão do T3 vale, portanto, sem hipótese
+sobre o resultado. Com chamadas com chave, uma execução pode terminar em recusa do provedor
+ou no encerramento pelo tratador; a comparação de desfechos de falha é a do T3 com sagas
+(`SagaNI.lean`). -/
 theorem noninterference_total {c₁ c₂ : Cfg} (hO₁ : c₁.oracle.Ok) (hO₂ : c₂.oracle.Ok)
     {Γ : List Bind} {pc : Lab} {e : Exp} {τ : Ty} {ι : Lab} {β : Budget}
     {ρ₁ ρ₂ : List Val} {s₁ s₂ : St} (h : HasType S Γ pc e τ ι β) (hlin : Linear Γ e)
-    (hsf : sagaFree e = true) (hg : Guarded e) (h0₁ : Start c₁.grants Γ ρ₁ s₁) (h0₂ : Start c₂.grants Γ ρ₂ s₂) (hB₁ : s₁.spent + β ≤ c₁.limit)
+    (hsf : sagaFree e = true) (hg : Guarded e) (hk : keyless e = true)
+    (h0₁ : Start c₁.grants Γ ρ₁ s₁) (h0₂ : Start c₂.grants Γ ρ₂ s₂) (hB₁ : s₁.spent + β ≤ c₁.limit)
     (hB₂ : s₂.spent + β ≤ c₂.limit) (hl : LowEq Γ ρ₁ ρ₂) :
     ∃ o₁ o₂, eval S c₁ e ρ₁ s₁ = .ok o₁ ∧ eval S c₂ e ρ₂ s₂ = .ok o₂ ∧ NI ι o₁ o₂ := by
-  obtain ⟨o₁, h₁, _⟩ := soundness hO₁ h hlin hg h0₁ hB₁
-  obtain ⟨o₂, h₂, _⟩ := soundness hO₂ h hlin hg h0₂ hB₂
+  obtain ⟨o₁, h₁, _⟩ := soundness_keyless hO₁ h hlin hg hk h0₁ hB₁
+  obtain ⟨o₂, h₂, _⟩ := soundness_keyless hO₂ h hlin hg hk h0₂ hB₂
   exact ⟨o₁, o₂, h₁, h₂, noninterference h hsf hl h₁ h₂⟩
 
 /-- Todo endosso aceito num traço satisfaz a política auditada que o aceitou. -/
@@ -536,6 +612,25 @@ theorem policy_preserves : Preserves S c True (fun _ _ tr => PolicyOk S tr) wher
     · obtain ⟨_, _, _, hu⟩ := compensate_undo S _ _ _ hv
       cases hu
     · simp at hv
+  callDone := by intro _ s t id v _ _ p x hv; simp at hv
+  callFailed := by intro _ s t id _ _ p x hv; simp at hv
+  callRec := by
+    intro _ s t id n v e _ _ _ _ p x hx
+    rcases List.mem_cons.mp hx with hx | hx
+    · cases hx
+    · rcases List.mem_append.mp hx with hx | hx
+      · obtain ⟨j, r, h'⟩ := reconcile_queries S (S.prov t) id 1 n _ hx; cases h'
+      · simp at hx
+  callAbort := by
+    intro _ s s₃ t id n v tr _ _ _ hh _ p x hx
+    rcases List.mem_cons.mp hx with hx | hx
+    · cases hx
+    · rcases List.mem_append.mp hx with hx | hx
+      · obtain ⟨j, r, h'⟩ := reconcile_queries S (S.prov t) id 1 n _ hx; cases h'
+      · rcases List.mem_append.mp hx with hx | hx
+        · exact hh p x hx
+        · simp at hx
+  transfer := fun p v hv => by simp at hv
 
 /-- **T3, solidez do endosso.** Em qualquer execução, de qualquer programa, todo valor aceito
 por `refine … by p` satisfaz `p`. -/

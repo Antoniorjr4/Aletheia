@@ -330,7 +330,11 @@ O corpus tem 160 programas gerados por semente, bem tipados e lineares, conferid
 reimplementação das regras de `Typing.lean`, e 200 programas com sagas: ferramentas
 `compensable` sobre um mundo de células, compensações que o provedor pode recusar, sondas,
 `atomic` e `await`, com sagas que confirmam, que recuperam e que terminam em
-`CompensationFailed`. Inclui ainda a injeção da Groq de
+`CompensationFailed`. Desde a Rev11 há também 120 programas com chamadas com chave
+(`own IdemKey`, provedores `idempotent`, `queryable` e `opaque`, falhas na chamada e nos
+reenvios, o tratador `timeout_unknown`). Neles o Lean e o ARX coincidem módulo a renomeação
+bijetiva das chaves, e os testes de mutação conferem que a normalização não esconde perda,
+duplicação nem troca. A CI roda 400 + 400 + 600. Inclui ainda a injeção da Groq de
 `Examples.lean` e o BLAKE3 do Lean contra o crate de referência. Detalhes em
 [`lean/README.md`](lean/README.md#o-tripé-diferencial-ath-lean-eval).
 
@@ -679,19 +683,20 @@ docs/            registros da Rev6 e da Rev7: execuções reais, decisões e lim
 - **Certificados:** sem `certify`, `Bounded` nem monitor de deriva estatística.
 - **Teoremas:** T1, T2, T3, T6 e T9 estão provados para o núcleo λ_Ath, e só para ele. Ficam
   de fora registros, variantes e `match`, `Text`, `mint` separado e atenuação (no núcleo, a
-  chave de uma operação é a identidade da capacidade que a autoriza), o tratador
-  `timeout_unknown` como código do agente (no núcleo, reconciliação e transferência são o
-  protocolo da ação), `retry`, graus de certeza, localizações e T4/T5. A prova é do cálculo.
+  chave de uma operação é a identidade da capacidade que a autoriza; a obrigação restante
+  está em `docs/REV11.md`), `retry`, graus de certeza, localizações e T4/T5. O tratador
+  `timeout_unknown` é uma expressão do núcleo desde a Rev11. A prova é do cálculo.
   Entre o cálculo e o ARX, e entre o ARX e o Python, a correspondência é verificada por
   construção e por testes diferenciais (o tripé executa o próprio avaliador provado), não
-  demonstrada. O tripé cobre o fragmento linear do núcleo, com sagas, mas sem `drop` na
-  superfície e sem ferramentas com chave.
+  demonstrada. O tripé cobre o fragmento linear do núcleo, com sagas e com ferramentas com
+  chave (Rev11), mas sem `drop` na superfície.
 
 ## Próximos marcos
 
-1. **Chaves no tripé e o tratador no núcleo**: ferramentas com `own IdemKey` e provedores
-   com falhas injetadas no `ath-lean-eval` e nos dois runtimes; `handle timeout_unknown` como
-   expressão do núcleo, com `Pending[k]` linear consumida por `reconcile` ou `transfer`.
+1. **A chave cunhada no núcleo** (Fase 2 da Rev11): `mint` separado da capacidade, uma
+   segunda classe de recurso linear em `Linear`, e o T1, o T2 e o T9 refeitos sobre ela. As
+   chaves no tripé e o tratador `timeout_unknown` como expressão do núcleo foram entregues na
+   Rev11 (`docs/REV11.md`).
 2. **A matriz oficial do AgentDojo**: completar a rodada `banking` (16 tarefas e 144 pares
    sob ataque, baseline × Aletheia) e estender a ponte à suíte `workspace`.
 3. **Invariantes de recuperação provados**: contratos `restoring` sobre um estado abstrato do

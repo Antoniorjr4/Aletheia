@@ -774,6 +774,10 @@ struct Tripod {
     py: String,
     /// o journal completo do ARX (para contar os desfechos das sagas)
     full: String,
+    /// o erro com que o ARX e o Python terminaram: só a recusa de uma operação com chave
+    /// (`R0600` na chamada, `R0611` na reconciliação) é um desfecho admitido
+    arx_err: Option<String>,
+    py_err: Option<String>,
 }
 
 /// Executa um programa do núcleo nos três backends. `src` é a tradução de superfície, `core`
@@ -786,10 +790,13 @@ fn tripod(tag: &str, src: &str, core: &Json, world: &Json, models: &Json, args: 
     let provider = Box::new(Scripted::from_json(models).unwrap());
     let mut arx = Arx::new(&c.module, Box::new(SimWorld::from_json(world).unwrap()), provider);
     arx.contracts = athc::contract_hashes(&c);
-    if let Err(e) = arx.run("A", "go", args.clone()) {
-        panic!("{tag}: o ARX abortou ({} {})\n{src}", e.code, e.msg);
-    }
-    let arx_core = arx::journal::Journal::core_view(&arx.journal.entries).to_jsonl();
+    let arx_err = match arx.run("A", "go", args.clone()) {
+        Ok(_) => None,
+        Err(e) if e.code == "R0600" || e.code == "R0611" => Some(e.code.clone()),
+        Err(e) => panic!("{tag}: o ARX abortou ({} {})\n{src}", e.code, e.msg),
+    };
+    let arx_core =
+        arx::journal::Journal::core_view_with(&arx.journal.entries, &athc::compensable_tools(&c.module)).to_jsonl();
     let arx_full = arx.journal.to_jsonl();
     // Python, sobre o código emitido
     let dir = scratch();
@@ -825,7 +832,14 @@ fn tripod(tag: &str, src: &str, core: &Json, world: &Json, models: &Json, args: 
         cmd.arg("--arg-json").arg(a.to_json().to_string());
     }
     let out = cmd.output().expect("python3 é necessário para o tripé");
-    assert!(out.status.success(), "{tag}: o runtime Python falhou\n{}", String::from_utf8_lossy(&out.stderr));
+    let report: Json =
+        std::fs::read_to_string(&r).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or(Json::Null);
+    let py_err = report["error"]["code"].as_str().map(String::from);
+    assert!(
+        out.status.success() || matches!(py_err.as_deref(), Some("R0600" | "R0611")),
+        "{tag}: o runtime Python falhou\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let py_core = std::fs::read_to_string(&cj).unwrap();
     // Lean: o avaliador canônico
     let lean = lean_eval().map(|bin| {
@@ -839,10 +853,11 @@ fn tripod(tag: &str, src: &str, core: &Json, world: &Json, models: &Json, args: 
         );
         String::from_utf8(out.stdout).unwrap()
     });
-    Tripod { lean, arx: arx_core, py: py_core, full: arx_full }
+    Tripod { lean, arx: arx_core, py: py_core, full: arx_full, arx_err, py_err }
 }
 
 fn assert_tripod(tag: &str, t: &Tripod) {
+    assert_eq!(t.arx_err, t.py_err, "{tag}: desfecho do ARX × Python");
     first_diff(tag, "ARX × Python (vista do núcleo)", &t.arx, &t.py);
     if let Some(lean) = &t.lean {
         first_diff(tag, "Lean × ARX (journal do núcleo)", lean, &t.arx);
@@ -1094,4 +1109,724 @@ agent A(bank: Cap[Bank.Transfer]) budget [tok <= 100000, usd <= 1.0, wall <= 100
     }
     heads.dedup();
     assert_eq!(heads.len(), 3, "os três roteiros produzem journals distintos");
+}
+
+// ------------------------------------------------------------------ Rev11: chaves no tripé
+
+/// A renomeação canônica das chaves: a `i`-ésima chave distinta (a partir de 1), na ordem da
+/// primeira aparição no journal do núcleo, passa a se chamar `k{i}`, como o ARX e o runtime
+/// Python as cunham. Devolve o journal renomeado (com a
+/// cadeia BLAKE3 refeita) e a bijeção `(nome original, nome canônico)`.
+///
+/// A renomeação é injetiva por construção (nomes distintos ganham índices distintos) e não
+/// toca em mais nada: nenhum evento é removido, reordenado ou fundido. Por isso ela não
+/// esconde perda, duplicação nem troca de eventos entre chaves (os testes de mutação abaixo
+/// conferem): só a escolha dos nomes deixa de importar.
+fn canon_keys(jsonl: &str) -> (String, Vec<(String, String)>) {
+    let mut map: Vec<(String, String)> = Vec::new();
+    let mut evs = Vec::new();
+    for l in jsonl.lines() {
+        let mut e: Json = serde_json::from_str(l).unwrap();
+        let mut d = e["detail"].take();
+        if let Some(k) = d.get("key").and_then(|k| k.as_str()).map(String::from) {
+            let c = match map.iter().find(|(a, _)| *a == k) {
+                Some((_, c)) => c.clone(),
+                None => {
+                    let c = format!("k{}", map.len() + 1);
+                    map.push((k, c.clone()));
+                    c
+                }
+            };
+            d["key"] = json!(c);
+        }
+        evs.push((e["kind"].as_str().unwrap().to_string(), d));
+    }
+    (arx::journal::Journal::untimed(evs).to_jsonl(), map)
+}
+
+/// O desfecho de uma chave no protocolo (spec 3.5).
+#[derive(Clone, Debug, PartialEq)]
+enum KeyEnd {
+    /// `Done` pela resposta da própria chamada (evento `act` imediatamente antes)
+    DoneAtOnce,
+    /// `Failed` pela recusa da própria chamada
+    FailedAtOnce,
+    /// depois de `pending`: as respostas das tentativas e o estado terminal
+    Reconciled(Vec<String>, String),
+}
+
+/// O verificador do ciclo de vida das chaves, independente da representação: só usa a
+/// igualdade de nomes dentro de um journal, nunca o nome em si. Para cada chave confere:
+///
+/// * exatamente um estado terminal (`settle`), que é o último evento da chave;
+/// * `Done` só com evidência: a resposta da chamada (`act` logo antes) ou a última tentativa
+///   da reconciliação com `done`;
+/// * `Failed` só com evidência: a recusa da chamada ou a última tentativa com `not_applied`;
+/// * `Transferred` só depois de esgotar o protocolo (`fuel` tentativas `unknown`, ou a única
+///   tentativa `opaque`) e logo depois de um `transfer` da mesma chave;
+/// * tentativas numeradas 1, 2, …; nenhuma tentativa sem `pending` antes;
+/// * nenhuma obrigação desconhecida some: todo `pending` tem `settle`;
+/// * `fail {cause: refused}` e `abort {cause: refused}` citam uma chave `Failed`; um `end`
+///   com `aborted` exige uma chave `Transferred`.
+///
+/// Devolve o desfecho de cada chave, na ordem da primeira aparição.
+fn lifecycle(jsonl: &str, fuel: usize) -> Result<Vec<(String, Option<String>, KeyEnd)>, String> {
+    let evs: Vec<Json> = jsonl.lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+    let mut order: Vec<String> = Vec::new();
+    let mut per: std::collections::BTreeMap<String, Vec<usize>> = Default::default();
+    for (i, e) in evs.iter().enumerate() {
+        let kind = e["kind"].as_str().unwrap();
+        if !matches!(kind, "pending" | "query" | "settle" | "transfer") {
+            continue;
+        }
+        let k = e["detail"]["key"].as_str().ok_or(format!("evento {i} ({kind}) sem chave"))?.to_string();
+        if !per.contains_key(&k) {
+            order.push(k.clone());
+        }
+        per.entry(k).or_default().push(i);
+    }
+    let mut out = Vec::new();
+    let mut ended: std::collections::BTreeMap<String, String> = Default::default();
+    for k in &order {
+        let idx = &per[k];
+        let kinds: Vec<&str> = idx.iter().map(|&i| evs[i]["kind"].as_str().unwrap()).collect();
+        let settles = kinds.iter().filter(|&&x| x == "settle").count();
+        if settles != 1 || *kinds.last().unwrap() != "settle" {
+            return Err(format!("{k}: {settles} estado(s) terminal(is); eventos {kinds:?}"));
+        }
+        let last = idx[idx.len() - 1];
+        let status = evs[last]["detail"]["status"].as_str().unwrap_or_default().to_string();
+        // a ferramenta: a do `pending` ou, com `Done` na hora, a do `act` que é a evidência
+        let tool = idx.iter().find_map(|&i| evs[i]["detail"]["tool"].as_str().map(String::from)).or_else(|| {
+            (status == "done" && idx.len() == 1 && last > 0 && evs[last - 1]["kind"] == "act")
+                .then(|| evs[last - 1]["detail"]["tool"].as_str().unwrap_or_default().to_string())
+        });
+        let end = if kinds[0] != "pending" {
+            match (kinds.len(), status.as_str()) {
+                (1, "done") if last > 0 && evs[last - 1]["kind"] == "act" => KeyEnd::DoneAtOnce,
+                (1, "failed") => KeyEnd::FailedAtOnce,
+                _ => return Err(format!("{k}: {status} sem obrigação nem evidência; eventos {kinds:?}")),
+            }
+        } else {
+            if kinds.iter().filter(|&&x| x == "pending").count() != 1 {
+                return Err(format!("{k}: mais de uma obrigação para a mesma chave"));
+            }
+            let qs: Vec<&Json> =
+                idx.iter().filter(|&&i| evs[i]["kind"] == "query").map(|&i| &evs[i]["detail"]).collect();
+            for (j, q) in qs.iter().enumerate() {
+                if q["attempt"].as_u64() != Some(j as u64 + 1) {
+                    return Err(format!("{k}: tentativa {} fora de ordem", q["attempt"]));
+                }
+            }
+            let st: Vec<String> = qs.iter().map(|q| q["status"].as_str().unwrap_or_default().to_string()).collect();
+            let lastq = st.last().map(String::as_str);
+            let ok = match status.as_str() {
+                "done" => lastq == Some("done"),
+                "failed" => lastq == Some("not_applied"),
+                "transferred" => {
+                    let exhausted =
+                        (st.len() == fuel && st.iter().all(|x| x == "unknown")) || (st.len() == 1 && st[0] == "opaque");
+                    let handed = last > 0
+                        && evs[last - 1]["kind"] == "transfer"
+                        && evs[last - 1]["detail"]["key"].as_str() == Some(k.as_str());
+                    exhausted && handed
+                }
+                _ => false,
+            };
+            let inner_ok = st.iter().take(st.len().saturating_sub(1)).all(|x| x == "unknown");
+            if !ok || !inner_ok {
+                return Err(format!("{k}: `{status}` sem a evidência do protocolo; tentativas {st:?}"));
+            }
+            KeyEnd::Reconciled(st, status.clone())
+        };
+        ended.insert(k.clone(), status);
+        out.push((k.clone(), tool, end));
+    }
+    for (i, e) in evs.iter().enumerate() {
+        let d = &e["detail"];
+        match (e["kind"].as_str().unwrap(), d["cause"].as_str()) {
+            ("fail" | "abort", Some("refused")) => {
+                let k = d["key"].as_str().unwrap_or_default();
+                if ended.get(k).map(String::as_str) != Some("failed") {
+                    return Err(format!("evento {i}: recusa de `{k}`, que não terminou `Failed`"));
+                }
+            }
+            ("end", _) if d["aborted"] == true && !ended.values().any(|s| s == "transferred") => {
+                return Err("encerramento pelo tratador sem obrigação transferida".into());
+            }
+            _ => {}
+        }
+    }
+    Ok(out)
+}
+
+/// Compara os três backends num programa com chaves: ARX × Python byte a byte (os dois
+/// nomeiam a chave pela ordem de cunhagem) e Lean × ARX de duas formas independentes:
+/// (1) os journals com as chaves renomeadas canonicamente, byte a byte, e (2) o ciclo de vida
+/// de cada chave (o verificador acima), comparado chave a chave pela ferramenta e pelo
+/// desfecho. Devolve se os bytes crus do Lean e do ARX coincidem (não coincidem quando há
+/// chaves: o Lean nomeia a chave pela capacidade que a carrega, `c3`, e o ARX pela cunhagem,
+/// `k0`) e o ciclo de vida das chaves.
+fn assert_tripod_keys(tag: &str, t: &Tripod, fuel: usize) -> (bool, Vec<(String, Option<String>, KeyEnd)>) {
+    assert_eq!(t.arx_err, t.py_err, "{tag}: desfecho do ARX × Python");
+    first_diff(tag, "ARX × Python (vista do núcleo)", &t.arx, &t.py);
+    let core: Vec<Json> = t.arx.lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+    assert_eq!(arx::journal::Journal::verify(&core), Ok(()), "{tag}: cadeia do núcleo");
+    let la = lifecycle(&t.arx, fuel).unwrap_or_else(|e| panic!("{tag}: ciclo de vida no ARX: {e}\n{}", t.arx));
+    let (ca, ma) = canon_keys(&t.arx);
+    // o ARX cunha as chaves na ordem de execução: o seu journal já está na forma canônica
+    assert!(ma.iter().all(|(a, c)| a == c), "{tag}: chaves do ARX fora da ordem de cunhagem: {ma:?}");
+    let Some(lean) = &t.lean else { return (false, la) };
+    let ll = lifecycle(lean, fuel).unwrap_or_else(|e| panic!("{tag}: ciclo de vida no Lean: {e}\n{lean}"));
+    let (cl, ml) = canon_keys(lean);
+    first_diff(tag, "Lean × ARX (journal do núcleo, chaves canônicas)", &cl, &ca);
+    // a bijeção: a i-ésima chave do Lean é a i-ésima do ARX, com a mesma ferramenta e o mesmo desfecho
+    assert_eq!(ml.len(), ma.len(), "{tag}: número de chaves");
+    assert_eq!(ll.len(), la.len(), "{tag}: número de ciclos de vida");
+    for ((kl, tl, el), (ka, ta, ea)) in ll.iter().zip(&la) {
+        assert_eq!((tl, el), (ta, ea), "{tag}: a chave {kl} do Lean e a {ka} do ARX divergem");
+    }
+    (lean == &t.arx, ll)
+}
+
+/// O tripé com chaves: programas gerados com sagas e chamadas com chave (`call`), provedores
+/// `idempotent`, `queryable` e `opaque`, falhas injetadas na chamada e nos reenvios e consultas
+/// inconclusivas. Os três backends precisam coincidir, módulo a renomeação bijetiva das chaves,
+/// e o ciclo de vida de toda chave precisa ser o do protocolo. A cobertura exige os sete
+/// cenários da Fase 4. `ATH_KEYED_N` muda o número de sementes (padrão 120; a revisão roda 480).
+#[test]
+fn keyed_tripod_lean_arx_python_agree_on_generated_programs() {
+    let n: u64 = std::env::var("ATH_KEYED_N").ok().and_then(|v| v.parse().ok()).unwrap_or(120);
+    let mut seen = std::collections::BTreeMap::<&str, usize>::new();
+    let mut heads = std::collections::BTreeSet::new();
+    let (mut with_lean, mut raw_equal, mut with_keys) = (0, 0, 0);
+    for seed in 0..n {
+        let p = lambda_ath::generate_keyed(seed);
+        p.check().unwrap_or_else(|e| panic!("semente {seed}: {e}"));
+        let tag = format!("keyed/{seed}");
+        let t = tripod(&tag, &p.to_ath(), &p.to_json(), &p.world(), &p.models(), vec![]);
+        let (raw, life) = assert_tripod_keys(&tag, &t, p.fuel);
+        with_lean += usize::from(t.lean.is_some());
+        with_keys += usize::from(!life.is_empty());
+        raw_equal += usize::from(raw);
+        // os cenários, pelo roteiro do provedor de cada chave que de fato rodou
+        let runs = p.key_runs();
+        // a ferramenta de cada chave do ARX, pelo journal completo (a recusa na hora não diz a
+        // ferramenta na vista do núcleo; `tool_failed` diz)
+        let arx_tool: std::collections::BTreeMap<String, String> = t
+            .full
+            .lines()
+            .filter_map(|l| {
+                let e: Json = serde_json::from_str(l).unwrap();
+                matches!(e["kind"].as_str(), Some("tool" | "tool_failed" | "timeout_unknown"))
+                    .then(|| {
+                        Some((e["detail"]["key"].as_str()?.to_string(), e["detail"]["tool"].as_str()?.to_string()))
+                    })
+                    .flatten()
+            })
+            .collect();
+        for (key, tool, end) in &life {
+            let ti = if t.lean.is_some() {
+                // no Lean a chave é a capacidade que a carrega: `c{i}` é a da ferramenta com
+                // chave da capacidade `i`, e só ela
+                let cap: usize = key[1..].parse().unwrap();
+                p.tools.iter().position(|t| t.key.as_ref().is_some_and(|k| k.cap == cap)).unwrap()
+            } else {
+                arx_tool[key][1..].parse().unwrap()
+            };
+            if let Some(tool) = tool {
+                assert_eq!(tool, &format!("t{ti}"), "{tag}: a chave {key} apareceu na ferramenta {tool}");
+            }
+            let spec = p.tools[ti].key.as_ref().unwrap();
+            let first = spec.faults.iter().find(|f| f.0 == 1).map(|f| f.1);
+            let run = &runs.iter().find(|(t, _, _)| *t == ti).unwrap().2;
+            match end {
+                KeyEnd::DoneAtOnce => *seen.entry("Done na hora").or_default() += 1,
+                KeyEnd::FailedAtOnce => *seen.entry("Failed na hora").or_default() += 1,
+                KeyEnd::Reconciled(st, fin) => {
+                    match first {
+                        Some("timeout_lost") => *seen.entry("1 timeout antes de aplicar").or_default() += 1,
+                        Some("timeout_applied") => *seen.entry("2 timeout depois de aplicar").or_default() += 1,
+                        _ => {}
+                    }
+                    if spec.provider == lambda_ath::Prov::Idempotent && !st.is_empty() && run.applied {
+                        *seen.entry("3 reenvio com a mesma chave").or_default() += 1;
+                    }
+                    if spec.provider == lambda_ath::Prov::Queryable && st.last().map(String::as_str) == Some("done") {
+                        *seen.entry("4 consulta que confirma").or_default() += 1;
+                    }
+                    if st.iter().any(|s| s == "unknown" || s == "opaque") {
+                        *seen.entry("5 consulta inconclusiva").or_default() += 1;
+                    }
+                    if fin == "transferred" {
+                        *seen.entry("6 combustível esgotado e transferência").or_default() += 1;
+                        if run.applied {
+                            *seen.entry("6' transferida com o efeito aplicado").or_default() += 1;
+                        }
+                    }
+                    if fin == "failed" {
+                        *seen.entry("Failed reconciliado").or_default() += 1;
+                    }
+                }
+            }
+        }
+        // 7: uma saga que falha por uma obrigação (encerramento ou recusa reconciliada) e não
+        // consegue compensar
+        let full: Vec<Json> = t.full.lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+        let mut pending_abort = false;
+        for e in &full {
+            match e["kind"].as_str().unwrap() {
+                "saga_abort" => {
+                    let r = e["detail"]["reason"].as_str().unwrap_or_default();
+                    pending_abort = !r.starts_with('R') || r.starts_with("R0611");
+                }
+                "compensation_failed" if pending_abort => {
+                    *seen.entry("7 compensação falha com obrigação pendente").or_default() += 1;
+                    pending_abort = false;
+                }
+                "saga_recovered" | "saga_commit" => pending_abort = false,
+                _ => {}
+            }
+        }
+        match (&t.arx_err, t.arx.lines().last().map(|l| serde_json::from_str::<Json>(l).unwrap())) {
+            (Some(_), _) => *seen.entry("evento recusado").or_default() += 1,
+            (None, Some(e)) if e["detail"]["aborted"] == true => {
+                *seen.entry("evento encerrado pelo tratador").or_default() += 1
+            }
+            _ => *seen.entry("evento com valor").or_default() += 1,
+        }
+        for l in t.arx.lines() {
+            heads.insert(serde_json::from_str::<Json>(l).unwrap()["hash"].as_str().unwrap().to_string());
+        }
+    }
+    eprintln!(
+        "tripé com chaves: {n} programas ({with_lean} com o Lean; {with_keys} com chaves; {raw_equal} com os bytes crus Lean = ARX) · cobertura {seen:?}"
+    );
+    for k in [
+        "Done na hora",
+        "Failed na hora",
+        "1 timeout antes de aplicar",
+        "2 timeout depois de aplicar",
+        "3 reenvio com a mesma chave",
+        "4 consulta que confirma",
+        "5 consulta inconclusiva",
+        "6 combustível esgotado e transferência",
+        "6' transferida com o efeito aplicado",
+        "7 compensação falha com obrigação pendente",
+        "evento recusado",
+        "evento encerrado pelo tratador",
+        "evento com valor",
+    ] {
+        assert!(seen.get(k).copied().unwrap_or(0) * 60 >= n as usize, "cobertura fraca de `{k}`: {seen:?}");
+    }
+    assert!(heads.len() as u64 > n, "os programas exercitam traços distintos");
+}
+
+fn events_of(jsonl: &str) -> Vec<(String, Json)> {
+    jsonl
+        .lines()
+        .map(|l| {
+            let e: Json = serde_json::from_str(l).unwrap();
+            (e["kind"].as_str().unwrap().to_string(), e["detail"].clone())
+        })
+        .collect()
+}
+
+fn rechain(evs: Vec<(String, Json)>) -> String {
+    arx::journal::Journal::untimed(evs).to_jsonl()
+}
+
+fn is_key_event(k: &str) -> bool {
+    matches!(k, "pending" | "query" | "settle" | "transfer")
+}
+
+/// A normalização das chaves não esconde defeito. Sobre journals reais do tripé com chaves, o
+/// journal do ARX é mutado de quatro formas, e cada mutante precisa ser recusado pela
+/// comparação canônica com o Lean ou pelo verificador do ciclo de vida:
+///
+/// * **perda**: um evento de chave some;
+/// * **duplicação**: um evento de chave aparece duas vezes, ou duas operações passam a
+///   compartilhar a mesma chave;
+/// * **troca**: dois eventos de chaves diferentes trocam de chave entre si;
+/// * **consumo irregular**: o estado terminal vem antes da obrigação, ou uma tentativa vem
+///   depois do estado terminal.
+///
+/// O controle positivo: uma renomeação bijetiva e consistente das chaves (outros nomes, outra
+/// ordem) é aceita pelos dois critérios. É exatamente a diferença entre o Lean e o ARX.
+#[test]
+fn key_normalization_does_not_hide_loss_duplication_or_swap() {
+    if lean_eval().is_none() {
+        return;
+    }
+    let n: u64 = std::env::var("ATH_MUTANT_N").ok().and_then(|v| v.parse().ok()).unwrap_or(80);
+    let mut caught = std::collections::BTreeMap::<&str, (usize, usize)>::new();
+    let mut renamed = 0usize;
+    let mut note = |k: &'static str, hit: bool| {
+        let e = caught.entry(k).or_default();
+        e.0 += 1;
+        e.1 += usize::from(hit);
+    };
+    for seed in 0..n {
+        let p = lambda_ath::generate_keyed(seed);
+        let tag = format!("mutante/{seed}");
+        let t = tripod(&tag, &p.to_ath(), &p.to_json(), &p.world(), &p.models(), vec![]);
+        let lean = t.lean.clone().unwrap();
+        let (cl, _) = canon_keys(&lean);
+        let evs = events_of(&t.arx);
+        let detected = |m: &str| canon_keys(m).0 != cl || lifecycle(m, p.fuel).is_err();
+        assert!(!detected(&t.arx), "{tag}: o journal original precisa passar");
+        let kidx: Vec<usize> = (0..evs.len()).filter(|&i| is_key_event(&evs[i].0)).collect();
+        let keys: Vec<String> = {
+            let mut v: Vec<String> = Vec::new();
+            for &i in &kidx {
+                let k = evs[i].1["key"].as_str().unwrap().to_string();
+                if !v.contains(&k) {
+                    v.push(k);
+                }
+            }
+            v
+        };
+        // controle positivo: renomeação bijetiva consistente (ordem inversa, outro prefixo)
+        if !keys.is_empty() {
+            let m: Vec<(String, Json)> = evs
+                .iter()
+                .map(|(k, d)| {
+                    let mut d = d.clone();
+                    if let Some(x) = d.get("key").and_then(|x| x.as_str()) {
+                        let i = keys.iter().position(|y| y == x).unwrap();
+                        d["key"] = json!(format!("zz{}", keys.len() - i));
+                    }
+                    (k.clone(), d)
+                })
+                .collect();
+            let m = rechain(m);
+            assert!(!detected(&m), "{tag}: uma renomeação bijetiva foi recusada");
+            renamed += 1;
+        }
+        for &i in &kidx {
+            // perda
+            let mut m = evs.clone();
+            m.remove(i);
+            note("perda de um evento de chave", detected(&rechain(m)));
+            // duplicação de evento
+            let mut m = evs.clone();
+            m.insert(i + 1, evs[i].clone());
+            note("evento de chave duplicado", detected(&rechain(m)));
+        }
+        for a in 0..keys.len() {
+            for b in 0..keys.len() {
+                if a == b {
+                    continue;
+                }
+                // duas operações com a mesma chave: `b` passa a se chamar `a`
+                let m: Vec<(String, Json)> = evs
+                    .iter()
+                    .map(|(k, d)| {
+                        let mut d = d.clone();
+                        if d.get("key").and_then(|x| x.as_str()) == Some(keys[b].as_str()) {
+                            d["key"] = json!(keys[a]);
+                        }
+                        (k.clone(), d)
+                    })
+                    .collect();
+                note("duas operações com a mesma chave", detected(&rechain(m)));
+            }
+        }
+        for x in 0..kidx.len() {
+            for y in x + 1..kidx.len() {
+                let (i, j) = (kidx[x], kidx[y]);
+                if evs[i].1["key"] == evs[j].1["key"] {
+                    continue;
+                }
+                // se cada uma das duas chaves tem só este evento, trocar as chaves dos dois é
+                // renomear as duas operações de forma consistente: não é defeito (controle)
+                // (a chave também aparece em `fail`/`abort` de uma recusa: aí a troca muda qual
+                // operação encerrou o evento, e precisa ser recusada)
+                let alone = |e: usize| evs.iter().filter(|(_, d)| d.get("key") == Some(&evs[e].1["key"])).count() == 1;
+                if alone(i) && alone(j) {
+                    let mut m = evs.clone();
+                    let (ki, kj) = (evs[i].1["key"].clone(), evs[j].1["key"].clone());
+                    m[i].1["key"] = kj;
+                    m[j].1["key"] = ki;
+                    assert!(!detected(&rechain(m)), "{tag}: a troca de chaves de duas operações inteiras foi recusada");
+                    renamed += 1;
+                    continue;
+                }
+                // troca: os dois eventos trocam de chave
+                let mut m = evs.clone();
+                let (ki, kj) = (evs[i].1["key"].clone(), evs[j].1["key"].clone());
+                m[i].1["key"] = kj;
+                m[j].1["key"] = ki;
+                note("dois eventos trocam de chave", detected(&rechain(m)));
+            }
+        }
+        for k in &keys {
+            let own: Vec<usize> = kidx.iter().copied().filter(|&i| evs[i].1["key"].as_str() == Some(k)).collect();
+            let last = *own.last().unwrap();
+            if own.len() >= 2 {
+                // o estado terminal antes da obrigação
+                let mut m = evs.clone();
+                let s = m.remove(last);
+                m.insert(own[0], s);
+                note("estado terminal antes da obrigação", detected(&rechain(m)));
+            }
+            // uma tentativa depois do estado terminal
+            let mut m = evs.clone();
+            m.insert(last + 1, ("query".into(), json!({ "attempt": 1, "key": k, "status": "done" })));
+            note("tentativa depois do estado terminal", detected(&rechain(m)));
+        }
+    }
+    eprintln!("mutantes (total, recusados): {caught:?} · controle: {renamed} renomeações bijetivas aceitas");
+    assert!(renamed >= 10, "poucos controles positivos");
+    for (k, (total, hit)) in &caught {
+        assert_eq!(total, hit, "a normalização escondeu `{k}`: {hit}/{total}");
+        assert!(*total > 0);
+    }
+    for k in [
+        "perda de um evento de chave",
+        "evento de chave duplicado",
+        "duas operações com a mesma chave",
+        "dois eventos trocam de chave",
+        "estado terminal antes da obrigação",
+        "tentativa depois do estado terminal",
+    ] {
+        assert!(caught.get(k).is_some_and(|c| c.0 >= 10), "poucos mutantes de `{k}`: {caught:?}");
+    }
+}
+
+fn ktool(cap: usize, provider: lambda_ath::Prov, faults: Vec<(u32, &'static str)>, unknown: u32) -> lambda_ath::Tool {
+    lambda_ath::Tool {
+        effect: cap,
+        arg: lambda_ath::Ty::Int,
+        cell: Some(cap),
+        compensable: false,
+        undo_fails: false,
+        key: Some(lambda_ath::KeySpec { cap, provider, faults, unknown }),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn key_prog(
+    seed: u64,
+    tools: Vec<lambda_ath::Tool>,
+    probes: Vec<lambda_ath::Probe>,
+    exp: lambda_ath::E,
+    ret: lambda_ath::Ty,
+    fuel: usize,
+    hval: lambda_ath::V,
+) -> lambda_ath::Prog {
+    let caps: Vec<Vec<usize>> = (0..tools.len()).map(|i| vec![i]).collect();
+    lambda_ath::Prog {
+        seed,
+        effects: caps.len(),
+        tools,
+        policies: vec![],
+        caps,
+        oracle: vec![],
+        exp,
+        ret,
+        probes,
+        fuel,
+        hval,
+    }
+}
+
+/// Os sete cenários determinísticos da Fase 4, cada um com o journal do núcleo esperado (com as
+/// chaves na forma canônica), conferido nos três backends:
+///
+/// 1. timeout antes da aplicação: a consulta diz que não aconteceu, `Failed`; a sonda de
+///    recuperação observa o mundo intacto;
+/// 2. timeout depois da aplicação e antes da confirmação: a consulta confirma, `Done`; a
+///    pós-condição observa o efeito;
+/// 3. repetição com a mesma chave: o reenvio devolve o recibo, sem repetir o efeito (a
+///    pós-condição exige a célula em 5, não em 10);
+/// 4. consulta que confirma depois de uma inconclusiva;
+/// 5. consultas inconclusivas e, enfim, conclusivas (`not_applied`);
+/// 6. combustível esgotado e transferência: o evento termina pelo tratador; numa saga, a sonda
+///    observa que o efeito continua no mundo (`Transferred` não é "desfeito");
+/// 7. falha de compensação com obrigação pendente: a obrigação é transferida, a saga não
+///    consegue compensar a outra ação, `on compensation_failed` roda, e o journal mantém o
+///    estado terminal da obrigação.
+#[test]
+fn keyed_scenarios_are_deterministic_on_the_three_backends() {
+    use lambda_ath::{Probe, Prov, Tool, Ty, E, V};
+    let call = |t: usize, k: usize, v: i64| E::Call(t, k, Box::new(E::Val(V::Int(v))));
+    let let_ = |a: E, b: E| E::Let(Box::new(a), Box::new(b));
+    let int = |n: i64| E::Val(V::Int(n));
+    let saga = |body: E| E::Atomic(Box::new(body), 0, Box::new(int(1)), Box::new(int(2)));
+    let cell = |c: usize, v: i64| Probe { cell: c, lo: v, hi: v };
+    let cases: Vec<(&str, lambda_ath::Prog, Json, Option<&str>)> = vec![
+        (
+            "1 timeout antes da aplicação",
+            key_prog(
+                1,
+                vec![ktool(0, Prov::Queryable, vec![(1, "timeout_lost")], 0)],
+                vec![cell(0, 0)],
+                saga(let_(call(0, 0, 5), int(0))),
+                Ty::Int,
+                2,
+                V::Int(9),
+            ),
+            json!([["pending", {"key": "k1", "tool": "t0"}],
+                   ["query", {"attempt": 1, "key": "k1", "status": "not_applied"}],
+                   ["settle", {"key": "k1", "status": "failed"}],
+                   ["fail", {"cause": "refused", "key": "k1"}],
+                   ["recover", {"ok": true, "probe": "p0"}],
+                   ["end", {"value": 1}]]),
+            None,
+        ),
+        (
+            "2 timeout depois da aplicação",
+            key_prog(
+                2,
+                vec![ktool(0, Prov::Queryable, vec![(1, "timeout_applied")], 0)],
+                vec![cell(0, 5)],
+                saga(let_(call(0, 0, 5), let_(E::Await(0), int(0)))),
+                Ty::Int,
+                2,
+                V::Int(9),
+            ),
+            json!([["pending", {"key": "k1", "tool": "t0"}],
+                   ["query", {"attempt": 1, "key": "k1", "status": "done"}],
+                   ["settle", {"key": "k1", "status": "done"}],
+                   ["end", {"value": 0}]]),
+            None,
+        ),
+        (
+            "3 repetição com a mesma chave",
+            key_prog(
+                3,
+                vec![ktool(0, Prov::Idempotent, vec![(1, "timeout_applied")], 0)],
+                vec![cell(0, 5)],
+                saga(let_(call(0, 0, 5), let_(E::Await(0), int(0)))),
+                Ty::Int,
+                2,
+                V::Int(9),
+            ),
+            json!([["pending", {"key": "k1", "tool": "t0"}],
+                   ["query", {"attempt": 1, "key": "k1", "status": "done"}],
+                   ["settle", {"key": "k1", "status": "done"}],
+                   ["end", {"value": 0}]]),
+            None,
+        ),
+        (
+            "4 consulta que confirma",
+            key_prog(
+                4,
+                vec![ktool(0, Prov::Queryable, vec![(1, "timeout_applied")], 1)],
+                vec![],
+                call(0, 0, 5),
+                Ty::Unit,
+                3,
+                V::Unit,
+            ),
+            json!([["pending", {"key": "k1", "tool": "t0"}],
+                   ["query", {"attempt": 1, "key": "k1", "status": "unknown"}],
+                   ["query", {"attempt": 2, "key": "k1", "status": "done"}],
+                   ["settle", {"key": "k1", "status": "done"}],
+                   ["end", {"value": null}]]),
+            None,
+        ),
+        (
+            "5 consultas inconclusivas e conclusiva",
+            key_prog(
+                5,
+                vec![ktool(0, Prov::Queryable, vec![(1, "timeout_lost")], 2)],
+                vec![],
+                call(0, 0, 5),
+                Ty::Unit,
+                3,
+                V::Unit,
+            ),
+            json!([["pending", {"key": "k1", "tool": "t0"}],
+                   ["query", {"attempt": 1, "key": "k1", "status": "unknown"}],
+                   ["query", {"attempt": 2, "key": "k1", "status": "unknown"}],
+                   ["query", {"attempt": 3, "key": "k1", "status": "not_applied"}],
+                   ["settle", {"key": "k1", "status": "failed"}],
+                   ["abort", {"cause": "refused", "key": "k1"}]]),
+            Some("R0611"),
+        ),
+        (
+            "6 combustível esgotado e transferência",
+            key_prog(
+                6,
+                vec![ktool(
+                    0,
+                    Prov::Idempotent,
+                    vec![(1, "timeout_lost"), (2, "timeout_lost"), (3, "timeout_lost")],
+                    0,
+                )],
+                vec![],
+                let_(call(0, 0, 5), int(0)),
+                Ty::Int,
+                2,
+                V::Int(9),
+            ),
+            json!([["pending", {"key": "k1", "tool": "t0"}],
+                   ["query", {"attempt": 1, "key": "k1", "status": "unknown"}],
+                   ["query", {"attempt": 2, "key": "k1", "status": "unknown"}],
+                   ["transfer", {"key": "k1"}],
+                   ["settle", {"key": "k1", "status": "transferred"}],
+                   ["end", {"aborted": true, "value": 9}]]),
+            None,
+        ),
+        (
+            "6' transferida com o efeito no mundo",
+            key_prog(
+                7,
+                vec![ktool(0, Prov::Queryable, vec![(1, "timeout_applied")], 5)],
+                vec![cell(0, 5)],
+                saga(let_(call(0, 0, 5), int(0))),
+                Ty::Int,
+                2,
+                V::Int(9),
+            ),
+            json!([["pending", {"key": "k1", "tool": "t0"}],
+                   ["query", {"attempt": 1, "key": "k1", "status": "unknown"}],
+                   ["query", {"attempt": 2, "key": "k1", "status": "unknown"}],
+                   ["transfer", {"key": "k1"}],
+                   ["settle", {"key": "k1", "status": "transferred"}],
+                   ["fail", {"cause": "abort"}],
+                   ["recover", {"ok": true, "probe": "p0"}],
+                   ["end", {"aborted": true, "value": 9}]]),
+            None,
+        ),
+        (
+            "7 compensação falha com obrigação pendente",
+            key_prog(
+                8,
+                vec![
+                    ktool(0, Prov::Queryable, vec![(1, "timeout_lost")], 5),
+                    Tool { effect: 1, arg: Ty::Int, cell: Some(1), compensable: true, undo_fails: true, key: None },
+                ],
+                vec![cell(1, 0)],
+                saga(let_(E::Act(1, 0, Box::new(int(3))), let_(call(0, 2, 5), int(0)))),
+                Ty::Int,
+                1,
+                V::Int(9),
+            ),
+            json!([["act", {"args": [3], "cap": ["Core.E1"], "tool": "t1"}],
+                   ["pending", {"key": "k1", "tool": "t0"}],
+                   ["query", {"attempt": 1, "key": "k1", "status": "unknown"}],
+                   ["transfer", {"key": "k1"}],
+                   ["settle", {"key": "k1", "status": "transferred"}],
+                   ["fail", {"cause": "abort"}],
+                   ["undo", {"args": [3], "ok": false, "tool": "t1"}],
+                   ["recover", {"ok": false, "probe": "p0"}],
+                   ["end", {"value": 2}]]),
+            None,
+        ),
+    ];
+    for (name, p, want, err) in cases {
+        p.check().unwrap_or_else(|e| panic!("{name}: {e}"));
+        let tag = format!("cenário {name}");
+        let t = tripod(&tag, &p.to_ath(), &p.to_json(), &p.world(), &p.models(), vec![]);
+        assert_tripod_keys(&tag, &t, p.fuel);
+        assert_eq!(t.arx_err.as_deref(), err, "{tag}: desfecho");
+        let got: Vec<Json> = events_of(&canon_keys(&t.arx).0).into_iter().map(|(k, d)| json!([k, d])).collect();
+        assert_eq!(Json::Array(got), want, "{tag}: journal do núcleo");
+        if let Some(lean) = &t.lean {
+            assert_eq!(canon_keys(lean).0, canon_keys(&t.arx).0, "{tag}: Lean × ARX");
+        }
+    }
 }

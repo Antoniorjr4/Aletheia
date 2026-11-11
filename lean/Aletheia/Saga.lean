@@ -96,7 +96,7 @@ sonda observou o mundo compensado, e o tratador foi escolhido por `ok && sonda`.
 registra o corpo até a falha, a falha, cada compensação, a observação da sonda e o
 tratador. -/
 theorem atomic_failed {body : Exp} {r : Nat} {f g : Exp} {ρ : List Val} {s : St} {o : Out}
-    {q : Nat} {s₁ : St} {tr : List Ev}
+    {q : Cause} {s₁ : St} {tr : List Ev}
     (hb : eval S c body ρ { s with comp := [] } = .error (.timeout q s₁ tr))
     (h : eval S c (.atomic body r f g) ρ s = .ok o) :
     ∃ o', eval S c (cond ((compensate S s₁.comp s₁.w).ok && S.probe r (compensate S s₁.comp s₁.w).w) f g)
@@ -104,6 +104,8 @@ theorem atomic_failed {body : Exp} {r : Nat} {f g : Exp} {ρ : List Val} {s : St
       o = ⟨o'.v, exitSaga ρ (.atomic body r f g) o'.st, tr ++ .fail q :: (compensate S s₁.comp s₁.w).evs ++
         [.recover r (S.probe r (compensate S s₁.comp s₁.w).w)] ++ o'.tr⟩ := by
   simp only [eval, hb] at h
+  split at h
+  · simp [pre] at h
   obtain ⟨o', h', h⟩ := bnd_eq_ok.mp (pre_eq_ok.mp h)
   cases h
   exact ⟨o', by rw [← eval_cond]; exact h', rfl⟩
@@ -113,7 +115,7 @@ compensação: se o corpo de uma saga falha, `on failure` roda exatamente quando
 compensações deram certo e a sonda de recuperação confirmou; em qualquer outro caso roda
 `on compensation_failed`. -/
 theorem T6_no_masking {body : Exp} {r : Nat} {f g : Exp} {ρ : List Val} {s : St} {o : Out}
-    {q : Nat} {s₁ : St} {tr : List Ev}
+    {q : Cause} {s₁ : St} {tr : List Ev}
     (hb : eval S c body ρ { s with comp := [] } = .error (.timeout q s₁ tr))
     (h : eval S c (.atomic body r f g) ρ s = .ok o) :
     ∃ o', o.tr = tr ++ .fail q :: (compensate S s₁.comp s₁.w).evs ++
@@ -133,7 +135,7 @@ theorem T6_no_masking {body : Exp} {r : Nat} {f g : Exp} {ρ : List Val} {s : St
 recusada, o mundo entregue ao tratador satisfaz `Inv` e o tratador é `on failure`. Ou alguma
 compensação foi recusada ou a sonda não confirmou, e o tratador é `on compensation_failed`. -/
 theorem T6_recovered {Inv : World → Prop} {body : Exp} {r : Nat} {f g : Exp} {ρ : List Val} {s : St}
-    {o : Out} {q : Nat} {s₁ : St} {tr : List Ev}
+    {o : Out} {q : Cause} {s₁ : St} {tr : List Ev}
     (hsound : ∀ w, S.probe r w = true → Inv w)
     (hb : eval S c body ρ { s with comp := [] } = .error (.timeout q s₁ tr))
     (h : eval S c (.atomic body r f g) ρ s = .ok o) :
@@ -188,32 +190,34 @@ theorem logged_preserves (hR : Restoring S E) : Preserves S c False (Logged S E)
   reject := ⟨[], rfl, rfl, hR.refl _⟩
   act := by
     intro s t id v _ _
-    have hacts : actsOf S (actEvs S t id v) =
-        if applied S t id then (if S.compensable t then [(t, v)] else []) else [] := by
-      unfold actsOf
-      rw [filterMap_actEvs _ (fun _ _ _ => rfl) (fun _ _ _ => rfl) (fun _ _ => rfl)]
-      by_cases ha : applied S t id = true <;> by_cases hc : S.compensable t = true <;> simp [ha, hc]
-    by_cases ha : applied S t id = true
-    · by_cases hc : S.compensable t = true
-      · exact ⟨[(t, v)], by simp [actC, ha, logAct, hc], by simp [hacts, ha, hc],
-          by simp [replay, actW, ha]; exact hR.refl _⟩
-      · have hc' : S.compensable t = false := by simpa using hc
-        exact ⟨[], by simp [actC, ha, logAct, hc'], by simp [hacts, ha, hc'],
-          by simpa [replay, actW, ha] using hR.inert t v s.w hc'⟩
-    · have ha' : applied S t id = false := by simpa using ha
-      exact ⟨[], by simp [actC, ha'], by simp [hacts, ha'], by simp [replay, actW, ha']; exact hR.refl _⟩
+    have hacts : actsOf S (actEvs S t id v) = if S.compensable t then [(t, v)] else [] := by
+      by_cases hc : S.compensable t = true <;> simp [actsOf, actEvs, hc]
+    by_cases hc : S.compensable t = true
+    · exact ⟨[(t, v)], by simp [actC, logAct, hc], by simp [hacts, hc],
+        by simp [replay, actW]; exact hR.refl _⟩
+    · have hc' : S.compensable t = false := by simpa using hc
+      exact ⟨[], by simp [actC, logAct, hc'], by simp [hacts, hc'],
+        by simpa [replay, actW] using hR.inert t v s.w hc'⟩
   drop _ := ⟨[], rfl, rfl, hR.refl _⟩
   infer := ⟨[], rfl, rfl, hR.refl _⟩
   commit h := h.elim
   revoke h := h.elim
   abort h := h.elim
+  callDone h := h.elim
+  callFailed h := h.elim
+  callRec h := h.elim
+  callAbort h := h.elim
+  transfer := ⟨[], rfl, rfl, hR.refl _⟩
 
-/-- O registro acompanha o mundo em toda execução sem saga aninhada, no sucesso e no
-`timeout`. -/
-theorem eval_logged (hR : Restoring S E) (e : Exp) (hsf : sagaFree e = true) {ρ : List Val} {s : St} :
+/-- O registro acompanha o mundo em toda execução sem saga aninhada e sem chamada com
+chave, no sucesso e na falha. Uma operação com chave que ficou sem resposta entra no registro
+mesmo que o efeito não exista (compensar é total sobre "aconteceu" e "não aconteceu"), então o
+registro deixa de ser a lista do que foi aplicado: por isso o fragmento exclui `call`. -/
+theorem eval_logged (hR : Restoring S E) (e : Exp) (hsf : sagaFree e = true) (hk : keyless e = true)
+    {ρ : List Val} {s : St} :
     (∀ {o : Out}, eval S c e ρ s = .ok o → Logged S E s o.st o.tr) ∧
     (∀ {q s₁ tr}, eval S c e ρ s = .error (.timeout q s₁ tr) → Logged S E s s₁ tr) :=
-  eval_preserves (logged_preserves hR) e (.inr hsf)
+  eval_preserves (logged_preserves hR) e (.inr ⟨hsf, hk⟩)
 
 /-- Sob `restoring`, compensar um registro a partir de um mundo equivalente à sua
 reaplicação sobre `w₀` dá certo em todos os passos e volta a um mundo equivalente a `w₀`. -/
@@ -233,12 +237,12 @@ de uma saga falha:
   recente à mais antiga;
 * nenhuma é recusada;
 * o mundo compensado é `E`-equivalente ao mundo de antes da saga. -/
-theorem T6 (hR : Restoring S E) {body : Exp} (hsf : sagaFree body = true) {ρ : List Val} {s : St}
-    {q : Nat} {s₁ : St} {tr : List Ev}
+theorem T6 (hR : Restoring S E) {body : Exp} (hsf : sagaFree body = true) (hk : keyless body = true)
+    {ρ : List Val} {s : St} {q : Cause} {s₁ : St} {tr : List Ev}
     (hb : eval S c body ρ { s with comp := [] } = .error (.timeout q s₁ tr)) :
     undoTargets (compensate S s₁.comp s₁.w).evs = (actsOf S tr).reverse ∧
       (compensate S s₁.comp s₁.w).ok = true ∧ E (compensate S s₁.comp s₁.w).w s.w := by
-  obtain ⟨new, hc, ha, hw⟩ := (eval_logged hR body hsf).2 hb
+  obtain ⟨new, hc, ha, hw⟩ := (eval_logged hR body hsf hk).2 hb
   simp only [List.append_nil] at hc
   rw [hc]
   exact ⟨by rw [compensate_targets, ha], compensate_restores hR new hw⟩
@@ -251,7 +255,8 @@ theorem T6 (hR : Restoring S E) {body : Exp} (hsf : sagaFree body = true) {ρ : 
   um mundo que satisfaz `Inv`. O tratador é `on failure` se a sonda confirma e
   `CompensationFailed` se não: só a sonda decide. -/
 theorem T6_saga {Inv : World → Prop} (hR : Restoring S E) (hInv : ∀ w w', E w w' → Inv w' → Inv w)
-    {body : Exp} {r : Nat} {f g : Exp} (hsf : sagaFree body = true) {ρ : List Val} {s : St} {o : Out}
+    {body : Exp} {r : Nat} {f g : Exp} (hsf : sagaFree body = true) (hk : keyless body = true)
+    {ρ : List Val} {s : St} {o : Out}
     (hs : Inv s.w) (h : eval S c (.atomic body r f g) ρ s = .ok o) :
     (∃ o₁, eval S c body ρ { s with comp := [] } = .ok o₁ ∧
         o = ⟨o₁.v, exitSaga ρ (.atomic body r f g) { o₁.st with comp := s.comp }, o₁.tr⟩) ∨
@@ -270,7 +275,7 @@ theorem T6_saga {Inv : World → Prop} (hR : Restoring S E) (hInv : ∀ w w', E 
   | error err =>
     cases err with
     | timeout q s₁ tr =>
-      obtain ⟨htg, hok, hw⟩ := T6 hR hsf hb
+      obtain ⟨htg, hok, hw⟩ := T6 hR hsf hk hb
       obtain ⟨o', he, rfl⟩ := atomic_failed hb h
       rw [hok, Bool.true_and] at he
       exact .inr ⟨q, s₁, tr, o', rfl, htg, hok, hInv _ _ hw hs, he, rfl⟩
@@ -321,12 +326,12 @@ def saga : Exp :=
 /-- `healthy` nunca confirma: a compensação desfaz a escala, a sonda vê 3 réplicas e o
 tratador `on failure` roda. -/
 example : (eval S cfg saga [.cap 7] s₀).map (fun o => (o.v, o.tr)) =
-    .ok (.int 1, [.act 0 7 (.int 2), .fail 0, .undo 0 (.int 2) true, .recover 1 true]) := rfl
+    .ok (.int 1, [.act 0 7 (.int 2), .fail (.probe 0), .undo 0 (.int 2) true, .recover 1 true]) := rfl
 
 /-- Com a compensação recusada, o mundo fica com 5 réplicas, a sonda não confirma e o
 programa entra em `CompensationFailed`. -/
 example : (eval Sbroken cfg saga [.cap 7] s₀).map (fun o => (o.v, o.tr)) =
-    .ok (.int 0, [.act 0 7 (.int 2), .fail 0, .undo 0 (.int 2) false, .recover 1 false]) := rfl
+    .ok (.int 0, [.act 0 7 (.int 2), .fail (.probe 0), .undo 0 (.int 2) false, .recover 1 false]) := rfl
 
 /-- A escala e a sua compensação são inversas exatas: o contrato `restoring` vale para a
 igualdade. -/
@@ -357,12 +362,12 @@ theorem saga_restores {ρ : List Val} {s : St} {o : Out} (hs : s.w 0 = 3)
     (h : eval S cfg saga ρ s = .ok o) :
     (∃ o₁, eval S cfg (.let_ (.act 0 0 (.val (.int 2))) (.await 0)) ρ { s with comp := [] } = .ok o₁ ∧
         o = ⟨o₁.v, exitSaga ρ saga { o₁.st with comp := s.comp }, o₁.tr⟩) ∨
-    (∃ (q : Nat) (s₁ : St) (tr : List Ev) (o' : Out), eval S cfg (.let_ (.act 0 0 (.val (.int 2))) (.await 0)) ρ { s with comp := [] } =
+    (∃ (q : Cause) (s₁ : St) (tr : List Ev) (o' : Out), eval S cfg (.let_ (.act 0 0 (.val (.int 2))) (.await 0)) ρ { s with comp := [] } =
         .error (.timeout q s₁ tr) ∧ (compensate S s₁.comp s₁.w).w 0 = 3 ∧
         undoTargets (compensate S s₁.comp s₁.w).evs = (actsOf S tr).reverse ∧
         o.tr = tr ++ .fail q :: (compensate S s₁.comp s₁.w).evs ++
           [.recover 1 (S.probe 1 (compensate S s₁.comp s₁.w).w)] ++ o'.tr) := by
-  rcases T6_saga (Inv := fun w => w 0 = 3) restoring (fun w w' h hw => h ▸ hw) rfl hs h with
+  rcases T6_saga (Inv := fun w => w 0 = 3) restoring (fun w w' h hw => h ▸ hw) rfl rfl hs h with
     hc | ⟨q, s₁, tr, o', hb, htg, _, hinv, _, htr⟩
   · exact .inl hc
   · exact .inr ⟨q, s₁, tr, o', hb, hinv, htg, htr⟩

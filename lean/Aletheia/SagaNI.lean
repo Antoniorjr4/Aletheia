@@ -180,6 +180,189 @@ theorem ext_doInfer (S : Sig) (c : Cfg) (m : Nat) (t : Ty) (o : Out) :
   · simp only [hb, if_false, Bool.false_eq_true]
     exact ⟨fun _ h _ => (by cases h), fun _ _ _ h => (by cases h), fun hs => hs⟩
 
+/-- A saída com o traço `t` à frente. -/
+def withTr (t : List Ev) : Except Err Out → Except Err Out
+  | .ok b => .ok ⟨b.v, b.st, t ++ b.tr⟩
+  | .error e => .error e
+
+/-- `call` só usa o traço anterior para prefixá-lo ao valor; uma falha não o carrega (quem o
+prefixa é `bnd`). -/
+theorem doCall_withTr (S : Sig) (c : Cfg) (t : Nat) (cv : Option Val) (n : Nat)
+    (h : Nat → St → Except Err Out) (o : Out) :
+    doCall S c t cv n h o = withTr o.tr (doCall S c t cv n h ⟨o.v, o.st, []⟩) := by
+  cases cv with
+  | none => rfl
+  | some v =>
+    cases v with
+    | cap id =>
+      simp only [doCall]
+      by_cases hg : S.effect t ∈ c.grants id
+      · by_cases hu : id ∈ o.st.used
+        · simp [hg, hu, withTr]
+        · by_cases hb : ble (o.st.spent + S.cost t) c.limit = true
+          · simp only [hg, hu, hb, if_true, if_false]
+            cases hr : S.reply id 0
+            · simp [withTr]
+            · simp [withTr]
+            · cases hk : (reconcile S (S.prov t) id 1 n).2
+              · simp [withTr]
+              · simp [withTr]
+              · cases hh : h id (callSt S t id o.v o.st (S.applied id))
+                · simp [withTr]
+                · rename_i oh
+                  cases ht : transferOnly id oh.tr <;> simp [withTr, ht]
+          · simp [hg, hu, hb, withTr]
+      · simp [hg, withTr]
+    | _ => rfl
+
+theorem ext_err {t : List Ev} {g : Out → Out} (e : Err) :
+    Ext t g (.error e : Except Err Out) (pre t (.error e)) := by
+  refine ⟨fun _ hb _ => (by cases hb), fun q s tr hb => ?_, fun hs => Settled.of_pre hs⟩
+  cases hb; rfl
+
+theorem ext_doCall (S : Sig) (c : Cfg) (t : Nat) (cv : Option Val) (n : Nat)
+    (h : Nat → St → Except Err Out) (o : Out) :
+    Ext o.tr (fun b : Out => (⟨b.v, b.st, o.tr ++ b.tr⟩ : Out))
+      (doCall S c t cv n h ⟨o.v, o.st, []⟩) (pre o.tr (doCall S c t cv n h o)) := by
+  rw [doCall_withTr S c t cv n h o]
+  cases doCall S c t cv n h ⟨o.v, o.st, []⟩ with
+  | ok b => exact ⟨fun b' hb _ => (by cases hb; exact ⟨rfl, rfl⟩), fun _ _ _ hb => (by cases hb),
+      fun _ => trivial⟩
+  | error e => exact ext_err e
+
+/-- Um tratador puro não lê o estado nem a configuração: as duas execuções obtêm dele o mesmo
+valor e o mesmo traço, e ele não muda o estado. -/
+theorem pure_eval {S : Sig} : ∀ (e : Exp), pureH e = true → ∀ (c₁ c₂ : Cfg) (ρ : List Val)
+    (s₁ s₂ : St),
+    (∃ v tr, eval S c₁ e ρ s₁ = .ok ⟨v, s₁, tr⟩ ∧ eval S c₂ e ρ s₂ = .ok ⟨v, s₂, tr⟩) ∨
+      (eval S c₁ e ρ s₁ = .error .stuck ∧ eval S c₂ e ρ s₂ = .error .stuck) := by
+  intro e
+  induction e with
+  | val v => intro _ c₁ c₂ ρ s₁ s₂; exact .inl ⟨v, [], rfl, rfl⟩
+  | var k =>
+    intro _ c₁ c₂ ρ s₁ s₂
+    cases hk : ρ[k]? with
+    | none => exact .inr ⟨by simp [eval, hk], by simp [eval, hk]⟩
+    | some v => exact .inl ⟨v, [], by simp [eval, hk], by simp [eval, hk]⟩
+  | transfer p =>
+    intro _ c₁ c₂ ρ s₁ s₂
+    cases hp : ρ[p]? with
+    | none => exact .inr ⟨by simp [eval, hp], by simp [eval, hp]⟩
+    | some v =>
+      cases v with
+      | pend t k => exact .inl ⟨.unit, [.handoff k], by simp [eval, hp], by simp [eval, hp]⟩
+      | _ => exact .inr ⟨by simp [eval, hp], by simp [eval, hp]⟩
+  | let_ a b iha ihb =>
+    intro hp c₁ c₂ ρ s₁ s₂
+    simp only [pureH, Bool.and_eq_true] at hp
+    rcases iha hp.1 c₁ c₂ ρ s₁ s₂ with ⟨v, tr, h₁, h₂⟩ | ⟨h₁, h₂⟩
+    · rcases ihb hp.2 c₁ c₂ (v :: ρ) s₁ s₂ with ⟨v', tr', h₁', h₂'⟩ | ⟨h₁', h₂'⟩
+      · exact .inl ⟨v', tr ++ tr', by simp [eval, h₁, h₁', pre], by simp [eval, h₂, h₂', pre]⟩
+      · exact .inr ⟨by simp [eval, h₁, h₁', pre], by simp [eval, h₂, h₂', pre]⟩
+    · exact .inr ⟨by simp [eval, h₁], by simp [eval, h₂]⟩
+  | prim op a b iha ihb =>
+    intro hp c₁ c₂ ρ s₁ s₂
+    simp only [pureH, Bool.and_eq_true] at hp
+    rcases iha hp.1 c₁ c₂ ρ s₁ s₂ with ⟨v, tr, h₁, h₂⟩ | ⟨h₁, h₂⟩
+    · rcases ihb hp.2 c₁ c₂ ρ s₁ s₂ with ⟨v', tr', h₁', h₂'⟩ | ⟨h₁', h₂'⟩
+      · cases v with
+        | int x =>
+          cases v' with
+          | int y =>
+            exact .inl ⟨op.apply x y, tr ++ tr', by simp [eval, h₁, h₁', pre],
+              by simp [eval, h₂, h₂', pre]⟩
+          | _ => exact .inr ⟨by simp [eval, h₁, h₁', pre], by simp [eval, h₂, h₂', pre]⟩
+        | _ => exact .inr ⟨by simp [eval, h₁, h₁', pre], by simp [eval, h₂, h₂', pre]⟩
+      · exact .inr ⟨by simp [eval, h₁, h₁', pre], by simp [eval, h₂, h₂', pre]⟩
+    · exact .inr ⟨by simp [eval, h₁], by simp [eval, h₂]⟩
+  | ite x t f ihx iht ihf =>
+    intro hp c₁ c₂ ρ s₁ s₂
+    simp only [pureH, Bool.and_eq_true] at hp
+    rcases ihx hp.1.1 c₁ c₂ ρ s₁ s₂ with ⟨v, tr, h₁, h₂⟩ | ⟨h₁, h₂⟩
+    · cases v with
+      | bool b =>
+        cases b
+        · rcases ihf hp.2 c₁ c₂ ρ s₁ s₂ with ⟨v', tr', h₁', h₂'⟩ | ⟨h₁', h₂'⟩
+          · exact .inl ⟨v', tr ++ tr', by simp [eval, h₁, h₁', pre], by simp [eval, h₂, h₂', pre]⟩
+          · exact .inr ⟨by simp [eval, h₁, h₁', pre], by simp [eval, h₂, h₂', pre]⟩
+        · rcases iht hp.1.2 c₁ c₂ ρ s₁ s₂ with ⟨v', tr', h₁', h₂'⟩ | ⟨h₁', h₂'⟩
+          · exact .inl ⟨v', tr ++ tr', by simp [eval, h₁, h₁', pre], by simp [eval, h₂, h₂', pre]⟩
+          · exact .inr ⟨by simp [eval, h₁, h₁', pre], by simp [eval, h₂, h₂', pre]⟩
+      | _ => exact .inr ⟨by simp [eval, h₁, pre], by simp [eval, h₂, pre]⟩
+    · exact .inr ⟨by simp [eval, h₁], by simp [eval, h₂]⟩
+  | _ => intro hp; simp [pureH] at hp
+
+theorem settled_cases {r : Except Err Out} (hs : Settled r) :
+    (∃ o, r = .ok o) ∨ (∃ q s tr, r = .error (.timeout q s tr)) := by
+  cases r with
+  | ok o => exact .inl ⟨o, rfl⟩
+  | error e =>
+    cases e with
+    | timeout q s tr => exact .inr ⟨q, s, tr, rfl⟩
+    | _ => exact (hs : False).elim
+
+/-- Uma chamada com chave, com a mesma capacidade, o mesmo argumento e o mesmo mundo nas duas
+execuções, termina igual nas duas: o provedor responde pela chave, a reconciliação depende
+só da chave e da classe, e o tratador é puro. -/
+theorem doCall_ni {S : Sig} {c₁ c₂ : Cfg} {t n : Nat} {cv : Option Val} {e : Exp}
+    (hpure : pureH e = true) {o₁ o₂ : Out} (hw : SameW o₁.st o₂.st) (hv : o₁.v = o₂.v)
+    (h₁ : Settled (doCall S c₁ t cv n (fun id s' => eval S c₁ e [.pend t id] s') ⟨o₁.v, o₁.st, []⟩))
+    (h₂ : Settled (doCall S c₂ t cv n (fun id s' => eval S c₂ e [.pend t id] s') ⟨o₂.v, o₂.st, []⟩)) :
+    NIR (OutEq .T) (doCall S c₁ t cv n (fun id s' => eval S c₁ e [.pend t id] s') ⟨o₁.v, o₁.st, []⟩)
+      (doCall S c₂ t cv n (fun id s' => eval S c₂ e [.pend t id] s') ⟨o₂.v, o₂.st, []⟩) := by
+  rcases o₁ with ⟨v, st₁, tr₁⟩
+  rcases o₂ with ⟨v', st₂, tr₂⟩
+  simp only at hv hw h₁ h₂ ⊢
+  subst hv
+  have hcs : ∀ (id : Nat) (b : Bool), SameW (callSt S t id v st₁ b) (callSt S t id v st₂ b) :=
+    fun id b => ⟨by simp [callSt, hw.1], by simp [callSt, hw.2]⟩
+  rcases settled_cases h₁ with ⟨r₁, e₁⟩ | ⟨q₁, u₁, t₁, e₁⟩ <;>
+    rcases settled_cases h₂ with ⟨r₂, e₂⟩ | ⟨q₂, u₂, t₂, e₂⟩
+  · obtain ⟨id, hid, _, _, _, hc₁⟩ := doCall_ok e₁
+    obtain ⟨id', hid', _, _, _, hc₂⟩ := doCall_ok e₂
+    rw [hid] at hid'; cases hid'
+    rw [e₁, e₂]
+    rcases hc₁ with ⟨hr₁, rfl⟩ | ⟨hr₁, _, rfl⟩ <;> rcases hc₂ with ⟨hr₂, rfl⟩ | ⟨hr₂, _, rfl⟩
+    · exact .inl ⟨_, _, rfl, rfl, rfl, hcs id true, fun _ => rfl⟩
+    · rw [hr₁] at hr₂; cases hr₂
+    · rw [hr₁] at hr₂; cases hr₂
+    · exact .inl ⟨_, _, rfl, rfl, rfl, hcs id _, fun _ => rfl⟩
+  · exfalso
+    obtain ⟨id, hid, _, _, _, hc₁⟩ := doCall_ok e₁
+    obtain ⟨id', hid', _, _, _, hc₂⟩ := doCall_timeout e₂
+    rw [hid] at hid'; cases hid'
+    rcases hc₁ with ⟨hr₁, _⟩ | ⟨hr₁, hk₁, _⟩ <;>
+      rcases hc₂ with ⟨hr₂, _⟩ | ⟨hr₂, hk₂, _⟩ | ⟨hr₂, hk₂, _⟩ <;>
+      first | (rw [hr₁] at hr₂; cases hr₂; done) | (rw [hk₁] at hk₂; cases hk₂; done)
+  · exfalso
+    obtain ⟨id, hid, _, _, _, hc₁⟩ := doCall_timeout e₁
+    obtain ⟨id', hid', _, _, _, hc₂⟩ := doCall_ok e₂
+    rw [hid] at hid'; cases hid'
+    rcases hc₂ with ⟨hr₂, _⟩ | ⟨hr₂, hk₂, _⟩ <;>
+      rcases hc₁ with ⟨hr₁, _⟩ | ⟨hr₁, hk₁, _⟩ | ⟨hr₁, hk₁, _⟩ <;>
+      first | (rw [hr₁] at hr₂; cases hr₂; done) | (rw [hk₁] at hk₂; cases hk₂; done)
+  · obtain ⟨id, hid, _, _, _, hc₁⟩ := doCall_timeout e₁
+    obtain ⟨id', hid', _, _, _, hc₂⟩ := doCall_timeout e₂
+    rw [hid] at hid'; cases hid'
+    rw [e₁, e₂]
+    rcases hc₁ with ⟨hr₁, rfl, rfl, rfl⟩ | ⟨hr₁, hk₁, rfl, rfl, rfl⟩ |
+        ⟨hr₁, hk₁, oh₁, hoh₁, _, rfl, rfl, rfl⟩ <;>
+      rcases hc₂ with ⟨hr₂, rfl, rfl, rfl⟩ | ⟨hr₂, hk₂, rfl, rfl, rfl⟩ |
+        ⟨hr₂, hk₂, oh₂, hoh₂, _, rfl, rfl, rfl⟩ <;>
+      first
+      | (rw [hr₁] at hr₂; cases hr₂; done)
+      | (rw [hk₁] at hk₂; cases hk₂; done)
+      | skip
+    · exact .inr (.inl ⟨_, _, _, _, rfl, rfl, hw⟩)
+    · exact .inr (.inl ⟨_, _, _, _, rfl, rfl, hcs id _⟩)
+    · dsimp only at hoh₁ hoh₂
+      rcases pure_eval e hpure c₁ c₂ [.pend t id] (callSt S t id v st₁ (S.applied id))
+          (callSt S t id v st₂ (S.applied id)) with ⟨vh, trh, hp₁, hp₂⟩ | ⟨hp₁, _⟩
+      · rw [hp₁] at hoh₁; rw [hp₂] at hoh₂
+        cases hoh₁; cases hoh₂
+        exact .inr (.inl ⟨_, _, _, _, rfl, rfl, hcs id _⟩)
+      · rw [hp₁] at hoh₁; cases hoh₁
+
 /-! ## Composição -/
 
 theorem NIR.ext {α β : Type} [HasTr α] [HasTr β] {Pi : α → α → Prop} {Q : β → β → Prop}
@@ -283,6 +466,19 @@ theorem loop_confine {f : Val → St → Except Err Out}
     obtain ⟨r, hr, t₂, w₂, k₂⟩ := loop_confine hf vs o.st hs'.of_bnd
     exact ⟨(r.1, o.tr ++ r.2), by simp only [bnd_ok, hr, pre_ok], by simp [t₁, t₂],
       w₂.trans w₁, k₂.trans k₁⟩
+
+theorem loop_no_timeout_all {f : Val → St → Except Err Out}
+    (hf : ∀ v s q s₁ tr, f v s ≠ .error (.timeout q s₁ tr)) :
+    ∀ (vs : List Val) (s : St) (q : Cause) (s₁ : St) (tr : List Ev),
+      loop f vs s ≠ .error (.timeout q s₁ tr)
+  | [], s, q, s₁, tr, h => by simp [loop] at h
+  | v :: vs, s, q, s₁, tr, h => by
+    simp only [loop] at h
+    rcases bnd_eq_timeout h with h₀ | ⟨o, t, _, h₁, _⟩
+    · exact hf v s q s₁ tr h₀
+    · rcases bnd_eq_timeout h₁ with h₂ | ⟨_, _, _, h₃, _⟩
+      · exact loop_no_timeout_all hf vs _ q s₁ _ h₂
+      · cases h₃
 
 /-! ## Confinamento com o mundo -/
 
@@ -396,7 +592,7 @@ theorem confine_w {c : Cfg} {Γ : List Bind} {pc : Lab} {e : Exp} {τ : Ty} {ι 
       · revert h₁; split
         · intro h₁
           rcases bnd_eq_timeout h₁ with h₂ | ⟨_, _, _, h₃, _⟩
-          · exact loop_no_timeout (fun v s' => (ihb hpc').2) _ _ _ _ _ h₂
+          · exact loop_no_timeout_all (fun v s' => (ihb hpc').2) _ _ _ _ _ h₂
           · cases h₃
         · intro h₁; cases h₁
   | infer _ iha =>
@@ -412,6 +608,8 @@ theorem confine_w {c : Cfg} {Γ : List Bind} {pc : Lab} {e : Exp} {τ : Ty} {ι 
       · exact doInfer_ne_timeout h₁
   | await hl => intro hpc; exact absurd hl hpc
   | atomic hl _ _ _ _ _ _ => intro hpc; exact absurd hl hpc
+  | call hl _ _ _ _ _ _ _ _ _ => intro hpc; exact absurd hl hpc
+  | transfer hl _ => intro hpc; exact absurd hl hpc
 
 theorem confine_settled {c : Cfg} {Γ : List Bind} {pc : Lab} {e : Exp} {τ : Ty} {ι : Lab}
     {β : Budget} (h : HasType S Γ pc e τ ι β) (hpc : ¬ low pc) {ρ : List Val} {s : St}
@@ -471,9 +669,13 @@ theorem atomic_extends {c : Cfg} {body : Exp} {r : Nat} {f g : Exp} {ρ : List V
   | error e =>
     cases e with
     | timeout q s₁ tr =>
-      rw [eval_atomic_fail hb] at hs ⊢
-      rw [rtr_pre_bnd hs (fun _ => rfl)]
-      exact ex_append tr _ _ _
+      by_cases hy : (q.isAbort && ((compensate S s₁.comp s₁.w).ok &&
+          S.probe r (compensate S s₁.comp s₁.w).w)) = true
+      · rw [eval_atomic_reraise hb hy]
+        exact ex_append tr _ _ _
+      · rw [eval_atomic_fail hb (by simpa using hy)] at hs ⊢
+        rw [rtr_pre_bnd hs (fun _ => rfl)]
+        exact ex_append tr _ _ _
     | _ =>
       have := eval_atomic_settled hs
       rw [hb] at this
@@ -726,7 +928,7 @@ theorem noninterference_saga {c₁ c₂ : Cfg} {Γ : List Bind} {pc : Lab} {e : 
     simp only [eval]
     rw [hw.1]
     cases S.probe q s₂.w
-    · exact .inr (.inl ⟨q, s₁, s₂, [], rfl, rfl, hw⟩)
+    · exact .inr (.inl ⟨.probe q, s₁, s₂, [], rfl, rfl, hw⟩)
     · exact .inl ⟨_, _, rfl, rfl, rfl, hw, fun _ => rfl⟩
   | @atomic Γ pc body r f g τ ιb ιf ιg βb βf βg _ _ _ _ ihb ihf ihg =>
     intro ρ₁ ρ₂ s₁ s₂ hl hw hs₁ hs₂
@@ -735,8 +937,24 @@ theorem noninterference_saga {c₁ c₂ : Cfg} {Γ : List Bind} {pc : Lab} {e : 
     rcases hb with ⟨b₁, b₂, he₁, he₂, ht, hw', hv⟩ | ⟨q, u₁, u₂, tr, he₁, he₂, hw'⟩ | hd
     · rw [eval_atomic_ok he₁, eval_atomic_ok he₂]
       exact .inl ⟨_, _, rfl, rfl, ht, ⟨hw'.1, hw.2⟩, fun hι => hv (low_meet.mp hι).1⟩
-    · rw [eval_atomic_fail he₁] at hs₁ ⊢
-      rw [eval_atomic_fail he₂] at hs₂ ⊢
+    · by_cases hy : (q.isAbort && ((compensate S u₂.comp u₂.w).ok &&
+          S.probe r (compensate S u₂.comp u₂.w).w)) = true
+      · -- o encerramento pelo tratador atravessa as duas sagas igualmente
+        have hy₁ : (q.isAbort && ((compensate S u₁.comp u₁.w).ok &&
+            S.probe r (compensate S u₁.comp u₁.w).w)) = true := by rw [hw'.1, hw'.2]; exact hy
+        rw [eval_atomic_reraise he₁ hy₁, eval_atomic_reraise he₂ hy]
+        refine .inr (.inl ⟨q, { u₁ with w := (compensate S u₁.comp u₁.w).w, comp := s₁.comp },
+          { u₂ with w := (compensate S u₂.comp u₂.w).w, comp := s₂.comp },
+          (tr ++ .fail q :: (compensate S u₂.comp u₂.w).evs ++
+            [.recover r (S.probe r (compensate S u₂.comp u₂.w).w)]) ++ [], ?_, rfl, ?_⟩)
+        · rw [hw'.1, hw'.2]
+        · exact ⟨by simp only [hw'.1, hw'.2], hw.2⟩
+      have hn₂ : (q.isAbort && ((compensate S u₂.comp u₂.w).ok &&
+          S.probe r (compensate S u₂.comp u₂.w).w)) = false := by simpa using hy
+      have hn₁ : (q.isAbort && ((compensate S u₁.comp u₁.w).ok &&
+          S.probe r (compensate S u₁.comp u₁.w).w)) = false := by rw [hw'.1, hw'.2]; exact hn₂
+      rw [eval_atomic_fail he₁ hn₁] at hs₁ ⊢
+      rw [eval_atomic_fail he₂ hn₂] at hs₂ ⊢
       rw [hw'.1, hw'.2] at hs₁ ⊢
       have hfin : ∀ (hd : Exp) (ιh : Lab), (low (ιb ⊓ (ιf ⊓ ιg)) → low ιh) →
           (∀ {s₁' s₂' : St}, SameW s₁' s₂' → Settled (eval S c₁ hd ρ₁ s₁') →
@@ -774,6 +992,31 @@ theorem noninterference_saga {c₁ c₂ : Cfg} {Γ : List Bind} {pc : Lab} {e : 
       obtain ⟨X₂, hX₂⟩ := atomic_extends hs₂
       rw [hX₁, hX₂]
       exact hd.append _ _
+  | @call Γ pc t k a n e ιa βa E ιe βe _ hk _ _ hla _ hpure _ iha _ =>
+    intro ρ₁ ρ₂ s₁ s₂ hl hw hs₁ hs₂
+    simp only [eval] at hs₁ hs₂ ⊢
+    have hcap := hl.cap_eq hk
+    rw [← hcap] at hs₂ ⊢
+    refine NIR.seq (iha hl hw hs₁.of_bnd hs₂.of_bnd)
+      (I₁ := fun o => doCall S c₁ t ρ₁[k]? n (fun id s' => eval S c₁ e [.pend t id] s') ⟨o.v, o.st, []⟩)
+      (g₁ := fun o b => ⟨b.v, b.st, o.tr ++ b.tr⟩)
+      (I₂ := fun o => doCall S c₂ t ρ₁[k]? n (fun id s' => eval S c₂ e [.pend t id] s') ⟨o.v, o.st, []⟩)
+      (g₂ := fun o b => ⟨b.v, b.st, o.tr ++ b.tr⟩)
+      (Pi := OutEq .T) (fun o => ext_doCall S c₁ t _ n _ o) (fun o => ext_doCall S c₂ t _ n _ o) ?_
+      (fun _ _ _ _ _ _ _ _ hpi => hpi) hs₁ hs₂
+    intro o₁ o₂ _ hp h₁ h₂
+    exact doCall_ni hpure hp.1 (hp.2 hla) h₁ h₂
+  | @transfer Γ pc p _ hp =>
+    intro ρ₁ ρ₂ s₁ s₂ hl hw hs₁ hs₂
+    have hpe := hl.pend_eq hp
+    simp only [eval] at hs₁ hs₂ ⊢
+    rw [← hpe] at hs₂ ⊢
+    cases hρ : ρ₁[p]? with
+    | none => simp [hρ, Settled] at hs₁
+    | some v =>
+      cases v with
+      | pend t' k => exact .inl ⟨_, _, rfl, rfl, rfl, hw, fun _ => rfl⟩
+      | _ => simp [hρ, Settled] at hs₁
 
 /-! ## Consequências -/
 
@@ -794,20 +1037,42 @@ theorem noninterference_saga_ok {c₁ c₂ : Cfg} {Γ : List Bind} {pc : Lab} {e
   · cases e₁
   · exact .inr hd
 
-/-- **T1 + T3 com sagas.** Para um programa bem tipado e linear, com todo `await` dentro de
-uma saga e o orçamento dentro dos dois tetos, as duas execuções terminam, e a conclusão do
-T3 vale sem hipótese sobre o resultado. -/
+/-- **T1 + T3 com sagas.** Para um programa bem tipado e linear, sem chamadas com chave, com
+todo `await` dentro de uma saga e o orçamento dentro dos dois tetos, as duas execuções
+terminam com valor, e a conclusão do T3 vale sem hipótese sobre o resultado. -/
 theorem noninterference_saga_total {c₁ c₂ : Cfg} (hO₁ : c₁.oracle.Ok) (hO₂ : c₂.oracle.Ok)
+    {Γ : List Bind} {pc : Lab} {e : Exp} {τ : Ty} {ι : Lab} {β : Budget}
+    {ρ₁ ρ₂ : List Val} {s₁ s₂ : St} (h : HasType S Γ pc e τ ι β) (hlin : Linear Γ e)
+    (hg : Guarded e) (hk : keyless e = true) (h0₁ : Start c₁.grants Γ ρ₁ s₁)
+    (h0₂ : Start c₂.grants Γ ρ₂ s₂)
+    (hB₁ : s₁.spent + β ≤ c₁.limit) (hB₂ : s₂.spent + β ≤ c₂.limit) (hl : LowEq Γ ρ₁ ρ₂)
+    (hw : SameW s₁ s₂) :
+    ∃ o₁ o₂, eval S c₁ e ρ₁ s₁ = .ok o₁ ∧ eval S c₂ e ρ₂ s₂ = .ok o₂ ∧
+      ((o₁.tr = o₂.tr ∧ SameW o₁.st o₂.st ∧ (low ι → o₁.v = o₂.v)) ∨ Diverge o₁.tr o₂.tr) := by
+  obtain ⟨o₁, h₁, _⟩ := soundness_keyless hO₁ h hlin hg hk h0₁ hB₁
+  obtain ⟨o₂, h₂, _⟩ := soundness_keyless hO₂ h hlin hg hk h0₂ hB₂
+  exact ⟨o₁, o₂, h₁, h₂, noninterference_saga_ok h hl hw h₁ h₂⟩
+
+/-- **T1 + T3 com sagas e chamadas com chave.** Para um programa bem tipado e linear, com todo
+`await` dentro de uma saga e o orçamento dentro dos dois tetos, as duas execuções chegam a um
+desfecho (valor, recusa do provedor ou encerramento pelo tratador de `TimeoutUnknown`), e os
+desfechos não interferem: o mesmo traço, o mesmo mundo e o mesmo resultado `⊒ Endorsed`; ou a
+mesma falha (a mesma causa, inclusive o valor do tratador, o mesmo traço, o mesmo mundo); ou
+uma divergência numa decisão de endosso. Dados `Untrusted` não decidem se uma operação com
+chave foi confirmada, recusada ou transferida. -/
+theorem noninterference_saga_keys {c₁ c₂ : Cfg} (hO₁ : c₁.oracle.Ok) (hO₂ : c₂.oracle.Ok)
     {Γ : List Bind} {pc : Lab} {e : Exp} {τ : Ty} {ι : Lab} {β : Budget}
     {ρ₁ ρ₂ : List Val} {s₁ s₂ : St} (h : HasType S Γ pc e τ ι β) (hlin : Linear Γ e)
     (hg : Guarded e) (h0₁ : Start c₁.grants Γ ρ₁ s₁) (h0₂ : Start c₂.grants Γ ρ₂ s₂)
     (hB₁ : s₁.spent + β ≤ c₁.limit) (hB₂ : s₂.spent + β ≤ c₂.limit) (hl : LowEq Γ ρ₁ ρ₂)
     (hw : SameW s₁ s₂) :
-    ∃ o₁ o₂, eval S c₁ e ρ₁ s₁ = .ok o₁ ∧ eval S c₂ e ρ₂ s₂ = .ok o₂ ∧
-      ((o₁.tr = o₂.tr ∧ SameW o₁.st o₂.st ∧ (low ι → o₁.v = o₂.v)) ∨ Diverge o₁.tr o₂.tr) := by
-  obtain ⟨o₁, h₁, _⟩ := soundness hO₁ h hlin hg h0₁ hB₁
-  obtain ⟨o₂, h₂, _⟩ := soundness hO₂ h hlin hg h0₂ hB₂
-  exact ⟨o₁, o₂, h₁, h₂, noninterference_saga_ok h hl hw h₁ h₂⟩
+    NIR (OutEq ι) (eval S c₁ e ρ₁ s₁) (eval S c₂ e ρ₂ s₂) := by
+  have hs : ∀ {c : Cfg}, c.oracle.Ok → ∀ {ρ : List Val} {s : St}, Start c.grants Γ ρ s →
+      s.spent + β ≤ c.limit → Settled (eval S c e ρ s) := by
+    intro c hO ρ s h0 hB
+    rcases soundness hO h hlin hg h0 hB with ⟨o, he, _⟩ | ⟨_, _, _, he⟩ | ⟨_, _, _, he, _⟩ <;>
+      rw [he] <;> trivial
+  exact noninterference_saga h hl hw (hs hO₁ h0₁ hB₁) (hs hO₂ h0₂ hB₂)
 
 end
 

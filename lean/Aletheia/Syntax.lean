@@ -27,16 +27,19 @@ inductive Ty where
   | list (t : Ty) (n : Nat)
   deriving DecidableEq, Repr
 
-/-- Valores de execução. `cap id` é a capacidade de identidade `id`. -/
+/-- Valores de execução. `cap id` é a capacidade de identidade `id`. `pend t k` é a obrigação
+linear `Pending[k]` da operação `t` de chave `k`: só existe no ambiente do tratador de
+`TimeoutUnknown` (`call`), e só `transfer` a consome. -/
 inductive Val where
   | int (n : Int)
   | bool (b : Bool)
   | unit
   | list (vs : List Val)
   | cap (id : Nat)
+  | pend (t k : Nat)
   deriving Repr
 
-/-- Tipagem de valores. Nenhum valor de dado é uma capacidade. -/
+/-- Tipagem de valores. Nenhum valor de dado é uma capacidade nem uma obrigação. -/
 inductive HasTy : Val → Ty → Prop where
   | int  {n : Int} : HasTy (.int n) .int
   | bool {b : Bool} : HasTy (.bool b) .bool
@@ -45,6 +48,9 @@ inductive HasTy : Val → Ty → Prop where
       (∀ v ∈ vs, HasTy v t) → vs.length ≤ n → HasTy (.list vs) (.list t n)
 
 theorem HasTy.not_cap {v : Val} {t : Ty} (h : HasTy v t) (id : Nat) : v ≠ .cap id := by
+  cases h <;> nofun
+
+theorem HasTy.not_pend {v : Val} {t : Ty} (h : HasTy v t) (a k : Nat) : v ≠ .pend a k := by
   cases h <;> nofun
 
 /-- Operações primitivas sobre inteiros. -/
@@ -92,6 +98,16 @@ inductive Exp where
   todas deram certo e a sonda de recuperação `r` confirma, e `g` (`CompensationFailed`) em
   qualquer outro caso -/
   | atomic (body : Exp) (r : Nat) (f g : Exp)
+  /-- `call t k a n e`: a ferramenta `t` com chave `own IdemKey`, com a autoridade da
+  capacidade do índice `k`, que ela consome. A chave da operação é a identidade dessa
+  capacidade. A chamada pode ser aplicada, recusada (`Failed`) ou ficar sem resposta
+  (`TimeoutUnknown`). No último caso roda o tratador `reconcile p fuel n else e`: até `n`
+  consultas pelo protocolo do provedor; se nenhuma for conclusiva, `e` roda num ambiente
+  fechado que só contém a obrigação linear `Pending[k]` (índice 0), precisa transferi-la, e o
+  seu valor encerra o evento (`Abort`). -/
+  | call (t k : Nat) (a : Exp) (n : Nat) (e : Exp)
+  /-- `transfer p`: entrega a obrigação do índice `p` ao reconciliador durável -/
+  | transfer (p : Nat)
   deriving Repr
 
 /-- Classe de efeito externo (identificador canônico atribuído pelo compilador, por exemplo
@@ -103,12 +119,20 @@ linear `Cap[E]`. -/
 inductive Bind where
   | data (t : Ty) (ι : Lab)
   | cap (E : List EffectId)
+  /-- a obrigação linear `Pending[k]` no ambiente do tratador -/
+  | pend
   deriving DecidableEq, Repr
 
-/-- O que o provedor responde a uma chamada com chave (tentativa 0) ou a uma consulta de
-status na reconciliação (tentativas 1, 2, …): aplicada, não aplicada, ou sem resposta. -/
+/-- O que o provedor responde a uma chamada com chave (tentativa 0) ou a uma tentativa da
+reconciliação (1, 2, …): aplicada, não aplicada, ou sem resposta. -/
 inductive Reply where
   | done | failed | unknown
+  deriving DecidableEq, Repr
+
+/-- A classe do provedor de uma ferramenta com chave (spec 3.5): `idempotent` reenvia com a
+mesma chave, `queryable` consulta o status pela chave, `opaque` não tem protocolo. -/
+inductive Prov where
+  | idempotent | queryable | opaque
   deriving DecidableEq, Repr
 
 /-- Os estados terminais de uma chave `IdemKey` (spec 3.5): `Done` (a operação aconteceu),
@@ -118,24 +142,42 @@ inductive KEnd where
   | done | failed | transferred
   deriving DecidableEq, Repr
 
+/-- A causa de uma falha que uma saga captura: a pós-condição `q` não observada (`R0910`),
+a operação de chave `k` não aplicada (`R0600` na chamada, `R0611` na reconciliação), ou o
+tratador de `TimeoutUnknown` que transferiu a obrigação e encerrou o evento com `v`. -/
+inductive Cause where
+  | probe (q : Nat)
+  | refused (k : Nat)
+  | abort (v : Val)
+  deriving Repr
+
+def Cause.isAbort : Cause → Bool
+  | .abort _ => true
+  | _ => false
+
 /-- Eventos observáveis de uma execução. -/
 inductive Ev where
   /-- a ferramenta `t` executou com a capacidade `id` e o argumento `v` -/
   | act (t : Nat) (id : Nat) (v : Val)
   /-- decisão de endosso pela política `p`: `some v` aceito, `none` recusado -/
   | endorse (p : Nat) (o : Option Val)
-  /-- a pós-condição `q` não foi observada: a saga corrente falhou -/
-  | fail (q : Nat)
+  /-- a saga corrente falhou pela causa `c` -/
+  | fail (c : Cause)
   /-- a compensação de `t(v)` rodou; `ok = false` se o provedor a recusou -/
   | undo (t : Nat) (v : Val) (ok : Bool)
   /-- a sonda de recuperação `r` observou (`true`) ou não (`false`) o invariante -/
   | recover (r : Nat) (ok : Bool)
   /-- `TimeoutUnknown`: a chamada `t(v)` com a chave `k` não respondeu; nasce `Pending[k]` -/
   | pending (t : Nat) (k : Nat) (v : Val)
-  /-- a `i`-ésima consulta de status da reconciliação de `k` e a resposta -/
-  | query (k : Nat) (i : Nat) (r : Reply)
+  /-- a `i`-ésima tentativa da reconciliação de `k` e a resposta; `none` para o provedor
+  `opaque`, que não tem protocolo -/
+  | query (k : Nat) (i : Nat) (r : Option Reply)
   /-- a chave `k` chegou ao estado terminal `e` -/
   | settle (k : Nat) (e : KEnd)
+  /-- `transfer`: o tratador entregou a obrigação `k` ao reconciliador durável. O fechamento
+  `Transferred` é emitido pela própria chamada, depois de conferir que o tratador entregou
+  aquela obrigação exatamente uma vez -/
+  | handoff (k : Nat)
   deriving Repr
 
 /-- O estado abstrato do mundo: células indexadas (réplicas por deployment, saldos,
@@ -166,15 +208,19 @@ structure Sig where
   undo  : Nat → Val → World → Option World := fun _ _ w => some w
   /-- sondas confiáveis do mundo (`await`, `recover`) -/
   probe : Nat → World → Bool := fun _ _ => true
-  /-- a ferramenta recebe uma chave `own IdemKey`: a chamada pode terminar em
-  `TimeoutUnknown` e passa pelo protocolo de reconciliação -/
-  keyed : Nat → Bool := fun _ => false
-  /-- o combustível da reconciliação (`reconcile p fuel N`) -/
-  fuel  : Nat → Nat := fun _ => 0
+  /-- a classe do provedor de cada ferramenta com chave -/
+  prov  : Nat → Prov := fun _ => .queryable
   /-- o provedor: `reply k i` é a resposta à tentativa `i` da operação de chave `k` (0 é a
-  chamada; 1, 2, … as consultas de status). Arbitrária: os teoremas valem para qualquer
-  provedor, inclusive um que nunca responde -/
+  chamada; 1, 2, … o reenvio ou a consulta de status). Arbitrária: os teoremas valem para
+  qualquer provedor, inclusive um que nunca responde -/
   reply : Nat → Nat → Reply := fun _ _ => .done
+  /-- a verdade oculta de uma operação que ficou sem resposta: `applied k` diz se o efeito
+  de `k` existe no mundo, saiba o agente ou não. É a razão de `Transferred` não significar
+  "desfeito" -/
+  applied : Nat → Bool := fun _ => false
+  /-- o tipo do valor com que o tratador de `TimeoutUnknown` encerra o evento (o tipo de
+  retorno do agente, como em `handle timeout_unknown(p) -> T`) -/
+  ret   : Ty := .unit
 
 /-- O oráculo de inferência: `O i m t v` é a resposta da `i`-ésima chamada ao modelo `m`,
 pedida no tipo `t`, com o prompt `v`. Ele é arbitrário e, portanto, adversarial. -/

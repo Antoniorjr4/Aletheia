@@ -1035,7 +1035,18 @@ impl<'m> Arx<'m> {
         let t0 = self.clock;
         let (out, lat) = match self.host.call(name, &args) {
             Ok(r) => r,
-            Err(HostError::Failed(m)) => return Err(rt("R0600", m).into()),
+            Err(HostError::Failed(m)) => {
+                // Com chave, a recusa é um estado terminal da obrigação (`Failed`): fica no
+                // journal, como `resolved` fica na reconciliação. Sem chave, nada muda.
+                if let Some(k) = key_n {
+                    self.journal.push(
+                        self.clock,
+                        "tool_failed",
+                        json!({ "tool": name, "key": format!("k{k}"), "error": m }),
+                    );
+                }
+                return Err(rt("R0600", m).into());
+            }
             Err(HostError::Timeout { elapsed }) => {
                 self.clock += elapsed;
                 self.meter.settle(0, t.usd, elapsed);

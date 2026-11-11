@@ -291,35 +291,49 @@ O T6 tem dois limites, que estão no enunciado:
 
 ## T9: chaves, `Pending[k]` e reconciliação
 
-Uma ferramenta `keyed` recebe uma chave `own IdemKey`. A chave de cada operação é a
-identidade da capacidade linear que a autoriza; como cada capacidade é consumida uma única
-vez (`eval_nodup`), cada chave nomeia uma única operação. O provedor (`Sig.reply`) é
-arbitrário: pode aplicar, recusar ou não responder, à chamada e a cada consulta.
+`call t k a n e` é a chamada com chave da ferramenta `t`. A chave de cada operação é a
+identidade da capacidade linear `k` que a autoriza. Como cada capacidade é consumida uma única
+vez (`eval_nodup`), cada chave nomeia uma única operação; a cunhagem separada (`keys.mint()`)
+fica para a Fase 2 (`docs/REV11.md`). O provedor (`Sig.reply`, `Sig.prov`, `Sig.applied`) é
+arbitrário: pode aplicar, recusar ou não responder, à chamada e a cada tentativa.
 
-- **Resposta direta:** `Done` (o efeito entra no mundo e no registro da saga) ou `Failed`.
-- **Sem resposta (`TimeoutUnknown`):** nasce `Pending[k]`, e a reconciliação consulta o
-  status até `fuel` vezes (`reconcile`). Uma consulta conclusiva decide `Done` ou `Failed`.
-  Se nenhuma for conclusiva, a obrigação é transferida ao reconciliador durável
-  (`Transferred`) e sai da saga: o efeito incerto não entra no mundo do agente nem no
-  registro de compensação.
+- **Resposta direta:** `Done` (`act` + `settle done`; o efeito entra no mundo e no registro da
+  saga) ou `Failed` (`refused k`, uma falha que a saga captura; nada no mundo nem no registro).
+- **Sem resposta (`TimeoutUnknown`):** nasce `Pending[k]` e a operação entra no registro da
+  saga (compensar é total sobre aconteceu e não aconteceu, como no ARX). A reconciliação
+  tenta até `n` vezes pela classe do provedor: `idempotent` reenvia, `queryable` consulta,
+  `opaque` não tem protocolo. Uma tentativa conclusiva decide `Done` ou `Failed`.
+- **Esgotado o combustível:** roda o **tratador** `e`, uma expressão do núcleo no ambiente
+  fechado `[Pending[k]]`. A tipagem exige um tratador puro, do tipo de retorno do agente, que
+  consuma a obrigação exatamente uma vez (`transfer 0`). O valor dele encerra o evento
+  (`abort v`). Uma saga que recupera compensa e deixa o encerramento subir; uma que não
+  recupera roda `on compensation_failed` e o absorve, como no ARX.
 
-O traço registra `pending t k v`, cada `query k i r` e o `settle k e` terminal.
+O traço registra `pending t k v`, cada `query k i r` (`none` para `opaque`), `handoff k`
+(o `transfer`) e o `settle k e` terminal.
 
 | teorema | enunciado |
 |---|---|
-| `T9` | para **qualquer** programa (com ou sem sagas, tipado ou não), qualquer provedor e nos **dois** desfechos (valor ou `timeout`), os eventos de cada chave do traço formam um ciclo de vida completo (`Lifecycle`) |
+| `T9` | para **qualquer** programa (com ou sem sagas, tipado ou não), qualquer provedor e em **todo** desfecho, os eventos de cada chave do traço formam um ciclo de vida completo (`Lifecycle`) |
 | `T9_no_silent_discard` | toda `Pending[k]` chega a um estado terminal, e toda chave tem exatamente um, no fim |
-| `T9_done_observed` | depois de `Pending[k]`, `Done` só com uma consulta que observou a operação aplicada: um `timeout` nunca vira sucesso por omissão |
-| `T9_transferred_exhausted` | `Transferred` só depois de `fuel` consultas, todas inconclusivas |
+| `T9_done_observed` | depois de `Pending[k]`, `Done` só com uma tentativa que observou a operação aplicada |
+| `T9_transferred_exhausted` | `Transferred` só depois de esgotar o protocolo: `n` tentativas inconclusivas, ou a única tentativa `opaque` |
+| `T9_transfer_explicit` | `Transferred` exige um `transfer` explícito daquela obrigação |
+| `T9_honest` | com um provedor honesto, `Done` ⇒ aplicado e `Failed` ⇒ não aplicado |
+| `KeysExample.transferred_but_applied` | uma operação `Transferred` com o efeito no mundo: transferir não é desfazer |
 
-A prova é uma instância de `eval_preserves` (`keys_preserves`). O invariante diz que o
-conjunto consumido cresce sem repetição, que toda chave do traço é uma capacidade consumida
-no próprio trecho (por isso ciclos de chaves distintas não se misturam na composição) e que
-os eventos de cada chave formam um ciclo completo. Os caminhos de compensação de uma saga
-não têm evento de chave, e a revogação na saída só acrescenta identidades novas.
-`KeysExample` mostra os dois casos por `rfl`: uma confirmação na segunda consulta e um
-provedor mudo que termina em `Transferred`. As ferramentas sem chave passam pelo protocolo
-trivial, então T1–T6 e o tripé continuam valendo sem mudança.
+A prova é uma instância de `eval_preserves` (`keys_preserves`). O invariante diz três coisas:
+- o conjunto consumido cresce sem repetição;
+- toda chave do traço é uma capacidade consumida no próprio trecho, então ciclos de chaves
+  distintas não se misturam na composição;
+- os eventos de cada chave formam um ciclo completo.
+
+O T1 passa a ter três desfechos (valor, `refused k`, `abort v` com `v : S.ret`); o enunciado
+anterior vale no fragmento sem `call` (`soundness_keyless`). O T3 com sagas cobre as chaves
+(`noninterference_saga`, `noninterference_saga_keys`): a resposta do provedor depende só da
+chave, e o tratador é puro. A restauração do T6 exige corpo sem `call`, porque compensar uma
+operação que não aconteceu não restaura um contrato `restoring` genérico. Detalhes e a tabela
+de axiomas em `docs/REV11.md`.
 
 ## O tripé diferencial (`ath-lean-eval`)
 
