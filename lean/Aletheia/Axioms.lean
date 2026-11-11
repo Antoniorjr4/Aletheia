@@ -212,3 +212,18 @@ open Aletheia
 
 /-- info: 'Aletheia.Arx.Counter.top_level_await_differs' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Arx.Counter.top_level_await_differs
+
+/-- info: 'Aletheia.T6_keys' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms T6_keys
+
+/-- info: 'Aletheia.compensate_restoresK' depends on axioms: [propext] -/
+#guard_msgs in #print axioms compensate_restoresK
+
+/-- info: 'Aletheia.opsOf_keyless' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms opsOf_keyless
+
+/-- info: 'Aletheia.KeyedSagaExample.blind_compensator_corrupts' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms KeyedSagaExample.blind_compensator_corrupts
+
+/-- info: 'Aletheia.KeyedSagaExample.bound_compensator_restores' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms KeyedSagaExample.bound_compensator_restores

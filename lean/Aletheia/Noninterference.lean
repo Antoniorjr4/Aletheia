@@ -178,7 +178,7 @@ section
 variable {S : Sig} {c : Cfg}
 
 /-- O contador avança exatamente uma vez por `mint` do traço. -/
-theorem next_preserves : Preserves S c True (fun s s' tr => s'.next = s.next + mints tr) where
+theorem next_preserves : Preserves S c True True (fun s s' tr => s'.next = s.next + mints tr) where
   refl _ := by simp [mints]
   trans h₁ h₂ := by rw [mints_append]; omega
   endorse _ := by simp [mints, isMint]
@@ -216,7 +216,7 @@ theorem next_preserves : Preserves S c True (fun s s' tr => s'.next = s.next + m
 
 theorem eval_next (e : Exp) {ρ : List Val} {s : St} {o : Out} (h : eval S c e ρ s = .ok o) :
     o.st.next = s.next + mints o.tr :=
-  (eval_preserves next_preserves e (.inl trivial)).1 h
+  (eval_preserves next_preserves e ⟨.inl trivial, .inl trivial⟩).1 h
 
 /-- Duas execuções com o mesmo contador e o mesmo traço terminam com o mesmo contador. -/
 theorem next_agree {c₁ c₂ : Cfg} {e₁ e₂ : Exp} {ρ₁ ρ₂ : List Val} {s₁ s₂ : St} {o₁ o₂ : Out}
@@ -736,7 +736,7 @@ theorem loop_policy {f : Val → St → Except Err Out}
 
 /-- Endossos pela política valem nos dois desfechos, inclusive no traço de uma saga que
 falha (as compensações e as sondas não são endossos). -/
-theorem policy_preserves : Preserves S c True (fun _ _ tr => PolicyOk S tr) where
+theorem policy_preserves : Preserves S c True True (fun _ _ tr => PolicyOk S tr) where
   refl _ := PolicyOk.nil
   trans h₁ h₂ := h₁.append h₂
   endorse hp := by intro p' v hv; simp at hv; obtain ⟨rfl, rfl⟩ := hv; exact hp
@@ -785,7 +785,7 @@ theorem policy_preserves : Preserves S c True (fun _ _ tr => PolicyOk S tr) wher
 por `refine … by p` satisfaz `p`. -/
 theorem endorsed_sound (e : Exp) {ρ : List Val} {s : St} {o : Out}
     (h : eval S c e ρ s = .ok o) : PolicyOk S o.tr :=
-  (eval_preserves policy_preserves e (.inl trivial)).1 h
+  (eval_preserves policy_preserves e ⟨.inl trivial, .inl trivial⟩).1 h
 
 end
 

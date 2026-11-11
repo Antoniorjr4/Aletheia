@@ -178,7 +178,7 @@ mundo de partida. -/
 def Logged (S : Sig) (E : World → World → Prop) (s s' : St) (tr : List Ev) : Prop :=
   ∃ new, s'.comp = new ++ s.comp ∧ new = (actsOf S tr).reverse ∧ E s'.w (replay S new s.w)
 
-theorem logged_preserves (hR : Restoring S E) : Preserves S c False (Logged S E) where
+theorem logged_preserves (hR : Restoring S E) : Preserves S c False False (Logged S E) where
   refl _ := ⟨[], rfl, rfl, hR.refl _⟩
   trans := by
     rintro s₁ s₂ s₃ t₁ t₂ ⟨n₁, hc₁, ha₁, hw₁⟩ ⟨n₂, hc₂, ha₂, hw₂⟩
@@ -220,7 +220,7 @@ theorem eval_logged (hR : Restoring S E) (e : Exp) (hsf : sagaFree e = true) (hk
     {ρ : List Val} {s : St} :
     (∀ {o : Out}, eval S c e ρ s = .ok o → Logged S E s o.st o.tr) ∧
     (∀ {q s₁ tr}, eval S c e ρ s = .error (.timeout q s₁ tr) → Logged S E s s₁ tr) :=
-  eval_preserves (logged_preserves hR) e (.inr ⟨hsf, hk⟩)
+  eval_preserves (logged_preserves hR) e ⟨.inr hsf, .inr hk⟩
 
 /-- Sob `restoring`, compensar um registro a partir de um mundo equivalente à sua
 reaplicação sobre `w₀` dá certo em todos os passos e volta a um mundo equivalente a `w₀`. -/
@@ -283,6 +283,215 @@ theorem T6_saga {Inv : World → Prop} (hR : Restoring S E) (hInv : ∀ w w', E 
       rw [hok, Bool.true_and] at he
       exact .inr ⟨q, s₁, tr, o', rfl, htg, hok, hInv _ _ hw hs, he, rfl⟩
     | _ => simp [eval, hb] at h
+
+/-! ## T6 com chaves (Rev12): sem a hipótese `keyless`
+
+Uma operação com chave sem resposta entra no registro antes de se saber se o efeito existe
+(`callSt` registra; o mundo muda só se `applied`). O registro deixa de ser a lista do que foi
+aplicado: é a lista do que foi **emitido**, cada entrada com a verdade oculta da sua aplicação.
+O contrato que fecha a conta é o que o ARX enuncia num comentário ("compensar é total sobre
+aconteceu e não aconteceu"): o compensador de uma operação em aberto, aplicado sem o efeito, não
+muda o que a saga restaura. Aqui ele vira uma hipótese explícita sobre o provedor, cobrada só das
+ferramentas que de fato ficaram em aberto no traço. -/
+
+/-- O compensador de `t` é total: aplicado a um mundo sem o efeito, devolve um mundo
+equivalente. É o que um compensador vinculado à identidade da operação garante (estornar o
+pagamento da chave `k` não faz nada se ele não existe); um compensador cego (subtrair `v`)
+não garante (`SagaExample.blind_compensator_corrupts`). -/
+def TotalUndo (S : Sig) (E : World → World → Prop) (t : Nat) : Prop :=
+  ∀ (v : Val) {w w₀ : World}, E w w₀ → ∃ w', S.undo t v w = some w' ∧ E w' w₀
+
+/-- As operações `compensable` emitidas num traço: as ações e as operações com chave, aplicadas
+na hora (`act`) ou deixadas em aberto (`pending`). -/
+def opsOf (S : Sig) (tr : List Ev) : List (Nat × Val) :=
+  tr.filterMap fun
+    | .act t _ v => if S.compensable t then some (t, v) else none
+    | .pending t _ v => if S.compensable t then some (t, v) else none
+    | _ => none
+
+/-- Reaplicar um registro em que cada entrada traz se o efeito foi aplicado. -/
+def replayB (S : Sig) : List (Nat × Val × Bool) → World → World
+  | [], w => w
+  | (t, v, b) :: rest, w => if b then S.step t v (replayB S rest w) else replayB S rest w
+
+def strip (l : List (Nat × Val × Bool)) : List (Nat × Val) := l.map fun e => (e.1, e.2.1)
+
+theorem replayB_append (S : Sig) :
+    ∀ (a b : List (Nat × Val × Bool)) (w : World), replayB S (a ++ b) w = replayB S a (replayB S b w)
+  | [], _, _ => rfl
+  | (t, v, x) :: a, b, w => by simp only [List.cons_append, replayB, replayB_append S a b w]
+
+theorem replayB_congr (hR : Restoring S E) :
+    ∀ (log : List (Nat × Val × Bool)) {w₁ w₂ : World}, E w₁ w₂ → E (replayB S log w₁) (replayB S log w₂)
+  | [], _, _, h => h
+  | (t, v, b) :: rest, _, _, h => by
+    simp only [replayB]
+    cases b
+    · exact replayB_congr hR rest h
+    · exact hR.step t v (replayB_congr hR rest h)
+
+/-- O registro com chaves: o que a execução acrescentou é o que ela emitiu (da mais recente à
+mais antiga), cada entrada não aplicada vem de uma operação em aberto do traço, e o mundo é
+`E`-equivalente a reaplicar as que foram aplicadas. -/
+def LoggedK (S : Sig) (E : World → World → Prop) (s s' : St) (tr : List Ev) : Prop :=
+  ∃ new : List (Nat × Val × Bool), s'.comp = strip new ++ s.comp ∧ strip new = (opsOf S tr).reverse ∧
+    (∀ e ∈ new, e.2.2 = false → ∃ k v, Ev.pending e.1 k v ∈ tr) ∧ E s'.w (replayB S new s.w)
+
+/-- A entrada de uma operação: registrada se `compensable`, com a verdade da aplicação. -/
+def entry (S : Sig) (t : Nat) (v : Val) (b : Bool) : List (Nat × Val × Bool) :=
+  if S.compensable t then [(t, v, b)] else []
+
+theorem entry_log (S : Sig) (t : Nat) (v : Val) (b : Bool) (comp : List (Nat × Val)) :
+    logAct S t v comp = strip (entry S t v b) ++ comp := by
+  unfold logAct entry strip; split <;> simp_all
+
+theorem entry_world (hR : Restoring S E) (t : Nat) (v : Val) (b : Bool) (w : World) :
+    E (if b then S.step t v w else w) (replayB S (entry S t v b) w) := by
+  unfold entry
+  by_cases hc : S.compensable t = true
+  · simp only [hc, if_true, replayB]; exact hR.refl _
+  · have hc' : S.compensable t = false := by simpa using hc
+    simp only [hc', Bool.false_eq_true, if_false, replayB]
+    cases b
+    · exact hR.refl _
+    · exact hR.inert t v w hc'
+
+theorem loggedK_preserves (hR : Restoring S E) : Preserves S c False True (LoggedK S E) where
+  refl _ := ⟨[], rfl, rfl, by simp, hR.refl _⟩
+  trans := by
+    rintro s₁ s₂ s₃ t₁ t₂ ⟨n₁, hc₁, ha₁, hp₁, hw₁⟩ ⟨n₂, hc₂, ha₂, hp₂, hw₂⟩
+    refine ⟨n₂ ++ n₁, by rw [hc₂, hc₁]; simp [strip, List.append_assoc], ?_, ?_, ?_⟩
+    · simp only [strip, List.map_append] at ha₁ ha₂ ⊢
+      simp [opsOf, List.filterMap_append, ha₁, ha₂]
+    · intro e he hb
+      rcases List.mem_append.mp he with he | he
+      · obtain ⟨k, v, h⟩ := hp₂ e he hb; exact ⟨k, v, List.mem_append_right _ h⟩
+      · obtain ⟨k, v, h⟩ := hp₁ e he hb; exact ⟨k, v, List.mem_append_left _ h⟩
+    · rw [replayB_append]; exact hR.trans hw₂ (replayB_congr hR n₂ hw₁)
+  endorse _ := ⟨[], rfl, rfl, by simp, hR.refl _⟩
+  reject := ⟨[], rfl, rfl, by simp, hR.refl _⟩
+  act := by
+    intro s t id v _ _
+    refine ⟨entry S t v true, by simp [actC, entry_log S t v true], ?_, by simp [entry], ?_⟩
+    · by_cases hc : S.compensable t = true <;> simp [entry, strip, opsOf, actEvs, hc]
+    · simpa [actW] using entry_world hR t v true s.w
+  drop _ := ⟨[], rfl, rfl, by simp, hR.refl _⟩
+  infer := ⟨[], rfl, rfl, by simp, hR.refl _⟩
+  commit h := h.elim
+  revoke h := h.elim
+  abort h := h.elim
+  callDone := by
+    intro _ s t id kid v _ _ _ _
+    refine ⟨entry S t v true, by simp [callSt, entry_log S t v true], ?_, by simp [entry], ?_⟩
+    · by_cases hc : S.compensable t = true <;> simp [entry, strip, opsOf, hc]
+    · simpa [callSt] using entry_world hR t v true s.w
+  callFailed := by
+    intro _ s t id kid _ _ _ _
+    exact ⟨[], by simp [callSt0, strip], by simp [strip, opsOf], by simp, by simpa [callSt0, replayB] using hR.refl _⟩
+  callRec := by
+    intro _ s t id kid n v e _ _ _ _ _ _
+    have hq := reconcile_queries S t kid 1 n
+    have hops : opsOf S (reconcile S t kid 1 n).1 = [] := by
+      unfold opsOf; rw [List.filterMap_eq_nil_iff]
+      intro x hx; obtain ⟨j, r, rfl⟩ := hq x hx; rfl
+    refine ⟨entry S t v (S.applied t kid), by simp [callSt, entry_log S t v (S.applied t kid)], ?_, ?_, ?_⟩
+    · by_cases hc : S.compensable t = true <;>
+        simp [entry, strip, opsOf, List.filterMap_append, hc] <;> simpa [opsOf] using hops
+    · intro x hx _
+      unfold entry at hx; split at hx
+      · simp at hx; subst hx; exact ⟨kid, v, List.mem_cons_self ..⟩
+      · simp at hx
+    · simpa [callSt] using entry_world hR t v (S.applied t kid) s.w
+  callAbort := by
+    intro _ s s₃ t id kid n v tr _ _ _ _ _ ⟨nh, hch, hah, hph, hwh⟩ _
+    have hq := reconcile_queries S t kid 1 n
+    have hops : opsOf S (reconcile S t kid 1 n).1 = [] := by
+      unfold opsOf; rw [List.filterMap_eq_nil_iff]
+      intro x hx; obtain ⟨j, r, rfl⟩ := hq x hx; rfl
+    refine ⟨nh ++ entry S t v (S.applied t kid), ?_, ?_, ?_, ?_⟩
+    · rw [hch]; simp [callSt, entry_log S t v (S.applied t kid), strip, List.append_assoc]
+    · simp only [strip, List.map_append] at hah ⊢
+      rw [hah]
+      by_cases hc : S.compensable t = true <;>
+        simp [entry, opsOf, List.filterMap_append, hc] <;> simpa [opsOf] using hops
+    · intro x hx hb
+      rcases List.mem_append.mp hx with hx | hx
+      · obtain ⟨k, w, h⟩ := hph x hx hb
+        exact ⟨k, w, List.mem_cons_of_mem _ (List.mem_append_right _ (List.mem_append_left _ h))⟩
+      · unfold entry at hx; split at hx
+        · simp at hx; subst hx; exact ⟨kid, v, List.mem_cons_self ..⟩
+        · simp at hx
+    · rw [replayB_append]
+      exact hR.trans hwh (replayB_congr hR nh (by simpa [callSt] using entry_world hR t v (S.applied t kid) s.w))
+  mint := by
+    rintro s s' t _ _ ⟨n, hc, ha, hp, hw⟩
+    refine ⟨n, hc, by simpa [opsOf] using ha, fun e he hb => ?_, hw⟩
+    obtain ⟨k, v, h⟩ := hp e he hb
+    exact ⟨k, v, List.mem_cons_of_mem _ h⟩
+  transfer := ⟨[], rfl, rfl, by simp, hR.refl _⟩
+
+theorem eval_loggedK (hR : Restoring S E) (e : Exp) (hsf : sagaFree e = true) {ρ : List Val} {s : St} :
+    (∀ {o : Out}, eval S c e ρ s = .ok o → LoggedK S E s o.st o.tr) ∧
+    (∀ {q s₁ tr}, eval S c e ρ s = .error (.timeout q s₁ tr) → LoggedK S E s s₁ tr) :=
+  eval_preserves (loggedK_preserves hR) e ⟨.inr hsf, .inl trivial⟩
+
+/-- Compensar um registro com entradas aplicadas e não aplicadas restaura, se o compensador de
+cada entrada não aplicada for total. -/
+theorem compensate_restoresK (hR : Restoring S E) :
+    ∀ (log : List (Nat × Val × Bool)) {w w₀ : World}, E w (replayB S log w₀) →
+      (∀ e ∈ log, e.2.2 = false → TotalUndo S E e.1) →
+      (compensate S (strip log) w).ok = true ∧ E (compensate S (strip log) w).w w₀
+  | [], _, _, h, _ => ⟨rfl, h⟩
+  | (t, v, b) :: rest, _, _, h, ht => by
+    have ht' : ∀ e ∈ rest, e.2.2 = false → TotalUndo S E e.1 :=
+      fun e he => ht e (List.mem_cons_of_mem _ he)
+    cases b with
+    | true =>
+      obtain ⟨w', hu, hw'⟩ := hR.undo t v (by simpa [replayB] using h)
+      simp only [strip, List.map_cons, compensate, hu]
+      exact compensate_restoresK hR rest hw' ht'
+    | false =>
+      obtain ⟨w', hu, hw'⟩ := ht (t, v, false) (List.mem_cons_self ..) rfl v (by simpa [replayB] using h)
+      simp only [strip, List.map_cons, compensate, hu]
+      exact compensate_restoresK hR rest hw' ht'
+
+/-- **T6 com chaves.** Sob contratos `restoring` para `E`, se o corpo (sem saga aninhada, agora
+**com** chamadas com chave) de uma saga falha, e toda ferramenta que ficou em aberto no traço
+(`Pending`) tem compensador total:
+
+* as compensações são exatamente as operações que o corpo emitiu (aplicadas na hora ou em
+  aberto), cada uma uma vez, da mais recente à mais antiga;
+* nenhuma é recusada;
+* o mundo compensado é `E`-equivalente ao de antes da saga — aplicada ou não cada operação em
+  aberto (`S.applied`), o que o agente não sabe. -/
+theorem T6_keys (hR : Restoring S E) {body : Exp} (hsf : sagaFree body = true)
+    {ρ : List Val} {s : St} {q : Cause} {s₁ : St} {tr : List Ev}
+    (hb : eval S c body ρ { s with comp := [] } = .error (.timeout q s₁ tr))
+    (htot : ∀ t k v, Ev.pending t k v ∈ tr → TotalUndo S E t) :
+    undoTargets (compensate S s₁.comp s₁.w).evs = (opsOf S tr).reverse ∧
+      (compensate S s₁.comp s₁.w).ok = true ∧ E (compensate S s₁.comp s₁.w).w s.w := by
+  obtain ⟨new, hc, ha, hp, hw⟩ := (eval_loggedK hR body hsf).2 hb
+  simp only [List.append_nil] at hc
+  rw [hc]
+  refine ⟨by rw [compensate_targets, ha], compensate_restoresK hR new hw fun e he hb' => ?_⟩
+  obtain ⟨k, v, h⟩ := hp e he hb'
+  exact htot e.1 k v h
+
+/-- O T6 com chaves contém o T6: sem chamada com chave não há `Pending` e as operações são as
+ações. -/
+theorem opsOf_keyless {tr : List Ev} (h : ∀ t k v, Ev.pending t k v ∉ tr) : opsOf S tr = actsOf S tr := by
+  induction tr with
+  | nil => rfl
+  | cons e l ih =>
+    have ih' := ih (fun t k v hm => h t k v (List.mem_cons_of_mem _ hm))
+    cases e with
+    | pending t k v => exact absurd (List.mem_cons_self ..) (h t k v)
+    | act t id v =>
+      unfold opsOf actsOf at ih' ⊢
+      simp only [List.filterMap_cons, ih']
+    | _ =>
+      unfold opsOf actsOf at ih' ⊢
+      simp only [List.filterMap_cons, ih']
 
 end
 
@@ -376,5 +585,60 @@ theorem saga_restores {ρ : List Val} {s : St} {o : Out} (hs : s.w 0 = 3)
   · exact .inr ⟨q, s₁, tr, o', hb, hinv, htg, htr⟩
 
 end SagaExample
+
+/-! ## Exemplo: compensar uma operação em aberto -/
+
+namespace KeyedSagaExample
+
+/-- A ferramenta 0 soma `n` na célula 0 (um pagamento); o provedor nunca responde e o efeito
+**não** foi aplicado (`applied = false`). -/
+def S : Sig where
+  cost := fun _ _ => 0
+  mcost := fun _ _ => 0
+  arg := fun _ => .int
+  effect := fun _ => 0
+  pol := fun _ _ => true
+  step := fun _ v w => match v with | .int n => fun i => if i = 0 then w 0 + n else w i | _ => w
+  -- o compensador cego: estorna `n` sem saber se o pagamento existe
+  undo := fun _ v w => match v with | .int n => some (fun i => if i = 0 then w 0 - n else w i) | _ => some w
+  reply := fun _ _ _ => .unknown
+  applied := fun _ _ => false
+
+def c : Cfg := ⟨fun _ _ _ _ => .unit, fun _ => 100, fun _ => [0]⟩
+
+def s₀ : St := ⟨[], fun _ => 0, 0, fun _ => 0, [], 10, []⟩
+
+/-- `atomic { pay(c, 5, keys.mint()) handle timeout_unknown(p) { reconcile p fuel 1 else
+{ transfer p; () } } }`: a operação fica em aberto, a obrigação é entregue, a saga compensa. -/
+def saga : Exp :=
+  .atomic (.mint (.call 0 1 0 (.val (.int 5)) 1 (.let_ (.transfer 0) (.val .unit)))) 0 (.val .unit) (.val .unit)
+
+/-- **O compensador cego corrompe.** O pagamento nunca aconteceu, a saga o estorna mesmo assim:
+o mundo termina em −5, não em 0. É o que `TotalUndo` exclui; sem ele, o T6 com chaves é falso. -/
+theorem blind_compensator_corrupts :
+    (match eval S c saga [.cap 7] s₀ with | .error (.timeout _ s _) => some (s.w 0) | _ => none) = some (-5) :=
+  rfl
+
+/-- O compensador vinculado à operação: a célula 1 registra se o pagamento existe, e o estorno
+só age se existir. -/
+def Sid (b : Bool) : Sig :=
+  { S with
+    step := fun _ v w => match v with
+      | .int n => fun i => if i = 0 then w 0 + n else if i = 1 then 1 else w i
+      | _ => w
+    undo := fun _ v w => match v with
+      | .int n => some (if w 1 = 1 then fun i => if i = 0 then w 0 - n else if i = 1 then 0 else w i else w)
+      | _ => some w
+    applied := fun _ _ => b }
+
+/-- **Com o compensador vinculado, a saga restaura nos dois mundos**: aplicado ou não, o que o
+agente não sabe. -/
+theorem bound_compensator_restores :
+    (match eval (Sid false) c saga [.cap 7] s₀ with | .error (.timeout _ s _) => some (s.w 0, s.w 1) | _ => none) =
+      some (0, 0) ∧
+    (match eval (Sid true) c saga [.cap 7] s₀ with | .error (.timeout _ s _) => some (s.w 0, s.w 1) | _ => none) =
+      some (0, 0) := ⟨rfl, rfl⟩
+
+end KeyedSagaExample
 
 end Aletheia

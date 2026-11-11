@@ -123,7 +123,7 @@ def Outcome.tr' : Except Err Out → Option (List Ev)
 
 /-- Toda ação do traço foi concedida, nos dois desfechos (as compensações e as sondas de uma
 saga não são ações). -/
-theorem granted_preserves (c : Cfg) : Preserves S c True (fun _ _ tr => Granted' S c.grants tr) where
+theorem granted_preserves (c : Cfg) : Preserves S c True True (fun _ _ tr => Granted' S c.grants tr) where
   refl _ := Granted'.nil _
   trans h₁ h₂ := h₁.append h₂
   endorse _ := Granted'.endorse _ _ _ [] (Granted'.nil _)
@@ -173,7 +173,7 @@ theorem granted_preserves (c : Cfg) : Preserves S c True (fun _ _ tr => Granted'
 
 theorem effects_granted (c : Cfg) (e : Exp) {ρ : List Val} {s : St} {o : Out}
     (h : eval S c e ρ s = .ok o) : Granted' S c.grants o.tr :=
-  (eval_preserves (granted_preserves c) e (.inl trivial)).1 h
+  (eval_preserves (granted_preserves c) e ⟨.inl trivial, .inl trivial⟩).1 h
 
 /-! ## 2. Toda ação usa uma `Cap[E]` léxica que contém o efeito -/
 
@@ -525,9 +525,9 @@ theorem T2_keys {c : Cfg} (hO : c.oracle.Ok) {Γ : List Bind} {pc : Lab} {e : Ex
   rcases soundness hO h hlin hg h0 hB with ⟨o, he, _⟩ | ⟨k, s₁, tr, he⟩ | ⟨v, s₁, tr, he, _⟩
   · exact ⟨o.tr, by simp [Outcome.tr', he], effects_lexical c h he, effects_granted c e he⟩
   · exact ⟨tr, by simp [Outcome.tr', he], (effects_lexical_total c h).2 _ _ _ he,
-      (eval_preserves (granted_preserves c) e (.inl trivial)).2 he⟩
+      (eval_preserves (granted_preserves c) e ⟨.inl trivial, .inl trivial⟩).2 he⟩
   · exact ⟨tr, by simp [Outcome.tr', he], (effects_lexical_total c h).2 _ _ _ he,
-      (eval_preserves (granted_preserves c) e (.inl trivial)).2 he⟩
+      (eval_preserves (granted_preserves c) e ⟨.inl trivial, .inl trivial⟩).2 he⟩
 
 end
 

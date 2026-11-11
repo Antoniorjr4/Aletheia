@@ -263,7 +263,7 @@ theorem free_of {s : St} {kid id : Nat} (h₁ : kid ∉ id :: s.used) (h₂ : ki
 section
 variable {S : Sig} {c : Cfg}
 
-theorem keys_preserves : Preserves S c True KeysOk where
+theorem keys_preserves : Preserves S c True True KeysOk where
   refl s := KeysOk.noKeys (fun _ h => h) fun _ => rfl
   trans := by
     rintro s₁ s₂ s₃ t₁ t₂ ⟨hf₁, hm₁, hl₁⟩ ⟨hf₂, hm₂, hl₂⟩
@@ -349,8 +349,8 @@ theorem T9 (e : Exp) {ρ : List Val} {s : St} :
     (∀ {o : Out}, eval S c e ρ s = .ok o → ∀ k, keyEvs k o.tr ≠ [] → Lifecycle k (keyEvs k o.tr)) ∧
     (∀ {q : Cause} {s₁ : St} {tr : List Ev}, eval S c e ρ s = .error (.timeout q s₁ tr) →
       ∀ k, keyEvs k tr ≠ [] → Lifecycle k (keyEvs k tr)) :=
-  ⟨fun h => ((eval_preserves keys_preserves e (.inl trivial)).1 h).2.2,
-    fun h => ((eval_preserves keys_preserves e (.inl trivial)).2 h).2.2⟩
+  ⟨fun h => ((eval_preserves keys_preserves e ⟨.inl trivial, .inl trivial⟩).1 h).2.2,
+    fun h => ((eval_preserves keys_preserves e ⟨.inl trivial, .inl trivial⟩).2 h).2.2⟩
 
 /-- O traço de um desfecho, seja ele qual for. -/
 def Outcome.tr : Except Err Out → Option (List Ev)
@@ -457,7 +457,7 @@ theorem handoff_mem_of_transferOnly {k : Nat} {tr : List Ev} (h : transferOnly k
       exact (List.mem_filter.mp this).1
   exact this _ rfl h
 
-theorem handed_preserves : Preserves S c True (fun _ _ tr => Handed tr) where
+theorem handed_preserves : Preserves S c True True (fun _ _ tr => Handed tr) where
   refl _ := fun _ h => by simp at h
   trans h₁ h₂ := fun k hk => by
     rcases List.mem_append.mp hk with hk | hk
@@ -513,10 +513,10 @@ theorem T9_transfer_explicit (e : Exp) {ρ : List Val} {s : St} {tr : List Ev}
     (hd : Ev.settle k .transferred ∈ tr) : Ev.handoff k ∈ tr := by
   revert h
   cases hr : eval S c e ρ s with
-  | ok o => intro h; cases h; exact (eval_preserves handed_preserves e (.inl trivial)).1 hr k hd
+  | ok o => intro h; cases h; exact (eval_preserves handed_preserves e ⟨.inl trivial, .inl trivial⟩).1 hr k hd
   | error err =>
     cases err with
-    | timeout q s₁ tr' => intro h; cases h; exact (eval_preserves handed_preserves e (.inl trivial)).2 hr k hd
+    | timeout q s₁ tr' => intro h; cases h; exact (eval_preserves handed_preserves e ⟨.inl trivial, .inl trivial⟩).2 hr k hd
     | _ => intro h; cases h
 
 /-! ## Provedor honesto: o que `Done` e `Failed` dizem sobre o mundo -/
@@ -544,7 +544,7 @@ theorem reconcile_faithful (S : Sig) (t k : Nat) :
         · simp at h; obtain ⟨rfl, rfl, rfl⟩ := h; exact ⟨rfl, hrep⟩
         · exact reconcile_faithful S t k (i + 1) n h
 
-theorem faithful_preserves : Preserves S c True (fun _ _ tr => Faithful S tr) where
+theorem faithful_preserves : Preserves S c True True (fun _ _ tr => Faithful S tr) where
   refl _ := fun _ _ _ h => by simp at h
   trans h₁ h₂ := fun k i r hk => by
     rcases List.mem_append.mp hk with hk | hk
@@ -620,7 +620,7 @@ theorem reconcile_index (S : Sig) (t k : Nat) :
 /-- As tentativas registradas são de reconciliação: índice ≥ 1. -/
 def Indexed (tr : List Ev) : Prop := ∀ k i r, Ev.query k i r ∈ tr → 1 ≤ i
 
-theorem indexed_preserves : Preserves S c True (fun _ _ tr => Indexed tr) where
+theorem indexed_preserves : Preserves S c True True (fun _ _ tr => Indexed tr) where
   refl _ := fun _ _ _ h => by simp at h
   trans h₁ h₂ := fun k i r hk => by
     rcases List.mem_append.mp hk with hk | hk
@@ -708,17 +708,17 @@ theorem T9_honest (hH : Honest S) (e : Exp) {ρ : List Val} {s : St} {tr : List 
     (Ev.settle k .done ∈ tr → S.applied t k = true) ∧ (Ev.settle k .failed ∈ tr → S.applied t k = false) := by
   have hfa : Faithful S tr := by
     revert h; cases hr : eval S c e ρ s with
-    | ok o => intro h; cases h; exact (eval_preserves faithful_preserves e (.inl trivial)).1 hr
+    | ok o => intro h; cases h; exact (eval_preserves faithful_preserves e ⟨.inl trivial, .inl trivial⟩).1 hr
     | error err =>
       cases err with
-      | timeout q s₁ tr' => intro h; cases h; exact (eval_preserves faithful_preserves e (.inl trivial)).2 hr
+      | timeout q s₁ tr' => intro h; cases h; exact (eval_preserves faithful_preserves e ⟨.inl trivial, .inl trivial⟩).2 hr
       | _ => intro h; cases h
   have hix : Indexed tr := by
     revert h; cases hr : eval S c e ρ s with
-    | ok o => intro h; cases h; exact (eval_preserves indexed_preserves e (.inl trivial)).1 hr
+    | ok o => intro h; cases h; exact (eval_preserves indexed_preserves e ⟨.inl trivial, .inl trivial⟩).1 hr
     | error err =>
       cases err with
-      | timeout q s₁ tr' => intro h; cases h; exact (eval_preserves indexed_preserves e (.inl trivial)).2 hr
+      | timeout q s₁ tr' => intro h; cases h; exact (eval_preserves indexed_preserves e ⟨.inl trivial, .inl trivial⟩).2 hr
       | _ => intro h; cases h
   have hmem : ∀ x ∈ tr, keyOf x = some k → x ∈ keyEvs k tr :=
     fun x hx hkx => List.mem_filter.mpr ⟨hx, by simp [hkx]⟩

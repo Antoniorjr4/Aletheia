@@ -508,7 +508,7 @@ theorem Mono.trans {s₁ s₂ s₃ : St} (h₁ : Mono s₁ s₂) (h₂ : Mono s�
     · exact .inr ⟨a', Nat.lt_of_lt_of_le b' h₂.le⟩
   · exact .inr ⟨Nat.le_trans h₁.le a, b⟩
 
-theorem mono_preserves : Preserves S c True (fun s s' _ => Mono s s') where
+theorem mono_preserves : Preserves S c True True (fun s s' _ => Mono s s') where
   refl s := Mono.refl s
   trans h₁ h₂ := h₁.trans h₂
   endorse _ := ⟨Nat.le_refl _, fun x hx => .inl hx⟩
@@ -534,11 +534,11 @@ theorem mono_preserves : Preserves S c True (fun s s' _ => Mono s s') where
   transfer := ⟨Nat.le_refl _, fun x hx => .inl hx⟩
 
 theorem eval_mono_ok {e : Exp} {ρ : List Val} {s : St} {o : Out} (h : eval S c e ρ s = .ok o) :
-    Mono s o.st := (eval_preserves mono_preserves e (.inl trivial)).1 h
+    Mono s o.st := (eval_preserves mono_preserves e ⟨.inl trivial, .inl trivial⟩).1 h
 
 theorem eval_mono_to {e : Exp} {ρ : List Val} {s : St} {q : Cause} {s₁ : St} {tr : List Ev}
     (h : eval S c e ρ s = .error (.timeout q s₁ tr)) : Mono s s₁ :=
-  (eval_preserves mono_preserves e (.inl trivial)).2 h
+  (eval_preserves mono_preserves e ⟨.inl trivial, .inl trivial⟩).2 h
 
 theorem KF.step {ρ : List Val} {s s' : St} (hK : KF ρ s) (hm : Mono s s')
     (hu : ∀ x ∈ s'.used, x ∈ s.used ∨ ∃ k : Nat, ρ[k]? = some (Val.cap x)) : KF ρ s' := by
@@ -1231,7 +1231,7 @@ theorem loop_fresh {f : Val → St → Except Err Out}
     exact (hf v s o ho).trans (loop_fresh hf vs o.st r' hr')
 
 /-- O conjunto consumido só cresce, com identidades novas: no sucesso e no `timeout`. -/
-theorem fresh_preserves : Preserves S c True (fun s s' _ => Fresh s.used s'.used) where
+theorem fresh_preserves : Preserves S c True True (fun s s' _ => Fresh s.used s'.used) where
   refl _ := Fresh.refl _
   trans h₁ h₂ := h₁.trans h₂
   endorse _ := Fresh.refl _
@@ -1263,7 +1263,7 @@ theorem fresh_preserves : Preserves S c True (fun s s' _ => Fresh s.used s'.used
 não estavam lá, e nunca a mesma duas vezes. -/
 theorem eval_fresh (e : Exp) {ρ : List Val} {s : St} {o : Out}
     (h : eval S c e ρ s = .ok o) : Fresh s.used o.st.used :=
-  (eval_preserves fresh_preserves e (.inl trivial)).1 h
+  (eval_preserves fresh_preserves e ⟨.inl trivial, .inl trivial⟩).1 h
 
 theorem eval_nodup {e : Exp} {ρ : List Val} {s : St} {o : Out}
     (h : eval S c e ρ s = .ok o) (hn : s.used.Nodup) : o.st.used.Nodup := by

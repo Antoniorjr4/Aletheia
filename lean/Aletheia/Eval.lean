@@ -729,13 +729,13 @@ def keyless : Exp → Bool
   | .mint e => keyless e
   | .val _ | .var _ | .drop _ | .await _ | .transfer _ => true
 
-/-- `e` é admissível para um invariante: o invariante cobre sagas e chamadas com chave
-(`sagas`), ou `e` não tem `atomic` nem `call`. -/
-def Adm (sagas : Prop) (e : Exp) : Prop := sagas ∨ (sagaFree e = true ∧ keyless e = true)
+/-- O fragmento de uma instância de `Preserves`: sagas aninhadas só se `sagas`, chamadas com
+chave só se `keys`. -/
+def Adm (sagas keys : Prop) (e : Exp) : Prop := (sagas ∨ sagaFree e = true) ∧ (keys ∨ keyless e = true)
 
-theorem Adm.mono {P : Prop} {e e' : Exp} (h : Adm P e)
-    (hs : sagaFree e = true ∧ keyless e = true → sagaFree e' = true ∧ keyless e' = true) :
-    Adm P e' := h.imp id hs
+theorem Adm.mono {P K : Prop} {e e' : Exp} (h : Adm P K e)
+    (hs : (sagaFree e = true → sagaFree e' = true) ∧ (keyless e = true → keyless e' = true)) :
+    Adm P K e' := ⟨h.1.imp id hs.1, h.2.imp id hs.2⟩
 
 theorem eval_cond {S : Sig} {c : Cfg} (b : Bool) (f g : Exp) (ρ : List Val) (s : St) :
     cond b (eval S c f ρ s) (eval S c g ρ s) = eval S c (cond b f g) ρ s := by
@@ -920,7 +920,7 @@ efeitos sempre concedidos, endossos sempre pela política) são instâncias dist
 do T6) usa `sagas = False`: os campos `commit` e `abort` ficam vazios, e o teorema vale para
 expressões sem `atomic`. -/
 
-structure Preserves (S : Sig) (c : Cfg) (sagas : Prop) (R : St → St → List Ev → Prop) : Prop where
+structure Preserves (S : Sig) (c : Cfg) (sagas keys : Prop) (R : St → St → List Ev → Prop) : Prop where
   refl    : ∀ s, R s s []
   trans   : ∀ {s₁ s₂ s₃ : St} {t₁ t₂ : List Ev}, R s₁ s₂ t₁ → R s₂ s₃ t₂ → R s₁ s₃ (t₁ ++ t₂)
   endorse : ∀ {s : St} {p : Nat} {v : Val}, S.pol p v = true → R s s [.endorse p (some v)]
@@ -941,21 +941,21 @@ structure Preserves (S : Sig) (c : Cfg) (sagas : Prop) (R : St → St → List E
       (t ++ .fail q :: (compensate S s₁.comp s₁.w).evs ++ [.recover r p])
   /-- a chamada com chave aplicada na hora: o efeito e o fechamento `Done`. A autoridade é
   `id`; a identidade, a chave `kid`, que nunca foi usada nem aposentada -/
-  callDone : sagas → ∀ {s : St} {t id kid : Nat} {v : Val}, S.effect t ∈ c.grants id → id ∉ s.used →
+  callDone : keys → ∀ {s : St} {t id kid : Nat} {v : Val}, S.effect t ∈ c.grants id → id ∉ s.used →
     kid ∉ id :: s.used → kid ∉ s.keys →
     R s (callSt S t id kid v s true) [.act t id v, .settle kid .done]
   /-- a chamada recusada na hora: `Failed` -/
-  callFailed : sagas → ∀ {s : St} {t id kid : Nat}, S.effect t ∈ c.grants id → id ∉ s.used →
+  callFailed : keys → ∀ {s : St} {t id kid : Nat}, S.effect t ∈ c.grants id → id ∉ s.used →
     kid ∉ id :: s.used → kid ∉ s.keys →
     R s (callSt0 S t id kid s) [.settle kid .failed]
   /-- `TimeoutUnknown` seguido de reconciliação conclusiva -/
-  callRec : sagas → ∀ {s : St} {t id kid n : Nat} {v : Val} {e : KEnd}, S.effect t ∈ c.grants id →
+  callRec : keys → ∀ {s : St} {t id kid n : Nat} {v : Val} {e : KEnd}, S.effect t ∈ c.grants id →
     id ∉ s.used → kid ∉ id :: s.used → kid ∉ s.keys →
     (reconcile S t kid 1 n).2 = e → e ≠ .transferred →
     R s (callSt S t id kid v s (S.applied t kid))
       (.pending t kid v :: ((reconcile S t kid 1 n).1 ++ [.settle kid e]))
   /-- `TimeoutUnknown`, combustível esgotado e o tratador, que transferiu a obrigação -/
-  callAbort : sagas → ∀ {s s₃ : St} {t id kid n : Nat} {v : Val} {tr : List Ev}, S.effect t ∈ c.grants id →
+  callAbort : keys → ∀ {s s₃ : St} {t id kid n : Nat} {v : Val} {tr : List Ev}, S.effect t ∈ c.grants id →
     id ∉ s.used → kid ∉ id :: s.used → kid ∉ s.keys → (reconcile S t kid 1 n).2 = .transferred →
     R (callSt S t id kid v s (S.applied t kid)) s₃ tr → transferOnly kid tr = true →
     R s s₃ (.pending t kid v :: ((reconcile S t kid 1 n).1 ++ (tr ++ [.settle kid .transferred])))
@@ -966,9 +966,9 @@ structure Preserves (S : Sig) (c : Cfg) (sagas : Prop) (R : St → St → List E
   transfer : ∀ {s : St} {k : Nat}, R s s [.handoff k]
 
 section
-variable {S : Sig} {c : Cfg} {sagas : Prop} {R : St → St → List Ev → Prop}
+variable {S : Sig} {c : Cfg} {sagas keys : Prop} {R : St → St → List Ev → Prop}
 
-theorem loop_preserves (hR : Preserves S c sagas R) {f : Val → St → Except Err Out}
+theorem loop_preserves (hR : Preserves S c sagas keys R) {f : Val → St → Except Err Out}
     (hf : ∀ v s, (∀ {o : Out}, f v s = .ok o → R s o.st o.tr) ∧
       (∀ {q s₁ tr}, f v s = .error (.timeout q s₁ tr) → R s s₁ tr)) :
     ∀ (vs : List Val) (s : St),
@@ -990,7 +990,7 @@ theorem loop_preserves (hR : Preserves S c sagas R) {f : Val → St → Except E
 
 /-- Toda relação preservada vale em toda execução de uma expressão admissível, no sucesso e no
 `timeout`. -/
-theorem eval_preserves (hR : Preserves S c sagas R) : ∀ (e : Exp), Adm sagas e → ∀ {ρ : List Val} {s : St},
+theorem eval_preserves (hR : Preserves S c sagas keys R) : ∀ (e : Exp), Adm sagas keys e → ∀ {ρ : List Val} {s : St},
     (∀ {o : Out}, eval S c e ρ s = .ok o → R s o.st o.tr) ∧
     (∀ {q s₁ tr}, eval S c e ρ s = .error (.timeout q s₁ tr) → R s s₁ tr)
   | .val _, hadm, ρ, s => ⟨fun h => by simp [eval] at h; subst h; exact hR.refl s,
@@ -1121,7 +1121,7 @@ theorem eval_preserves (hR : Preserves S c sagas R) : ∀ (e : Exp), Adm sagas e
     · cases h
     · cases h; exact hR.refl s
   | .atomic body r f g, hadm, ρ, s => by
-    have hsg : sagas := hadm.resolve_right (by simp [sagaFree])
+    have hsg : sagas := hadm.1.resolve_right (by simp [sagaFree])
     refine ⟨fun h => ?_, fun h => ?_⟩
     · simp only [eval] at h
       split at h
@@ -1161,7 +1161,7 @@ theorem eval_preserves (hR : Preserves S c sagas R) : ∀ (e : Exp), Adm sagas e
         cases h
         exact absurd rfl (hne _ _ _)
   | .call t j κ a n e, hadm, ρ, s => by
-    have hsg : sagas := hadm.resolve_right (by simp [keyless])
+    have hsg : keys := hadm.2.resolve_right (by simp [keyless])
     have iha := eval_preserves hR a (hadm.mono (by simp_all [sagaFree, keyless])) (ρ := ρ) (s := s)
     have ihe : ∀ {ρ' : List Val} {s' : St} {o' : Out}, eval S c e ρ' s' = .ok o' → R s' o'.st o'.tr :=
       fun h => (eval_preserves hR e (hadm.mono (by simp_all [sagaFree, keyless]))).1 h
