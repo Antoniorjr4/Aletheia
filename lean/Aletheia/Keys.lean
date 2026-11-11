@@ -136,8 +136,8 @@ theorem Probes.transferred_inconclusive {k n : Nat} {qs : List Ev} {e : KEnd} (h
 
 /-! ## A reconciliação produz um ciclo de vida -/
 
-theorem reconcile_probes (S : Sig) (cls : Prov) (k : Nat) :
-    ∀ (i n : Nat), Probes k n (reconcile S cls k i n).1 (reconcile S cls k i n).2
+theorem reconcile_probes (S : Sig) (t k : Nat) :
+    ∀ (i n : Nat), Probes k n (reconcile S t k i n).1 (reconcile S t k i n).2
   | _, 0 => .nil
   | i, n + 1 => by
     simp only [reconcile]
@@ -146,7 +146,7 @@ theorem reconcile_probes (S : Sig) (cls : Prov) (k : Nat) :
     · split
       · exact .done i
       · exact .failed i
-      · exact .unknown i (reconcile_probes S cls k (i + 1) n)
+      · exact .unknown i (reconcile_probes S t k (i + 1) n)
 
 theorem keyEvs_queries {k k' : Nat} {qs : List Ev} (h : ∀ e ∈ qs, ∃ j r, e = .query k j r) :
     keyEvs k' qs = if k = k' then qs else [] := by
@@ -185,24 +185,37 @@ theorem kevs_nil_of_transferOnly {k : Nat} {tr : List Ev} (h : transferOnly k tr
   exact h.1
 
 /-- Os eventos de chave de uma chamada que reconciliou: o ciclo de vida da sua chave. -/
-theorem keyEvs_rec (S : Sig) (cls : Prov) (t id n : Nat) (v : Val) (tail : List Ev) (e : KEnd)
-    (ht : ∀ k, keyEvs k tail = if id = k then [.settle id e] else []) (k : Nat) :
-    keyEvs k (.pending t id v :: ((reconcile S cls id 1 n).1 ++ tail)) =
-      if id = k then .pending t id v :: ((reconcile S cls id 1 n).1 ++ [.settle id e]) else [] := by
-  rw [keyEvs_cons_pending, keyEvs_append, keyEvs_queries (reconcile_queries S cls id 1 n), ht]
-  by_cases h : id = k <;> simp [h]
+theorem keyEvs_rec (S : Sig) (t kid n : Nat) (v : Val) (tail : List Ev) (e : KEnd)
+    (ht : ∀ k, keyEvs k tail = if kid = k then [.settle kid e] else []) (k : Nat) :
+    keyEvs k (.pending t kid v :: ((reconcile S t kid 1 n).1 ++ tail)) =
+      if kid = k then .pending t kid v :: ((reconcile S t kid 1 n).1 ++ [.settle kid e]) else [] := by
+  rw [keyEvs_cons_pending, keyEvs_append, keyEvs_queries (reconcile_queries S t kid 1 n), ht]
+  by_cases h : kid = k <;> simp [h]
 
 /-! ## O invariante -/
 
-/-- O invariante do T9: o conjunto consumido cresce sem repetição (`Fresh`); toda chave do
-traço é uma capacidade consumida no trecho; e os eventos de cada chave formam um ciclo de
-vida completo. -/
+/-- Uma identidade gasta: consumida (`used`) ou aposentada por um `mint` que terminou
+(`keys`). -/
+def Spent (s : St) (x : Nat) : Prop := x ∈ s.used ∨ x ∈ s.keys
+
+theorem spent_retire {s : St} {x : Nat} (k : Nat) (h : Spent s x) : Spent (retire k s) x := by
+  unfold Spent Aletheia.retire at *
+  by_cases hx : x = k
+  · exact .inr (by simp [hx])
+  · rcases h with h | h
+    · exact .inl (List.mem_filter.mpr ⟨h, by simp [hx]⟩)
+    · exact .inr (List.mem_cons_of_mem _ h)
+
+/-- O invariante do T9: as identidades gastas só crescem; toda chave do traço foi gasta no
+trecho e estava livre antes; e os eventos de cada chave formam um ciclo de vida completo.
+A chave é independente da capacidade: é gasta em `used` pela chamada e, na saída do
+`mint`, migra para `keys`, de onde nenhuma chamada a aceita de novo. -/
 def KeysOk (s s' : St) (tr : List Ev) : Prop :=
-  Fresh s.used s'.used ∧
-  (∀ k, keyEvs k tr ≠ [] → k ∈ s'.used ∧ k ∉ s.used) ∧
+  (∀ x, Spent s x → Spent s' x) ∧
+  (∀ k, keyEvs k tr ≠ [] → Spent s' k ∧ ¬Spent s k) ∧
   (∀ k, keyEvs k tr ≠ [] → Lifecycle k (keyEvs k tr))
 
-theorem KeysOk.noKeys {s s' : St} {tr : List Ev} (hf : Fresh s.used s'.used)
+theorem KeysOk.noKeys {s s' : St} {tr : List Ev} (hf : ∀ x, Spent s x → Spent s' x)
     (h : ∀ k, keyEvs k tr = []) : KeysOk s s' tr :=
   ⟨hf, fun k hk => absurd (h k) hk, fun k hk => absurd (h k) hk⟩
 
@@ -215,37 +228,53 @@ theorem keyEvs_saga (k : Nat) (q : Cause) (r : Nat) (p : Bool) (S : Sig) (comp :
   simp only [keyEvs, List.cons_append, List.filter_cons, List.filter_append, hc]
   simp [keyOf]
 
-/-- Uma chamada que consome `id` e cujos eventos de chave são o ciclo de vida de `id`. -/
-theorem keysOk_call {s s' : St} {tr : List Ev} {id : Nat} {L : List Ev}
-    (hf : Fresh s.used s'.used) (hin : id ∈ s'.used) (hfree : id ∉ s.used)
-    (hk : ∀ k, keyEvs k tr = if id = k then L else []) (hL : Lifecycle id L) : KeysOk s s' tr := by
+/-- Uma chamada que gasta a chave `kid` e cujos eventos de chave são o ciclo de vida dela. -/
+theorem keysOk_call {s s' : St} {tr : List Ev} {kid : Nat} {L : List Ev}
+    (hf : ∀ x, Spent s x → Spent s' x) (hin : Spent s' kid) (hfree : ¬Spent s kid)
+    (hk : ∀ k, keyEvs k tr = if kid = k then L else []) (hL : Lifecycle kid L) : KeysOk s s' tr := by
   refine ⟨hf, fun k hne => ?_, fun k hne => ?_⟩
-  · by_cases h : id = k
+  · by_cases h : kid = k
     · subst h; exact ⟨hin, hfree⟩
     · rw [hk k, if_neg h] at hne; exact absurd rfl hne
-  · by_cases h : id = k
-    · subst h; rw [hk id, if_pos rfl]; exact hL
+  · by_cases h : kid = k
+    · subst h; rw [hk kid, if_pos rfl]; exact hL
     · rw [hk k, if_neg h] at hne; exact absurd rfl hne
+
+theorem spent_mono {s s' : St} {x : Nat} (hu : ∀ y ∈ s.used, y ∈ s'.used) (hk : s'.keys = s.keys)
+    (h : Spent s x) : Spent s' x :=
+  h.elim (fun h => .inl (hu _ h)) (fun h => .inr (hk ▸ h))
+
+theorem spent_callSt {S : Sig} {t id kid : Nat} {v : Val} {s : St} {b : Bool} {x : Nat}
+    (h : Spent s x) : Spent (callSt S t id kid v s b) x := by
+  rcases h with h | h
+  · exact .inl (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ h))
+  · exact .inr h
+
+theorem spent_callSt0 {S : Sig} {t id kid : Nat} {s : St} {x : Nat}
+    (h : Spent s x) : Spent (callSt0 S t id kid s) x := by
+  unfold callSt0
+  rcases h with h | h
+  · exact .inl (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ h))
+  · exact .inr h
+
+theorem free_of {s : St} {kid id : Nat} (h₁ : kid ∉ id :: s.used) (h₂ : kid ∉ s.keys) : ¬Spent s kid :=
+  fun h => h.elim (fun h => h₁ (List.mem_cons_of_mem _ h)) h₂
 
 section
 variable {S : Sig} {c : Cfg}
 
 theorem keys_preserves : Preserves S c True KeysOk where
-  refl s := KeysOk.noKeys (Fresh.refl _) fun _ => rfl
+  refl s := KeysOk.noKeys (fun _ h => h) fun _ => rfl
   trans := by
     rintro s₁ s₂ s₃ t₁ t₂ ⟨hf₁, hm₁, hl₁⟩ ⟨hf₂, hm₂, hl₂⟩
-    have hsub : ∀ x, x ∈ s₂.used → x ∈ s₃.used := by
-      obtain ⟨n, hn, _, _⟩ := hf₂; intro x hx; rw [hn]; exact List.mem_append_right _ hx
-    have hsub₁ : ∀ x, x ∈ s₁.used → x ∈ s₂.used := by
-      obtain ⟨n, hn, _, _⟩ := hf₁; intro x hx; rw [hn]; exact List.mem_append_right _ hx
-    refine ⟨hf₁.trans hf₂, fun k hk => ?_, fun k hk => ?_⟩
+    refine ⟨fun x h => hf₂ x (hf₁ x h), fun k hk => ?_, fun k hk => ?_⟩
     · rw [keyEvs_append] at hk
       by_cases h₁ : keyEvs k t₁ = []
       · rw [h₁, List.nil_append] at hk
         obtain ⟨a, b⟩ := hm₂ k hk
-        exact ⟨a, fun h => b (hsub₁ k h)⟩
+        exact ⟨a, fun h => b (hf₁ k h)⟩
       · obtain ⟨a, b⟩ := hm₁ k h₁
-        exact ⟨hsub k a, b⟩
+        exact ⟨hf₂ k a, b⟩
     · rw [keyEvs_append] at hk ⊢
       by_cases h₁ : keyEvs k t₁ = []
       · rw [h₁, List.nil_append] at hk ⊢
@@ -253,53 +282,62 @@ theorem keys_preserves : Preserves S c True KeysOk where
       · by_cases h₂ : keyEvs k t₂ = []
         · rw [h₂, List.append_nil]; exact hl₁ k h₁
         · exact absurd (hm₁ k h₁).1 (hm₂ k h₂).2
-  endorse _ := KeysOk.noKeys (Fresh.refl _) fun _ => by simp [keyEvs, keyOf]
-  reject := KeysOk.noKeys (Fresh.refl _) fun _ => by simp [keyEvs, keyOf]
-  act _ hfree := KeysOk.noKeys (Fresh.cons hfree) fun _ => by simp [keyEvs, keyOf, actEvs]
-  drop hfree := KeysOk.noKeys (Fresh.cons hfree) fun _ => rfl
-  infer := KeysOk.noKeys (Fresh.refl _) fun _ => rfl
-  commit _ := fun h => h
+  endorse _ := KeysOk.noKeys (fun _ h => h) fun _ => by simp [keyEvs, keyOf]
+  reject := KeysOk.noKeys (fun _ h => h) fun _ => by simp [keyEvs, keyOf]
+  act _ _ := KeysOk.noKeys (fun _ h => spent_mono (fun _ => List.mem_cons_of_mem _) rfl h) fun _ => by simp [keyEvs, keyOf, actEvs]
+  drop _ := KeysOk.noKeys (fun _ h => spent_mono (fun _ => List.mem_cons_of_mem _) rfl h) fun _ => rfl
+  infer := KeysOk.noKeys (fun _ h => h) fun _ => rfl
+  commit _ := fun ⟨hf, hm, hl⟩ => ⟨fun x h => hf x h, fun k hk => hm k hk, hl⟩
   revoke _ := by
     rintro s s' t ids hd hf ⟨hfr, hm, hl⟩
-    refine ⟨hfr.trans ⟨ids, rfl, hd, hf⟩, fun k hk => ?_, hl⟩
+    have hup : ∀ x, Spent s' x → Spent { s' with used := ids ++ s'.used } x := fun x h =>
+      h.elim (fun h => .inl (List.mem_append_right _ h)) .inr
+    refine ⟨fun x h => hup x (hfr x h), fun k hk => ?_, hl⟩
     obtain ⟨a, b⟩ := hm k hk
-    exact ⟨List.mem_append_right _ a, b⟩
+    exact ⟨hup k a, b⟩
   abort _ := by
     rintro s s₁ t q r p ⟨hfr, hm, hl⟩
-    refine ⟨hfr, fun k hk => ?_, fun k hk => ?_⟩
+    refine ⟨fun x h => hfr x h, fun k hk => ?_, fun k hk => ?_⟩
     · rw [List.append_assoc, keyEvs_append, keyEvs_saga, List.append_nil] at hk
       exact hm k hk
     · rw [List.append_assoc, keyEvs_append, keyEvs_saga, List.append_nil] at hk ⊢
       exact hl k hk
   callDone := by
-    intro _ s t id v _ hfree
-    refine keysOk_call (L := [.settle id .done]) (Fresh.cons hfree) (List.mem_cons_self ..) hfree
-      (fun k => ?_) .done
-    by_cases h : id = k <;> simp [keyEvs, keyOf, h]
+    intro _ s t id kid v _ _ hk₁ hk₂
+    refine keysOk_call (L := [.settle kid .done]) (fun _ h => spent_callSt h)
+      (.inl (List.mem_cons_self ..)) (free_of hk₁ hk₂) (fun k => ?_) .done
+    by_cases h : kid = k <;> simp [keyEvs, keyOf, h]
   callFailed := by
-    intro _ s t id _ hfree
-    refine keysOk_call (L := [.settle id .failed]) (Fresh.cons hfree) (List.mem_cons_self ..) hfree
-      (fun k => ?_) .failed
-    by_cases h : id = k <;> simp [keyEvs, keyOf, h]
+    intro _ s t id kid _ _ hk₁ hk₂
+    refine keysOk_call (L := [.settle kid .failed]) (fun _ h => spent_callSt0 h)
+      (.inl (List.mem_cons_self ..)) (free_of hk₁ hk₂) (fun k => ?_) .failed
+    by_cases h : kid = k <;> simp [keyEvs, keyOf, h]
   callRec := by
-    intro _ s t id n v e _ hfree hr _
-    refine keysOk_call (Fresh.cons hfree) (List.mem_cons_self ..) hfree
-      (keyEvs_rec S (S.prov t) t id n v [.settle id e] e (fun k => keyEvs_settle k id e)) ?_
-    have := reconcile_probes S (S.prov t) id 1 n
+    intro _ s t id kid n v e _ _ hk₁ hk₂ hr _
+    refine keysOk_call (fun _ h => spent_callSt h) (.inl (List.mem_cons_self ..)) (free_of hk₁ hk₂)
+      (keyEvs_rec S t kid n v [.settle kid e] e (fun k => keyEvs_settle k kid e)) ?_
+    have := reconcile_probes S t kid 1 n
     rw [hr] at this
     exact .reconciled this
   callAbort := by
-    intro _ s s₃ t id n v tr _ hfree hr ⟨hf, _, _⟩ hto
+    intro _ s s₃ t id kid n v tr _ _ hk₁ hk₂ hr ⟨hf, _, _⟩ hto
     have hnil := keyEvs_of_kevs_nil (kevs_nil_of_transferOnly hto)
-    have hsub : id ∈ s₃.used := by
-      obtain ⟨m, hm, _, _⟩ := hf; rw [hm]; exact List.mem_append_right _ (List.mem_cons_self ..)
-    refine keysOk_call ((Fresh.cons hfree).trans hf) hsub hfree
-      (keyEvs_rec S (S.prov t) t id n v (tr ++ [.settle id .transferred]) .transferred
+    refine keysOk_call (fun _ h => hf _ (spent_callSt h)) (hf _ (.inl (List.mem_cons_self ..)))
+      (free_of hk₁ hk₂)
+      (keyEvs_rec S t kid n v (tr ++ [.settle kid .transferred]) .transferred
         (fun k => by rw [keyEvs_append, hnil, keyEvs_settle]; simp)) ?_
-    have := reconcile_probes S (S.prov t) id 1 n
+    have := reconcile_probes S t kid 1 n
     rw [hr] at this
     exact .reconciled this
-  transfer := KeysOk.noKeys (Fresh.refl _) fun _ => by simp [keyEvs, keyOf]
+  mint := by
+    intro s s' t _ _ ⟨hf, hm, hl⟩
+    have hk : ∀ k, keyEvs k (.mint s.next :: t) = keyEvs k t := fun k => by simp [keyEvs, keyOf]
+    refine ⟨fun x h => spent_retire _ (hf x h), fun k hne => ?_, fun k hne => ?_⟩
+    · rw [hk] at hne
+      obtain ⟨a, b⟩ := hm k hne
+      exact ⟨spent_retire _ a, b⟩
+    · rw [hk] at hne ⊢; exact hl k hne
+  transfer := KeysOk.noKeys (fun _ h => h) fun _ => by simp [keyEvs, keyOf]
 
 /-! ## O teorema -/
 
@@ -441,26 +479,31 @@ theorem handed_preserves : Preserves S c True (fun _ _ tr => Handed tr) where
         · cases hk
         · obtain ⟨_, _, _, h'⟩ := compensate_undo S _ _ _ hk; cases h'
     · simp at hk
-  callDone := by intro _ s t id v _ _ k h; simp at h
-  callFailed := by intro _ s t id _ _ k h; simp at h
+  callDone := by intro _ s t id kid v _ _ _ _ k h; simp at h
+  callFailed := by intro _ s t id kid _ _ _ _ k h; simp at h
   callRec := by
-    intro _ s t id n v e _ _ _ hne k hk
+    intro _ s t id kid n v e _ _ _ _ _ hne k hk
     rcases List.mem_cons.mp hk with hk | hk
     · cases hk
     · rcases List.mem_append.mp hk with hk | hk
-      · obtain ⟨j, r, h'⟩ := reconcile_queries S (S.prov t) id 1 n _ hk; cases h'
+      · obtain ⟨j, r, h'⟩ := reconcile_queries S t kid 1 n _ hk; cases h'
       · simp at hk; obtain ⟨_, rfl⟩ := hk; exact absurd rfl hne
   callAbort := by
-    intro _ s s₃ t id n v tr _ _ _ hh hto k hk
+    intro _ s s₃ t id kid n v tr _ _ _ _ _ hh hto k hk
     rcases List.mem_cons.mp hk with hk | hk
     · cases hk
     · rcases List.mem_append.mp hk with hk | hk
-      · obtain ⟨j, r, h'⟩ := reconcile_queries S (S.prov t) id 1 n _ hk; cases h'
+      · obtain ⟨j, r, h'⟩ := reconcile_queries S t kid 1 n _ hk; cases h'
       · rcases List.mem_append.mp hk with hk | hk
         · exact List.mem_cons_of_mem _ (List.mem_append_right _ (List.mem_append_left _ (hh k hk)))
         · simp at hk; subst hk
           exact List.mem_cons_of_mem _ (List.mem_append_right _ (List.mem_append_left _
             (handoff_mem_of_transferOnly hto)))
+  mint := by
+    intro s s' t _ _ h k hk
+    rcases List.mem_cons.mp hk with hk | hk
+    · cases hk
+    · exact List.mem_cons_of_mem _ (h k hk)
   transfer := fun _ h => by simp at h
 
 /-- **T9, transferência explícita.** Nenhuma chave chega a `Transferred` sem que o tratador
@@ -478,14 +521,14 @@ theorem T9_transfer_explicit (e : Exp) {ρ : List Val} {s : St} {tr : List Ev}
 
 /-! ## Provedor honesto: o que `Done` e `Failed` dizem sobre o mundo -/
 
-/-- As respostas registradas são as do provedor: toda tentativa no traço com resposta `r`
-é `S.reply k i = r`. -/
+/-- As respostas registradas são as do provedor: toda tentativa no traço com resposta `r` vem
+de uma operação `Pending[k]` da ferramenta `t` no mesmo traço, e `S.reply t k i = r`. -/
 def Faithful (S : Sig) (tr : List Ev) : Prop :=
-  ∀ k i r, Ev.query k i (some r) ∈ tr → S.reply k i = r
+  ∀ k i r, Ev.query k i (some r) ∈ tr → ∃ t v, Ev.pending t k v ∈ tr ∧ S.reply t k i = r
 
-theorem reconcile_faithful (S : Sig) (cls : Prov) (k : Nat) :
-    ∀ (i n : Nat) {k' j : Nat} {r : Reply}, Ev.query k' j (some r) ∈ (reconcile S cls k i n).1 →
-      S.reply k' j = r
+theorem reconcile_faithful (S : Sig) (t k : Nat) :
+    ∀ (i n : Nat) {k' j : Nat} {r : Reply}, Ev.query k' j (some r) ∈ (reconcile S t k i n).1 →
+      k' = k ∧ S.reply t k' j = r
   | _, 0, _, _, _, h => by simp [reconcile] at h
   | i, n + 1, k', j, r, h => by
     simp only [reconcile] at h
@@ -493,20 +536,20 @@ theorem reconcile_faithful (S : Sig) (cls : Prov) (k : Nat) :
     · simp at h
     · rename_i hcls
       split at h
-      · rename_i hrep; simp at h; obtain ⟨rfl, rfl, rfl⟩ := h; exact hrep
-      · rename_i hrep; simp at h; obtain ⟨rfl, rfl, rfl⟩ := h; exact hrep
+      · rename_i hrep; simp at h; obtain ⟨rfl, rfl, rfl⟩ := h; exact ⟨rfl, hrep⟩
+      · rename_i hrep; simp at h; obtain ⟨rfl, rfl, rfl⟩ := h; exact ⟨rfl, hrep⟩
       · rename_i hrep
         simp only [List.mem_cons] at h
         rcases h with h | h
-        · simp at h; obtain ⟨rfl, rfl, rfl⟩ := h; exact hrep
-        · exact reconcile_faithful S cls k (i + 1) n h
+        · simp at h; obtain ⟨rfl, rfl, rfl⟩ := h; exact ⟨rfl, hrep⟩
+        · exact reconcile_faithful S t k (i + 1) n h
 
 theorem faithful_preserves : Preserves S c True (fun _ _ tr => Faithful S tr) where
   refl _ := fun _ _ _ h => by simp at h
   trans h₁ h₂ := fun k i r hk => by
     rcases List.mem_append.mp hk with hk | hk
-    · exact h₁ k i r hk
-    · exact h₂ k i r hk
+    · obtain ⟨t, v, hp, hr⟩ := h₁ k i r hk; exact ⟨t, v, List.mem_append_left _ hp, hr⟩
+    · obtain ⟨t, v, hp, hr⟩ := h₂ k i r hk; exact ⟨t, v, List.mem_append_right _ hp, hr⟩
   endorse _ := fun _ _ _ h => by simp at h
   reject := fun _ _ _ h => by simp at h
   act _ _ := fun _ _ _ h => by simp [actEvs] at h
@@ -518,38 +561,49 @@ theorem faithful_preserves : Preserves S c True (fun _ _ tr => Faithful S tr) wh
     intro s s₁ t q r p h k i x hk
     rcases List.mem_append.mp hk with hk | hk
     · rcases List.mem_append.mp hk with hk | hk
-      · exact h k i x hk
+      · obtain ⟨t', v, hp, hr⟩ := h k i x hk
+        exact ⟨t', v, List.mem_append_left _ (List.mem_append_left _ hp), hr⟩
       · rcases List.mem_cons.mp hk with hk | hk
         · cases hk
         · obtain ⟨_, _, _, h'⟩ := compensate_undo S _ _ _ hk; cases h'
     · simp at hk
-  callDone := by intro _ s t id v _ _ k i r h; simp at h
-  callFailed := by intro _ s t id _ _ k i r h; simp at h
+  callDone := by intro _ s t id kid v _ _ _ _ k i r h; simp at h
+  callFailed := by intro _ s t id kid _ _ _ _ k i r h; simp at h
   callRec := by
-    intro _ s t id n v e _ _ _ _ k i r hk
+    intro _ s t id kid n v e _ _ _ _ _ _ k i r hk
     rcases List.mem_cons.mp hk with hk | hk
     · cases hk
     · rcases List.mem_append.mp hk with hk | hk
-      · exact reconcile_faithful S (S.prov t) id 1 n hk
+      · obtain ⟨rfl, hr⟩ := reconcile_faithful S t kid 1 n hk
+        exact ⟨t, v, List.mem_cons_self .., hr⟩
       · simp at hk
   callAbort := by
-    intro _ s s₃ t id n v tr _ _ _ hh _ k i r hk
+    intro _ s s₃ t id kid n v tr _ _ _ _ _ hh _ k i r hk
     rcases List.mem_cons.mp hk with hk | hk
     · cases hk
     · rcases List.mem_append.mp hk with hk | hk
-      · exact reconcile_faithful S (S.prov t) id 1 n hk
+      · obtain ⟨rfl, hr⟩ := reconcile_faithful S t kid 1 n hk
+        exact ⟨t, v, List.mem_cons_self .., hr⟩
       · rcases List.mem_append.mp hk with hk | hk
-        · exact hh k i r hk
+        · obtain ⟨t', v', hp, hr⟩ := hh k i r hk
+          exact ⟨t', v', List.mem_cons_of_mem _ (List.mem_append_right _ (List.mem_append_left _ hp)), hr⟩
         · simp at hk
+  mint := by
+    intro s s' t _ _ h k i r hk
+    rcases List.mem_cons.mp hk with hk | hk
+    · cases hk
+    · obtain ⟨t', v, hp, hr⟩ := h k i r hk; exact ⟨t', v, List.mem_cons_of_mem _ hp, hr⟩
   transfer := fun _ _ _ h => by simp at h
 
 /-- Um provedor honesto: uma tentativa de reconciliação conclusiva diz a verdade sobre o
-efeito (`applied`). A chamada original (tentativa 0) não entra: ela não respondeu. -/
+efeito (`applied`) da operação `(t, k)`. A chamada original (tentativa 0) não entra: ela não
+respondeu. -/
 def Honest (S : Sig) : Prop :=
-  ∀ k i, 1 ≤ i → (S.reply k i = .done → S.applied k = true) ∧ (S.reply k i = .failed → S.applied k = false)
+  ∀ t k i, 1 ≤ i → (S.reply t k i = .done → S.applied t k = true) ∧
+    (S.reply t k i = .failed → S.applied t k = false)
 
-theorem reconcile_index (S : Sig) (cls : Prov) (k : Nat) :
-    ∀ (i n : Nat) {k' j : Nat} {r : Option Reply}, Ev.query k' j r ∈ (reconcile S cls k i n).1 → i ≤ j
+theorem reconcile_index (S : Sig) (t k : Nat) :
+    ∀ (i n : Nat) {k' j : Nat} {r : Option Reply}, Ev.query k' j r ∈ (reconcile S t k i n).1 → i ≤ j
   | _, 0, _, _, _, h => by simp [reconcile] at h
   | i, n + 1, k', j, r, h => by
     simp only [reconcile] at h
@@ -561,7 +615,7 @@ theorem reconcile_index (S : Sig) (cls : Prov) (k : Nat) :
       · simp only [List.mem_cons] at h
         rcases h with h | h
         · simp at h; omega
-        · have := reconcile_index S cls k (i + 1) n h; omega
+        · have := reconcile_index S t k (i + 1) n h; omega
 
 /-- As tentativas registradas são de reconciliação: índice ≥ 1. -/
 def Indexed (tr : List Ev) : Prop := ∀ k i r, Ev.query k i r ∈ tr → 1 ≤ i
@@ -588,33 +642,70 @@ theorem indexed_preserves : Preserves S c True (fun _ _ tr => Indexed tr) where
         · cases hk
         · obtain ⟨_, _, _, h'⟩ := compensate_undo S _ _ _ hk; cases h'
     · simp at hk
-  callDone := by intro _ s t id v _ _ k i r h; simp at h
-  callFailed := by intro _ s t id _ _ k i r h; simp at h
+  callDone := by intro _ s t id kid v _ _ _ _ k i r h; simp at h
+  callFailed := by intro _ s t id kid _ _ _ _ k i r h; simp at h
   callRec := by
-    intro _ s t id n v e _ _ _ _ k i r hk
+    intro _ s t id kid n v e _ _ _ _ _ _ k i r hk
     rcases List.mem_cons.mp hk with hk | hk
     · cases hk
     · rcases List.mem_append.mp hk with hk | hk
-      · exact reconcile_index S (S.prov t) id 1 n hk
+      · exact reconcile_index S t kid 1 n hk
       · simp at hk
   callAbort := by
-    intro _ s s₃ t id n v tr _ _ _ hh _ k i r hk
+    intro _ s s₃ t id kid n v tr _ _ _ _ _ hh _ k i r hk
     rcases List.mem_cons.mp hk with hk | hk
     · cases hk
     · rcases List.mem_append.mp hk with hk | hk
-      · exact reconcile_index S (S.prov t) id 1 n hk
+      · exact reconcile_index S t kid 1 n hk
       · rcases List.mem_append.mp hk with hk | hk
         · exact hh k i r hk
         · simp at hk
+  mint := by
+    intro s s' t _ _ h k i r hk
+    rcases List.mem_cons.mp hk with hk | hk
+    · cases hk
+    · exact h k i r hk
   transfer := fun _ _ _ h => by simp at h
 
+theorem Probes.queries {k n : Nat} {qs : List Ev} {e : KEnd} (h : Probes k n qs e) :
+    ∀ x ∈ qs, ∃ i r, x = .query k i r := by
+  induction h with
+  | nil => simp
+  | noProto i => simp
+  | done i => simp
+  | failed i => simp
+  | unknown i _ ih =>
+    intro x hx
+    rcases List.mem_cons.mp hx with rfl | hx
+    · exact ⟨_, _, rfl⟩
+    · exact ih x hx
+
+/-- Uma chave tem uma única operação: dois `Pending[k]` do mesmo ciclo de vida são o mesmo. -/
+theorem Lifecycle.pending_unique {k : Nat} {L : List Ev} (h : Lifecycle k L) {t t' : Nat} {v v' : Val}
+    (h₁ : Ev.pending t k v ∈ L) (h₂ : Ev.pending t' k v' ∈ L) : t = t' ∧ v = v' := by
+  cases h with
+  | done => simp at h₁
+  | failed => simp at h₁
+  | @reconciled t₀ n v₀ qs r hq =>
+    have hd : ∀ {t₁ : Nat} {v₁ : Val}, Ev.pending t₁ k v₁ ∈ (Ev.pending t₀ k v₀ :: qs ++ [.settle k r]) →
+        t₁ = t₀ ∧ v₁ = v₀ := by
+      intro t₁ v₁ hm
+      rcases List.mem_cons.mp hm with hm | hm
+      · cases hm; exact ⟨rfl, rfl⟩
+      · rcases List.mem_append.mp hm with hm | hm
+        · obtain ⟨_, _, h'⟩ := hq.queries _ hm; cases h'
+        · simp at hm
+    obtain ⟨a, b⟩ := hd h₁
+    obtain ⟨c, d⟩ := hd h₂
+    exact ⟨a.trans c.symm, b.trans d.symm⟩
+
 /-- **T9, provedor honesto.** Se o provedor diz a verdade nas tentativas de reconciliação,
-`Done` depois de `Pending[k]` implica o efeito de `k` aplicado, e `Failed` depois de
-`Pending[k]` implica o efeito ausente. Nada se conclui de `Transferred`: o efeito pode existir
+`Done` depois de `Pending[k]` da ferramenta `t` implica o efeito de `(t, k)` aplicado, e `Failed`
+implica o efeito ausente. Nada se conclui de `Transferred`: o efeito pode existir
 (`transferred_but_applied`). -/
 theorem T9_honest (hH : Honest S) (e : Exp) {ρ : List Val} {s : St} {tr : List Ev}
     (h : Outcome.tr (eval S c e ρ s) = some tr) {t k : Nat} {v : Val} (hp : Ev.pending t k v ∈ tr) :
-    (Ev.settle k .done ∈ tr → S.applied k = true) ∧ (Ev.settle k .failed ∈ tr → S.applied k = false) := by
+    (Ev.settle k .done ∈ tr → S.applied t k = true) ∧ (Ev.settle k .failed ∈ tr → S.applied t k = false) := by
   have hfa : Faithful S tr := by
     revert h; cases hr : eval S c e ρ s with
     | ok o => intro h; cases h; exact (eval_preserves faithful_preserves e (.inl trivial)).1 hr
@@ -633,8 +724,14 @@ theorem T9_honest (hH : Honest S) (e : Exp) {ρ : List Val} {s : St} {tr : List 
     fun x hx hkx => List.mem_filter.mpr ⟨hx, by simp [hkx]⟩
   have hk : keyEvs k tr ≠ [] := by
     intro he; have := hmem _ hp rfl; rw [he] at this; simp at this
-  have hsub : ∀ x ∈ keyEvs k tr, x ∈ tr := fun x hx => (List.mem_filter.mp hx).1
   have hlc := T9_outcome e h k hk
+  -- a resposta `r` registrada na tentativa `i` é a do provedor para a mesma operação `(t, k)`
+  have hsame : ∀ i r, Ev.query k i (some r) ∈ tr → S.reply t k i = r := by
+    intro i r hq
+    obtain ⟨t', v', hp', hr⟩ := hfa k i r hq
+    obtain ⟨rfl, _⟩ := hlc.pending_unique (hmem _ hp rfl) (hmem _ hp' rfl)
+    exact hr
+  have hsub : ∀ x ∈ keyEvs k tr, x ∈ tr := fun x hx => (List.mem_filter.mp hx).1
   have hp' := hmem _ hp rfl
   refine ⟨fun hd => ?_, fun hd => ?_⟩
   · have hd' := hmem _ hd rfl
@@ -652,7 +749,7 @@ theorem T9_honest (hH : Honest S) (e : Exp) {ρ : List Val} {s : St} {tr : List 
       obtain ⟨i, hi⟩ := hq.done_last hr
       have hin : Ev.query k i (some .done) ∈ tr :=
         hsub _ (by rw [hL]; exact List.mem_cons_of_mem _ (List.mem_append_left _ hi))
-      exact (hH k i (hix k i _ hin)).1 (hfa k i _ hin)
+      exact (hH t k i (hix k i _ hin)).1 (hsame i _ hin)
   · have hd' := hmem _ hd rfl
     generalize hL : keyEvs k tr = L at hlc hd' hp'
     cases hlc with
@@ -668,7 +765,7 @@ theorem T9_honest (hH : Honest S) (e : Exp) {ρ : List Val} {s : St} {tr : List 
       obtain ⟨i, hi⟩ := hq.failed_last hr
       have hin : Ev.query k i (some .failed) ∈ tr :=
         hsub _ (by rw [hL]; exact List.mem_cons_of_mem _ (List.mem_append_left _ hi))
-      exact (hH k i (hix k i _ hin)).2 (hfa k i _ hin)
+      exact (hH t k i (hix k i _ hin)).2 (hsame i _ hin)
 
 end
 
@@ -685,42 +782,65 @@ def S : Sig where
   effect := fun _ => 0
   pol := fun _ _ => true
   step := fun _ v w => match v with | .int n => fun j => if j = 0 then w j + n else w j | _ => w
-  reply := fun _ i => if i = 2 then .done else .unknown
-  applied := fun _ => true
+  reply := fun _ _ i => if i = 2 then .done else .unknown
+  applied := fun _ _ => true
 
 /-- O provedor que nunca responde, depois de aplicar o efeito: a verdade oculta é "aplicado". -/
-def S' : Sig := { S with reply := fun _ _ => .unknown }
+def S' : Sig := { S with reply := fun _ _ _ => .unknown }
 
 def c : Cfg := ⟨fun _ _ _ _ => .unit, fun _ => 100, fun _ => [0]⟩
 
-def s₀ : St := ⟨[], 0, 0, fun _ => 0, []⟩
+/-- A capacidade 7 no ambiente; o contador de chaves começa em 100. -/
+def s₀ : St := ⟨[], 0, 0, fun _ => 0, [], 100, []⟩
 
 /-- O tratador canônico: `reconcile p fuel 3 else { transfer p; () }`. -/
 def handler : Exp := .let_ (.transfer 0) (.val .unit)
 
-/-- `TimeoutUnknown`, uma consulta inconclusiva, a confirmação: `Done`, e o efeito acontece. -/
-example : (eval S c (.call 0 0 (.val (.int 5)) 3 handler) [.cap 7] s₀).map (·.tr) =
-    .ok [.pending 0 7 (.int 5), .query 7 1 (some .unknown), .query 7 2 (some .done),
-      .settle 7 .done] := rfl
+/-- `scale(c, 5, keys.mint())`: a chave é cunhada (posição 0), a capacidade é a posição 1. -/
+def prog (h : Exp) : Exp := .mint (.call 0 1 0 (.val (.int 5)) 3 h)
+
+/-- `TimeoutUnknown`, uma consulta inconclusiva, a confirmação: `Done`, e o efeito acontece. A
+chave da operação é a cunhada (100), não a capacidade (7). -/
+example : (eval S c (prog handler) [.cap 7] s₀).map (·.tr) =
+    .ok [.mint 100, .pending 0 100 (.int 5), .query 100 1 (some .unknown), .query 100 2 (some .done),
+      .settle 100 .done] := rfl
 
 /-- Sem resposta: três consultas inconclusivas, a entrega e a transferência; o evento é
 encerrado pelo tratador. -/
-example : (match eval S' c (.call 0 0 (.val (.int 5)) 3 handler) [.cap 7] s₀ with
+example : (match eval S' c (prog handler) [.cap 7] s₀ with
     | .error (.timeout (.abort _) _ tr) => some tr | _ => none) =
-    some [.pending 0 7 (.int 5), .query 7 1 (some .unknown), .query 7 2 (some .unknown),
-      .query 7 3 (some .unknown), .handoff 7, .settle 7 .transferred] := rfl
+    some [.mint 100, .pending 0 100 (.int 5), .query 100 1 (some .unknown), .query 100 2 (some .unknown),
+      .query 100 3 (some .unknown), .handoff 100, .settle 100 .transferred] := rfl
 
 /-- **`Transferred` não é "desfeito".** A chave terminou em `Transferred` e, mesmo assim, o
 efeito existe no mundo: a célula 0 vale 5. -/
 theorem transferred_but_applied :
-    ∃ s₁, eval S' c (.call 0 0 (.val (.int 5)) 3 handler) [.cap 7] s₀ =
-      .error (.timeout (.abort .unit) s₁ [.pending 0 7 (.int 5), .query 7 1 (some .unknown),
-        .query 7 2 (some .unknown), .query 7 3 (some .unknown), .handoff 7, .settle 7 .transferred]) ∧
+    ∃ s₁, eval S' c (prog handler) [.cap 7] s₀ =
+      .error (.timeout (.abort .unit) s₁ [.mint 100, .pending 0 100 (.int 5), .query 100 1 (some .unknown),
+        .query 100 2 (some .unknown), .query 100 3 (some .unknown), .handoff 100,
+        .settle 100 .transferred]) ∧
       s₁.w 0 = 5 :=
   ⟨_, rfl, rfl⟩
 
 /-- O tratador que não transfere é recusado pela guarda: erro de linearidade, não silêncio. -/
-example : (match eval S' c (.call 0 0 (.val (.int 5)) 3 (.val .unit)) [.cap 7] s₀ with
+example : (match eval S' c (prog (.val .unit)) [.cap 7] s₀ with
+    | .error .reuse => true | _ => false) = true := rfl
+
+/-- **A chave não é a capacidade.** Usar a capacidade como chave (`call 0 0 0`) é recusado:
+autoridade e identidade são recursos lineares distintos. -/
+example : (match eval S c (.call 0 0 0 (.val (.int 5)) 3 handler) [.cap 7] s₀ with
+    | .error .reuse => true | _ => false) = true := rfl
+
+/-- **Uma chave, uma operação.** Duas chamadas com a mesma chave cunhada: a segunda é recusada
+(`reuse`), com duas capacidades distintas. -/
+example : (match eval S c (.mint (.let_ (.call 0 1 0 (.val (.int 5)) 3 handler)
+      (.call 0 3 1 (.val (.int 1)) 3 handler))) [.cap 7, .cap 8] s₀ with
+    | .error .reuse => true | _ => false) = true := rfl
+
+/-- **Aposentada não volta.** Uma chave que saiu do escopo do seu `mint` (aqui, a 100, passada
+de volta como valor e reusada) é recusada. -/
+example : (match eval S c (.let_ (.mint (.var 0)) (.call 0 2 0 (.val (.int 5)) 3 handler))
+      [.cap 7, .cap 8] s₀ with
     | .error .reuse => true | _ => false) = true := rfl
 
 end KeysExample

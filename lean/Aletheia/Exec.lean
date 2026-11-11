@@ -153,9 +153,10 @@ structure Prog where
   oracle : Array Int
   exp : Exp
   probes : Array Probe := #[]
-  /-- o roteiro do provedor, por chave -/
+  /-- o roteiro do provedor, por ferramenta: a resposta à tentativa `i` da operação da
+  ferramenta `t` (o provedor responde à operação, não ao nome da chave) -/
   replies : List (Nat × Array Reply) := []
-  /-- as chaves cujo efeito existe no mundo -/
+  /-- as ferramentas cuja operação teve o efeito aplicado no mundo -/
   applied : List Nat := []
 
 abbrev P := Except String
@@ -231,8 +232,9 @@ partial def exp (j : Json) : P Exp := do
   | "atomic" =>
     let a ← args v 4; return .atomic (← exp a[0]!) (← nat a[1]!) (← exp a[2]!) (← exp a[3]!)
   | "call" =>
-    let a ← args v 5
-    return .call (← nat a[0]!) (← nat a[1]!) (← exp a[2]!) (← nat a[3]!) (← exp a[4]!)
+    let a ← args v 6
+    return .call (← nat a[0]!) (← nat a[1]!) (← nat a[2]!) (← exp a[3]!) (← nat a[4]!) (← exp a[5]!)
+  | "mint" => return .mint (← exp v)
   | "transfer" => return .transfer (← nat v)
   | _ => throw s!"expressão inválida: {k}"
 
@@ -278,7 +280,7 @@ def prog (j : Json) : P Prog := do
   let oracle ← (← arr (← field j "oracle")).mapM int
   let replies ← match j.getObjVal? "replies" with
     | .ok rs => (← arr rs).toList.mapM fun r => do
-        return (← nat (← field r "key"), ← (← arr (← field r "replies")).mapM reply)
+        return (← nat (← field r "tool"), ← (← arr (← field r "replies")).mapM reply)
     | .error _ => pure []
   let applied ← match j.getObjVal? "applied" with
     | .ok xs => (← arr xs).toList.mapM nat
@@ -319,11 +321,11 @@ def Prog.sig (p : Prog) : Sig where
     | none => false
   prov := fun t => (p.tools[t]?.map (·.provider)).getD .queryable
   -- sem roteiro, o provedor aplica na hora; com roteiro, além dele não responde
-  reply := fun k i =>
-    match p.replies.find? (·.1 == k) with
+  reply := fun t _ i =>
+    match p.replies.find? (·.1 == t) with
     | some (_, rs) => rs[i]?.getD .unknown
     | none => .done
-  applied := fun k => p.applied.contains k
+  applied := fun t _ => p.applied.contains t
 
 /-- O oráculo roteirizado: a `i`-ésima chamada recebe a `i`-ésima resposta, no tipo pedido. -/
 def Prog.oracle' (p : Prog) : Oracle := fun i _ t _ =>
@@ -338,14 +340,19 @@ def Prog.cfg (p : Prog) : Cfg where
   limit := 0
   grants := fun id => p.grants[id]?.getD []
 
-def St.init : St := ⟨[], 0, 0, fun _ => 0, []⟩
+/-- A primeira chave: acima de toda capacidade do ambiente, como o `KF` do T1 exige (o contador
+de cunhagem nunca alcança uma identidade em uso). -/
+def Prog.keyBase (p : Prog) : Nat :=
+  p.env.foldl (fun m v => match v with | .cap id => max m (id + 1) | _ => m) 0
+
+def Prog.init (p : Prog) : St := ⟨[], 0, 0, fun _ => 0, [], p.keyBase, []⟩
 
 /-- A execução: exatamente o avaliador canônico. -/
-def Prog.run (p : Prog) : Except Err Out := eval p.sig p.cfg p.exp p.env St.init
+def Prog.run (p : Prog) : Except Err Out := eval p.sig p.cfg p.exp p.env p.init
 
 /-- Nenhuma camada entre o binário e a semântica: `run` é, por definição, o `eval` dos
 teoremas, na assinatura, na configuração e no ambiente que o programa declara. -/
-theorem Prog.run_eq (p : Prog) : p.run = eval p.sig p.cfg p.exp p.env St.init := rfl
+theorem Prog.run_eq (p : Prog) : p.run = eval p.sig p.cfg p.exp p.env p.init := rfl
 
 /-! ## O journal do núcleo -/
 
@@ -366,6 +373,13 @@ where
     | [] => [x]
     | y :: ys => if x < y then x :: y :: ys else y :: insert x ys
 
+/-- O nome de uma chave: a `i`-ésima cunhada (a partir de 1) é `k{i}`, como o ARX e o runtime
+Python as cunham. A identidade é o valor do contador (`keyBase + i − 1`); o nome é uma função
+injetiva dela. Uma identidade abaixo de `keyBase` não foi cunhada (só um programa mal tipado a
+usa como chave) e conserva o nome da capacidade, `c{id}`. -/
+def Prog.keyName (p : Prog) (k : Nat) : J :=
+  if p.keyBase ≤ k then .str s!"k{k - p.keyBase + 1}" else .str s!"c{k}"
+
 /-- O detalhe de cada evento do traço. `cap` é o conjunto de efeitos que o runtime concede à
 capacidade usada, em ordem. -/
 def Prog.event (p : Prog) : Ev → String × J
@@ -378,7 +392,7 @@ def Prog.event (p : Prog) : Ev → String × J
       ("value", (o.map valJson).getD .null)])
   -- os eventos de saga, como a vista do núcleo do ARX os projeta
   | .fail (.probe q) => ("fail", .obj [("probe", Prog.name (p.probes.map (·.name)) q)])
-  | .fail (.refused k) => ("fail", .obj [("cause", .str "refused"), ("key", keyName k)])
+  | .fail (.refused k) => ("fail", .obj [("cause", .str "refused"), ("key", p.keyName k)])
   | .fail (.abort _) => ("fail", .obj [("cause", .str "abort")])
   | .undo t v ok =>
     if (p.tools[t]?.map (·.keyed)).getD false then
@@ -387,18 +401,16 @@ def Prog.event (p : Prog) : Ev → String × J
       ("undo", .obj [("args", .arr [valJson v]), ("ok", .bool ok), ("tool", Prog.name (p.tools.map (·.name)) t)])
   | .recover r ok => ("recover", .obj [("ok", .bool ok), ("probe", Prog.name (p.probes.map (·.name)) r)])
   -- o protocolo de chaves
-  | .pending t k _ => ("pending", .obj [("key", keyName k), ("tool", Prog.name (p.tools.map (·.name)) t)])
+  | .pending t k _ => ("pending", .obj [("key", p.keyName k), ("tool", Prog.name (p.tools.map (·.name)) t)])
   | .query k i r =>
-    ("query", .obj [("attempt", .int i), ("key", keyName k), ("status", .str (match r with
+    ("query", .obj [("attempt", .int i), ("key", p.keyName k), ("status", .str (match r with
       | some .done => "done" | some .failed => "not_applied" | some .unknown => "unknown"
       | none => "opaque"))])
   | .settle k e =>
-    ("settle", .obj [("key", keyName k), ("status", .str (match e with
+    ("settle", .obj [("key", p.keyName k), ("status", .str (match e with
       | .done => "done" | .failed => "failed" | .transferred => "transferred"))])
-  | .handoff k => ("transfer", .obj [("key", keyName k)])
-where
-  /-- a chave pela capacidade que a carrega -/
-  keyName (k : Nat) : J := .str s!"c{k}"
+  | .handoff k => ("transfer", .obj [("key", p.keyName k)])
+  | .mint k => ("mint", .obj [("key", p.keyName k)])
 
 def GENESIS : String := "".pushn '0' 64
 
@@ -425,7 +437,7 @@ def Prog.outcome (p : Prog) : Except Err Out → Option (List String)
   | .error (.timeout (.abort v) _ tr) =>
     some (chain (tr.map p.event ++ [("end", .obj [("aborted", .bool true), ("value", valJson v)])]))
   | .error (.timeout (.refused k) _ tr) =>
-    some (chain (tr.map p.event ++ [("abort", .obj [("cause", .str "refused"), ("key", .str s!"c{k}")])]))
+    some (chain (tr.map p.event ++ [("abort", .obj [("cause", .str "refused"), ("key", p.keyName k)])]))
   | .error (.timeout (.probe q) _ tr) =>
     some (chain (tr.map p.event ++
       [("abort", .obj [("cause", .str "probe"), ("probe", Prog.name (p.probes.map (·.name)) q)])]))

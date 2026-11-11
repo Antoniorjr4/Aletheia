@@ -207,6 +207,9 @@ theorem logged_preserves (hR : Restoring S E) : Preserves S c False (Logged S E)
   callFailed h := h.elim
   callRec h := h.elim
   callAbort h := h.elim
+  mint := by
+    rintro s s' t _ _ ⟨n, hc, ha, hw⟩
+    exact ⟨n, hc, by simpa [actsOf] using ha, hw⟩
   transfer := ⟨[], rfl, rfl, hR.refl _⟩
 
 /-- O registro acompanha o mundo em toda execução sem saga aninhada e sem chamada com
@@ -312,7 +315,7 @@ def cfg : Cfg := ⟨fun _ _ _ _ => .unit, 0, fun id => if id = 7 then [0] else [
 /-- 3 réplicas, sem saúde. -/
 def w₀ : World := fun i => if i = 0 then 3 else 0
 
-def s₀ : St := ⟨[], 0, 0, w₀, []⟩
+def s₀ : St := ⟨[], 0, 0, w₀, [], 100, []⟩
 
 /-- ```
 atomic recover replicas_ok {

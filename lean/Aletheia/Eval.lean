@@ -40,6 +40,11 @@ structure St where
   /-- o registro de compensação da saga corrente: `(ferramenta, argumento)` de cada ação
   executada, a mais recente primeiro -/
   comp  : List (Nat × Val)
+  /-- o contador de cunhagem: a próxima chave de `mint` -/
+  next  : Nat
+  /-- as chaves aposentadas: cunhadas por um `mint` que já terminou; nenhuma delas identifica
+  outra operação -/
+  keys  : List Nat
 
 structure Out where
   v  : Val
@@ -138,16 +143,16 @@ Uma ação sem chave (`act`) é sempre aplicada: o efeito, o registro da saga e 
 /-- A reconciliação de `k` a partir da tentativa `i`, com `n` tentativas de combustível: os
 eventos e o estado terminal. Sem resposta conclusiva, `Transferred`: o tratador recebe a
 obrigação. O provedor `opaque` registra a tentativa sem protocolo e esgota na hora. -/
-def reconcile (S : Sig) (cls : Prov) (k : Nat) : Nat → Nat → List Ev × KEnd
+def reconcile (S : Sig) (t k : Nat) : Nat → Nat → List Ev × KEnd
   | _, 0 => ([], .transferred)
   | i, n + 1 =>
-    if cls = .opaque then ([.query k i none], .transferred)
+    if S.prov t = .opaque then ([.query k i none], .transferred)
     else
-      match S.reply k i with
+      match S.reply t k i with
       | .done => ([.query k i (some .done)], .done)
       | .failed => ([.query k i (some .failed)], .failed)
       | .unknown =>
-        let r := reconcile S cls k (i + 1) n
+        let r := reconcile S t k (i + 1) n
         (.query k i (some .unknown) :: r.1, r.2)
 
 /-- O mundo depois de uma ação sem chave. -/
@@ -160,8 +165,8 @@ def actC (S : Sig) (t _k : Nat) (v : Val) (comp : List (Nat × Val)) : List (Nat
 /-- Os eventos de uma ação sem chave. -/
 def actEvs (_S : Sig) (t k : Nat) (v : Val) : List Ev := [.act t k v]
 
-theorem reconcile_queries (S : Sig) (cls : Prov) (k : Nat) :
-    ∀ (i n : Nat), ∀ e ∈ (reconcile S cls k i n).1, ∃ j r, e = .query k j r
+theorem reconcile_queries (S : Sig) (t k : Nat) :
+    ∀ (i n : Nat), ∀ e ∈ (reconcile S t k i n).1, ∃ j r, e = .query k j r
   | _, 0, e, h => by simp [reconcile] at h
   | i, n + 1, e, h => by
     simp only [reconcile] at h
@@ -173,7 +178,7 @@ theorem reconcile_queries (S : Sig) (cls : Prov) (k : Nat) :
       · simp only [List.mem_cons] at h
         rcases h with h | h
         · exact ⟨_, _, h⟩
-        · exact reconcile_queries S cls k (i + 1) n e h
+        · exact reconcile_queries S t k (i + 1) n e h
 
 theorem filterMap_queries {β : Type} (f : Ev → Option β) (hf : ∀ k i r, f (.query k i r) = none)
     {l : List Ev} {k : Nat} (h : ∀ e ∈ l, ∃ j r, e = .query k j r) : l.filterMap f = [] := by
@@ -223,15 +228,27 @@ def transferOnly (k : Nat) (tr : List Ev) : Bool :=
     | _ => false
 
 /-- O estado depois de uma chamada com chave cuja operação existe no registro da saga: a
-capacidade consumida, o custo, e o mundo com o efeito se `b` (aplicado). -/
-def callSt (S : Sig) (t id : Nat) (v : Val) (st : St) (b : Bool) : St :=
-  ⟨id :: st.used, st.spent + S.cost t, st.calls, if b then S.step t v st.w else st.w,
-    logAct S t v st.comp⟩
+capacidade `id` (autoridade) e a chave `kid` (identidade) consumidas, o custo, e o mundo com
+o efeito se `b` (aplicado). -/
+def callSt (S : Sig) (t id kid : Nat) (v : Val) (st : St) (b : Bool) : St :=
+  ⟨kid :: id :: st.used, st.spent + S.cost t, st.calls, if b then S.step t v st.w else st.w,
+    logAct S t v st.comp, st.next, st.keys⟩
 
-/-- O estado depois de uma chamada recusada na hora: a capacidade consumida e o custo; nada
-no mundo, nada no registro. -/
-def callSt0 (S : Sig) (t id : Nat) (st : St) : St :=
-  ⟨id :: st.used, st.spent + S.cost t, st.calls, st.w, st.comp⟩
+/-- O estado depois de uma chamada recusada na hora: a capacidade e a chave consumidas e o
+custo; nada no mundo, nada no registro. -/
+def callSt0 (S : Sig) (t id kid : Nat) (st : St) : St :=
+  ⟨kid :: id :: st.used, st.spent + S.cost t, st.calls, st.w, st.comp, st.next, st.keys⟩
+
+/-- A aposentadoria da chave `k` na saída do seu `mint`: ela sai do conjunto consumido e
+entra no das chaves aposentadas, que nenhuma chamada aceita de novo. -/
+def retire (k : Nat) (st : St) : St :=
+  { st with used := st.used.filter (· ≠ k), keys := k :: st.keys }
+
+/-- O desfecho de `mint`: o evento de cunhagem à frente e a chave aposentada no estado. -/
+def mintOut (k : Nat) : Except Err Out → Except Err Out
+  | .ok o => .ok ⟨o.v, retire k o.st, .mint k :: o.tr⟩
+  | .error (.timeout q s tr) => .error (.timeout q (retire k s) (.mint k :: tr))
+  | .error e => .error e
 
 /-- O efeito de `act t`, depois de avaliado o argumento (saída `o`), com a autoridade `cv`.
 A guarda confere, nesta ordem, a concessão do runtime para o efeito da ferramenta, a
@@ -243,7 +260,7 @@ def doAct (S : Sig) (c : Cfg) (t : Nat) (cv : Option Val) (o : Out) : Except Err
       if id ∈ o.st.used then .error .reuse
       else if ble (o.st.spent + S.cost t) c.limit then
         .ok ⟨.unit, ⟨id :: o.st.used, o.st.spent + S.cost t, o.st.calls, actW S t id o.v o.st.w,
-          actC S t id o.v o.st.comp⟩, o.tr ++ actEvs S t id o.v⟩
+          actC S t id o.v o.st.comp, o.st.next, o.st.keys⟩, o.tr ++ actEvs S t id o.v⟩
       else .error .budget
     else .error .noCap
   | _ => .error .noCap
@@ -254,49 +271,51 @@ As guardas são as de `act`. A resposta do provedor decide: aplicada (`Done`), r
 reconciliação. Esgotado o combustível, o tratador `h` recebe a obrigação; ele precisa
 transferi-la, e o seu valor encerra o evento (`abort`). A operação em aberto entra no
 registro da saga (compensar é total sobre "aconteceu" e "não aconteceu", como no ARX). -/
-def doCall (S : Sig) (c : Cfg) (t : Nat) (cv : Option Val) (n : Nat)
+def doCall (S : Sig) (c : Cfg) (t : Nat) (cv kv : Option Val) (n : Nat)
     (h : Nat → St → Except Err Out) (o : Out) : Except Err Out :=
-  match cv with
-  | some (.cap id) =>
+  match cv, kv with
+  | some (.cap id), some (.cap kid) =>
     if S.effect t ∈ c.grants id then
       if id ∈ o.st.used then .error .reuse
+      else if kid ∈ id :: o.st.used ∨ kid ∈ o.st.keys then .error .reuse
       else if ble (o.st.spent + S.cost t) c.limit then
-        match S.reply id 0 with
-        | .done => .ok ⟨.unit, callSt S t id o.v o.st true, o.tr ++ [.act t id o.v, .settle id .done]⟩
-        | .failed => .error (.timeout (.refused id) (callSt0 S t id o.st) [.settle id .failed])
+        match S.reply t kid 0 with
+        | .done =>
+          .ok ⟨.unit, callSt S t id kid o.v o.st true, o.tr ++ [.act t id o.v, .settle kid .done]⟩
+        | .failed => .error (.timeout (.refused kid) (callSt0 S t id kid o.st) [.settle kid .failed])
         | .unknown =>
-          match (reconcile S (S.prov t) id 1 n).2 with
+          match (reconcile S t kid 1 n).2 with
           | .done =>
-            .ok ⟨.unit, callSt S t id o.v o.st (S.applied id),
-              o.tr ++ (.pending t id o.v :: ((reconcile S (S.prov t) id 1 n).1 ++ [.settle id .done]))⟩
+            .ok ⟨.unit, callSt S t id kid o.v o.st (S.applied t kid),
+              o.tr ++ (.pending t kid o.v :: ((reconcile S t kid 1 n).1 ++ [.settle kid .done]))⟩
           | .failed =>
-            .error (.timeout (.refused id) (callSt S t id o.v o.st (S.applied id))
-              (.pending t id o.v :: ((reconcile S (S.prov t) id 1 n).1 ++ [.settle id .failed])))
+            .error (.timeout (.refused kid) (callSt S t id kid o.v o.st (S.applied t kid))
+              (.pending t kid o.v :: ((reconcile S t kid 1 n).1 ++ [.settle kid .failed])))
           | .transferred =>
-            match h id (callSt S t id o.v o.st (S.applied id)) with
+            match h kid (callSt S t id kid o.v o.st (S.applied t kid)) with
             | .ok oh =>
-              if transferOnly id oh.tr then
+              if transferOnly kid oh.tr then
                 .error (.timeout (.abort oh.v) oh.st
-                  (.pending t id o.v :: ((reconcile S (S.prov t) id 1 n).1 ++ (oh.tr ++ [.settle id .transferred]))))
+                  (.pending t kid o.v :: ((reconcile S t kid 1 n).1 ++ (oh.tr ++ [.settle kid .transferred]))))
               else .error .reuse
             | .error _ => .error .reuse
       else .error .budget
     else .error .noCap
-  | _ => .error .noCap
+  | _, _ => .error .noCap
 
 /-- `drop k`: consome a capacidade sem efeito e sem evento. -/
 def doDrop (cv : Option Val) (s : St) : Except Err Out :=
   match cv with
   | some (.cap id) =>
     if id ∈ s.used then .error .reuse
-    else .ok ⟨.unit, ⟨id :: s.used, s.spent, s.calls, s.w, s.comp⟩, []⟩
+    else .ok ⟨.unit, ⟨id :: s.used, s.spent, s.calls, s.w, s.comp, s.next, s.keys⟩, []⟩
   | _ => .error .noCap
 
 /-- O efeito de `infer m t`, depois de avaliado o prompt (saída `o`). -/
 def doInfer (S : Sig) (c : Cfg) (m : Nat) (t : Ty) (o : Out) : Except Err Out :=
   if ble (o.st.spent + S.mcost m) c.limit then
     .ok ⟨c.oracle o.st.calls m t o.v, ⟨o.st.used, o.st.spent + S.mcost m, o.st.calls + 1, o.st.w,
-      o.st.comp⟩, o.tr⟩
+      o.st.comp, o.st.next, o.st.keys⟩, o.tr⟩
   else .error .budget
 
 /-- Sem repetição, preservando a primeira ocorrência de trás para a frente. -/
@@ -456,8 +475,13 @@ def eval (S : Sig) (c : Cfg) : Exp → List Val → St → Except Err Out
         pre evs (bnd (cond (k.ok && p) (eval S c f ρ s₂) (eval S c g ρ s₂)) fun o' =>
           .ok ⟨o'.v, exitSaga ρ (.atomic body r f g) o'.st, evs ++ o'.tr⟩)
     | .error e => .error e
-  | .call t k a n e, ρ, s =>
-    bnd (eval S c a ρ s) fun o => doCall S c t ρ[k]? n (fun id s' => eval S c e [.pend t id] s') o
+  | .call t j κ a n e, ρ, s =>
+    bnd (eval S c a ρ s) fun o =>
+      doCall S c t ρ[j]? ρ[κ]? n (fun id s' => eval S c e [.pend t id] s') o
+  -- a chave fresca é o contador; a guarda confere que ela nunca foi usada nem aposentada
+  | .mint e, ρ, s =>
+    if s.next ∈ s.used ∨ s.next ∈ s.keys then .error .reuse
+    else mintOut s.next (eval S c e (.cap s.next :: ρ) { s with next := s.next + 1 })
   | .transfer p, ρ, s =>
     match ρ[p]? with
     | some (.pend _ k) => .ok ⟨.unit, s, [.handoff k]⟩
@@ -480,7 +504,7 @@ theorem doAct_ok {S : Sig} {c : Cfg} {t : Nat} {cv : Option Val} {o r : Out}
     ∃ id, cv = some (.cap id) ∧ S.effect t ∈ c.grants id ∧ id ∉ o.st.used ∧
       ble (o.st.spent + S.cost t) c.limit = true ∧
       r = ⟨.unit, ⟨id :: o.st.used, o.st.spent + S.cost t, o.st.calls, actW S t id o.v o.st.w,
-        actC S t id o.v o.st.comp⟩, o.tr ++ actEvs S t id o.v⟩ := by
+        actC S t id o.v o.st.comp, o.st.next, o.st.keys⟩, o.tr ++ actEvs S t id o.v⟩ := by
   unfold doAct at h
   split at h
   · rename_i id
@@ -496,7 +520,7 @@ theorem doAct_ok {S : Sig} {c : Cfg} {t : Nat} {cv : Option Val} {o r : Out}
 
 theorem doDrop_ok {cv : Option Val} {s : St} {r : Out} (h : doDrop cv s = .ok r) :
     ∃ id, cv = some (.cap id) ∧ id ∉ s.used ∧
-      r = ⟨.unit, ⟨id :: s.used, s.spent, s.calls, s.w, s.comp⟩, []⟩ := by
+      r = ⟨.unit, ⟨id :: s.used, s.spent, s.calls, s.w, s.comp, s.next, s.keys⟩, []⟩ := by
   unfold doDrop at h
   split at h
   · rename_i id
@@ -510,7 +534,7 @@ theorem doInfer_ok {S : Sig} {c : Cfg} {m : Nat} {t : Ty} {o r : Out}
     (h : doInfer S c m t o = .ok r) :
     ble (o.st.spent + S.mcost m) c.limit = true ∧
       r = ⟨c.oracle o.st.calls m t o.v, ⟨o.st.used, o.st.spent + S.mcost m, o.st.calls + 1, o.st.w,
-        o.st.comp⟩, o.tr⟩ := by
+        o.st.comp, o.st.next, o.st.keys⟩, o.tr⟩ := by
   unfold doInfer at h
   by_cases hb : ble (o.st.spent + S.mcost m) c.limit = true
   · simp [hb] at h; exact ⟨hb, h.symm⟩
@@ -536,77 +560,133 @@ theorem doInfer_ne_timeout {S : Sig} {c : Cfg} {m : Nat} {t : Ty} {o : Out} {q :
     {tr : List Ev} : doInfer S c m t o ≠ .error (.timeout q s tr) := by
   unfold doInfer; split <;> nofun
 
-theorem doCall_ok {S : Sig} {c : Cfg} {t : Nat} {cv : Option Val} {n : Nat}
-    {h : Nat → St → Except Err Out} {o r : Out} (hc : doCall S c t cv n h o = .ok r) :
-    ∃ id, cv = some (.cap id) ∧ S.effect t ∈ c.grants id ∧ id ∉ o.st.used ∧
+theorem doCall_ok {S : Sig} {c : Cfg} {t : Nat} {cv kv : Option Val} {n : Nat}
+    {h : Nat → St → Except Err Out} {o r : Out} (hc : doCall S c t cv kv n h o = .ok r) :
+    ∃ id kid, cv = some (.cap id) ∧ kv = some (.cap kid) ∧ S.effect t ∈ c.grants id ∧
+      id ∉ o.st.used ∧ kid ∉ id :: o.st.used ∧ kid ∉ o.st.keys ∧
       ble (o.st.spent + S.cost t) c.limit = true ∧
-      ((S.reply id 0 = .done ∧
-          r = ⟨.unit, callSt S t id o.v o.st true, o.tr ++ [.act t id o.v, .settle id .done]⟩) ∨
-       (S.reply id 0 = .unknown ∧ (reconcile S (S.prov t) id 1 n).2 = .done ∧
-          r = ⟨.unit, callSt S t id o.v o.st (S.applied id),
-            o.tr ++ (.pending t id o.v :: ((reconcile S (S.prov t) id 1 n).1 ++ [.settle id .done]))⟩)) := by
+      ((S.reply t kid 0 = .done ∧
+          r = ⟨.unit, callSt S t id kid o.v o.st true, o.tr ++ [.act t id o.v, .settle kid .done]⟩) ∨
+       (S.reply t kid 0 = .unknown ∧ (reconcile S t kid 1 n).2 = .done ∧
+          r = ⟨.unit, callSt S t id kid o.v o.st (S.applied t kid),
+            o.tr ++ (.pending t kid o.v :: ((reconcile S t kid 1 n).1 ++ [.settle kid .done]))⟩)) := by
   unfold doCall at hc
   split at hc
-  · rename_i id
+  · rename_i id kid
     by_cases hg : S.effect t ∈ c.grants id
-    · by_cases hu : id ∈ o.st.used
-      · simp [hg, hu] at hc
-      · by_cases hb : ble (o.st.spent + S.cost t) c.limit = true
-        · simp only [hg, hu, hb, if_true, if_false] at hc
-          refine ⟨id, rfl, hg, hu, hb, ?_⟩
-          split at hc
-          · rename_i h0; cases hc; exact .inl ⟨h0, rfl⟩
-          · cases hc
-          · rename_i h0
+    · rw [if_pos hg] at hc
+      by_cases hu : id ∈ o.st.used
+      · rw [if_pos hu] at hc; cases hc
+      · rw [if_neg hu] at hc
+        by_cases hk : kid ∈ id :: o.st.used ∨ kid ∈ o.st.keys
+        · rw [if_pos hk] at hc; cases hc
+        · rw [if_neg hk] at hc
+          obtain ⟨hk₁, hk₂⟩ := not_or.mp hk
+          by_cases hb : ble (o.st.spent + S.cost t) c.limit = true
+          · rw [if_pos hb] at hc
+            refine ⟨id, kid, rfl, rfl, hg, hu, hk₁, hk₂, hb, ?_⟩
             split at hc
-            · rename_i hr; cases hc; exact .inr ⟨h0, hr, rfl⟩
+            · rename_i h0; cases hc; exact .inl ⟨h0, rfl⟩
             · cases hc
-            · split at hc
-              · split at hc <;> cases hc
+            · rename_i h0
+              split at hc
+              · rename_i hr; cases hc; exact .inr ⟨h0, hr, rfl⟩
               · cases hc
-        · simp [hg, hu, hb] at hc
-    · simp [hg] at hc
+              · split at hc
+                · split at hc <;> cases hc
+                · cases hc
+          · rw [if_neg hb] at hc; cases hc
+    · rw [if_neg hg] at hc; cases hc
   · cases hc
 
-theorem doCall_timeout {S : Sig} {c : Cfg} {t : Nat} {cv : Option Val} {n : Nat}
+theorem doCall_timeout {S : Sig} {c : Cfg} {t : Nat} {cv kv : Option Val} {n : Nat}
     {h : Nat → St → Except Err Out} {o : Out} {q : Cause} {s₁ : St} {tr : List Ev}
-    (hc : doCall S c t cv n h o = .error (.timeout q s₁ tr)) :
-    ∃ id, cv = some (.cap id) ∧ S.effect t ∈ c.grants id ∧ id ∉ o.st.used ∧
+    (hc : doCall S c t cv kv n h o = .error (.timeout q s₁ tr)) :
+    ∃ id kid, cv = some (.cap id) ∧ kv = some (.cap kid) ∧ S.effect t ∈ c.grants id ∧
+      id ∉ o.st.used ∧ kid ∉ id :: o.st.used ∧ kid ∉ o.st.keys ∧
       ble (o.st.spent + S.cost t) c.limit = true ∧
-      ((S.reply id 0 = .failed ∧ q = .refused id ∧ s₁ = callSt0 S t id o.st ∧ tr = [.settle id .failed]) ∨
-       (S.reply id 0 = .unknown ∧ (reconcile S (S.prov t) id 1 n).2 = .failed ∧ q = .refused id ∧
-          s₁ = callSt S t id o.v o.st (S.applied id) ∧
-          tr = .pending t id o.v :: ((reconcile S (S.prov t) id 1 n).1 ++ [.settle id .failed])) ∨
-       (S.reply id 0 = .unknown ∧ (reconcile S (S.prov t) id 1 n).2 = .transferred ∧
-          ∃ oh, h id (callSt S t id o.v o.st (S.applied id)) = .ok oh ∧ transferOnly id oh.tr = true ∧
-            q = .abort oh.v ∧ s₁ = oh.st ∧
-            tr = .pending t id o.v :: ((reconcile S (S.prov t) id 1 n).1 ++ (oh.tr ++ [.settle id .transferred])))) := by
+      ((S.reply t kid 0 = .failed ∧ q = .refused kid ∧ s₁ = callSt0 S t id kid o.st ∧
+          tr = [.settle kid .failed]) ∨
+       (S.reply t kid 0 = .unknown ∧ (reconcile S t kid 1 n).2 = .failed ∧ q = .refused kid ∧
+          s₁ = callSt S t id kid o.v o.st (S.applied t kid) ∧
+          tr = .pending t kid o.v :: ((reconcile S t kid 1 n).1 ++ [.settle kid .failed])) ∨
+       (S.reply t kid 0 = .unknown ∧ (reconcile S t kid 1 n).2 = .transferred ∧
+          ∃ oh, h kid (callSt S t id kid o.v o.st (S.applied t kid)) = .ok oh ∧
+            transferOnly kid oh.tr = true ∧ q = .abort oh.v ∧ s₁ = oh.st ∧
+            tr = .pending t kid o.v :: ((reconcile S t kid 1 n).1 ++
+              (oh.tr ++ [.settle kid .transferred])))) := by
   unfold doCall at hc
   split at hc
-  · rename_i id
+  · rename_i id kid
     by_cases hg : S.effect t ∈ c.grants id
-    · by_cases hu : id ∈ o.st.used
-      · simp [hg, hu] at hc
-      · by_cases hb : ble (o.st.spent + S.cost t) c.limit = true
-        · simp only [hg, hu, hb, if_true, if_false] at hc
-          refine ⟨id, rfl, hg, hu, hb, ?_⟩
-          split at hc
-          · cases hc
-          · rename_i h0; cases hc; exact .inl ⟨h0, rfl, rfl, rfl⟩
-          · rename_i h0
+    · rw [if_pos hg] at hc
+      by_cases hu : id ∈ o.st.used
+      · rw [if_pos hu] at hc; cases hc
+      · rw [if_neg hu] at hc
+        by_cases hk : kid ∈ id :: o.st.used ∨ kid ∈ o.st.keys
+        · rw [if_pos hk] at hc; cases hc
+        · rw [if_neg hk] at hc
+          obtain ⟨hk₁, hk₂⟩ := not_or.mp hk
+          by_cases hb : ble (o.st.spent + S.cost t) c.limit = true
+          · rw [if_pos hb] at hc
+            refine ⟨id, kid, rfl, rfl, hg, hu, hk₁, hk₂, hb, ?_⟩
             split at hc
             · cases hc
-            · rename_i hr; cases hc; exact .inr (.inl ⟨h0, hr, rfl, rfl, rfl⟩)
-            · rename_i hr
+            · rename_i h0; cases hc; exact .inl ⟨h0, rfl, rfl, rfl⟩
+            · rename_i h0
               split at hc
-              · rename_i oh hoh
-                split at hc
-                · rename_i hto; cases hc; exact .inr (.inr ⟨h0, hr, oh, hoh, hto, rfl, rfl, rfl⟩)
-                · cases hc
               · cases hc
-        · simp [hg, hu, hb] at hc
-    · simp [hg] at hc
+              · rename_i hr; cases hc; exact .inr (.inl ⟨h0, hr, rfl, rfl, rfl⟩)
+              · rename_i hr
+                split at hc
+                · rename_i oh hoh
+                  split at hc
+                  · rename_i hto; cases hc
+                    exact .inr (.inr ⟨h0, hr, oh, hoh, hto, rfl, rfl, rfl⟩)
+                  · cases hc
+                · cases hc
+          · rw [if_neg hb] at hc; cases hc
+    · rw [if_neg hg] at hc; cases hc
   · cases hc
+
+theorem mintOut_ok {k : Nat} {r : Except Err Out} {o : Out} (h : mintOut k r = .ok o) :
+    ∃ o', r = .ok o' ∧ o = ⟨o'.v, retire k o'.st, .mint k :: o'.tr⟩ := by
+  unfold mintOut at h; split at h
+  · cases h; exact ⟨_, rfl, rfl⟩
+  · cases h
+  · cases h
+
+theorem mintOut_timeout {k : Nat} {r : Except Err Out} {q : Cause} {s : St} {tr : List Ev}
+    (h : mintOut k r = .error (.timeout q s tr)) :
+    ∃ s' tr', r = .error (.timeout q s' tr') ∧ s = retire k s' ∧ tr = .mint k :: tr' := by
+  unfold mintOut at h; split at h
+  · cases h
+  · cases h; exact ⟨_, _, rfl, rfl, rfl⟩
+  · rename_i hne; cases h; exact absurd rfl (hne _ _ _)
+
+theorem eval_mint_ok {S : Sig} {c : Cfg} {e : Exp} {ρ : List Val} {s : St} {o : Out}
+    (h : eval S c (.mint e) ρ s = .ok o) :
+    s.next ∉ s.used ∧ s.next ∉ s.keys ∧
+      ∃ o', eval S c e (.cap s.next :: ρ) { s with next := s.next + 1 } = .ok o' ∧
+        o = ⟨o'.v, retire s.next o'.st, .mint s.next :: o'.tr⟩ := by
+  simp only [eval] at h
+  split at h
+  · cases h
+  · rename_i hg
+    obtain ⟨a, b⟩ := not_or.mp hg
+    exact ⟨a, b, mintOut_ok h⟩
+
+theorem eval_mint_timeout {S : Sig} {c : Cfg} {e : Exp} {ρ : List Val} {s : St} {q : Cause}
+    {s₁ : St} {tr : List Ev} (h : eval S c (.mint e) ρ s = .error (.timeout q s₁ tr)) :
+    s.next ∉ s.used ∧ s.next ∉ s.keys ∧
+      ∃ s' tr', eval S c e (.cap s.next :: ρ) { s with next := s.next + 1 } =
+        .error (.timeout q s' tr') ∧ s₁ = retire s.next s' ∧ tr = .mint s.next :: tr' := by
+  simp only [eval] at h
+  split at h
+  · cases h
+  · rename_i hg
+    obtain ⟨a, b⟩ := not_or.mp hg
+    exact ⟨a, b, mintOut_timeout h⟩
 
 /-- Sem `atomic`: o fragmento em que uma saga não aninha outra. -/
 def sagaFree : Exp → Bool
@@ -616,7 +696,8 @@ def sagaFree : Exp → Bool
   | .act _ _ a | .infer _ _ a => sagaFree a
   | .for_ _ xs body => sagaFree xs && sagaFree body
   | .atomic .. => false
-  | .call _ _ a _ e => sagaFree a && sagaFree e
+  | .call _ _ _ a _ e => sagaFree a && sagaFree e
+  | .mint e => sagaFree e
   | .val _ | .var _ | .drop _ | .await _ | .transfer _ => true
 
 /-- `await` só dentro do corpo de uma saga (o E0601 do `athc`). `sg` diz se a posição está
@@ -629,7 +710,8 @@ def guarded : Bool → Exp → Bool
   | sg, .for_ _ xs body => guarded sg xs && guarded sg body
   | sg, .await _ => sg
   | sg, .atomic body _ f g => guarded true body && guarded sg f && guarded sg g
-  | sg, .call _ _ a _ e => guarded sg a && guarded false e
+  | sg, .call _ _ _ a _ e => guarded sg a && guarded false e
+  | sg, .mint e => guarded sg e
   | _, .val _ | _, .var _ | _, .drop _ | _, .transfer _ => true
 
 /-- Um programa em que todo `await` está dentro de uma saga. -/
@@ -644,6 +726,7 @@ def keyless : Exp → Bool
   | .for_ _ xs body => keyless xs && keyless body
   | .atomic body _ f g => keyless body && keyless f && keyless g
   | .call .. => false
+  | .mint e => keyless e
   | .val _ | .var _ | .drop _ | .await _ | .transfer _ => true
 
 /-- `e` é admissível para um invariante: o invariante cobre sagas e chamadas com chave
@@ -810,13 +893,17 @@ theorem guarded_no_timeout : ∀ (e : Exp), guarded false e = true →
     · rename_i hne _
       cases h
       exact absurd rfl (hne _ _ _)
-  | .call t k a n e, hg, ρ, s, q, s₁, tr, h => by
+  | .call t j κ a n e, hg, ρ, s, q, s₁, tr, h => by
     simp only [guarded, Bool.and_eq_true] at hg
     simp only [eval] at h
     rcases bnd_eq_timeout h with h₀ | ⟨o, t', _, h₁, _⟩
     · exact guarded_no_timeout a hg.1 _ _ _ _ _ h₀
-    · obtain ⟨id, -, -, -, -, h₂⟩ := doCall_timeout h₁
+    · obtain ⟨id, kid, -, -, -, -, -, -, -, h₂⟩ := doCall_timeout h₁
       rcases h₂ with ⟨-, hq, -⟩ | ⟨-, -, hq, -⟩ | ⟨-, -, oh, -, -, hq, -⟩ <;> cases hq
+  | .mint e, hg, ρ, s, q, s₁, tr, h => by
+    simp only [guarded] at hg
+    obtain ⟨_, _, s', tr', h₃, _⟩ := eval_mint_timeout h
+    exact guarded_no_timeout e hg _ _ _ _ _ h₃
   | .transfer p, _, ρ, s, q, s₁, tr, h => by
     simp only [eval] at h; split at h <;> cases h
 
@@ -839,10 +926,11 @@ structure Preserves (S : Sig) (c : Cfg) (sagas : Prop) (R : St → St → List E
   endorse : ∀ {s : St} {p : Nat} {v : Val}, S.pol p v = true → R s s [.endorse p (some v)]
   reject  : ∀ {s : St} {p : Nat}, R s s [.endorse p none]
   act     : ∀ {s : St} {t id : Nat} {v : Val}, S.effect t ∈ c.grants id → id ∉ s.used →
-    R s ⟨id :: s.used, s.spent + S.cost t, s.calls, actW S t id v s.w, actC S t id v s.comp⟩
-      (actEvs S t id v)
-  drop    : ∀ {s : St} {id : Nat}, id ∉ s.used → R s ⟨id :: s.used, s.spent, s.calls, s.w, s.comp⟩ []
-  infer   : ∀ {s : St} {m : Nat}, R s ⟨s.used, s.spent + S.mcost m, s.calls + 1, s.w, s.comp⟩ []
+    R s ⟨id :: s.used, s.spent + S.cost t, s.calls, actW S t id v s.w, actC S t id v s.comp, s.next,
+      s.keys⟩ (actEvs S t id v)
+  drop    : ∀ {s : St} {id : Nat}, id ∉ s.used →
+    R s ⟨id :: s.used, s.spent, s.calls, s.w, s.comp, s.next, s.keys⟩ []
+  infer   : ∀ {s : St} {m : Nat}, R s ⟨s.used, s.spent + S.mcost m, s.calls + 1, s.w, s.comp, s.next, s.keys⟩ []
   commit  : sagas → ∀ {s s' : St} {t : List Ev}, R { s with comp := [] } s' t →
     R s { s' with comp := s.comp } t
   /-- a revogação na saída da saga: identidades novas, sem repetição -/
@@ -851,22 +939,29 @@ structure Preserves (S : Sig) (c : Cfg) (sagas : Prop) (R : St → St → List E
   abort   : sagas → ∀ {s s₁ : St} {t : List Ev} (q : Cause) (r : Nat) (p : Bool), R { s with comp := [] } s₁ t →
     R s { s₁ with w := (compensate S s₁.comp s₁.w).w, comp := s.comp }
       (t ++ .fail q :: (compensate S s₁.comp s₁.w).evs ++ [.recover r p])
-  /-- a chamada com chave aplicada na hora: o efeito e o fechamento `Done` -/
-  callDone : sagas → ∀ {s : St} {t id : Nat} {v : Val}, S.effect t ∈ c.grants id → id ∉ s.used →
-    R s (callSt S t id v s true) [.act t id v, .settle id .done]
+  /-- a chamada com chave aplicada na hora: o efeito e o fechamento `Done`. A autoridade é
+  `id`; a identidade, a chave `kid`, que nunca foi usada nem aposentada -/
+  callDone : sagas → ∀ {s : St} {t id kid : Nat} {v : Val}, S.effect t ∈ c.grants id → id ∉ s.used →
+    kid ∉ id :: s.used → kid ∉ s.keys →
+    R s (callSt S t id kid v s true) [.act t id v, .settle kid .done]
   /-- a chamada recusada na hora: `Failed` -/
-  callFailed : sagas → ∀ {s : St} {t id : Nat}, S.effect t ∈ c.grants id → id ∉ s.used →
-    R s (callSt0 S t id s) [.settle id .failed]
+  callFailed : sagas → ∀ {s : St} {t id kid : Nat}, S.effect t ∈ c.grants id → id ∉ s.used →
+    kid ∉ id :: s.used → kid ∉ s.keys →
+    R s (callSt0 S t id kid s) [.settle kid .failed]
   /-- `TimeoutUnknown` seguido de reconciliação conclusiva -/
-  callRec : sagas → ∀ {s : St} {t id n : Nat} {v : Val} {e : KEnd}, S.effect t ∈ c.grants id → id ∉ s.used →
-    (reconcile S (S.prov t) id 1 n).2 = e → e ≠ .transferred →
-    R s (callSt S t id v s (S.applied id))
-      (.pending t id v :: ((reconcile S (S.prov t) id 1 n).1 ++ [.settle id e]))
+  callRec : sagas → ∀ {s : St} {t id kid n : Nat} {v : Val} {e : KEnd}, S.effect t ∈ c.grants id →
+    id ∉ s.used → kid ∉ id :: s.used → kid ∉ s.keys →
+    (reconcile S t kid 1 n).2 = e → e ≠ .transferred →
+    R s (callSt S t id kid v s (S.applied t kid))
+      (.pending t kid v :: ((reconcile S t kid 1 n).1 ++ [.settle kid e]))
   /-- `TimeoutUnknown`, combustível esgotado e o tratador, que transferiu a obrigação -/
-  callAbort : sagas → ∀ {s s₃ : St} {t id n : Nat} {v : Val} {tr : List Ev}, S.effect t ∈ c.grants id →
-    id ∉ s.used → (reconcile S (S.prov t) id 1 n).2 = .transferred →
-    R (callSt S t id v s (S.applied id)) s₃ tr → transferOnly id tr = true →
-    R s s₃ (.pending t id v :: ((reconcile S (S.prov t) id 1 n).1 ++ (tr ++ [.settle id .transferred])))
+  callAbort : sagas → ∀ {s s₃ : St} {t id kid n : Nat} {v : Val} {tr : List Ev}, S.effect t ∈ c.grants id →
+    id ∉ s.used → kid ∉ id :: s.used → kid ∉ s.keys → (reconcile S t kid 1 n).2 = .transferred →
+    R (callSt S t id kid v s (S.applied t kid)) s₃ tr → transferOnly kid tr = true →
+    R s s₃ (.pending t kid v :: ((reconcile S t kid 1 n).1 ++ (tr ++ [.settle kid .transferred])))
+  /-- `mint`: a chave fresca no corpo e, na saída, aposentada -/
+  mint : ∀ {s s' : St} {t : List Ev}, s.next ∉ s.used → s.next ∉ s.keys →
+    R { s with next := s.next + 1 } s' t → R s (retire s.next s') (.mint s.next :: t)
   /-- `transfer`: a entrega da obrigação, sem efeito -/
   transfer : ∀ {s : St} {k : Nat}, R s s [.handoff k]
 
@@ -1065,7 +1160,7 @@ theorem eval_preserves (hR : Preserves S c sagas R) : ∀ (e : Exp), Adm sagas e
       · rename_i hne _
         cases h
         exact absurd rfl (hne _ _ _)
-  | .call t k a n e, hadm, ρ, s => by
+  | .call t j κ a n e, hadm, ρ, s => by
     have hsg : sagas := hadm.resolve_right (by simp [keyless])
     have iha := eval_preserves hR a (hadm.mono (by simp_all [sagaFree, keyless])) (ρ := ρ) (s := s)
     have ihe : ∀ {ρ' : List Val} {s' : St} {o' : Out}, eval S c e ρ' s' = .ok o' → R s' o'.st o'.tr :=
@@ -1073,18 +1168,26 @@ theorem eval_preserves (hR : Preserves S c sagas R) : ∀ (e : Exp), Adm sagas e
     refine ⟨fun h => ?_, fun h => ?_⟩
     · simp only [eval, bnd_eq_ok] at h
       obtain ⟨oa, ha, h⟩ := h
-      obtain ⟨id, _, hg, hfree, _, hcase⟩ := doCall_ok h
+      obtain ⟨id, kid, _, _, hg, hfree, hk₁, hk₂, _, hcase⟩ := doCall_ok h
       rcases hcase with ⟨_, rfl⟩ | ⟨_, hr, rfl⟩
-      · exact hR.trans (iha.1 ha) (hR.callDone hsg hg hfree)
-      · exact hR.trans (iha.1 ha) (hR.callRec hsg hg hfree hr (by simp))
+      · exact hR.trans (iha.1 ha) (hR.callDone hsg hg hfree hk₁ hk₂)
+      · exact hR.trans (iha.1 ha) (hR.callRec hsg hg hfree hk₁ hk₂ hr (by simp))
     · simp only [eval] at h
       rcases bnd_eq_timeout h with h₀ | ⟨oa, t', ha, h₁, rfl⟩
       · exact iha.2 h₀
-      · obtain ⟨id, _, hg, hfree, _, hcase⟩ := doCall_timeout h₁
+      · obtain ⟨id, kid, _, _, hg, hfree, hk₁, hk₂, _, hcase⟩ := doCall_timeout h₁
         rcases hcase with ⟨_, _, rfl, rfl⟩ | ⟨_, hr, _, rfl, rfl⟩ | ⟨_, hr, oh, hoh, hto, _, rfl, rfl⟩
-        · exact hR.trans (iha.1 ha) (hR.callFailed hsg hg hfree)
-        · exact hR.trans (iha.1 ha) (hR.callRec hsg hg hfree hr (by simp))
-        · exact hR.trans (iha.1 ha) (hR.callAbort hsg hg hfree hr (ihe hoh) hto)
+        · exact hR.trans (iha.1 ha) (hR.callFailed hsg hg hfree hk₁ hk₂)
+        · exact hR.trans (iha.1 ha) (hR.callRec hsg hg hfree hk₁ hk₂ hr (by simp))
+        · exact hR.trans (iha.1 ha) (hR.callAbort hsg hg hfree hk₁ hk₂ hr (ihe hoh) hto)
+  | .mint e, hadm, ρ, s => by
+    have ih := eval_preserves hR e (hadm.mono (by simp_all [sagaFree, keyless]))
+      (ρ := .cap s.next :: ρ) (s := { s with next := s.next + 1 })
+    refine ⟨fun h => ?_, fun h => ?_⟩
+    · obtain ⟨h₁, h₂, o', ho, rfl⟩ := eval_mint_ok h
+      exact hR.mint h₁ h₂ (ih.1 ho)
+    · obtain ⟨h₁, h₂, s', tr', ho, rfl, rfl⟩ := eval_mint_timeout h
+      exact hR.mint h₁ h₂ (ih.2 ho)
   | .transfer p, hadm, ρ, s => by
     refine ⟨fun h => ?_, fun h => ?_⟩ <;> simp only [eval] at h <;> split at h
     · cases h; exact hR.transfer
