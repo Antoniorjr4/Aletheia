@@ -134,12 +134,111 @@ pub enum E {
     /// `atomic corpo r f g`: a saga, com a sonda de recuperação `r`, o tratador `f` (on
     /// failure) e `g` (on compensation_failed)
     Atomic(Box<E>, usize, Box<E>, Box<E>),
+    /// `call t k a`: a chamada com chave da ferramenta `t` pela capacidade `k`. O combustível e
+    /// o tratador de `TimeoutUnknown` são os do programa (`Prog::fuel`, `Prog::handler`), como
+    /// o `handle timeout_unknown` único de um agente
+    Call(usize, usize, Box<E>),
+    /// `transfer p`: entrega a obrigação `Pending[k]` da posição `p` (só no tratador)
+    Transfer(usize),
 }
 
 #[derive(Clone, Debug)]
 pub enum Bind {
     Data(Ty, Lab),
     Cap(Vec<usize>),
+    /// a obrigação `Pending[k]`, no ambiente do tratador
+    Pend,
+}
+
+/// A classe do provedor de uma ferramenta com chave.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Prov {
+    Idempotent,
+    Queryable,
+    Opaque,
+}
+
+impl Prov {
+    pub fn name(self) -> &'static str {
+        match self {
+            Prov::Idempotent => "idempotent",
+            Prov::Queryable => "queryable",
+            Prov::Opaque => "opaque",
+        }
+    }
+}
+
+/// O provedor de uma ferramenta com chave, como o `SimWorld` o simula: falhas injetadas por
+/// número de chamada (1 é a chamada; 2, 3, … os reenvios de um provedor `idempotent`) e, para
+/// `queryable`, as consultas de status que respondem "desconhecido" antes da verdade.
+#[derive(Clone, Debug)]
+pub struct KeySpec {
+    /// a capacidade que dá a chave à chamada (a chave do Lean)
+    pub cap: usize,
+    pub provider: Prov,
+    pub faults: Vec<(u32, &'static str)>,
+    pub unknown: u32,
+}
+
+/// O que o provedor responde a cada tentativa e se o efeito existe no fim.
+#[derive(Clone, Debug, PartialEq)]
+pub struct KeyRun {
+    pub replies: Vec<&'static str>,
+    pub applied: bool,
+}
+
+impl KeySpec {
+    /// A simulação do `SimWorld` (`crates/arx/src/host.rs`): uma chave já aplicada responde o
+    /// recibo sem contar a chamada; senão conta e consulta a falha da vez. A ferramenta tem um
+    /// único ponto de chamada executado, então a contagem só depende desta chave.
+    pub fn simulate(&self, fuel: usize) -> KeyRun {
+        let mut calls = 0u32;
+        let mut applied = false;
+        let mut unknown = self.unknown;
+        let faults = &self.faults;
+        let mut call = |applied: &mut bool| -> &'static str {
+            if *applied {
+                return "done";
+            }
+            calls += 1;
+            match faults.iter().find(|f| f.0 == calls).map(|f| f.1) {
+                Some("error") => "failed",
+                Some("timeout_lost") => "unknown",
+                Some("timeout_applied") => {
+                    *applied = true;
+                    "unknown"
+                }
+                _ => {
+                    *applied = true;
+                    "done"
+                }
+            }
+        };
+        let mut replies = vec![call(&mut applied)];
+        if replies[0] == "unknown" {
+            for _ in 0..fuel {
+                let r = match self.provider {
+                    Prov::Opaque => break,
+                    Prov::Idempotent => call(&mut applied),
+                    Prov::Queryable => {
+                        if unknown > 0 {
+                            unknown -= 1;
+                            "unknown"
+                        } else if applied {
+                            "done"
+                        } else {
+                            "failed"
+                        }
+                    }
+                };
+                replies.push(r);
+                if r != "unknown" {
+                    break;
+                }
+            }
+        }
+        KeyRun { replies, applied }
+    }
 }
 
 pub struct Tool {
@@ -151,6 +250,8 @@ pub struct Tool {
     pub compensable: bool,
     /// o provedor recusa a compensação
     pub undo_fails: bool,
+    /// ferramenta com chave (`k: own IdemKey`) e o seu provedor
+    pub key: Option<KeySpec>,
 }
 
 /// Sonda de célula: `lo ≤ w[cell] ≤ hi`.
@@ -177,12 +278,46 @@ pub struct Prog {
     pub exp: E,
     pub ret: Ty,
     pub probes: Vec<Probe>,
+    /// o combustível da reconciliação no tratador de `TimeoutUnknown`
+    pub fuel: usize,
+    /// o valor com que o tratador encerra o evento depois de transferir a obrigação
+    pub hval: V,
 }
 
 impl Prog {
     /// Γ inicial: a capacidade 0 é a mais antiga, então o índice 0 é a última.
     pub fn gamma(&self) -> Vec<Bind> {
         self.caps.iter().map(|e| Bind::Cap(e.clone())).collect()
+    }
+
+    /// O tratador de `TimeoutUnknown` no núcleo: `let _ = transfer 0 in hval`, o `else` de
+    /// `reconcile p fuel n else { transfer p; hval }`.
+    pub fn handler(&self) -> E {
+        E::Let(Box::new(E::Transfer(0)), Box::new(E::Val(self.hval.clone())))
+    }
+
+    pub fn has_calls(&self) -> bool {
+        fn go(e: &E) -> bool {
+            match e {
+                E::Call(..) => true,
+                E::Val(_) | E::Var(_) | E::Drop(_) | E::Await(_) | E::Transfer(_) => false,
+                E::Let(a, b) | E::Prim(_, a, b) | E::Endorse(_, a, b) => go(a) || go(b),
+                E::Ite(c, t, f) => go(c) || go(t) || go(f),
+                E::Act(_, _, a) | E::Infer(_, _, a) => go(a),
+                E::For(_, xs, b) => go(xs) || go(b),
+                E::Atomic(b, _, f, g) => go(b) || go(f) || go(g),
+            }
+        }
+        go(&self.exp)
+    }
+
+    /// O roteiro do provedor de cada chave (a capacidade que a carrega).
+    pub fn key_runs(&self) -> Vec<(usize, usize, KeyRun)> {
+        self.tools
+            .iter()
+            .enumerate()
+            .filter_map(|(t, tl)| tl.key.as_ref().map(|k| (t, k.cap, k.simulate(self.fuel))))
+            .collect()
     }
 }
 
@@ -213,7 +348,7 @@ fn has_type(p: &Prog, ctx: &mut Vec<Bind>, pc: Lab, e: &E) -> Option<(Ty, Lab)> 
         E::Val(v) => (val_ty(v)?, Lab::T),
         E::Var(k) => match get(ctx, *k)? {
             Bind::Data(t, l) => (t.clone(), *l),
-            Bind::Cap(_) => return None,
+            Bind::Cap(_) | Bind::Pend => return None,
         },
         E::Let(a, b) => {
             let (t1, l1) = has_type(p, ctx, pc, a)?;
@@ -255,6 +390,9 @@ fn has_type(p: &Prog, ctx: &mut Vec<Bind>, pc: Lab, e: &E) -> Option<(Ty, Lab)> 
         }
         E::Act(t, k, a) => {
             let tool = p.tools.get(*t)?;
+            if tool.key.is_some() {
+                return None;
+            }
             let Bind::Cap(eff) = get(ctx, *k)? else { return None };
             if !pc.low() || !eff.contains(&tool.effect) {
                 return None;
@@ -267,7 +405,24 @@ fn has_type(p: &Prog, ctx: &mut Vec<Bind>, pc: Lab, e: &E) -> Option<(Ty, Lab)> 
         }
         E::Drop(k) => match get(ctx, *k)? {
             Bind::Cap(_) => (Ty::Unit, Lab::T),
-            Bind::Data(..) => return None,
+            Bind::Data(..) | Bind::Pend => return None,
+        },
+        E::Call(t, k, a) => {
+            let tool = p.tools.get(*t)?;
+            tool.key.as_ref()?;
+            let Bind::Cap(eff) = get(ctx, *k)? else { return None };
+            if !pc.low() || !eff.contains(&tool.effect) {
+                return None;
+            }
+            let (ta, la) = has_type(p, ctx, pc, a)?;
+            if ta != tool.arg || !la.low() {
+                return None;
+            }
+            (Ty::Unit, Lab::T)
+        }
+        E::Transfer(k) => match get(ctx, *k)? {
+            Bind::Pend if pc.low() => (Ty::Unit, Lab::T),
+            _ => return None,
         },
         E::For(n, xs, body) => {
             let (tx, lx) = has_type(p, ctx, pc, xs)?;
@@ -316,6 +471,18 @@ fn guarded(sg: bool, e: &E) -> bool {
         E::For(_, xs, body) => guarded(sg, xs) && guarded(sg, body),
         E::Await(_) => sg,
         E::Atomic(body, _, f, g) => guarded(true, body) && guarded(sg, f) && guarded(sg, g),
+        E::Call(_, _, a) => guarded(sg, a),
+        E::Transfer(_) => true,
+    }
+}
+
+/// `pureH` de `Typing.lean`: o tratador não tem efeito, inferência, saga nem chamada.
+fn pure_h(e: &E) -> bool {
+    match e {
+        E::Val(_) | E::Var(_) | E::Transfer(_) => true,
+        E::Let(a, b) | E::Prim(_, a, b) => pure_h(a) && pure_h(b),
+        E::Ite(c, t, f) => pure_h(c) && pure_h(t) && pure_h(f),
+        _ => false,
     }
 }
 
@@ -349,6 +516,8 @@ fn consumes(e: &E, k: usize) -> Option<usize> {
         E::Infer(_, _, a) => consumes(a, k),
         E::Await(_) => Some(0),
         E::Atomic(body, _, f, g) => add(consumes(body, k), same(consumes(f, k), consumes(g, k))),
+        E::Call(_, j, a) => add(consumes(a, k), Some(usize::from(*j == k))),
+        E::Transfer(j) => Some(usize::from(*j == k)),
     }
 }
 
@@ -369,6 +538,15 @@ impl Prog {
         if !guarded(false, &self.exp) {
             return Err("`await` fora de saga (não Guarded)".into());
         }
+        // `HasType.call`: o tratador é puro, do tipo de retorno e consome a obrigação uma vez
+        if self.has_calls() {
+            let h = self.handler();
+            let mut hctx = vec![Bind::Pend];
+            let (t, _) = has_type(self, &mut hctx, Lab::T, &h).ok_or("tratador fora de HasType")?;
+            if t != self.ret || !pure_h(&h) || consumes(&h, 0) != Some(1) {
+                return Err("tratador de TimeoutUnknown inválido".into());
+            }
+        }
         Ok(())
     }
 }
@@ -387,6 +565,8 @@ struct Gen<'a> {
     saga: bool,
     /// o próximo bloco é o corpo de uma saga: termina com um `await` (às vezes)
     tail: bool,
+    /// com chaves: a ferramenta com chave da capacidade `i` é `keyed + i`
+    keyed: Option<usize>,
 }
 
 impl Gen<'_> {
@@ -435,10 +615,19 @@ impl Gen<'_> {
     /// Ferramentas que a capacidade da posição `pos` autoriza.
     fn tools_for(&self, pos: usize) -> Vec<usize> {
         let Bind::Cap(eff) = &self.ctx[pos] else { return vec![] };
-        (0..self.tools.len()).filter(|&t| eff.contains(&self.tools[t].effect)).collect()
+        (0..self.tools.len()).filter(|&t| eff.contains(&self.tools[t].effect) && self.tools[t].key.is_none()).collect()
     }
 
     fn consume(&mut self, pos: usize, prefer_act: bool) -> E {
+        // com chaves: metade das capacidades vai para a chamada com chave da sua ferramenta
+        // (provedor `opaque` não entra em saga: o `athc` recusa, T0305)
+        if let Some(base) = self.keyed {
+            let opaque = self.tools[base + pos].key.as_ref().is_some_and(|k| k.provider == Prov::Opaque);
+            if self.rng.chance(1, 2) && !(self.saga && opaque) {
+                let k = self.index(pos);
+                return E::Call(base + pos, k, Box::new(self.atom(&Ty::Int)));
+            }
+        }
         let mut ts = self.tools_for(pos);
         // no corpo de uma saga, de preferência uma ação compensável
         if self.saga && self.rng.chance(3, 4) {
@@ -588,21 +777,55 @@ fn calls(e: &E) -> usize {
         E::Infer(_, _, a) => 1 + calls(a),
         E::Await(_) => 0,
         E::Atomic(body, _, f, g) => calls(body) + calls(f).max(calls(g)),
+        E::Call(_, _, a) => calls(a),
+        E::Transfer(_) => 0,
     }
 }
 
 /// O programa da semente `seed`, no fragmento sem sagas.
 pub fn generate(seed: u64) -> Prog {
-    generate_with(seed, false)
+    generate_with(seed, false, false)
 }
 
 /// O programa da semente `seed`, com sagas: ferramentas de célula (algumas `compensable`,
 /// algumas com compensação recusada), sondas de intervalo, `atomic` e `await`.
 pub fn generate_saga(seed: u64) -> Prog {
-    generate_with(seed, true)
+    generate_with(seed, true, false)
 }
 
-fn generate_with(seed: u64, sagas: bool) -> Prog {
+/// O programa da semente `seed`, com sagas e chamadas com chave: cada capacidade tem uma
+/// ferramenta com chave (provedor `idempotent`, `queryable` ou `opaque`, falhas injetadas na
+/// chamada e nos reenvios, consultas inconclusivas), e metade das capacidades é consumida por
+/// ela. O tratador de `TimeoutUnknown` reconcilia com o combustível do programa e, esgotado,
+/// transfere a obrigação e encerra o evento.
+pub fn generate_keyed(seed: u64) -> Prog {
+    generate_with(seed, true, true)
+}
+
+fn key_spec(rng: &mut Rng, cap: usize) -> KeySpec {
+    let provider = [Prov::Idempotent, Prov::Idempotent, Prov::Queryable, Prov::Queryable, Prov::Opaque][rng.below(5)];
+    let mut faults = Vec::new();
+    match rng.below(9) {
+        0 | 1 => {}
+        2 => faults.push((1, "error")),
+        3..=5 => faults.push((1, "timeout_lost")),
+        _ => faults.push((1, "timeout_applied")),
+    }
+    if provider == Prov::Idempotent {
+        for n in 2..=4 {
+            match rng.below(5) {
+                0 => {}
+                1 | 2 => faults.push((n, "timeout_lost")),
+                3 => faults.push((n, "timeout_applied")),
+                _ => faults.push((n, "error")),
+            }
+        }
+    }
+    let unknown = if provider == Prov::Queryable { rng.below(4) as u32 } else { 0 };
+    KeySpec { cap, provider, faults, unknown }
+}
+
+fn generate_with(seed: u64, sagas: bool, keyed: bool) -> Prog {
     let mut rng = Rng::new(seed);
     let ncaps = 1 + rng.below(3) + usize::from(sagas && rng.chance(1, 2));
     let effects = ncaps + rng.below(2);
@@ -619,7 +842,7 @@ fn generate_with(seed: u64, sagas: bool) -> Prog {
         .map(|_| {
             let effect = rng.below(effects);
             let arg = if rng.chance(3, 4) { Ty::Int } else { Ty::Bool };
-            let mut t = Tool { effect, arg, cell: None, compensable: false, undo_fails: false };
+            let mut t = Tool { effect, arg, cell: None, compensable: false, undo_fails: false, key: None };
             if sagas && t.arg == Ty::Int && rng.chance(3, 4) {
                 t.cell = Some(rng.below(ncells));
                 t.compensable = rng.chance(4, 5);
@@ -634,7 +857,26 @@ fn generate_with(seed: u64, sagas: bool) -> Prog {
         // sempre em `caps[i]`
         for e in 0..ncaps {
             let cell = Some(rng.below(ncells));
-            tools.push(Tool { effect: e, arg: Ty::Int, cell, compensable: true, undo_fails: rng.chance(1, 3) });
+            tools.push(Tool {
+                effect: e,
+                arg: Ty::Int,
+                cell,
+                compensable: true,
+                undo_fails: rng.chance(1, 3),
+                key: None,
+            });
+        }
+    }
+    // com chaves: a ferramenta com chave da capacidade `i` (efeito `i`), depois de todas as
+    // outras, para não mudar a sequência pseudoaleatória dos outros fragmentos
+    let keyed_base = tools.len();
+    if keyed {
+        for i in 0..ncaps {
+            let spec = key_spec(&mut rng, i);
+            let cell = rng.chance(3, 4).then(|| rng.below(ncells));
+            let compensable = cell.is_some() && rng.chance(1, 2);
+            let undo_fails = compensable && rng.chance(1, 3);
+            tools.push(Tool { effect: i, arg: Ty::Int, cell, compensable, undo_fails, key: Some(spec) });
         }
     }
     let probes: Vec<Probe> = if sagas {
@@ -669,6 +911,7 @@ fn generate_with(seed: u64, sagas: bool) -> Prog {
         nprobes: probes.len(),
         saga: false,
         tail: false,
+        keyed: keyed.then_some(keyed_base),
     };
     let live: Vec<usize> = (0..ncaps).collect();
     let exp = g.block(live, 0, &ret);
@@ -684,7 +927,18 @@ fn generate_with(seed: u64, sagas: bool) -> Prog {
             }
         })
         .collect();
-    Prog { seed, effects, tools, policies, caps, oracle, exp, ret, probes }
+    let (fuel, hval) = if keyed {
+        let fuel = 1 + rng.below(3);
+        let hval = match ret {
+            Ty::Int => V::Int(rng.int(0, 100)),
+            Ty::Bool => V::Bool(rng.chance(1, 2)),
+            _ => V::Unit,
+        };
+        (fuel, hval)
+    } else {
+        (0, V::Unit)
+    };
+    Prog { seed, effects, tools, policies, caps, oracle, exp, ret, probes, fuel, hval }
 }
 
 // ------------------------------------------------------------------ JSON para o `ath-lean-eval`
@@ -707,7 +961,8 @@ fn val_json(v: &V) -> Json {
     }
 }
 
-fn exp_json(e: &E) -> Json {
+fn exp_json(e: &E, h: &(usize, Json)) -> Json {
+    let exp_json = |x: &E| exp_json(x, h);
     match e {
         E::Val(v) => json!({ "val": val_json(v) }),
         E::Var(k) => json!({ "var": k }),
@@ -721,6 +976,8 @@ fn exp_json(e: &E) -> Json {
         E::Infer(m, t, a) => json!({ "infer": [m, ty_json(t), exp_json(a)] }),
         E::Await(q) => json!({ "await": q }),
         E::Atomic(b, r, f, g) => json!({ "atomic": [exp_json(b), r, exp_json(f), exp_json(g)] }),
+        E::Call(t, k, a) => json!({ "call": [t, k, exp_json(a), h.0, h.1] }),
+        E::Transfer(p) => json!({ "transfer": p }),
     }
 }
 
@@ -737,17 +994,26 @@ impl Prog {
     pub fn to_json(&self) -> Json {
         json!({
             "effects": (0..self.effects).map(Prog::effect_name).collect::<Vec<_>>(),
-            "tools": self.tools.iter().enumerate().map(|(i, t)| json!({
-                "name": format!("t{i}"), "effect": t.effect, "arg": ty_json(&t.arg),
-                "cell": t.cell, "compensable": t.compensable, "undo_fails": t.undo_fails,
-            })).collect::<Vec<_>>(),
+            "tools": self.tools.iter().enumerate().map(|(i, t)| {
+                let mut j = json!({
+                    "name": format!("t{i}"), "effect": t.effect, "arg": ty_json(&t.arg),
+                    "cell": t.cell, "compensable": t.compensable, "undo_fails": t.undo_fails,
+                });
+                if let Some(k) = &t.key {
+                    j["keyed"] = json!(true);
+                    j["provider"] = json!(k.provider.name());
+                }
+                j
+            }).collect::<Vec<_>>(),
             "probes": self.probes.iter().enumerate().map(|(i, p)| json!({ "name": format!("p{i}"), "cell": p.cell, "lo": p.lo, "hi": p.hi })).collect::<Vec<_>>(),
             "policies": self.policies.iter().enumerate().map(|(i, p)| json!({ "name": format!("P{i}"), "lo": p.lo, "hi": p.hi })).collect::<Vec<_>>(),
             "grants": self.caps,
             // ρ inicial em ordem de de Bruijn: o índice 0 é a última capacidade
             "env": (0..self.caps.len()).rev().map(|id| json!({ "cap": id })).collect::<Vec<_>>(),
             "oracle": self.oracle,
-            "exp": exp_json(&self.exp),
+            "exp": exp_json(&self.exp, &(self.fuel, exp_json(&self.handler(), &(0, Json::Null)))),
+            "replies": self.key_runs().iter().map(|(_, cap, r)| json!({ "key": cap, "replies": r.replies })).collect::<Vec<_>>(),
+            "applied": self.key_runs().iter().filter(|(_, _, r)| r.applied).map(|(_, cap, _)| cap).collect::<Vec<_>>(),
         })
     }
 
@@ -781,17 +1047,32 @@ impl Prog {
         for i in 0..self.probes.len() {
             lat.insert(format!("p{i}"), json!(0.0));
         }
-        json!({ "sinks": sinks, "latency": lat, "cells": { "tools": tools, "probes": probes } })
+        let mut faults = Vec::new();
+        for (i, t) in self.tools.iter().enumerate() {
+            if let Some(k) = &t.key {
+                for (nth, kind) in &k.faults {
+                    faults.push(json!({ "tool": names[i], "nth": nth, "kind": kind }));
+                }
+                if k.unknown > 0 {
+                    faults.push(json!({ "tool": names[i], "kind": "unknown_status", "times": k.unknown }));
+                }
+            }
+        }
+        let mut w = json!({ "sinks": sinks, "latency": lat, "cells": { "tools": tools, "probes": probes } });
+        if !faults.is_empty() {
+            w["faults"] = json!(faults);
+        }
+        w
     }
 
     pub fn has_saga(&self) -> bool {
         fn go(e: &E) -> bool {
             match e {
                 E::Atomic(..) => true,
-                E::Val(_) | E::Var(_) | E::Drop(_) | E::Await(_) => false,
+                E::Val(_) | E::Var(_) | E::Drop(_) | E::Await(_) | E::Transfer(_) => false,
                 E::Let(a, b) | E::Prim(_, a, b) | E::Endorse(_, a, b) => go(a) || go(b),
                 E::Ite(c, t, f) => go(c) || go(t) || go(f),
-                E::Act(_, _, a) | E::Infer(_, _, a) => go(a),
+                E::Act(_, _, a) | E::Infer(_, _, a) | E::Call(_, _, a) => go(a),
                 E::For(_, xs, b) => go(xs) || go(b),
             }
         }
@@ -915,6 +1196,11 @@ impl Tr {
                 out.push(format!("{pad}t{t}({}, {})", self.name(*k).expect("capacidade"), self.atom(a)));
                 None
             }
+            // a chave é cunhada no ponto da chamada: a ordem de cunhagem é a de execução
+            E::Call(t, k, a) => {
+                out.push(format!("{pad}t{t}({}, {}, keys.mint())", self.name(*k).expect("capacidade"), self.atom(a)));
+                None
+            }
             // a superfície ainda não tem `drop`: o descarte explícito do núcleo não emite evento
             E::Drop(_) => None,
             E::Ite(c, t, f) => {
@@ -964,7 +1250,7 @@ impl Tr {
                 out.push(format!("{pad}let {x} = {v}"));
                 Some(x)
             }
-            E::Let(..) | E::Infer(..) => panic!("fora da forma A-normal: {e:?}"),
+            E::Let(..) | E::Infer(..) | E::Transfer(_) => panic!("fora da forma A-normal: {e:?}"),
         }
     }
 }
@@ -977,6 +1263,22 @@ impl Prog {
         for (i, t) in self.tools.iter().enumerate() {
             let e = Prog::effect_name(t.effect);
             let a = surface_ty(&t.arg);
+            if let Some(k) = &t.key {
+                let pv = k.provider.name();
+                if t.compensable {
+                    s.push_str(&format!(
+                        "tool t{i}(c: Cap[{e}], v: {a} ^ Endorsed, k: own IdemKey) -> Unit ! {{ {e} }} compensable by u{i} provider {pv} latency 0.0\n"
+                    ));
+                    s.push_str(&format!(
+                        "tool u{i}(c: Cap[{e}], v: {a} ^ Endorsed, k: own IdemKey) -> Unit ! {{ {e} }} reversible provider idempotent latency 0.0\n"
+                    ));
+                } else {
+                    s.push_str(&format!(
+                        "tool t{i}(c: Cap[{e}], v: {a} ^ Endorsed, k: own IdemKey) -> Unit ! {{ {e} }} reversible provider {pv} latency 0.0\n"
+                    ));
+                }
+                continue;
+            }
             if t.compensable {
                 s.push_str(&format!(
                     "tool t{i}(c: Cap[{e}], v: {a} ^ Endorsed) -> Unit ! {{ {e} }} compensable by u{i} latency 0.0\n"
@@ -997,8 +1299,12 @@ impl Prog {
         for (i, p) in self.policies.iter().enumerate() {
             s.push_str(&format!("policy P{i}(x: Int[0..100]) -> Bool = {} <= x && x <= {}\n", p.lo, p.hi));
         }
-        let params: Vec<String> =
+        let mut params: Vec<String> =
             self.caps.iter().enumerate().map(|(i, e)| format!("c{i}: Cap[{}]", caps_ty(e))).collect();
+        let calls = self.has_calls();
+        if calls {
+            params.push("keys: Cap[IdemKey.Mint]".into());
+        }
         let mut row: Vec<String> = vec!["Infer".into()];
         let mut effs: Vec<usize> = self.tools.iter().map(|t| t.effect).collect();
         effs.sort();
@@ -1006,6 +1312,9 @@ impl Prog {
         row.extend(effs.into_iter().map(Prog::effect_name));
         if self.has_saga() {
             row.push("CompensationFailed".into());
+        }
+        if calls {
+            row.push("TimeoutUnknown".into());
         }
         s.push_str(&format!(
             "\nagent A({}) budget [tok <= 100000000, usd <= 1.0, wall <= 1000.0] {{\n  on go() -> {} ! {{ {} }} ",
@@ -1015,6 +1324,18 @@ impl Prog {
         ));
         let mut tr = Tr { fresh: 0, names: (0..self.caps.len()).map(|i| Some(format!("c{i}"))).collect() };
         s.push_str(&tr.braces(&self.exp, 1).0);
+        if calls {
+            // o tratador do núcleo (`Prog::handler`): reconcilia; esgotado, transfere e encerra
+            let fin = match &self.hval {
+                V::Unit => String::new(),
+                v => format!("\n      {}", Tr::lit(v)),
+            };
+            s.push_str(&format!(
+                "\n\n  handle timeout_unknown(p: own Pending[_]) -> {} {{\n    reconcile p fuel {} else {{\n      transfer p{fin}\n    }}\n  }}",
+                surface_ty(&self.ret),
+                self.fuel
+            ));
+        }
         s.push_str("\n}\n");
         s
     }
