@@ -10,7 +10,7 @@ banking continuam pendentes de decisão financeira. Nenhum merge foi executado.
 **Estado.** `main` está em `245214b`. O PR #1 (`rev10` → `main`, rascunho) leva 9 commits,
 de `00a3c11` a `b0754ed`. Os resultados, journals, cassetes e referências da Rev10 e das
 anteriores ficaram intocados. Esta revisão não alterou nenhum arquivo em `bench/agentdojo/runs`
-nem em `bench/replay`, e os 16 cassetes do ARX reproduzem o journal gravado byte a byte (seção 7).
+nem em `bench/replay`, e os 16 cassetes do ARX reproduzem o journal gravado byte a byte (seção 5).
 
 **Auditoria dos artefatos públicos** (o repositório é público):
 
