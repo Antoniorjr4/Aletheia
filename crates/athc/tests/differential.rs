@@ -2654,6 +2654,8 @@ fn digests_separate_semantics_from_evidence() {
         assert_eq!(s0, s1, "semente {seed}: o registro semântico mudou com as latências\n{src}");
         if e0 != e1 {
             moved += 1;
+        } else if std::env::var("ATH_DIGEST_DEBUG").is_ok() {
+            eprintln!("semente {seed}: evidências iguais");
         }
         // Python, com o mundo original
         let py = ath_emit::python(&c.module, &c.check, &c.codex, "d.ath").expect("emissão");
