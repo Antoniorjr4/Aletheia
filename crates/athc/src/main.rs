@@ -457,6 +457,13 @@ fn cmd_run(opts: &Opts, st: Style) -> Result<bool, String> {
                 .collect::<Vec<_>>(),
             "spent": { "tok": arx.meter.tok, "usd": arx.meter.usd, "wall": arx.meter.wall },
             "journal_head": arx.journal.head,
+            // Rev13 (M-V): dois registros separados. O semântico é a cabeça da cadeia da vista do
+            // núcleo — determinístico, sem tempo nem latência: o que o programa fez. O de
+            // evidências é a cabeça do journal integral — com as medições reais: como e quando.
+            "digests": {
+                "semantic": arx::journal::Journal::core_view_with(&arx.journal.entries, &athc::compensable_tools(&c.module)).head,
+                "evidence": arx.journal.head,
+            },
         });
         let text = serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?;
         std::fs::write(rp, text).map_err(|e| format!("falha ao gravar o relatório: {e}"))?;

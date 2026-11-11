@@ -38,6 +38,7 @@ from agentdojo.types import (  # noqa: E402
 )
 
 from aletheia_runtime.__main__ import load_program  # noqa: E402
+from aletheia_runtime.journal import core_view  # noqa: E402
 from aletheia_runtime.runtime import RtErr, Runtime  # noqa: E402
 from aletheia_runtime.values import Cap  # noqa: E402
 from aletheia_runtime.world import HostFailed  # noqa: E402
@@ -199,6 +200,8 @@ class AletheiaAgent(BasePipelineElement):
         self.last = {
             "error": error,
             "journal_head": rt.journal.head,
+            "semantic_head": core_view(rt.journal.entries, {n for n, t in rt.p.tools.items()
+                                                             if t["class"] == "compensable"}).head,
             "spent": {"tok": rt.meter.tok, "usd": rt.meter.usd, "wall": rt.meter.wall},
             "calls": host.calls,
             "inventories": inventories,

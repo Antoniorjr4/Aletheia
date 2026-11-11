@@ -182,6 +182,13 @@ def main(argv: list) -> int:
         "world": world.state(),
         "spent": {"tok": rt.meter.tok, "usd": rt.meter.usd, "wall": rt.meter.wall},
         "journal_head": rt.journal.head,
+        # Rev13 (M-V): o registro semântico (vista do núcleo, sem tempo) e o de evidências
+        # (journal integral, com as medições), separados
+        "digests": {
+            "semantic": core_view(rt.journal.entries,
+                                  {n for n, t in prog.tools.items() if t["class"] == "compensable"}).head,
+            "evidence": rt.journal.head,
+        },
     }
     if one("report"):
         with open(one("report"), "w", encoding="utf-8", newline="\n") as f:

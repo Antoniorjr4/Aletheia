@@ -2604,3 +2604,88 @@ fn lifted_obligations_refuse_at_refine_and_bind_the_intent() {
     first_diff("lifted/lacuna", "ARX × Python (journal completo)", &a, &p);
     assert!(!kinds(&a).iter().any(|x| x == "tool" || x == "obligation_reject"));
 }
+
+// ------------------------------------------------------------------ M-V: os dois registros
+
+/// **M-V, semântica × evidência.** Para cada programa gerado (sagas, chaves, os três provedores),
+/// o mesmo programa roda no ARX com as latências do mundo simulado e com latências diferentes, e
+/// no Python. O registro **semântico** (a cabeça da cadeia da vista do núcleo, sem tempo) é o
+/// mesmo nos três: é o que o programa fez. O registro de **evidências** (a cabeça do journal
+/// integral) é o mesmo entre ARX e Python sob o mesmo relógio simulado e muda quando as latências
+/// mudam: é como e quando, com a cadeia de custódia das medições. Nenhum dos dois substitui o
+/// outro. `ATH_DIGEST_N` muda o número de sementes (padrão 80).
+#[test]
+fn digests_separate_semantics_from_evidence() {
+    let n: u64 = std::env::var("ATH_DIGEST_N").ok().and_then(|v| v.parse().ok()).unwrap_or(80);
+    let dir = scratch();
+    let mut moved = 0;
+    for seed in 0..n {
+        let p = if seed % 2 == 0 { lambda_ath::generate_saga(seed) } else { lambda_ath::generate_keyed(seed) };
+        // a latência declarada com folga (5 s): as medições mudam sem que nenhuma passe do
+        // contrato Δ — uma latência acima do declarado é semântica (`R0701`), não ruído
+        let src = p.to_ath().replace("latency 0.0", "latency 5.0");
+        let c = compile(&src).unwrap();
+        let comp = athc::compensable_tools(&c.module);
+        let run = |world: &Json| {
+            let provider = Box::new(Scripted::from_json(&p.models()).unwrap());
+            let mut a = Arx::new(&c.module, Box::new(SimWorld::from_json(world).unwrap()), provider);
+            a.contracts = athc::contract_hashes(&c);
+            let _ = a.run("A", "go", vec![]);
+            let cv = arx::journal::Journal::core_view_with(&a.journal.entries, &comp);
+            if std::env::var("ATH_DIGEST_DEBUG").is_ok() {
+                eprintln!("{}\n---", cv.to_jsonl());
+            }
+            (cv.head, a.journal.head.clone())
+        };
+        let w0 = p.world();
+        let mut w1 = w0.clone();
+        let tools: serde_json::Map<String, Json> = c
+            .module
+            .items
+            .iter()
+            .filter_map(|i| match i {
+                ath_syntax::ast::Item::Tool(t) => Some((t.name.name.clone(), json!(1.75))),
+                _ => None,
+            })
+            .collect();
+        w1["latency"] = Json::Object(tools);
+        let (s0, e0) = run(&w0);
+        let (s1, e1) = run(&w1);
+        assert_eq!(s0, s1, "semente {seed}: o registro semântico mudou com as latências\n{src}");
+        if e0 != e1 {
+            moved += 1;
+        }
+        // Python, com o mundo original
+        let py = ath_emit::python(&c.module, &c.check, &c.codex, "d.ath").expect("emissão");
+        let (pp, w, m, r) = (
+            dir.join(format!("dg{seed}.py")),
+            dir.join(format!("dg{seed}.world.json")),
+            dir.join(format!("dg{seed}.models.json")),
+            dir.join(format!("dg{seed}.report.json")),
+        );
+        std::fs::write(&pp, py).unwrap();
+        std::fs::write(&w, w0.to_string()).unwrap();
+        std::fs::write(&m, p.models().to_string()).unwrap();
+        let out = Command::new("python3")
+            .env("PYTHONPATH", root().join("runtimes/python"))
+            .args(["-m", "aletheia_runtime", "run"])
+            .arg(&pp)
+            .arg("--world")
+            .arg(&w)
+            .arg("--models")
+            .arg(&m)
+            .args(["--provider", "scripted", "--agent", "A", "--on", "go", "--report"])
+            .arg(&r)
+            .output()
+            .unwrap();
+        let rep: Json = serde_json::from_str(
+            &std::fs::read_to_string(&r)
+                .unwrap_or_else(|_| panic!("semente {seed}: sem relatório\n{}", String::from_utf8_lossy(&out.stderr))),
+        )
+        .unwrap();
+        assert_eq!(rep["digests"]["semantic"].as_str(), Some(s0.as_str()), "semente {seed}: semântico ARX × Python");
+        assert_eq!(rep["digests"]["evidence"].as_str(), Some(e0.as_str()), "semente {seed}: evidências ARX × Python");
+    }
+    eprintln!("M-V: {n} programas · o registro de evidências mudou com as latências em {moved}");
+    assert!(moved * 2 >= n as usize, "as latências quase nunca aparecem nas evidências: {moved}/{n}");
+}
