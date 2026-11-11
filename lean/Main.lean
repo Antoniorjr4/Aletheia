@@ -8,9 +8,10 @@ ath-lean-eval run programa.json   # journal do núcleo (JSONL) na saída padrão
 ath-lean-eval hash arquivo        # BLAKE3 (hex) dos bytes do arquivo
 ```
 
-`run` executa o avaliador canônico `Aletheia.eval` (o mesmo dos teoremas T1–T3). Em erro de
-execução (`stuck`, `noCap`, `reuse`, `budget`), escreve o erro na saída de erro e termina com
-código 1; em programa malformado, código 2.
+`run` executa o avaliador canônico `Aletheia.eval` (o mesmo dos teoremas T1, T2, T3, T6 e T9)
+e escreve o journal do desfecho: valor, encerramento pelo tratador de `TimeoutUnknown` ou
+recusa de uma operação com chave. Em erro de programa (`stuck`, `noCap`, `reuse`, `budget`),
+escreve o erro na saída de erro e termina com código 1; em programa malformado, código 2.
 -/
 
 open Aletheia Aletheia.Exec
@@ -30,13 +31,15 @@ def main (argv : List String) : IO UInt32 := do
       IO.eprintln s!"programa inválido: {e}"
       return 2
     | .ok p =>
-      match p.run with
-      | .ok o =>
-        for line in p.journal o do
+      match p.outcome p.run with
+      | some lines =>
+        for line in lines do
           IO.println line
         return 0
-      | .error e =>
-        IO.eprintln s!"erro de execução: {repr e}"
+      | none =>
+        match p.run with
+        | .error e => IO.eprintln s!"erro de execução: {repr e}"
+        | .ok _ => IO.eprintln "erro de execução"
         return 1
   | _ =>
     IO.eprintln usage
