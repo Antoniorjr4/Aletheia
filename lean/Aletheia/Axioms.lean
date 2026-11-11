@@ -148,3 +148,35 @@ open Aletheia
 
 /-- info: 'Aletheia.T9_transferred_exhausted' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms T9_transferred_exhausted
+
+/-! ## Rev11: o tratador de `TimeoutUnknown` como expressão do núcleo -/
+
+/-- info: 'Aletheia.soundness_keyless' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms soundness_keyless
+
+/-- info: 'Aletheia.pure_handler' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms pure_handler
+
+/-- info: 'Aletheia.T2_keys' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms T2_keys
+
+/-- info: 'Aletheia.caps_exactly_once_ok' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms caps_exactly_once_ok
+
+/-- info: 'Aletheia.doCall_ni' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms doCall_ni
+
+/-- info: 'Aletheia.noninterference_saga_keys' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms noninterference_saga_keys
+
+/-- info: 'Aletheia.T9_outcome' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms T9_outcome
+
+/-- info: 'Aletheia.T9_transfer_explicit' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms T9_transfer_explicit
+
+/-- info: 'Aletheia.T9_honest' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms T9_honest
+
+/-- info: 'Aletheia.KeysExample.transferred_but_applied' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms KeysExample.transferred_but_applied

@@ -97,6 +97,12 @@ theorem loop_all {f : Val → St → Except Err Out} {P : List Ev → Prop}
     cases h
     exact happ _ _ (hf v s o ho) (loop_all hnil happ hf vs o.st r' hr')
 
+/-- O traço de um desfecho com valor ou com falha capturável. -/
+def Outcome.tr' : Except Err Out → Option (List Ev)
+  | .ok o => some o.tr
+  | .error (.timeout _ _ tr) => some tr
+  | .error _ => none
+
 /-! ## 1. A guarda dinâmica é correta, para qualquer programa -/
 
 /-- Toda ação do traço foi concedida, nos dois desfechos (as compensações e as sondas de uma
@@ -122,6 +128,27 @@ theorem granted_preserves (c : Cfg) : Preserves S c True (fun _ _ tr => Granted'
     · obtain ⟨_, _, _, hu⟩ := compensate_undo S _ _ _ hv
       cases hu
     · simp at hv
+  callDone := by
+    intro _ s t id v hg _ t' id' v' hm
+    simp at hm; obtain ⟨rfl, rfl, rfl⟩ := hm; exact hg
+  callFailed := by intro _ s t id _ _ t' id' v' hm; simp at hm
+  callRec := by
+    intro _ s t id n v e _ _ _ _ t' id' v' hm
+    rcases List.mem_cons.mp hm with hm | hm
+    · cases hm
+    · rcases List.mem_append.mp hm with hm | hm
+      · obtain ⟨j, r, h'⟩ := reconcile_queries S (S.prov t) id 1 n _ hm; cases h'
+      · simp at hm
+  callAbort := by
+    intro _ s s₃ t id n v tr _ _ _ hh _ t' id' v' hm
+    rcases List.mem_cons.mp hm with hm | hm
+    · cases hm
+    · rcases List.mem_append.mp hm with hm | hm
+      · obtain ⟨j, r, h'⟩ := reconcile_queries S (S.prov t) id 1 n _ hm; cases h'
+      · rcases List.mem_append.mp hm with hm | hm
+        · exact hh t' id' v' hm
+        · simp at hm
+  transfer := by intro s k t' id' v' hm; simp at hm
 
 theorem effects_granted (c : Cfg) (e : Exp) {ρ : List Val} {s : St} {o : Out}
     (h : eval S c e ρ s = .ok o) : Granted' S c.grants o.tr :=
@@ -129,7 +156,7 @@ theorem effects_granted (c : Cfg) (e : Exp) {ρ : List Val} {s : St} {o : Out}
 
 /-! ## 2. Toda ação usa uma `Cap[E]` léxica que contém o efeito -/
 
-theorem Lexical.saga {Γ : List Bind} {ρ : List Val} {tr : List Ev} (q r : Nat) (p : Bool)
+theorem Lexical.saga {Γ : List Bind} {ρ : List Val} {tr : List Ev} (q : Cause) (r : Nat) (p : Bool)
     (comp : List (Nat × Val)) (w : World) (h : Lexical S Γ ρ tr) :
     Lexical S Γ ρ (tr ++ .fail q :: (compensate S comp w).evs ++ [.recover r p]) := by
   rw [List.append_assoc]
@@ -319,6 +346,8 @@ theorem effects_lexical_total (c : Cfg) {Γ : List Bind} {pc : Lab} {e : Exp} {�
       · rename_i ob hb
         cases he; exact ihb.1 ob hb
       · rename_i q' s' tr' hb
+        split at he
+        · simp [pre] at he
         obtain ⟨o', h₁, he⟩ := bnd_eq_ok.mp (pre_eq_ok.mp he)
         cases he
         refine (Lexical.saga q' _ _ _ _ (ihb.2 _ _ _ hb)).append ?_
@@ -330,6 +359,10 @@ theorem effects_lexical_total (c : Cfg) {Γ : List Bind} {pc : Lab} {e : Exp} {�
       split at he
       · cases he
       · rename_i q' s' tr' hb
+        split at he
+        · simp only [pre] at he
+          cases he
+          simpa using Lexical.saga q _ _ _ _ (ihb.2 _ _ _ hb)
         obtain ⟨t, h₁, rfl⟩ := pre_eq_timeout he
         rcases bnd_eq_timeout h₁ with h₂ | ⟨_, _, _, h₃, _⟩
         · refine (Lexical.saga q' _ _ _ _ (ihb.2 _ _ _ hb)).append ?_
@@ -340,6 +373,58 @@ theorem effects_lexical_total (c : Cfg) {Γ : List Bind} {pc : Lab} {e : Exp} {�
       · rename_i hne _
         cases he
         exact absurd rfl (hne _ _ _)
+  | @call Γ pc t k a n e ιa βa E ιe βe _ hk heff _ _ _ _ _ iha ihe =>
+    intro ρ s
+    -- o tratador roda num ambiente sem capacidades: o traço dele não tem ação
+    have hnoact : ∀ {s' : St} {o' : Out} {pid : Nat}, eval S c e [.pend t pid] s' = .ok o' →
+        ∀ t' id' v', Ev.act t' id' v' ∉ o'.tr := by
+      intro s' o' pid ho t' id' v' hm
+      obtain ⟨k', E', hk', _, _⟩ := ihe.1 o' ho t' id' v' hm
+      cases k' with
+      | zero => simp at hk'
+      | succ k' => simp at hk'
+    refine ⟨fun o he => ?_, fun q s₁ tr he => ?_⟩
+    · simp only [eval, bnd_eq_ok] at he
+      obtain ⟨oa, ha, he⟩ := he
+      obtain ⟨id, hid, _, _, _, hc⟩ := doCall_ok he
+      rcases hc with ⟨_, rfl⟩ | ⟨_, _, rfl⟩
+      · refine (iha.1 _ ha).append fun t' id' v' hm => ?_
+        simp at hm; obtain ⟨rfl, rfl, rfl⟩ := hm
+        exact ⟨k, E, hk, hid, heff⟩
+      · refine (iha.1 _ ha).append fun t' id' v' hm => ?_
+        rcases List.mem_cons.mp hm with hm | hm
+        · cases hm
+        · rcases List.mem_append.mp hm with hm | hm
+          · obtain ⟨j, r, h'⟩ := reconcile_queries S (S.prov t) id 1 n _ hm; cases h'
+          · simp at hm
+    · simp only [eval] at he
+      rcases bnd_eq_timeout he with h₀ | ⟨oa, t₀, ha, h₁, rfl⟩
+      · exact iha.2 _ _ _ h₀
+      · obtain ⟨id, hid, _, _, _, hc⟩ := doCall_timeout h₁
+        refine (iha.1 _ ha).append fun t' id' v' hm => ?_
+        rcases hc with ⟨_, _, _, rfl⟩ | ⟨_, _, _, _, rfl⟩ | ⟨_, _, oh, hoh, _, _, _, rfl⟩
+        · simp at hm
+        · rcases List.mem_cons.mp hm with hm | hm
+          · cases hm
+          · rcases List.mem_append.mp hm with hm | hm
+            · obtain ⟨j, r, h'⟩ := reconcile_queries S (S.prov t) id 1 n _ hm; cases h'
+            · simp at hm
+        · rcases List.mem_cons.mp hm with hm | hm
+          · cases hm
+          · rcases List.mem_append.mp hm with hm | hm
+            · obtain ⟨j, r, h'⟩ := reconcile_queries S (S.prov t) id 1 n _ hm; cases h'
+            · rcases List.mem_append.mp hm with hm | hm
+              · exact absurd hm (hnoact hoh t' id' v')
+              · simp at hm
+  | transfer _ _ =>
+    intro ρ s
+    refine ⟨fun o he => ?_, fun q s₁ tr he => ?_⟩
+    · simp only [eval] at he
+      split at he
+      · cases he; intro t' id' v' hm; simp at hm
+      · cases he
+    · simp only [eval] at he
+      split at he <;> cases he
 
 theorem effects_lexical (c : Cfg) {Γ : List Bind} {pc : Lab} {e : Exp} {τ : Ty} {ι : Lab}
     {β : Budget} (h : HasType S Γ pc e τ ι β) :
@@ -348,25 +433,43 @@ theorem effects_lexical (c : Cfg) {Γ : List Bind} {pc : Lab} {e : Exp} {τ : Ty
 
 /-! ## 3. Multiplicidade 1: cada capacidade é consumida exatamente uma vez -/
 
-/-- **Capacidades lineares.** Um programa bem tipado e linear, a partir de um ponto de
-partida válido e com orçamento suficiente, termina tendo consumido cada capacidade do agente
-exatamente uma vez. O conjunto `new` acrescentado não repete identidade (nenhuma
-duplicação) e contém todas as capacidades do ambiente (nenhum descarte sem consumo). -/
+/-- **Capacidades lineares.** Um programa bem tipado e linear, sem chamadas com chave, a
+partir de um ponto de partida válido e com orçamento suficiente, termina tendo consumido cada
+capacidade do agente exatamente uma vez. O conjunto `new` acrescentado não repete identidade
+(nenhuma duplicação) e contém todas as capacidades do ambiente (nenhum descarte sem consumo). -/
 theorem caps_exactly_once {c : Cfg} (hO : c.oracle.Ok) {Γ : List Bind} {pc : Lab} {e : Exp}
     {τ : Ty} {ι : Lab} {β : Budget} {ρ : List Val} {s : St} (h : HasType S Γ pc e τ ι β)
-    (hlin : Linear Γ e) (hg : Guarded e) (h0 : Start c.grants Γ ρ s) (hB : s.spent + β ≤ c.limit) :
+    (hlin : Linear Γ e) (hg : Guarded e) (hk : keyless e = true) (h0 : Start c.grants Γ ρ s)
+    (hB : s.spent + β ≤ c.limit) :
     ∃ o new, eval S c e ρ s = .ok o ∧ o.st.used = new ++ s.used ∧ new.Nodup ∧
       ∀ id : Nat, id ∈ new ↔ ∃ k : Nat, ρ[k]? = some (Val.cap id) := by
-  obtain ⟨o, he, _, _, new, hnew, hmem⟩ := soundness hO h hlin hg h0 hB
+  obtain ⟨o, he, _, _, new, hnew, hmem⟩ := soundness_keyless hO h hlin hg hk h0 hB
   obtain ⟨new', hnew', hd, _⟩ := eval_fresh e he
   have : new = new' := List.append_cancel_right (hnew.symm.trans hnew')
   subst this
   exact ⟨o, new, he, hnew, hd, hmem⟩
 
+/-- **Capacidades lineares, com chamadas com chave.** Se a execução termina com valor, cada
+capacidade do agente foi consumida exatamente uma vez, sem duplicação. -/
+theorem caps_exactly_once_ok {c : Cfg} (hO : c.oracle.Ok) {Γ : List Bind} {pc : Lab} {e : Exp}
+    {τ : Ty} {ι : Lab} {β : Budget} {ρ : List Val} {s : St} {o : Out} (h : HasType S Γ pc e τ ι β)
+    (hlin : Linear Γ e) (h0 : Start c.grants Γ ρ s) (hB : s.spent + β ≤ c.limit)
+    (he : eval S c e ρ s = .ok o) :
+    ∃ new, o.st.used = new ++ s.used ∧ new.Nodup ∧
+      ∀ id : Nat, id ∈ new ↔ ∃ k : Nat, ρ[k]? = some (Val.cap id) := by
+  rcases soundness_total hO h hlin h0 hB with ⟨o', he', _, _, new, hnew, hmem⟩ | ⟨_, _, _, he', _⟩
+  · rw [he'] at he; cases he
+    obtain ⟨new', hnew', hd, _⟩ := eval_fresh e he'
+    have : new = new' := List.append_cancel_right (hnew.symm.trans hnew')
+    subst this
+    exact ⟨new, hnew, hd, hmem⟩
+  · rw [he'] at he; cases he
+
 /-! ## 4. O teorema T2 -/
 
 /-- **Teorema T2 (efeitos e capacidades `Cap[E]`).** Para um programa bem tipado e linear,
-com concessões do runtime que cobrem os tipos `Cap[E]` e orçamento que cabe no teto:
+sem chamadas com chave, com concessões do runtime que cobrem os tipos `Cap[E]` e orçamento que
+cabe no teto:
 
 * a execução termina sem erro: a guarda dinâmica nunca recusa, porque a verificação estática
   basta;
@@ -375,12 +478,28 @@ com concessões do runtime que cobrem os tipos `Cap[E]` e orçamento que cabe no
 * cada capacidade do agente foi consumida exatamente uma vez. -/
 theorem T2 {c : Cfg} (hO : c.oracle.Ok) {Γ : List Bind} {pc : Lab} {e : Exp} {τ : Ty} {ι : Lab}
     {β : Budget} {ρ : List Val} {s : St} (h : HasType S Γ pc e τ ι β) (hlin : Linear Γ e)
-    (hg : Guarded e) (h0 : Start c.grants Γ ρ s) (hB : s.spent + β ≤ c.limit) :
+    (hg : Guarded e) (hk : keyless e = true) (h0 : Start c.grants Γ ρ s) (hB : s.spent + β ≤ c.limit) :
     ∃ o new, eval S c e ρ s = .ok o ∧ Lexical S Γ ρ o.tr ∧ Granted' S c.grants o.tr ∧
       o.st.used = new ++ s.used ∧ new.Nodup ∧
       ∀ id : Nat, id ∈ new ↔ ∃ k : Nat, ρ[k]? = some (Val.cap id) := by
-  obtain ⟨o, new, he, hu, hd, hmem⟩ := caps_exactly_once hO h hlin hg h0 hB
+  obtain ⟨o, new, he, hu, hd, hmem⟩ := caps_exactly_once hO h hlin hg hk h0 hB
   exact ⟨o, new, he, effects_lexical c h he, effects_granted c e he, hu, hd, hmem⟩
+
+/-- **T2 com chamadas com chave.** Para um programa bem tipado, linear e `Guarded`, com
+concessões que cobrem os tipos e orçamento que cabe no teto, a guarda dinâmica nunca recusa
+(nenhum `noCap`, nenhum erro de programa), e em **todo** desfecho (valor, recusa do provedor,
+encerramento pelo tratador) toda ação do traço usou uma `Cap[E]` léxica que contém o efeito e
+foi concedida pelo runtime. -/
+theorem T2_keys {c : Cfg} (hO : c.oracle.Ok) {Γ : List Bind} {pc : Lab} {e : Exp} {τ : Ty}
+    {ι : Lab} {β : Budget} {ρ : List Val} {s : St} (h : HasType S Γ pc e τ ι β) (hlin : Linear Γ e)
+    (hg : Guarded e) (h0 : Start c.grants Γ ρ s) (hB : s.spent + β ≤ c.limit) :
+    ∃ tr, Outcome.tr' (eval S c e ρ s) = some tr ∧ Lexical S Γ ρ tr ∧ Granted' S c.grants tr := by
+  rcases soundness hO h hlin hg h0 hB with ⟨o, he, _⟩ | ⟨k, s₁, tr, he⟩ | ⟨v, s₁, tr, he, _⟩
+  · exact ⟨o.tr, by simp [Outcome.tr', he], effects_lexical c h he, effects_granted c e he⟩
+  · exact ⟨tr, by simp [Outcome.tr', he], (effects_lexical_total c h).2 _ _ _ he,
+      (eval_preserves (granted_preserves c) e (.inl trivial)).2 he⟩
+  · exact ⟨tr, by simp [Outcome.tr', he], (effects_lexical_total c h).2 _ _ _ he,
+      (eval_preserves (granted_preserves c) e (.inl trivial)).2 he⟩
 
 end
 
