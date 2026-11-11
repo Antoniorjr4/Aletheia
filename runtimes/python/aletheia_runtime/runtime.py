@@ -64,6 +64,9 @@ class Meter:
         self.tok = 0
         self.usd = 0.0
         self.wall = 0.0
+        # a reserva de compensação (Rev13, M-IV), como no ARX
+        self.held_usd = 0.0
+        self.held_wall = 0.0
 
     def reserve(self, tok: int, usd: float, wall: float, what: str) -> None:
         def over(name: str, need: str, left: str):
@@ -71,15 +74,23 @@ class Meter:
 
         if self.lim_tok is not None and self.tok + tok > self.lim_tok:
             raise over("tokens", f"{tok} tok", f"{self.lim_tok - self.tok} tok")
-        if self.lim_usd is not None and self.usd + usd > self.lim_usd + 1e-12:
-            raise over("dólares", f"US$ {usd:.4f}", f"US$ {self.lim_usd - self.usd:.4f}")
-        if self.lim_wall is not None and self.wall + wall > self.lim_wall + 1e-9:
-            raise over("tempo", f"{wall:.1f} s", f"{self.lim_wall - self.wall:.1f} s")
+        if self.lim_usd is not None and self.usd + self.held_usd + usd > self.lim_usd + 1e-12:
+            raise over("dólares", f"US$ {usd:.4f}", f"US$ {self.lim_usd - self.usd - self.held_usd:.4f}")
+        if self.lim_wall is not None and self.wall + self.held_wall + wall > self.lim_wall + 1e-9:
+            raise over("tempo", f"{wall:.1f} s", f"{self.lim_wall - self.wall - self.held_wall:.1f} s")
 
     def settle(self, tok: int, usd: float, wall: float) -> None:
         self.tok += tok
         self.usd += usd
         self.wall += wall
+
+    def hold(self, usd: float, wall: float) -> None:
+        self.held_usd += usd
+        self.held_wall += wall
+
+    def release(self, usd: float, wall: float) -> None:
+        self.held_usd = max(self.held_usd - usd, 0.0)
+        self.held_wall = max(self.held_wall - wall, 0.0)
 
 
 def decimal(x: str):
@@ -356,8 +367,10 @@ class Runtime:
             if not ok:
                 self.journal.push(self.clock, "contract_refused", {"tool": name})
                 raise RtErr("R0630", f"o contrato `requires` de `{name}` recusou os argumentos")
+        # o que o medidor confere (`need`): o custo da chamada e, dentro de saga, o pior do compensador
+        held_c = self._comp_reserve(t) if self.sagas else (0.0, 0.0)
         if not self.obligation:
-            self.meter.reserve(0, t["usd"], t["latency"], name)
+            self.meter.reserve(0, t["usd"] + held_c[0], t["latency"] + held_c[1], name)
         key_n = next((a.n for a in args if isinstance(a, Key)), None)
         key = f"k{key_n}" if key_n is not None else None
         from .world import HostFailed, HostTimeout
@@ -376,14 +389,16 @@ class Runtime:
             if key_n is None:
                 raise RtErr("R0601", f"`{name}` sem resposta em {elapsed:.1f} s") from None
             if t["class"] == "compensable" and self.sagas:
-                self.sagas[-1].append((name, list(args)))
+                self.sagas[-1].append((name, list(args), held_c))
+                self.meter.hold(*held_c)
             self.journal.push(self.clock, "timeout_unknown",
                               {"tool": name, "key": f"k{key_n}", "provider": t["provider"], "elapsed": elapsed})
             return self._on_timeout(name, args, key_n)
         self.clock += lat
         self.meter.settle(0, t["usd"], lat)
         if t["class"] == "compensable" and self.sagas:
-            self.sagas[-1].append((name, list(args)))
+            self.sagas[-1].append((name, list(args), held_c))
+            self.meter.hold(*held_c)
         self.journal.push(self.clock, "tool", {
             "tool": name,
             "class": t["class"],
@@ -397,6 +412,22 @@ class Runtime:
             self.journal.push(self.clock, "contract_breach", {"tool": name, "declared": t["latency"], "observed": lat})
             raise RtErr("R0701", f"ContractBreach: `{name}` levou {lat:.2f} s; o contrato Δ declara {t['latency']:.2f} s")
         return out
+
+    def _comp_reserve(self, t: dict) -> tuple:
+        """A reserva do compensador de `t`: custo e latência declarados de `compensable by`."""
+        if t["class"] != "compensable":
+            return (0.0, 0.0)
+        c = self.p.tools.get(t.get("compensator") or "")
+        return (c["usd"], c["latency"]) if c is not None else (0.0, 0.0)
+
+    def _unlog(self, key: int) -> None:
+        """`R0611`: tira dos quadros abertos a operação de chave `key` e libera a reserva."""
+        for frame in reversed(self.sagas):
+            for i in range(len(frame) - 1, -1, -1):
+                if any(isinstance(a, Key) and a.n == key for a in frame[i][1]):
+                    op = frame.pop(i)
+                    self.meter.release(*op[2])
+                    return
 
     def _on_timeout(self, tool: str, args: list, key: int):
         h = self.agent["handles"].get("timeout_unknown") if self.agent else None
@@ -419,11 +450,15 @@ class Runtime:
         try:
             v = body()
         except (Ret, Resume):
-            self.sagas.pop()
+            for op in self.sagas.pop():
+                self.meter.release(*op[2])
             raise
         except (RtErr, Abort) as e:
             cause = e
         ops = self.sagas.pop()
+        # o quadro fecha: as reservas voltam ao saldo; as compensações liquidam o custo real
+        for op in ops:
+            self.meter.release(*op[2])
         if cause is None:
             self.journal.push(self.clock, "saga_commit", {"compensable_ops": len(ops)})
             return v
@@ -433,7 +468,7 @@ class Runtime:
 
         prev, self.obligation = self.obligation, True
         residual = []
-        for tool, args in reversed(ops):
+        for tool, args, held_op in reversed(ops):
             comp = self.p.tools[tool]["compensator"]
             if comp is None or comp not in self.p.tools:
                 residual.append(f"{tool}: sem compensador")
@@ -449,6 +484,10 @@ class Runtime:
             else:
                 self.clock += lat
                 self.meter.settle(0, self.p.tools[comp]["usd"], lat)
+                if self.p.tools[comp]["usd"] > held_op[0] + 1e-12 or lat > held_op[1] + 1e-9:
+                    self.journal.push(self.clock, "compensation_overrun",
+                                      {"tool": comp, "held_usd": held_op[0], "held_wall": held_op[1],
+                                       "usd": self.p.tools[comp]["usd"], "wall": lat})
                 self.journal.push(self.clock, "compensate",
                                   {"of": tool, "tool": comp, "key": key, "ok": True, "result": to_json(out)})
                 continue
@@ -543,7 +582,9 @@ class Runtime:
             self.journal.push(self.clock, "resolved", {"key": k, "status": "done"})
             raise Resume(outcome[1])
         if outcome is not None:
-            self.journal.push(self.clock, "resolved", {"key": k, "status": "failed"})
+            # `R0611`: a operação refutada sai do quadro e a reserva dela é liberada
+            self._unlog(p.key)
+            self.journal.push(self.clock, "resolved", {"key": k, "tool": p.tool, "status": "failed"})
             raise RtErr("R0611", f"`{p.tool}` não aplicada (reconciliado): {outcome[1]}")
         self.journal.push(self.clock, "reconcile_exhausted", {"key": k, "fuel": fuel})
 

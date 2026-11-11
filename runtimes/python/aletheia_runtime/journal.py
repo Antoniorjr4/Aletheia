@@ -113,6 +113,9 @@ def core_view(entries: list, compensable=()) -> Journal:
         elif kind == "resolved":
             if d.get("status") == "failed":
                 refused = d.get("key")
+                # `R0611`: a operação refutada sai da pilha de compensações
+                if d.get("tool") in compensable and comp:
+                    comp.pop()
             j.push_untimed("settle", {"key": d.get("key"), "status": d.get("status")})
         elif kind == "transfer":
             j.push_untimed("transfer", {"key": d.get("key")})

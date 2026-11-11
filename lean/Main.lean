@@ -6,6 +6,7 @@ import Aletheia.Exec
 ```
 ath-lean-eval run programa.json   # journal do núcleo (JSONL) na saída padrão
 ath-lean-eval arx programa.json   # o mesmo programa no modelo do ARX (`Arx.run`), vista do núcleo
+ath-lean-eval meter programa.json # o gasto do λ_Ath e o gasto e a reserva do modelo do ARX (JSON)
 ath-lean-eval hash arquivo        # BLAKE3 (hex) dos bytes do arquivo
 ```
 
@@ -18,7 +19,7 @@ escreve o erro na saída de erro e termina com código 1; em programa malformado
 open Aletheia Aletheia.Exec
 
 def usage : String :=
-  "uso: ath-lean-eval run programa.json | ath-lean-eval arx programa.json | ath-lean-eval hash arquivo"
+  "uso: ath-lean-eval run|arx|meter programa.json | ath-lean-eval hash arquivo"
 
 def main (argv : List String) : IO UInt32 := do
   match argv with
@@ -57,6 +58,15 @@ def main (argv : List String) : IO UInt32 := do
       | none =>
         IO.eprintln "erro de execução no modelo do ARX"
         return 1
+  | ["meter", path] =>
+    let src ← IO.FS.readFile path
+    match Lean.Json.parse src >>= prog with
+    | .error e =>
+      IO.eprintln s!"programa inválido: {e}"
+      return 2
+    | .ok p =>
+      IO.println (render p.meter)
+      return 0
   | _ =>
     IO.eprintln usage
     return 2

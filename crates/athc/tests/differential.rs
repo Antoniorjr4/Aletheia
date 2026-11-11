@@ -1612,6 +1612,8 @@ fn ktool(cap: usize, provider: lambda_ath::Prov, faults: Vec<(u32, &'static str)
         compensable: false,
         undo_fails: false,
         key: Some(lambda_ath::KeySpec { cap, provider, faults, unknown }),
+        usd: 0,
+        cusd: 0,
     }
 }
 
@@ -1638,6 +1640,7 @@ fn key_prog(
         probes,
         fuel,
         hval,
+        limit: None,
     }
 }
 
@@ -1815,7 +1818,16 @@ fn keyed_scenarios_are_deterministic_on_the_three_backends() {
                 8,
                 vec![
                     ktool(0, Prov::Queryable, vec![(1, "timeout_lost")], 5),
-                    Tool { effect: 1, arg: Ty::Int, cell: Some(1), compensable: true, undo_fails: true, key: None },
+                    Tool {
+                        effect: 1,
+                        arg: Ty::Int,
+                        cell: Some(1),
+                        compensable: true,
+                        undo_fails: true,
+                        key: None,
+                        usd: 0,
+                        cusd: 0,
+                    },
                 ],
                 vec![cell(1, 0)],
                 saga(let_(E::Act(1, 0, Box::new(int(3))), let_(call(0, 2, 5), int(0)))),
@@ -1916,4 +1928,275 @@ agent A(bank: Cap[Bank.Transfer]) budget [usd <= 1.0, wall <= 100.0] {
     let report: Json = serde_json::from_str(&std::fs::read_to_string(&r).unwrap()).unwrap();
     assert_eq!(report["error"]["code"].as_str(), Some("R0630"), "{}", String::from_utf8_lossy(&out.stderr));
     first_diff("contratos", "ARX × Python (journal completo)", &full, &std::fs::read_to_string(&j).unwrap());
+}
+
+// ------------------------------------------------------------------ M-IV: orçamento com compensações pagas
+
+/// O `athc` sem o estrato E6: o programa como o ARX o executaria se o orçamento estático não
+/// tivesse sido conferido. É assim que o diferencial exercita o medidor do runtime também em
+/// programas que o `athc` recusaria (B02xx): o invariante `arx_budget_closed` não depende de
+/// tipagem.
+fn compile_unbudgeted(src: &str) -> Compiled {
+    let module = ath_syntax::parse_module(src).unwrap_or_else(|e| panic!("parse: {}\n{src}", e.msg));
+    let mut check = ath_check::check_module(&module);
+    check.diags.retain(|d| !d.code.starts_with("B02"));
+    assert!(
+        check.ok(),
+        "o athc recusou por outro motivo: {:?}\n{src}",
+        check.diags.iter().map(|d| (&d.code, &d.msg)).collect::<Vec<_>>()
+    );
+    let codex = ath_codex::address(&module).unwrap();
+    Compiled { module, check, codex }
+}
+
+/// O que cada backend mediu num programa com custos.
+#[derive(Debug)]
+struct Paid {
+    /// gasto do ARX, do Python e do modelo do ARX em Lean, em 1/1024 US$
+    arx: u64,
+    py: u64,
+    model: u64,
+    /// a reserva que sobrou no modelo no fim (os quadros fecharam: zero)
+    model_resv: u64,
+    /// o gasto contabilizado pelo λ_Ath, se ele terminou com valor ou falha capturável
+    eval: Option<u64>,
+    eval_budget: bool,
+    model_outcome: String,
+    arx_err: Option<String>,
+    py_err: Option<String>,
+    arx_core: String,
+    py_core: String,
+    lean_arx: Option<String>,
+    lean_run: Option<String>,
+    full: String,
+}
+
+fn units(x: f64) -> u64 {
+    let u = x * 1024.0;
+    assert!((u - u.round()).abs() < 1e-9 && u >= 0.0, "gasto fora da grade de 1/1024 US$: {x}");
+    u.round() as u64
+}
+
+fn paid_run(tag: &str, p: &lambda_ath::Prog) -> Paid {
+    let src = p.to_ath();
+    let c = compile_unbudgeted(&src);
+    let (core, world, models) = (p.to_json(), p.world(), p.models());
+    let provider = Box::new(Scripted::from_json(&models).unwrap());
+    let mut arx = Arx::new(&c.module, Box::new(SimWorld::from_json(&world).unwrap()), provider);
+    arx.contracts = athc::contract_hashes(&c);
+    let arx_err = match arx.run("A", "go", vec![]) {
+        Ok(_) => None,
+        Err(e) if ["R0600", "R0611", "R0801"].contains(&e.code.as_str()) => Some(e.code.clone()),
+        Err(e) => panic!("{tag}: o ARX abortou ({} {})\n{src}", e.code, e.msg),
+    };
+    let arx_spent = units(arx.meter.usd);
+    assert!(arx.meter.held_usd.abs() < 1e-12, "{tag}: reserva do ARX não liberada: {}", arx.meter.held_usd);
+    let arx_core =
+        arx::journal::Journal::core_view_with(&arx.journal.entries, &athc::compensable_tools(&c.module)).to_jsonl();
+    let full = arx.journal.to_jsonl();
+    // Python
+    let dir = scratch();
+    let file = tag.replace(|ch: char| !ch.is_ascii_alphanumeric(), "_");
+    let py = ath_emit::python(&c.module, &c.check, &c.codex, &format!("{file}.ath")).expect("emissão");
+    let (pp, w, m, j, cj, r) = (
+        dir.join(format!("{file}.py")),
+        dir.join(format!("{file}.world.json")),
+        dir.join(format!("{file}.models.json")),
+        dir.join(format!("{file}.journal.jsonl")),
+        dir.join(format!("{file}.core.jsonl")),
+        dir.join(format!("{file}.report.json")),
+    );
+    std::fs::write(&pp, py).unwrap();
+    std::fs::write(&w, world.to_string()).unwrap();
+    std::fs::write(&m, models.to_string()).unwrap();
+    let out = Command::new("python3")
+        .env("PYTHONPATH", root().join("runtimes/python"))
+        .args(["-m", "aletheia_runtime", "run"])
+        .arg(&pp)
+        .arg("--world")
+        .arg(&w)
+        .arg("--models")
+        .arg(&m)
+        .args(["--provider", "scripted", "--agent", "A", "--on", "go", "--journal"])
+        .arg(&j)
+        .arg("--core-journal")
+        .arg(&cj)
+        .arg("--report")
+        .arg(&r)
+        .output()
+        .expect("python3");
+    let report: Json = serde_json::from_str(&std::fs::read_to_string(&r).unwrap_or_else(|_| {
+        panic!("{tag}: o Python não escreveu o relatório\n{}", String::from_utf8_lossy(&out.stderr))
+    }))
+    .unwrap();
+    let py_err = report["error"]["code"].as_str().map(String::from);
+    let py_spent = units(report["spent"]["usd"].as_f64().unwrap());
+    let py_core = std::fs::read_to_string(&cj).unwrap();
+    // Lean
+    let lean = lean_eval().expect("o diferencial do M-IV precisa do avaliador do Lean");
+    let pj = dir.join(format!("{file}.core.json"));
+    std::fs::write(&pj, core.to_string()).unwrap();
+    let call = |mode: &str| Command::new(&lean).arg(mode).arg(&pj).output().unwrap();
+    let mo = call("meter");
+    assert!(mo.status.success(), "{tag}: meter: {}", String::from_utf8_lossy(&mo.stderr));
+    let meter: Json = serde_json::from_slice(&mo.stdout).unwrap();
+    let ok = |o: std::process::Output| o.status.success().then(|| String::from_utf8(o.stdout).unwrap());
+    Paid {
+        arx: arx_spent,
+        py: py_spent,
+        model: meter["arx"]["spent"].as_u64().unwrap(),
+        model_resv: meter["arx"]["resv"].as_u64().unwrap(),
+        eval: meter["eval"]["spent"].as_u64(),
+        eval_budget: meter["eval"]["outcome"] == "budget",
+        model_outcome: meter["arx"]["outcome"].as_str().unwrap().to_string(),
+        arx_err,
+        py_err,
+        arx_core,
+        py_core,
+        lean_arx: ok(call("arx")),
+        lean_run: ok(call("run")),
+        full,
+    }
+}
+
+/// **M-IV, o diferencial do medidor.** Programas gerados com sagas (e chaves nas sementes
+/// ímpares), cada ferramenta e cada compensador com custo positivo exato, e um limite sorteado.
+/// Para cada um:
+///
+/// * o gasto do modelo do ARX em Lean, do ARX e do Python coincidem exatamente, e nenhum passa
+///   do limite — inclusive quando a saga falha e liquida compensadores pagos;
+/// * a reserva termina zerada nos três;
+/// * a vista do núcleo do ARX e a do Python coincidem byte a byte, e com a do modelo quando o
+///   modelo termina (o ARX recusa no topo com `R0801` exatamente quando o modelo recusa);
+/// * quando o λ_Ath termina sem erro de orçamento, o journal dele é o do ARX e o gasto do ARX não
+///   passa do contabilizado (`arx_refines`).
+///
+/// A cobertura exige compensações pagas, recusas pela reserva e execuções no fio do limite.
+/// `ATH_PAID_N` muda o número de sementes (padrão 200).
+#[test]
+fn paid_compensation_meter_agrees_and_never_exceeds_the_limit() {
+    if lean_eval().is_none() {
+        return;
+    }
+    let n: u64 = std::env::var("ATH_PAID_N").ok().and_then(|v| v.parse().ok()).unwrap_or(200);
+    let mut seen = std::collections::BTreeMap::<&str, usize>::new();
+    for seed in 0..n {
+        let p = lambda_ath::generate_paid(seed);
+        p.check().unwrap_or_else(|e| panic!("semente {seed}: {e}"));
+        let lim = p.limit.unwrap();
+        let tag = format!("paid/{seed}");
+        let r = paid_run(&tag, &p);
+        assert_eq!(r.arx_err, r.py_err, "{tag}: desfecho do ARX × Python");
+        assert_eq!(
+            (r.model, r.arx, r.py),
+            (r.model, r.model, r.model),
+            "{tag}: gasto modelo × ARX × Python\n{}",
+            p.to_ath()
+        );
+        assert!(r.model <= lim, "{tag}: o gasto {} passou do limite {lim}", r.model);
+        assert_eq!(r.model_resv, 0, "{tag}: a reserva do modelo não fechou");
+        first_diff(&tag, "ARX × Python (vista do núcleo)", &r.arx_core, &r.py_core);
+        if r.arx_err.as_deref() == Some("R0801") {
+            assert_eq!(r.model_outcome, "other", "{tag}: o ARX recusou pelo orçamento e o modelo não");
+            assert!(r.lean_arx.is_none(), "{tag}: o modelo produziu journal de um desfecho recusado");
+            *seen.entry("recusa no topo pela reserva").or_default() += 1;
+        } else {
+            let model =
+                r.lean_arx.as_ref().unwrap_or_else(|| panic!("{tag}: o modelo não terminou ({})", r.model_outcome));
+            first_diff(&tag, "modelo Lean do ARX × ARX (vista do núcleo)", model, &r.arx_core);
+        }
+        if r.eval_budget {
+            *seen.entry("λ_Ath recusa antes (custo contabilizado)").or_default() += 1;
+        } else if let Some(e) = r.eval {
+            assert!(r.model <= e && e <= lim, "{tag}: ARX {} ≤ λ_Ath {e} ≤ limite {lim}", r.model);
+            if let Some(run) = &r.lean_run {
+                first_diff(&tag, "Lean × ARX (journal do núcleo)", run, &r.arx_core);
+            }
+            *seen.entry("λ_Ath termina").or_default() += 1;
+        }
+        let mut paid_comp = false;
+        for l in r.full.lines() {
+            let e: Json = serde_json::from_str(l).unwrap();
+            match e["kind"].as_str().unwrap() {
+                "compensate" if e["detail"]["ok"] == json!(true) => {
+                    let comp = &p.tools[e["detail"]["of"].as_str().unwrap()[1..].parse::<usize>().unwrap()];
+                    paid_comp |= comp.cusd > 0;
+                }
+                "saga_abort" if e["detail"]["reason"].as_str().is_some_and(|x| x.starts_with("R0801")) => {
+                    *seen.entry("recusa pela reserva dentro da saga").or_default() += 1;
+                }
+                "resolved" if e["detail"]["status"] == "failed" => {
+                    *seen.entry("R0611 (reserva liberada)").or_default() += 1;
+                }
+                "compensation_overrun" => panic!("{tag}: compensador acima do declarado"),
+                _ => {}
+            }
+        }
+        if paid_comp {
+            *seen.entry("compensação paga").or_default() += 1;
+        }
+        if r.model == lim && lim > 0 {
+            *seen.entry("no fio do limite").or_default() += 1;
+        }
+    }
+    eprintln!("M-IV: {n} programas · {seen:?}");
+    for (k, den) in
+        [("compensação paga", 20), ("recusa no topo pela reserva", 20), ("λ_Ath termina", 4), ("no fio do limite", 50)]
+    {
+        assert!(seen.get(k).copied().unwrap_or(0) * den >= n as usize, "cobertura fraca de `{k}`: {seen:?}");
+    }
+}
+
+/// **O contraexemplo da Rev12, nos runtimes.** `atomic { t0(c, 1); await p0 } recover p0`, com
+/// `t0` de US$ 1 compensável por `u0` de US$ 1 e uma sonda que nunca confirma: na Rev12 o ARX
+/// terminava em US$ 2 sob limite US$ 1 (`Arx.Counter.comp_cost_breaks_budget`). Agora, sob
+/// limite 1, o `athc` recusa (B0202) e, sem a conferência estática, o medidor recusa antes do
+/// efeito: nada é feito, nada é gasto. Sob limite 2 a saga compensa e os três param em 2.
+#[test]
+fn rev12_paid_compensation_counterexample_is_closed() {
+    if lean_eval().is_none() {
+        return;
+    }
+    use lambda_ath::{Probe, Tool, Ty, E, V};
+    let mk = |limit: u64| {
+        let mut p = key_prog(
+            0,
+            vec![Tool {
+                effect: 0,
+                arg: Ty::Int,
+                cell: Some(0),
+                compensable: true,
+                undo_fails: false,
+                key: None,
+                usd: 1024,
+                cusd: 1024,
+            }],
+            vec![Probe { cell: 0, lo: 7, hi: 7 }],
+            E::Atomic(
+                Box::new(E::Let(Box::new(E::Act(0, 0, Box::new(E::Val(V::Int(1))))), Box::new(E::Await(0)))),
+                0,
+                Box::new(E::Val(V::Unit)),
+                Box::new(E::Val(V::Unit)),
+            ),
+            Ty::Unit,
+            0,
+            V::Unit,
+        );
+        p.limit = Some(limit);
+        p
+    };
+    let p1 = mk(1024);
+    let diags = compile(&p1.to_ath()).err().expect("o athc precisa recusar o limite 1");
+    assert!(diags.iter().any(|d| d.code == "B0202"), "{:?}", diags.iter().map(|d| &d.code).collect::<Vec<_>>());
+    let r1 = paid_run("rev12/limite-1", &p1);
+    assert_eq!((r1.model, r1.arx, r1.py), (0, 0, 0), "nada é gasto: {r1:?}");
+    assert!(r1.eval_budget, "o λ_Ath recusa pelo custo contabilizado (ação + estorno = 2)");
+    assert!(r1.full.contains("R0801"), "o medidor do ARX recusa pela reserva:\n{}", r1.full);
+    let p2 = mk(2048);
+    assert!(compile(&p2.to_ath()).is_ok(), "sob limite 2 o programa é aceito");
+    let r2 = paid_run("rev12/limite-2", &p2);
+    assert_eq!((r2.model, r2.arx, r2.py, r2.eval), (2048, 2048, 2048, Some(2048)), "{r2:?}");
+    first_diff("rev12/limite-2", "modelo × ARX", r2.lean_arx.as_ref().unwrap(), &r2.arx_core);
+    first_diff("rev12/limite-2", "λ_Ath × ARX", r2.lean_run.as_ref().unwrap(), &r2.arx_core);
+    assert!(r2.arx_core.contains("\"undo\""), "a saga compensou");
 }

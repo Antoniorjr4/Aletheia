@@ -120,6 +120,12 @@ def resv (S : Sig) : List (List SOp) → Budget
   | [] => 0
   | f :: fs => resvF S f + resv S fs
 
+/-- O que o medidor do ARX confere antes de uma chamada: o custo dela e, se ela vai entrar num
+quadro de saga (é `compensable` e há saga aberta), o pior custo do seu compensador. Fora de uma
+saga não há o que compensar e nada é reservado. -/
+def need (S : Sig) (fs : List (List SOp)) (t : Nat) : Budget :=
+  S.cost t + (if S.compensable t && !fs.isEmpty then S.ccost t else 0)
+
 /-- Tira do quadro a operação mais recente com a chave `k` (a reconciliação a refutou). -/
 def unlogK (k : Nat) : List SOp → List SOp
   | [] => []
@@ -244,7 +250,7 @@ def run : Exp → List Val → AS → Res
       match ρ[k]? with
       | some (.cap id) =>
         if S.effect t ∈ c.grants id then
-          if ble (σ.spent + resv S σ.frames + S.acost t) c.limit then
+          if ble (σ.spent + resv S σ.frames + need S σ.frames t) c.limit then
             (.ok .unit, (σ.step S t v none true).push (.tool t id v none (S.compensable t)))
           else (.error (.err .other), σ)
         else (.error (.err .other), σ)
@@ -288,7 +294,7 @@ def run : Exp → List Val → AS → Res
       match ρ[j]?, ρ[κ]? with
       | some (.cap id), some (.cap kid) =>
         if S.effect t ∈ c.grants id then
-          if ble (σ.spent + resv S σ.frames + S.acost t) c.limit then
+          if ble (σ.spent + resv S σ.frames + need S σ.frames t) c.limit then
             match S.reply t kid 0 with
             | .done =>
               (.ok .unit, (σ.step S t v (some kid) true).push (.tool t id v (some kid) (S.compensable t)))
@@ -669,16 +675,38 @@ theorem resv_pushOp (S : Sig) (op : SOp) (fs : List (List SOp)) :
     | cons top rest => simp; omega
   · simp only [hc, Bool.false_eq_true, if_false]; simp
 
-/-- O passo de uma chamada aplicada: o medidor liquida o custo e a reserva cresce no máximo o
-compensador, o que somado cabe no custo contabilizado. -/
+/-- O passo de uma chamada aplicada: o medidor liquida o custo e a reserva cresce exatamente o
+compensador, se a operação entrou num quadro — o que o medidor conferiu (`need`). -/
 theorem step_resv (S : Sig) (t : Nat) (v : Val) (ko : Option Nat) (b : Bool) (σ : AS) :
-    (σ.step S t v ko b).spent + resv S (σ.step S t v ko b).frames ≤ σ.spent + resv S σ.frames + S.acost t := by
+    (σ.step S t v ko b).spent + resv S (σ.step S t v ko b).frames ≤ σ.spent + resv S σ.frames + need S σ.frames t := by
   intro d
-  have h := resv_pushOp S (t, v, ko) σ.frames d
-  simp only [AS.step_spent, AS.step_frames, Budget.add_apply, Sig.acost] at h ⊢
+  simp only [AS.step_spent, AS.step_frames, Budget.add_apply, need]
+  unfold pushOp
   by_cases hc : S.compensable t = true
-  · simp only [hc, if_true] at h ⊢; omega
-  · simp only [hc, Bool.false_eq_true, if_false] at h ⊢; simp at h ⊢; omega
+  · simp only [hc, if_true]
+    cases σ.frames with
+    | nil => simp
+    | cons top rest => simp; omega
+  · have hc' : S.compensable t = false := by simpa using hc
+    simp [hc']; omega
+
+/-- O medidor do ARX nunca confere mais do que o λ_Ath contabiliza. -/
+theorem need_le_acost (S : Sig) (fs : List (List SOp)) (t : Nat) : need S fs t ≤ S.acost t := by
+  intro d; unfold need Sig.acost
+  by_cases hc : S.compensable t = true
+  · simp only [hc, if_true, Bool.true_and]; split <;> simp
+  · simp [hc]
+
+theorem cost_le_need (S : Sig) (fs : List (List SOp)) (t : Nat) : S.cost t ≤ need S fs t := by
+  intro d; unfold need; split <;> simp
+
+theorem add_le_add₂ {a b c e : Budget} (h : a ≤ b) (h' : c ≤ e) : a + c ≤ b + e := by
+  intro d; have := h d; have := h' d; simp; omega
+
+theorem ble_mono₂ {a b c e L : Budget} (h : a ≤ b) (h' : c ≤ e) (hb : ble (b + e) L = true) :
+    ble (a + c) L = true := by
+  rw [Budget.ble_iff] at hb ⊢
+  intro d; have := hb d; have := h d; have := h' d; simp at *; omega
 
 /-- Refutar a operação que acabou de ser registrada devolve o quadro anterior. -/
 theorem unlogTop_pushOp (S : Sig) (t : Nat) (v : Val) (k : Nat) (fs : List (List SOp)) :
@@ -910,7 +938,7 @@ theorem sim_act {t k : Nat} {a : Exp} (hk : kd t = false) (iha : SimT S c cc kd 
     obtain ⟨oa, h₁, he⟩ := he
     obtain ⟨σ₁, X₁, r₁, p₁, hr₁, hX₁, hc₁⟩ := seq_ok iha hr hX hc h₁
     obtain ⟨id, hid, hg, _, hb, rfl⟩ := doAct_ok he
-    have hb' := ble_mono hr₁.spent hb
+    have hb' := ble_mono₂ hr₁.spent (need_le_acost S σ₁.frames t) hb
     refine ⟨(σ₁.step S t oa.v none true).push (.tool t id oa.v none (S.compensable t)),
       by simp [run, seqA, r₁, hid, hg, hb'], ?_⟩
     have h2 : Post S kd ⟨id :: oa.st.used, oa.st.spent + S.acost t, oa.st.calls, actW S t id oa.v oa.st.w,
@@ -918,7 +946,7 @@ theorem sim_act {t k : Nat} {a : Exp} (hk : kd t = false) (iha : SimT S c cc kd 
         ((σ₁.step S t oa.v none true).push (.tool t id oa.v none (S.compensable t))) P [.act t id oa.v] := by
       refine ⟨⟨?_, ?_, hr₁.calls, hr₁.next, ?_⟩, ?_, ?_, ?_, ?_⟩
       · simp [AS.push, AS.step, actW, hr₁.w]
-      · exact Budget.le_trans (step_resv S t oa.v none true σ₁) (add_le_add _ hr₁.spent)
+      · exact Budget.le_trans (step_resv S t oa.v none true σ₁) (add_le_add₂ hr₁.spent (need_le_acost S σ₁.frames t))
       · exact pushOp_top (by simp [hk]) hr₁.top
       · simp [AS.push, AS.step, pushOp_length]
       · simp [AS.push, AS.step, pushOp_tail]
@@ -1095,7 +1123,7 @@ theorem call_pending {t id kid n : Nat} {v : Val} {σ : AS} {o : St} {X P : List
     rw [hj, cvRun_append, cv_queries]; simp [cvAcc, cvStep]
   refine ⟨⟨⟨?_, ?_, hr.calls, hr.next, ?_⟩, ?_, ?_, ?_, ?_⟩, by rw [hcv]⟩
   · simp [σ₂, pendSt, callSt, hr.w]
-  · exact Budget.le_trans (step_resv S t v (some kid) (S.applied t kid) σ) (add_le_add _ hr.spent)
+  · exact Budget.le_trans (step_resv S t v (some kid) (S.applied t kid) σ) (add_le_add₂ hr.spent (need_le_acost S σ.frames t))
   · simpa [σ₂, pendSt, callSt] using pushOp_top (S := S) (v := v) (ko := some kid) (by simp [hkd]) hr.top
   · simp [σ₂, pendSt, pushOp_length]
   · simp [σ₂, pendSt, pushOp_tail]
@@ -1145,7 +1173,7 @@ theorem sim_call {t j κ n : Nat} {a h : Exp} (hkd : kd t = true) (iha : SimT S 
     obtain ⟨oa, h₁, he⟩ := he
     obtain ⟨σ₁, X₁, r₁, p₁, hr₁, hX₁, hc₁⟩ := seq_ok iha hr hX hc h₁
     obtain ⟨id, kid, hid, hkid, hg, _, _, _, hb, hcs⟩ := doCall_ok he
-    have hb' := ble_mono hr₁.spent hb
+    have hb' := ble_mono₂ hr₁.spent (need_le_acost S σ₁.frames t) hb
     rcases hcs with ⟨h0, rfl⟩ | ⟨h0, hrc, rfl⟩
     · -- `Done` na hora: o evento `tool` com a chave
       refine ⟨(σ₁.step S t oa.v (some kid) true).push (.tool t id oa.v (some kid) (S.compensable t)),
@@ -1155,7 +1183,7 @@ theorem sim_call {t j κ n : Nat} {a h : Exp} (hkd : kd t = true) (iha : SimT S 
           [.act t id oa.v, .settle kid .done] := by
         refine ⟨⟨?_, ?_, hr₁.calls, hr₁.next, ?_⟩, ?_, ?_, ?_, ?_⟩
         · simp [callSt, hr₁.w]
-        · exact Budget.le_trans (step_resv S t oa.v (some kid) true σ₁) (add_le_add _ hr₁.spent)
+        · exact Budget.le_trans (step_resv S t oa.v (some kid) true σ₁) (add_le_add₂ hr₁.spent (need_le_acost S σ₁.frames t))
         · simpa [callSt] using pushOp_top (S := S) (v := oa.v) (ko := some kid) (by simp [hkd]) hr₁.top
         · simp [pushOp_length]
         · simp [pushOp_tail]
@@ -1177,7 +1205,7 @@ theorem sim_call {t j κ n : Nat} {a h : Exp} (hkd : kd t = true) (iha : SimT S 
       exact ⟨u, σ', by simp [run, seqA, r], hu, hcv, hp⟩
     · obtain ⟨σ₁, X₁, r₁, p₁, hr₁, hX₁, hc₁⟩ := seq_ok iha hr hX hc h₁
       obtain ⟨id, kid, hid, hkid, hg, _, _, _, hb, hcs⟩ := doCall_timeout h₂
-      have hb' := ble_mono hr₁.spent hb
+      have hb' := ble_mono₂ hr₁.spent (need_le_acost S σ₁.frames t) hb
       rcases hcs with ⟨h0, rfl, rfl, rfl⟩ | ⟨h0, hrc, rfl, rfl, rfl⟩ | ⟨h0, hrc, oh, hoh, _, rfl, rfl, rfl⟩
       · -- recusa na hora: `tool_failed`; o ARX não liquida o medidor
         refine ⟨.err (.refusedNow kid), σ₁.push (.toolFailed t kid),
@@ -1553,7 +1581,7 @@ theorem push_closed {S : Sig} {c : Cfg} {σ : AS} (h : Inv S c σ) (e : AEv) (r 
 
 /-- O medidor de uma chamada aplicada: a reserva cobre o compensador dela. -/
 theorem step_closed {S : Sig} {c : Cfg} {σ : AS} {t : Nat} {v : Val} {ko : Option Nat} {b : Bool}
-    (hb : ble (σ.spent + resv S σ.frames + S.acost t) c.limit = true) :
+    (hb : ble (σ.spent + resv S σ.frames + need S σ.frames t) c.limit = true) :
     Inv S c (σ.step S t v ko b) ∧ Shape σ (σ.step S t v ko b) :=
   ⟨Budget.le_trans (step_resv S t v ko b σ) (Budget.ble_iff.mp hb),
     by simp [AS.step, pushOp_length], by simp [AS.step, pushOp_tail]⟩
@@ -1652,7 +1680,7 @@ theorem closed_call {t j κ n : Nat} {a h : Exp} (iha : ClosedT S c cc a) (ihh :
           · exact ⟨hp.1, hp.2⟩
           · -- `R0611`: a reserva da operação refutada é liberada
             refine ⟨fun d => ?_, ?_, ?_⟩
-            · have a := Budget.ble_iff.mp hb d; have b := cost_le_acost S t d
+            · have a := Budget.ble_iff.mp hb d; have b := cost_le_need S σ'.frames t d
               simp only [pendSt, AS.push_spent, AS.push_frames, AS.step_spent, AS.step_frames,
                 unlogTop_pushOp, Budget.add_apply] at a b ⊢; omega
             · simp [pendSt, unlogTop_pushOp]

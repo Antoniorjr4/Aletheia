@@ -162,6 +162,10 @@ impl Journal {
                 Some("resolved") => {
                     if d["status"] == "failed" {
                         refused = d["key"].clone();
+                        // `R0611`: a operação refutada sai da pilha de compensações
+                        if d["tool"].as_str().is_some_and(|t| compensable.contains(t)) {
+                            comp.pop();
+                        }
                     }
                     j.push_untimed("settle", json!({ "key": d["key"], "status": d["status"] }));
                 }

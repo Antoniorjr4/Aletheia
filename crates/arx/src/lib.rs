@@ -48,6 +48,16 @@ enum Unwind {
 struct SagaOp<'m> {
     tool: &'m ToolDecl,
     args: Vec<Value>,
+    /// A reserva do compensador (US$, s): separada do saldo quando o efeito entrou no quadro e
+    /// liberada quando a saga fecha, quando a compensação é liquidada ou quando a reconciliação
+    /// refuta a operação (`R0611`).
+    held: (f64, f64),
+}
+
+impl SagaOp<'_> {
+    fn key(&self) -> Option<u64> {
+        self.args.iter().find_map(|v| if let Value::Key(k) = v { Some(*k) } else { None })
+    }
 }
 
 /// Recuo entre tentativas de reconciliação, em segundos.
@@ -71,10 +81,17 @@ pub struct Meter {
     pub tok: u64,
     pub usd: f64,
     pub wall: f64,
+    /// A reserva de compensação (Rev13, M-IV): o pior custo declarado dos compensadores das
+    /// operações em sagas abertas. Não é gasto, mas não está disponível: toda reserva nova
+    /// confere `gasto + reserva + custo ≤ limite`, e a recuperação de uma falha encontra o que
+    /// precisa já separado.
+    pub held_usd: f64,
+    pub held_wall: f64,
 }
 
 impl Meter {
-    /// Reserva antes, liquida depois: se o pior custo não cabe no saldo, a chamada não começa.
+    /// Reserva antes, liquida depois: se o pior custo não cabe no saldo (o limite menos o gasto
+    /// e menos a reserva de compensação), a chamada não começa.
     pub fn reserve(&self, tok: u64, usd: f64, wall: f64, what: &str) -> Result<(), RtError> {
         let over = |name: &str, need: String, left: String| {
             rt("R0801", format!("BudgetExhausted: reserva de {need} para `{what}` excede o saldo de {name} ({left})"))
@@ -85,16 +102,32 @@ impl Meter {
             }
         }
         if let Some(l) = self.lim_usd {
-            if self.usd + usd > l + 1e-12 {
-                return Err(over("dólares", format!("US$ {usd:.4}"), format!("US$ {:.4}", l - self.usd)));
+            if self.usd + self.held_usd + usd > l + 1e-12 {
+                return Err(over(
+                    "dólares",
+                    format!("US$ {usd:.4}"),
+                    format!("US$ {:.4}", l - self.usd - self.held_usd),
+                ));
             }
         }
         if let Some(l) = self.lim_wall {
-            if self.wall + wall > l + 1e-9 {
-                return Err(over("tempo", format!("{wall:.1} s"), format!("{:.1} s", l - self.wall)));
+            if self.wall + self.held_wall + wall > l + 1e-9 {
+                return Err(over("tempo", format!("{wall:.1} s"), format!("{:.1} s", l - self.wall - self.held_wall)));
             }
         }
         Ok(())
+    }
+
+    /// Separa a reserva de um compensador.
+    pub fn hold(&mut self, usd: f64, wall: f64) {
+        self.held_usd += usd;
+        self.held_wall += wall;
+    }
+
+    /// Libera a reserva de um compensador.
+    pub fn release(&mut self, usd: f64, wall: f64) {
+        self.held_usd = (self.held_usd - usd).max(0.0);
+        self.held_wall = (self.held_wall - wall).max(0.0);
     }
 
     pub fn settle(&mut self, tok: u64, usd: f64, wall: f64) {
@@ -703,6 +736,11 @@ impl<'m> Arx<'m> {
         self.sagas.push(Vec::new());
         let r = self.block(body);
         let ops = self.sagas.pop().unwrap_or_default();
+        // O quadro fecha: as reservas dele voltam ao saldo. Se a saga falhou, cada compensação
+        // é liquidada a seguir com o custo real, que a reserva liberada cobre (`cc ≤ ccost`).
+        for op in &ops {
+            self.meter.release(op.held.0, op.held.1);
+        }
         let cause = match r {
             Ok(v) => {
                 self.journal.push(self.clock, "saga_commit", json!({ "compensable_ops": ops.len() }));
@@ -731,6 +769,16 @@ impl<'m> Arx<'m> {
                 Ok((out, lat)) => {
                     self.clock += lat;
                     self.meter.settle(0, comp.usd, lat);
+                    if comp.usd > op.held.0 + 1e-12 || lat > op.held.1 + 1e-9 {
+                        // A hipótese `cc ≤ ccost` falhou: o compensador custou mais do que o
+                        // contrato reservou. Fica no journal; o orçamento não é mais garantido.
+                        self.journal.push(
+                            self.clock,
+                            "compensation_overrun",
+                            json!({ "tool": comp.name.name, "held_usd": op.held.0, "held_wall": op.held.1,
+                                    "usd": comp.usd, "wall": lat }),
+                        );
+                    }
                     self.journal.push(
                         self.clock,
                         "compensate",
@@ -920,7 +968,16 @@ impl<'m> Arx<'m> {
                 Err(Unwind::Resume(v))
             }
             Some(Err(m)) => {
-                self.journal.push(self.clock, "resolved", json!({ "key": format!("k{key}"), "status": "failed" }));
+                // `R0611`: a reconciliação provou que a operação não aconteceu. Ela sai do quadro
+                // (o campo `tool` só aparece aqui, para a vista do núcleo desempilhar; o `resolved`
+                // de `Done` fica como era, e os journals gravados continuam reproduzíveis)
+                // da saga (não há o que estornar) e a reserva do compensador é liberada.
+                self.unlog(key);
+                self.journal.push(
+                    self.clock,
+                    "resolved",
+                    json!({ "key": format!("k{key}"), "tool": tool, "status": "failed" }),
+                );
                 self.line(format!("Pending[k{key}] resolvida"), m.clone(), 0.0, Some((false, "Failed".into())));
                 Err(rt("R0611", format!("`{tool}` não aplicada (reconciliado): {m}")).into())
             }
@@ -935,6 +992,31 @@ impl<'m> Arx<'m> {
                 self.block(els)
             }
         }
+    }
+
+    /// Tira dos quadros abertos a operação de chave `key` (a mais interna primeiro) e libera a
+    /// reserva dela.
+    fn unlog(&mut self, key: u64) {
+        for frame in self.sagas.iter_mut().rev() {
+            if let Some(i) = frame.iter().rposition(|op| op.key() == Some(key)) {
+                let op = frame.remove(i);
+                self.meter.release(op.held.0, op.held.1);
+                return;
+            }
+        }
+    }
+
+    /// A reserva do compensador de `t`: o custo e a latência declarados da ferramenta nomeada em
+    /// `compensable by`.
+    fn comp_reserve(&self, t: &ToolDecl) -> (f64, f64) {
+        if t.class != EffClass::Compensable {
+            return (0.0, 0.0);
+        }
+        t.compensator
+            .as_ref()
+            .and_then(|c| self.tools.get(c.name.as_str()))
+            .map(|c| (c.usd, c.latency))
+            .unwrap_or((0.0, 0.0))
     }
 
     fn binary(&mut self, op: BinOp, l: &Expr, r: &Expr) -> R<Value> {
@@ -1052,8 +1134,11 @@ impl<'m> Arx<'m> {
                 _ => return Err(rt("R0109", "contrato não devolveu Bool").into()),
             }
         }
+        // O que o medidor confere (`need` do modelo): o custo da chamada e, se ela vai entrar
+        // num quadro de saga, o pior custo do seu compensador. Fora de saga não há o que compensar.
+        let held = if self.sagas.is_empty() { (0.0, 0.0) } else { self.comp_reserve(t) };
         if !self.obligation {
-            self.meter.reserve(0, t.usd, t.latency, name)?;
+            self.meter.reserve(0, t.usd + held.0, t.latency + held.1, name)?;
         }
         let shown: Vec<String> = args.iter().map(|v| v.show()).collect();
         let key_n = args.iter().find_map(|v| if let Value::Key(k) = v { Some(*k) } else { None });
@@ -1083,7 +1168,8 @@ impl<'m> Arx<'m> {
                 // Compensar é total sobre "aconteceu" e "não aconteceu": a operação em aberto entra na saga.
                 if t.class == EffClass::Compensable {
                     if let Some(frame) = self.sagas.last_mut() {
-                        frame.push(SagaOp { tool: t, args: args.clone() });
+                        frame.push(SagaOp { tool: t, args: args.clone(), held });
+                        self.meter.hold(held.0, held.1);
                     }
                 }
                 self.journal.push(
@@ -1106,7 +1192,8 @@ impl<'m> Arx<'m> {
         self.meter.settle(0, t.usd, lat);
         if t.class == EffClass::Compensable {
             if let Some(frame) = self.sagas.last_mut() {
-                frame.push(SagaOp { tool: t, args: args.clone() });
+                frame.push(SagaOp { tool: t, args: args.clone(), held });
+                self.meter.hold(held.0, held.1);
             }
         }
         self.journal.push(
