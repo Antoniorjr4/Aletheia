@@ -213,8 +213,26 @@ open Aletheia
 /-- info: 'Aletheia.Arx.Counter.top_level_await_differs' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Arx.Counter.top_level_await_differs
 
-/-- info: 'Aletheia.T6_keys' depends on axioms: [propext, Quot.sound] -/
+/-- info: 'Aletheia.T6_keys' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms T6_keys
+
+/-- info: 'Aletheia.loggedK_preserves' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms loggedK_preserves
+
+/-- info: 'Aletheia.KeyedSagaExample.refuted_not_compensated' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms KeyedSagaExample.refuted_not_compensated
+
+/-- info: 'Aletheia.KeyedSagaExample.dishonest_refusal_strands' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms KeyedSagaExample.dishonest_refusal_strands
+
+/-- info: 'Aletheia.Arx.arx_budget_closed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Arx.arx_budget_closed
+
+/-- info: 'Aletheia.Arx.Counter.comp_cost_reserved' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Arx.Counter.comp_cost_reserved
+
+/-- info: 'Aletheia.Arx.call_refuted' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Arx.call_refuted
 
 /-- info: 'Aletheia.compensate_restoresK' depends on axioms: [propext] -/
 #guard_msgs in #print axioms compensate_restoresK

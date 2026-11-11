@@ -771,9 +771,9 @@ theorem sound (hO : c.oracle.Ok) {Γ : List Bind} {pc : Lab} {e : Exp} {τ : Ty}
       have hfree : id ∉ oa.st.used := by
         obtain ⟨m, hm, _, hm1⟩ := hL.seq hs hD hca j id hid
         simp at hm; subst hm; exact hm1 rfl
-      have hble : ble (oa.st.spent + S.cost t) c.limit = true :=
+      have hble : ble (oa.st.spent + S.acost t) c.limit = true :=
         ble_iff.mpr fun d => by have := hB d; have := (hwa d).2; simp at *; omega
-      exact .inl ⟨⟨.unit, ⟨id :: oa.st.used, oa.st.spent + S.cost t, oa.st.calls,
+      exact .inl ⟨⟨.unit, ⟨id :: oa.st.used, oa.st.spent + S.acost t, oa.st.calls,
         actW S t id oa.v oa.st.w, actC S t id oa.v oa.st.comp, oa.st.next, oa.st.keys⟩,
         oa.tr ++ actEvs S t id oa.v⟩,
         by simp [eval, hea, doAct, hid, hgrant, hfree, hble], .unit, hwa.trans (Within.step _ _),
@@ -892,11 +892,11 @@ theorem sound (hO : c.oracle.Ok) {Γ : List Bind} {pc : Lab} {e : Exp} {τ : Ty}
         obtain ⟨m, hm, _, hm1⟩ := hL.seq hs hD hca κ kid hkid
         simp [hjκ] at hm; subst hm; exact hm1 rfl
       have hkk : kid ∉ oa.st.keys := ((hK.step (eval_mono_ok hea) hca.sub).cap κ kid hkid).2
-      have hble : ble (oa.st.spent + S.cost t) c.limit = true :=
+      have hble : ble (oa.st.spent + S.acost t) c.limit = true :=
         ble_iff.mpr fun d => by have := hB d; have := (hwa d).2; simp at *; omega
       have hcon : Consumed ρ (consumes (.call t j κ a n e)) s.used (kid :: id :: oa.st.used) :=
         Consumed.seq hs hL hca (Consumed.double hid hkid hjκ)
-      have hwc : Within s.spent (oa.st.spent + S.cost t) (βa + S.cost t) := hwa.trans (Within.step _ _)
+      have hwc : Within s.spent (oa.st.spent + S.acost t) (βa + S.acost t) := hwa.trans (Within.step _ _)
       have hev : eval S c (.call t j κ a n e) ρ s = bnd (eval S c a ρ s) (fun o =>
           doCall S c t ρ[j]? ρ[κ]? n (fun id s' => eval S c e [.pend t id] s') o) := rfl
       rw [hev, hea, bnd_ok]
@@ -914,7 +914,7 @@ theorem sound (hO : c.oracle.Ok) {Γ : List Bind} {pc : Lab} {e : Exp} {τ : Ty}
         cases hr : (reconcile S t kid 1 n).2 with
         | done => exact .inl ⟨_, rfl, .unit, hwc, hcon⟩
         | failed =>
-          exact .inr ⟨.refused kid, callSt S t id kid oa.v oa.st (S.applied t kid),
+          exact .inr ⟨.refused kid, recSt S t id kid oa.v oa.st .failed,
             oa.tr ++ (.pending t kid oa.v :: ((reconcile S t kid 1 n).1 ++ [.settle kid .failed])),
             by simp [pre] <;> rfl, hwc, hcon.toPartial, trivial⟩
         | transferred =>

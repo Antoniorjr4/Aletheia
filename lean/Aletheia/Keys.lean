@@ -250,6 +250,12 @@ theorem spent_callSt {S : Sig} {t id kid : Nat} {v : Val} {s : St} {b : Bool} {x
   · exact .inl (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ h))
   · exact .inr h
 
+theorem spent_recSt {S : Sig} {t id kid : Nat} {v : Val} {s : St} {e : KEnd} {x : Nat}
+    (h : Spent s x) : Spent (recSt S t id kid v s e) x := by
+  rcases h with h | h
+  · exact .inl (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ h))
+  · exact .inr h
+
 theorem spent_callSt0 {S : Sig} {t id kid : Nat} {s : St} {x : Nat}
     (h : Spent s x) : Spent (callSt0 S t id kid s) x := by
   unfold callSt0
@@ -314,7 +320,7 @@ theorem keys_preserves : Preserves S c True True KeysOk where
     by_cases h : kid = k <;> simp [keyEvs, keyOf, h]
   callRec := by
     intro _ s t id kid n v e _ _ hk₁ hk₂ hr _
-    refine keysOk_call (fun _ h => spent_callSt h) (.inl (List.mem_cons_self ..)) (free_of hk₁ hk₂)
+    refine keysOk_call (fun _ h => spent_recSt h) (.inl (List.mem_cons_self ..)) (free_of hk₁ hk₂)
       (keyEvs_rec S t kid n v [.settle kid e] e (fun k => keyEvs_settle k kid e)) ?_
     have := reconcile_probes S t kid 1 n
     rw [hr] at this

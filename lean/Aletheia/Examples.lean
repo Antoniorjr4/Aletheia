@@ -53,7 +53,7 @@ def remediate : Exp :=
     (.let_ (.endorse 0 (.var 0) (.val (.int 3)))
       (.act 0 3 (.var 0)))
 
-def βR : Budget := (0 + S.mcost 0) + ((0 + 0) + (0 + S.cost 0))
+def βR : Budget := (0 + S.mcost 0) + ((0 + 0) + (0 + S.acost 0))
 
 theorem remediate_typed : HasType S Γ .T remediate .unit .T βR :=
   .let_ (.infer (.var rfl))

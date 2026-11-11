@@ -160,7 +160,7 @@ theorem ext_doAct (S : Sig) (c : Cfg) (t : Nat) (cv : Option Val) (o : Out) :
     by_cases hg : S.effect t ∈ c.grants id
     · by_cases hu : id ∈ o.st.used
       · simp only [hg, hu, if_true]; exact ⟨fun _ hb _ => (by cases hb), fun _ _ _ hb => (by cases hb), fun hs => hs⟩
-      · by_cases hb : ble (o.st.spent + S.cost t) c.limit = true
+      · by_cases hb : ble (o.st.spent + S.acost t) c.limit = true
         · simp only [hg, hu, hb, if_true, if_false]
           exact ⟨fun b h _ => (by cases h; exact ⟨by simp [pre], rfl⟩), fun _ _ _ h => (by cases h),
             fun _ => trivial⟩
@@ -199,7 +199,7 @@ theorem doCall_withTr (S : Sig) (c : Cfg) (t : Nat) (cv kv : Option Val) (n : Na
       · simp [hg, hu, withTr]
       · by_cases hk : kid ∈ id :: o.st.used ∨ kid ∈ o.st.keys
         · simp only [hg, hu, hk, if_true, if_false]; rfl
-        · by_cases hb : ble (o.st.spent + S.cost t) c.limit = true
+        · by_cases hb : ble (o.st.spent + S.acost t) c.limit = true
           · simp only [hg, hu, hk, hb, if_true, if_false]
             cases hr : S.reply t kid 0
             · simp [withTr]
@@ -316,6 +316,8 @@ theorem doCall_ni {S : Sig} {c₁ c₂ : Cfg} {t n : Nat} {cv kv : Option Val} {
   subst hv
   have hcs : ∀ (id kid : Nat) (b : Bool), SameW (callSt S t id kid v st₁ b) (callSt S t id kid v st₂ b) :=
     fun id kid b => ⟨by simp [callSt, hw.1], by simp [callSt, hw.2.1], by simp [callSt, hw.2.2]⟩
+  have hrs : ∀ (id kid : Nat) (e : KEnd), SameW (recSt S t id kid v st₁ e) (recSt S t id kid v st₂ e) :=
+    fun id kid e => ⟨by simp [recSt, hw.1], by simp [recSt, hw.2.1], by simp [recSt, hw.2.2]⟩
   rcases settled_cases h₁ with ⟨r₁, e₁⟩ | ⟨q₁, u₁, t₁, e₁⟩ <;>
     rcases settled_cases h₂ with ⟨r₂, e₂⟩ | ⟨q₂, u₂, t₂, e₂⟩
   · obtain ⟨id, kid, hid, hkid, _, _, _, _, _, hc₁⟩ := doCall_ok e₁
@@ -358,7 +360,7 @@ theorem doCall_ni {S : Sig} {c₁ c₂ : Cfg} {t n : Nat} {cv kv : Option Val} {
       | (rw [hk₁] at hk₂; cases hk₂; done)
       | skip
     · exact .inr (.inl ⟨_, _, _, _, rfl, rfl, hw⟩)
-    · exact .inr (.inl ⟨_, _, _, _, rfl, rfl, hcs id kid _⟩)
+    · exact .inr (.inl ⟨_, _, _, _, rfl, rfl, hrs id kid _⟩)
     · dsimp only at hoh₁ hoh₂
       rcases pure_eval e hpure c₁ c₂ [.pend t kid] (callSt S t id kid v st₁ (S.applied t kid))
           (callSt S t id kid v st₂ (S.applied t kid)) with ⟨vh, trh, hp₁, hp₂⟩ | ⟨hp₁, _⟩

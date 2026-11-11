@@ -200,7 +200,7 @@ theorem next_preserves : Preserves S c True True (fun s s' tr => s'.next = s.nex
     intro _ s t id kid n v e _ _ _ _ _ _
     have := mints_queries (reconcile_queries S t kid 1 n)
     rw [mints_cons_of rfl, mints_append, this, show mints [Ev.settle kid e] = 0 from rfl]
-    simp [callSt]
+    simp [recSt]
   callAbort := by
     intro _ s s₃ t id kid n v tr _ _ _ _ _ hh _
     have := mints_queries (reconcile_queries S t kid 1 n)

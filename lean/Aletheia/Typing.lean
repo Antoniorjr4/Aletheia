@@ -110,7 +110,7 @@ inductive HasType (S : Sig) : List Bind → Lab → Exp → Ty → Lab → Budge
       S.effect t ∈ E →
       HasType S Γ pc a (S.arg t) ιa βa →
       low ιa →
-      HasType S Γ pc (.act t k a) .unit .T (βa + S.cost t)
+      HasType S Γ pc (.act t k a) .unit .T (βa + S.acost t)
   | drop {Γ pc k E} :
       Γ[k]? = some (.cap E) →
       HasType S Γ pc (.drop k) .unit .T 0
@@ -149,7 +149,7 @@ inductive HasType (S : Sig) : List Bind → Lab → Exp → Ty → Lab → Budge
       HasType S [.pend] .T e S.ret ιe βe →
       pureH e = true →
       consumes e 0 = some 1 →
-      HasType S Γ pc (.call t c κ a n e) .unit .T (βa + S.cost t)
+      HasType S Γ pc (.call t c κ a n e) .unit .T (βa + S.acost t)
   /-- `mint e`: a chave fresca no índice 0 de `e`, consumida **exatamente uma vez em todo
   caminho** (E1, o `E1104` do `athc`). Cunhar muda o estado observável (a ordem das chaves),
   então exige `pc ⊒ Endorsed`, como toda decisão com efeito. -/
