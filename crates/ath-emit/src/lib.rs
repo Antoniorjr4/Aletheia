@@ -201,7 +201,34 @@ pub fn python(m: &Module, _check: &CheckResult, codex: &Codex, source: &str) -> 
     }
     let _ = writeln!(out, "\n");
     out.push_str(&agents);
-    let _ = writeln!(out, "\nPROGRAM = Program(MODULE, CODEX_ROOT, TOOLS, MODELS, AGENTS)");
+    // as autoridades declaradas e os tratadores com argumento `Trusted` (só quando há autoridade:
+    // um módulo sem ela é emitido como antes)
+    let authorities: serde_json::Map<String, Json> = m
+        .items
+        .iter()
+        .filter_map(|i| if let Item::Authority(d) = i { Some((d.name.name.clone(), json!(d.key))) } else { None })
+        .collect();
+    if authorities.is_empty() {
+        let _ = writeln!(out, "\nPROGRAM = Program(MODULE, CODEX_ROOT, TOOLS, MODELS, AGENTS)");
+    } else {
+        let mut trusted: Vec<Json> = Vec::new();
+        for i in &m.items {
+            if let Item::Agent(a) = i {
+                for h in &a.handlers {
+                    let t = |p: &ath_syntax::ast::Param| {
+                        matches!(&p.ty, ath_syntax::ast::TypeExpr::Labeled(_, ath_syntax::ast::Label::Trusted, _))
+                    };
+                    if h.params.iter().any(t) {
+                        trusted.push(json!(format!("{}.{}", a.name.name, h.event.name)));
+                    }
+                }
+            }
+        }
+        let _ = writeln!(out, "\nAUTHORITIES = {}", py(&Json::Object(authorities)));
+        let _ = writeln!(out, "TRUSTED_ARGS = {}", py(&Json::Array(trusted)));
+        let _ =
+            writeln!(out, "PROGRAM = Program(MODULE, CODEX_ROOT, TOOLS, MODELS, AGENTS, AUTHORITIES, TRUSTED_ARGS)");
+    }
     Ok(out)
 }
 

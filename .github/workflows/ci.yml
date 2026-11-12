@@ -83,6 +83,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: scripts/rc-smoke.sh
         run: NO_COLOR=1 scripts/rc-smoke.sh
+      # v1.0-RC2: a fronteira entre autorização, persistência e efeito. SIGKILL entre a
+      # autorização e a intenção, quatro processos disputando as mesmas concessões, um executor
+      # por WAL, e concessões / fotografia / pedido sem a assinatura da autoridade declarada.
+      - name: scripts/rc2-smoke.sh
+        run: NO_COLOR=1 scripts/rc2-smoke.sh
 
   lean:
     # O núcleo λ_Ath mecanizado: T1 (preservação e progresso, com capacidades lineares e

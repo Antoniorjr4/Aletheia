@@ -132,11 +132,12 @@ impl Parser {
         match self.peek() {
             Tok::Type => self.type_decl().map(Item::Type),
             Tok::Model => self.model_decl().map(Item::Model),
+            Tok::Authority => self.authority_decl().map(Item::Authority),
             Tok::Tool => self.tool_decl().map(Item::Tool),
             Tok::Policy => self.policy_decl().map(Item::Policy),
             Tok::Agent => self.agent_decl().map(Item::Agent),
             other => Err(self.err(format!(
-                "esperado `type`, `model`, `tool`, `policy` ou `agent`, encontrado {}",
+                "esperado `type`, `model`, `authority`, `tool`, `policy` ou `agent`, encontrado {}",
                 other.describe()
             ))),
         }
@@ -190,6 +191,25 @@ impl Parser {
         }
         self.expect(Tok::RBrace)?;
         Ok(ModelDecl { name, props, meta })
+    }
+
+    fn authority_decl(&mut self) -> PResult<AuthorityDecl> {
+        self.expect(Tok::Authority)?;
+        let name = self.ident()?;
+        self.expect(Tok::LBrace)?;
+        let field = self.ident()?;
+        if field.name != "key" {
+            return Err(self.err(format!("uma autoridade declara `key`, encontrado `{}`", field.name)));
+        }
+        self.expect(Tok::Assign)?;
+        let key_span = self.span();
+        let Tok::Str(key) = self.peek().clone() else {
+            return Err(self.err("esperada a chave pública entre aspas (`ed25519:…`)".to_string()));
+        };
+        self.bump();
+        self.eat(&Tok::Comma);
+        self.expect(Tok::RBrace)?;
+        Ok(AuthorityDecl { name, key, key_span })
     }
 
     fn params(&mut self) -> PResult<Vec<Param>> {

@@ -557,6 +557,22 @@ impl<'m> Ctx<'m> {
                 Item::Model(d) => {
                     self.models.insert(d.name.name.clone(), d);
                 }
+                Item::Authority(d) => {
+                    // a forma da chave é conferida aqui; o ponto da curva, na carga (`arx::sign`)
+                    let hex = d.key.strip_prefix("ed25519:");
+                    if !hex.is_some_and(|h| h.len() == 64 && h.bytes().all(|b| b.is_ascii_hexdigit())) {
+                        self.push(
+                            Diag::new(
+                                E0,
+                                "E0426",
+                                format!("chave inválida na autoridade `{}`", d.name.name),
+                                d.key_span,
+                                "esperado `ed25519:` e 64 dígitos hexadecimais",
+                            )
+                            .help("gere um par com `athc keygen --out chave` e declare a chave pública impressa"),
+                        );
+                    }
+                }
                 Item::Tool(d) => {
                     self.tools.insert(d.name.name.clone(), d);
                 }

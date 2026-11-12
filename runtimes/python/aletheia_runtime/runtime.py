@@ -106,9 +106,13 @@ def decimal(x: str):
 class Program:
     """Metadados que o emissor gera a partir do programa verificado."""
 
-    def __init__(self, module: str, codex_root: str, tools: dict, models: dict, agents: dict):
+    def __init__(self, module: str, codex_root: str, tools: dict, models: dict, agents: dict,
+                 authorities: dict = None, trusted_args: list = None):
         self.module, self.codex_root = module, codex_root
         self.tools, self.models, self.agents = tools, models, agents
+        # `authority nome { key = … }` e os tratadores `Agente.evento` com argumento `Trusted`
+        self.authorities = authorities or {}
+        self.trusted_args = trusted_args or []
 
 
 class Runtime:
@@ -135,6 +139,12 @@ class Runtime:
         # a avaliação em curso reivindicou e a identidade da execução
         self.grants: list = []
         self.spent: set = set()
+        # concessão → hash da intenção do WAL que o consumo paga (o registro de consumo do ARX)
+        self.owners: dict = {}
+        self.spent_view = None
+        self.args_attestation = None  # (argumentos como escritos, assinatura)
+        self._barred: set = set()
+        self._grant_auth: list = []
         self.run_id = ""
         self._claim: list = []
         self._linear = False
@@ -152,6 +162,16 @@ class Runtime:
         fn, params = h
         if len(args) != len(params):
             raise RtErr("R0002", f"`{agent}.{event}` recebe {len(params)} argumento(s)")
+        # os argumentos `Trusted` só valem com a assinatura da autoridade declarada (`Arx::run`)
+        if self.p.authorities and f"{agent}.{event}" in self.p.trusted_args:
+            by = None
+            if self.args_attestation is not None:
+                raw, sig = self.args_attestation
+                payload = self.run_id + "\n" + blake3.hexdigest("\x1f".join(raw).encode("utf-8"))
+                by = self._signer("args", payload, sig)
+            if by is None:
+                raise RtErr("R0636", f"`{agent}.{event}` recebe um argumento `Trusted` sem a assinatura de uma autoridade do módulo")
+            self.journal.push(self.clock, "attested", {"what": "args", "authority": by})
         self.agent = a
         b = a["budget"]
         self.meter.lim_tok = int(b["tok"]) if "tok" in b else None
@@ -260,6 +280,21 @@ class Runtime:
             return Key(k)
         raise RtErr("R0502", "`mint` não autorizado por esta capacidade")
 
+    def _signer(self, kind: str, payload: str, sig):
+        """A autoridade declarada cuja assinatura sobre a carga confere, se alguma."""
+        from . import ed25519
+
+        for name, key in self.p.authorities.items():
+            if ed25519.verify_tagged(key, kind, payload, sig):
+                return name
+        return None
+
+    def _attest_trusted(self) -> None:
+        """Com autoridade declarada, `s.…` só é consultado com a assinatura dela sobre a
+        fotografia. O mundo simulado deste runtime não tem de onde apresentá-la: recusa."""
+        if self.p.authorities:
+            raise RtErr("R0635", "a fotografia confiável não tem a assinatura de uma autoridade do módulo: `s.…` não é consultado")
+
     # Intrínsecos de estado confiável: mesmo snapshot para o prompt e a política.
     def _log_snapshot(self) -> None:
         """A fotografia entra no journal uma vez, na primeira leitura de `s.…` (como no ARX)."""
@@ -279,11 +314,13 @@ class Runtime:
     def inventory(self, name: str) -> str:
         """`s.inventory("k")`: o inventário confiável `k`, para o prompt."""
         self._log_snapshot()
+        self._attest_trusted()
         return ", ".join(self.snapshot.get("inventories", {}).get(name, []))
 
     def member(self, name: str, x) -> bool:
         """`s.member("k", x)`: `x` (texto, ou inteiro na grafia decimal) está no inventário `k`."""
         self._log_snapshot()
+        self._attest_trusted()
         if type(x) is int:
             x = str(x)
         return type(x) is str and x in self.snapshot.get("inventories", {}).get(name, [])
@@ -291,6 +328,7 @@ class Runtime:
     def within(self, name: str, x) -> bool:
         """`s.within("k", x)`: `x` (decimal) não passa do limite confiável `k`; falha fechado."""
         self._log_snapshot()
+        self._attest_trusted()
         inv = self.snapshot.get("inventories", {}).get(name, [])
         lim = decimal(inv[0]) if inv else None
         v = decimal(str(x)) if type(x) in (int, str) else None
@@ -300,6 +338,7 @@ class Runtime:
         """`s.binds("r", x1, …, xn)`: a tupla é uma linha `c1|…|cn` da relação confiável `r`
         (decimais comparados pelo valor). A linha casada é a identidade da autorização."""
         self._log_snapshot()
+        self._attest_trusted()
         vals = [str(x) if type(x) is int else x for x in xs]
         if not all(type(x) is str for x in vals):
             return False
@@ -324,8 +363,17 @@ class Runtime:
         self._linear = True
         if not self._grants_logged:
             self._grants_logged = True
-            live = [dict(g) for g in self.grants if g["run"] == self.run_id and g["id"] not in self.spent]
-            self.journal.push(self.clock, "grants", {"run": self.run_id, "live": live})
+            # com autoridade declarada, só vale a concessão que ela assinou
+            self._grant_auth = [self._signer("grant", g["id"], g.get("sig")) for g in self.grants]
+            signed = bool(self.p.authorities)
+            if signed:
+                self._barred = {i for i, a in enumerate(self._grant_auth) if a is None}
+            live = [dict(g) for i, g in enumerate(self.grants)
+                    if g["run"] == self.run_id and g["id"] not in self.spent and i not in self._barred]
+            d = {"run": self.run_id, "live": live}
+            if signed:
+                d["unauthenticated"] = [self.grants[i]["id"] for i in sorted(self._barred)]
+            self.journal.push(self.clock, "grants", d)
         vals = [str(x) if type(x) is int else x for x in xs]
         if not all(type(x) is str for x in vals):
             return False
@@ -337,7 +385,7 @@ class Runtime:
             return da is not None and db is not None and da == db
 
         for i, g in enumerate(self.grants):
-            if g["run"] != self.run_id or g["id"] in self.spent or i in self._claim or g["op"] != op:
+            if g["run"] != self.run_id or g["id"] in self.spent or i in self._barred or i in self._claim or g["op"] != op:
                 continue
             if len(g["args"]) == len(vals) and all(same(c, x) for c, x in zip(g["args"], vals)):
                 self._claim.append(i)
@@ -362,21 +410,27 @@ class Runtime:
                 raise ValueError(f"concessão {n}: o `id` não confere com o conteúdo")
             if any(x["id"] == gid for x in self.grants):
                 raise ValueError(f"concessão {n}: repetida")
-            self.grants.append({"id": gid, "op": op, "args": args, "origin": origin, "run": run, "nonce": nonce})
+            rec = {"id": gid, "op": op, "args": args, "origin": origin, "run": run, "nonce": nonce}
+            if isinstance(g.get("sig"), str):
+                rec["sig"] = g["sig"]
+            self.grants.append(rec)
 
     def mentions(self, name: str, x) -> bool:
         """`s.mentions("k", x)`: `x`, não vazio, aparece literalmente num texto confiável `k`."""
         self._log_snapshot()
+        self._attest_trusted()
         if type(x) is int:
             x = str(x)
         return type(x) is str and x != "" and any(x in s for s in self.snapshot.get("inventories", {}).get(name, []))
 
     def managed(self) -> str:
         self._log_snapshot()
+        self._attest_trusted()
         return ", ".join(self.snapshot["managed"])
 
     def telemetry(self) -> str:
         self._log_snapshot()
+        self._attest_trusted()
         out = []
         for name in self.snapshot["managed"]:
             cpu = self.snapshot["cpu_pct"].get(name, "n/d")
@@ -386,10 +440,12 @@ class Runtime:
 
     def is_managed(self, deploy: str) -> bool:
         self._log_snapshot()
+        self._attest_trusted()
         return type(deploy) is str and deploy in self.snapshot["managed"]
 
     def scale_justified(self, deploy: str, to: int) -> bool:
         self._log_snapshot()
+        self._attest_trusted()
         if not self.is_managed(deploy) or type(to) is not int:
             return False
         current = self.snapshot["replicas"].get(deploy)
@@ -460,12 +516,8 @@ class Runtime:
                 self.journal.push(self.clock, "contract_refused", {"tool": name})
                 raise RtErr("R0630", f"o contrato `requires` de `{name}` recusou os argumentos")
             rows, self._auth = self._auth, []
-            for i in claimed:
-                g = self.grants[i]
-                self.spent.add(g["id"])
-                rows.append({"grant": g["id"], "op": g["op"], "args": g["args"], "origin": g["origin"], "run": g["run"]})
-            if rows:
-                self.journal.push(self.clock, "authorized", {"tool": name, "by": rows})
+        else:
+            claimed, rows = [], []
         # o que o medidor confere (`need`): o custo da chamada e, dentro de saga, o pior do compensador
         held_c = self._comp_reserve(t) if self.sagas else (0.0, 0.0)
         if not self.obligation:
@@ -474,13 +526,38 @@ class Runtime:
         key = f"k{key_n}" if key_n is not None else None
         from .world import HostFailed, HostTimeout
 
-        # M-III: a intenção é persistida antes do envio
-        if key_n is not None and self.wal is not None:
+        # A seção crítica da autorização (v1.0-RC2, `lean/Aletheia/Txn.lean`), na ordem do ARX:
+        # intenção (citando as concessões) → consumo → envio. Este runtime é a referência
+        # semântica da ordem; o registro durável do consumo e as travas entre processos são do ARX.
+        walled = key_n is not None and self.wal is not None
+        if walled:
             self.wal.nth += 1
             self.wal.ord[key_n] = self.wal.nth
-            self._wlog("intent", {"key": f"k{key_n}", "tool": name, "provider": t["provider"], "obligation": "reconcile",
-                                  "saga": self.saga_ids[-1] if self.saga_ids else None,
-                                  "args": [to_json(a) for a in args]})
+            self._wcrash("authorized", key_n)
+        taken = next((self.grants[i]["id"] for i in claimed if self.grants[i]["id"] in self.spent), None)
+        if taken is not None:
+            self.journal.push(self.clock, "contract_refused", {"tool": name, "linear": True, "taken": taken})
+            raise RtErr("R0632", f"`{name}`: a concessão que autorizava estes argumentos foi consumida por outro executor")
+        ids = [self.grants[i]["id"] for i in claimed]
+        if walled:
+            d = {"key": f"k{key_n}", "tool": name, "provider": t["provider"], "obligation": "reconcile",
+                 "saga": self.saga_ids[-1] if self.saga_ids else None, "args": [to_json(a) for a in args]}
+            if ids:
+                d["grants"] = ids
+            self._wlog("intent", d)
+            self._wcrash("logged", key_n)
+        intent_hash = self.wal.log.entries[-1].get("hash") if walled else None
+        for i in claimed:
+            g = self.grants[i]
+            self.spent.add(g["id"])
+            self.owners[g["id"]] = intent_hash
+            row = {"grant": g["id"], "op": g["op"], "args": g["args"], "origin": g["origin"], "run": g["run"]}
+            if i < len(self._grant_auth) and self._grant_auth[i] is not None:
+                row["authority"] = self._grant_auth[i]
+            rows.append(row)
+        if rows:
+            self.journal.push(self.clock, "authorized", {"tool": name, "by": rows})
+        if walled:
             self._wcrash("intent", key_n)
         try:
             try:
@@ -572,6 +649,17 @@ class Runtime:
                 self._wlog("escalate", {"key": key, "reason": "ferramenta ausente do programa"})
                 continue
             kn = int(key[1:])
+            # intenção que cita concessões: sem o consumo, a operação não saiu (`Txn.lean`)
+            cited = d.get("grants") or []
+            if cited:
+                if self.spent_view is None:
+                    self._wlog("escalate", {"key": key, "reason": "registro de consumo indisponível", "attempts": 0})
+                    continue
+                mine = st.hashes.get(key)
+                if not all(g in self.spent_view and self.spent_view[g] == mine for g in cited):
+                    self._wlog("close", {"key": key, "status": "failed", "evidence": "recovery:unspent",
+                                         "attempts": 0, "released": cited})
+                    continue
             args = [self._arg_from_wal(k, j) for k, j in zip(decl.get("params", []), d.get("args", []))]
             outcome, tries = None, 0
             if decl["provider"] != "opaque":

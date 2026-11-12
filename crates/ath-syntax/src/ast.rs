@@ -45,6 +45,7 @@ pub struct Module {
 pub enum Item {
     Type(TypeDecl),
     Model(ModelDecl),
+    Authority(AuthorityDecl),
     Tool(ToolDecl),
     Policy(PolicyDecl),
     Agent(AgentDecl),
@@ -55,6 +56,7 @@ impl Item {
         match self {
             Item::Type(d) => &d.name,
             Item::Model(d) => &d.name,
+            Item::Authority(d) => &d.name,
             Item::Tool(d) => &d.name,
             Item::Policy(d) => &d.name,
             Item::Agent(d) => &d.name,
@@ -69,11 +71,22 @@ impl Item {
         match self {
             Item::Type(_) => "type",
             Item::Model(_) => "model",
+            Item::Authority(_) => "authority",
             Item::Tool(_) => "tool",
             Item::Policy(_) => "policy",
             Item::Agent(_) => "agent",
         }
     }
+}
+
+/// `authority nome { key = "ed25519:…" }`: quem pode conceder autoridade a este programa. Com
+/// uma autoridade declarada, concessões, fotografia confiável e argumentos `Trusted` só valem
+/// assinados por ela (`arx::sign`).
+#[derive(Clone, Debug)]
+pub struct AuthorityDecl {
+    pub name: Ident,
+    pub key: String,
+    pub key_span: Span,
 }
 
 #[derive(Clone, Debug)]
