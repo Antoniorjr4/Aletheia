@@ -68,6 +68,14 @@ uso:
       registra a confirmação estruturada do principal: cada concessão é uma operação com os
       argumentos exatos, vale para a execução R e é consumida por um efeito. --from lê
       {\"operations\": [{\"op\": …, \"args\": […]}]}; uma entrada marcada \"ambiguous\" é recusada
+      --sign chave    assina cada concessão com a chave privada da autoridade (`athc keygen`)
+  athc keygen --out chave
+      gera um par Ed25519: grava a chave privada em `chave` (modo 0600) e imprime a pública, que
+      o programa declara: authority nome { key = \"ed25519:…\" }
+  athc sign --key chave --trusted confiável.json
+  athc sign --key chave --run R --arg X … [--out pedido.sig]
+      assina uma fonte Trusted: a fotografia confiável (grava confiável.json.sig) ou os
+      argumentos do evento da execução R (imprime a assinatura; passe-a em `run --args-sig`)
   athc recover <arquivo.ath> --wal execução.wal --host tcp://… [--trusted confiável.json]
                [--fuel 3] [--timeout s] [--report relatório.json] [--inspect] [--retry-escalated]
       recupera uma execução interrompida: confere a integridade do WAL, lista as obrigações em
@@ -154,6 +162,8 @@ fn main() -> ExitCode {
         "obligations" => cmd_obligations(&opts, st),
         "emit" => cmd_emit(&opts, st),
         "grant" => cmd_grant(&opts),
+        "keygen" => cmd_keygen(&opts),
+        "sign" => cmd_sign(&opts),
         "recover" => return cmd_recover(&opts, st),
         "replay" => cmd_replay(&opts, st),
         "help" | "--help" | "-h" => {
@@ -338,6 +348,29 @@ fn cmd_run(opts: &Opts, st: Style) -> Result<bool, String> {
     arx.run_id = run_id.clone();
     if let Some(g) = opts.one("grants") {
         arx.grants = GrantStore::open(Path::new(g))?;
+        // com autoridade declarada, falha fechado na carga: uma concessão sem a assinatura dela
+        // recusa o arquivo inteiro (o runtime também a ignora, em `s.authorizes`)
+        if !arx.authorities.is_empty() {
+            for (i, x) in arx.grants.grants.iter().enumerate() {
+                let ok = x.sig.as_deref().is_some_and(|s| {
+                    arx.authorities
+                        .iter()
+                        .any(|(_, k)| k.as_ref().is_some_and(|k| arx::sign::verify(k, "grant", &x.id, s)))
+                });
+                if !ok {
+                    return Err(format!(
+                        "G0001: concessão {} ({}) sem assinatura válida de uma autoridade do programa; nada foi executado",
+                        i + 1,
+                        &x.id[..12]
+                    ));
+                }
+            }
+        }
+    }
+    if let Some(s) = opts.one("args-sig") {
+        // a assinatura, ou o arquivo que a contém
+        let sig = std::fs::read_to_string(s).map(|t| t.trim().to_string()).unwrap_or_else(|_| s.to_string());
+        arx.args_attestation = Some((opts.flags.get("arg").cloned().unwrap_or_default(), sig));
     }
     let args_src: Vec<String> = opts.flags.get("arg").cloned().unwrap_or_default();
     let event = match opts.one("on") {
@@ -939,13 +972,24 @@ fn fresh_run_id() -> String {
 }
 
 fn remote_host(opts: &Opts, addr: &str, run: &str) -> Result<RemoteHost, String> {
+    let mut attestation = None;
     let snapshot = match opts.one("trusted") {
-        Some(p) => RemoteHost::snapshot_from_json(&read_json(Path::new(p))?)?,
+        Some(p) => {
+            // os bytes que viram a fotografia são os mesmos que a assinatura ao lado cobre
+            let bytes = std::fs::read(p).map_err(|e| format!("falha ao ler `{p}`: {e}"))?;
+            if let Ok(sig) = std::fs::read_to_string(format!("{p}.sig")) {
+                attestation = Some((arx::sign::trusted_payload(&bytes), sig.trim().to_string()));
+            }
+            let j = serde_json::from_slice(&bytes).map_err(|e| format!("`{p}` não é JSON: {e}"))?;
+            RemoteHost::snapshot_from_json(&j)?
+        }
         None => arx::host::TrustedSnapshot::default(),
     };
     let timeout =
         opts.one("timeout").map(|t| t.parse::<f64>().map_err(|_| "--timeout inválido")).transpose()?.unwrap_or(3.0);
-    RemoteHost::new(addr, run, timeout, snapshot)
+    let mut h = RemoteHost::new(addr, run, timeout, snapshot)?;
+    h.attestation = attestation;
+    Ok(h)
 }
 
 /// `athc grant`: a confirmação estruturada do principal vira concessões. Cada concessão é uma
@@ -982,25 +1026,32 @@ fn cmd_grant(opts: &Opts) -> Result<bool, String> {
         let op = opts.one("op").ok_or("informe --op e --arg…, ou --from intenção.json")?;
         ops.push((op.to_string(), opts.flags.get("arg").cloned().unwrap_or_default()));
     }
+    let secret = match opts.one("sign") {
+        Some(k) => Some(read_secret(k)?),
+        None => None,
+    };
     let mut doc = if out.exists() { read_json(&out)? } else { json!({ "grants": [] }) };
     // a carga confere as que já estão no arquivo (origem, id) antes de acrescentar
     let mut store = GrantStore::from_json(&doc)?;
     for (op, args) in ops {
         let mut nonce = 0;
-        let g = loop {
+        let mut g = loop {
             let g = Grant::new(run, &op, &args, origin, nonce);
             if !store.grants.iter().any(|x| x.id == g.id) {
                 break g;
             }
             nonce += 1;
         };
+        // a assinatura cobre a identidade: execução, operação, argumentos, origem e nonce
+        g.sig = secret.as_ref().map(|k| arx::sign::sign(k, "grant", &g.id));
         println!(
-            "concedido {} · {}({}) · execução {} · origem {}",
+            "concedido {} · {}({}) · execução {} · origem {}{}",
             &g.id[..12],
             g.op,
             g.args.join(", "),
             g.run,
-            g.origin
+            g.origin,
+            secret.as_ref().map(|k| format!(" · assinado por {}", arx::sign::public_of(k))).unwrap_or_default()
         );
         doc["grants"].as_array_mut().ok_or("arquivo de concessões inválido")?.push(g.to_json());
         store.grants.push(g);
@@ -1009,6 +1060,58 @@ fn cmd_grant(opts: &Opts) -> Result<bool, String> {
     GrantStore::from_json(&doc)?;
     let text = serde_json::to_string_pretty(&doc).map_err(|e| e.to_string())?;
     std::fs::write(&out, text).map_err(|e| format!("falha ao gravar `{}`: {e}", out.display()))?;
+    Ok(true)
+}
+
+fn read_secret(path: &str) -> Result<[u8; 32], String> {
+    let t = std::fs::read_to_string(path).map_err(|e| format!("chave `{path}`: {e}"))?;
+    arx::sign::parse_secret(&t).map_err(|e| format!("chave `{path}`: {e}"))
+}
+
+/// `athc keygen`: o par da autoridade. A privada fica com o principal; a pública vai no programa.
+fn cmd_keygen(opts: &Opts) -> Result<bool, String> {
+    use std::io::{Read, Write};
+    let out = opts.one("out").ok_or("informe --out (onde gravar a chave privada)")?;
+    if Path::new(out).exists() {
+        return Err(format!("`{out}` já existe: uma chave não é sobrescrita"));
+    }
+    let mut seed = [0u8; 32];
+    std::fs::File::open("/dev/urandom")
+        .and_then(|mut f| f.read_exact(&mut seed))
+        .map_err(|e| format!("sem fonte de aleatoriedade (/dev/urandom): {e}"))?;
+    let mut o = std::fs::OpenOptions::new();
+    o.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        o.mode(0o600);
+    }
+    let hex: String = seed.iter().map(|b| format!("{b:02x}")).collect();
+    o.open(out)
+        .and_then(|mut f| f.write_all(format!("{hex}\n").as_bytes()))
+        .map_err(|e| format!("falha ao gravar `{out}`: {e}"))?;
+    println!("{}", arx::sign::public_of(&seed));
+    Ok(true)
+}
+
+/// `athc sign`: a autoridade assina uma fonte Trusted (a fotografia ou os argumentos do evento).
+fn cmd_sign(opts: &Opts) -> Result<bool, String> {
+    let key = read_secret(opts.one("key").ok_or("informe --key (a chave privada da autoridade)")?)?;
+    if let Some(t) = opts.one("trusted") {
+        let bytes = std::fs::read(t).map_err(|e| format!("falha ao ler `{t}`: {e}"))?;
+        let sig = arx::sign::sign(&key, "trusted", &arx::sign::trusted_payload(&bytes));
+        let out = format!("{t}.sig");
+        std::fs::write(&out, format!("{sig}\n")).map_err(|e| format!("falha ao gravar `{out}`: {e}"))?;
+        println!("assinado {t} → {out} · {}", arx::sign::public_of(&key));
+        return Ok(true);
+    }
+    let run = opts.one("run").ok_or("informe --trusted ARQUIVO, ou --run R com os --arg do evento")?;
+    let raw: Vec<String> = opts.flags.get("arg").cloned().unwrap_or_default();
+    let sig = arx::sign::sign(&key, "args", &arx::sign::args_payload(run, &raw));
+    match opts.one("out") {
+        Some(o) => std::fs::write(o, format!("{sig}\n")).map_err(|e| format!("falha ao gravar `{o}`: {e}"))?,
+        None => println!("{sig}"),
+    }
     Ok(true)
 }
 

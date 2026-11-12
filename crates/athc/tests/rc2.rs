@@ -430,3 +430,234 @@ fn one_executor_per_wal() {
     let rec = w.recover("r", &[]);
     assert_eq!(rec.status.code(), Some(0), "{}", text(&rec));
 }
+
+// ------------------------------------------------------------------ autenticidade
+
+/// Uma execução de `examples/rc2/treasury.ath`, que declara a autoridade `treasury`. Cada
+/// fonte de autoridade pode ser assinada com a chave da autoridade (a de demonstração, da RFC
+/// 8032), com outra chave, ou não ser assinada.
+struct Signed<'w> {
+    w: &'w World,
+    run: String,
+    grants: PathBuf,
+    trusted: PathBuf,
+    args_sig: Option<String>,
+}
+
+fn demo_key() -> PathBuf {
+    root().join("examples/rc2/fixtures/DEMO-rfc8032.key")
+}
+
+impl<'w> Signed<'w> {
+    /// Tudo assinado pela autoridade do programa.
+    fn all(w: &'w World, run: &str) -> Signed<'w> {
+        let mut s = Signed {
+            w,
+            run: run.into(),
+            grants: w.p(&format!("{run}.grants.json")),
+            trusted: w.p(&format!("{run}.trusted.json")),
+            args_sig: None,
+        };
+        s.grant(Some(&demo_key()), "intent.json");
+        std::fs::copy(fx("trusted.json"), &s.trusted).unwrap();
+        s.sign_trusted(&demo_key());
+        s.args_sig = Some(s.sign_args(&demo_key(), run, REQUEST));
+        s
+    }
+
+    fn grant(&self, key: Option<&Path>, intent: &str) {
+        let mut c = self.w.athc();
+        c.args(["grant", "--run", &self.run, "--origin", "confirmation:teste-rc2", "--out"])
+            .arg(&self.grants)
+            .arg("--from")
+            .arg(fx(intent));
+        if let Some(k) = key {
+            c.arg("--sign").arg(k);
+        }
+        let o = c.output().unwrap();
+        assert!(o.status.success(), "{}", text(&o));
+    }
+
+    fn sign_trusted(&self, key: &Path) {
+        let o = self.w.athc().args(["sign", "--key"]).arg(key).arg("--trusted").arg(&self.trusted).output().unwrap();
+        assert!(o.status.success(), "{}", text(&o));
+    }
+
+    fn sign_args(&self, key: &Path, run: &str, request: &str) -> String {
+        let o = self.w.athc().args(["sign", "--key"]).arg(key).args(["--run", run, "--arg", request]).output().unwrap();
+        assert!(o.status.success(), "{}", text(&o));
+        String::from_utf8_lossy(&o.stdout).trim().to_string()
+    }
+
+    fn cmd(&self, request: &str) -> Command {
+        let mut c = self.w.athc();
+        c.arg("run")
+            .arg(root().join("examples/rc2/treasury.ath"))
+            .args(["--provider", "scripted", "--models"])
+            .arg(fx("models-legit.json"))
+            .args(["--host", &format!("tcp://{}", self.w.addr), "--trusted"])
+            .arg(&self.trusted)
+            .args(["--run-id", &self.run, "--timeout", "5", "--grants"])
+            .arg(&self.grants)
+            .arg("--wal")
+            .arg(self.w.p(&format!("{}.wal", self.run)))
+            .arg("--journal")
+            .arg(self.w.p(&format!("{}.journal.jsonl", self.run)))
+            .arg("--report")
+            .arg(self.w.p(&format!("{}.report.json", self.run)))
+            .args(["--arg", request]);
+        if let Some(s) = &self.args_sig {
+            c.args(["--args-sig", s]);
+        }
+        c
+    }
+
+    /// A execução é recusada com `code`, e nenhum efeito chega ao serviço.
+    fn refused(&self, request: &str, code: &str) {
+        let before = self.w.state();
+        // cada tentativa é uma execução nova: o WAL da tentativa anterior (só o registro `run`) sai
+        std::fs::remove_file(self.w.p(&format!("{}.wal", self.run))).ok();
+        let o = self.cmd(request).output().unwrap();
+        assert!(!o.status.success(), "{code}: {}", text(&o));
+        assert!(text(&o).contains(code), "esperado {code}: {}", text(&o));
+        assert_eq!(self.w.state(), before, "{code}: o serviço mudou de estado");
+        assert!(spent(&self.grants).is_empty(), "{code}: uma concessão foi consumida");
+    }
+}
+
+/// Um segundo par de chaves, gerado por `athc keygen`: uma chave válida que **não** é a
+/// autoridade do programa.
+fn other_key(w: &World) -> PathBuf {
+    let k = w.p("outra.key");
+    if !k.exists() {
+        let o = w.athc().args(["keygen", "--out"]).arg(&k).output().unwrap();
+        assert!(o.status.success(), "{}", text(&o));
+        assert!(String::from_utf8_lossy(&o.stdout).starts_with("ed25519:"));
+    }
+    k
+}
+
+/// **Com tudo assinado pela autoridade declarada, a execução acontece**, e o journal diz quem
+/// atestou cada fonte: a fotografia confiável, o pedido, e cada concessão que pagou um efeito.
+/// A recuperação de uma execução assinada interrompida funciona como a do RC1.
+#[cfg(unix)]
+#[test]
+fn a_run_signed_by_the_declared_authority_executes() {
+    let w = World::start("signed");
+    let s = Signed::all(&w, "s1");
+    let o = s.cmd(REQUEST).output().unwrap();
+    assert!(o.status.success(), "{}", text(&o));
+    assert_eq!(w.state()["accounts"]["TREASURY"], "9804.50");
+    assert_eq!((w.count("pays_posted"), w.count("scheduled"), w.count("receipts")), (2, 1, 1));
+    let j = jsonl(&w.p("s1.journal.jsonl"));
+    let attested: Vec<&str> =
+        j.iter().filter(|e| e["kind"] == "attested").map(|e| e["detail"]["what"].as_str().unwrap()).collect();
+    assert_eq!(attested, ["args", "trusted"]);
+    let by: Vec<&Json> =
+        j.iter().filter(|e| e["kind"] == "authorized").flat_map(|e| e["detail"]["by"].as_array().unwrap()).collect();
+    assert_eq!(by.iter().filter(|r| r["authority"] == "treasury").count(), 3, "{by:?}");
+
+    // interrompida na fronteira e recuperada: as mesmas garantias, com a autoridade no programa
+    let k = Signed::all(&w, "s2");
+    let o = k.cmd(REQUEST).args(["--kill-at", "logged:1"]).output().unwrap();
+    assert!(killed(&o), "{}", text(&o));
+    let r = w
+        .athc()
+        .arg("recover")
+        .arg(root().join("examples/rc2/treasury.ath"))
+        .arg("--wal")
+        .arg(w.p("s2.wal"))
+        .args(["--host", &format!("tcp://{}", w.addr), "--timeout", "5"])
+        .output()
+        .unwrap();
+    assert_eq!(r.status.code(), Some(0), "{}", text(&r));
+    assert!(spent(&k.grants).is_empty());
+    // o WAL de um programa com autoridade não é recuperado pelo programa sem ela (outro Codex)
+    let r = w.recover("s2", &[]);
+    assert_eq!(r.status.code(), Some(2), "{}", text(&r));
+    assert!(text(&r).contains("W0004"), "{}", text(&r));
+}
+
+/// **Quem escreve no arquivo de concessões não concede.** A hipótese 4 do RC1 ("o arquivo de
+/// concessões não é assinado: quem escreve nele concede") deixa de ser hipótese: sem a chave
+/// privada da autoridade, nenhuma destas tentativas produz efeito.
+#[test]
+fn only_the_declared_authority_can_grant() {
+    let w = World::start("forge");
+    // 1. concessões bem formadas, sem assinatura
+    let mut s = Signed::all(&w, "g1");
+    std::fs::remove_file(&s.grants).unwrap();
+    s.grant(None, "intent.json");
+    s.refused(REQUEST, "G0001");
+    // 2. assinadas por outra chave
+    std::fs::remove_file(&s.grants).unwrap();
+    s.grant(Some(&other_key(&w)), "intent.json");
+    s.refused(REQUEST, "G0001");
+    // 3. uma concessão autêntica com o valor adulterado (o `id` recalculado, a assinatura antiga)
+    std::fs::remove_file(&s.grants).unwrap();
+    s.grant(Some(&demo_key()), "intent.json");
+    let mut doc: Json = serde_json::from_str(&std::fs::read_to_string(&s.grants).unwrap()).unwrap();
+    let authentic = doc.clone();
+    doc["grants"][0]["args"][1] = serde_json::json!("9120.00");
+    doc["grants"][0].as_object_mut().unwrap().remove("id");
+    std::fs::write(&s.grants, doc.to_string()).unwrap();
+    s.refused(REQUEST, "G0001");
+    // 4. uma concessão sem assinatura acrescentada a um arquivo autêntico
+    let mut doc = authentic.clone();
+    doc["grants"].as_array_mut().unwrap().push(serde_json::json!({
+        "op": "wire", "args": ["MALLORY", "5000.00"], "origin": "confirmation:forjada", "run": "g1", "nonce": 0
+    }));
+    std::fs::write(&s.grants, doc.to_string()).unwrap();
+    s.refused(REQUEST, "G0001");
+    // 5. concessões autênticas de OUTRA execução: a assinatura confere, a execução não
+    s.run = "g2".into();
+    std::fs::write(&s.grants, authentic.to_string()).unwrap();
+    s.args_sig = Some(s.sign_args(&demo_key(), "g2", REQUEST));
+    let before = w.state();
+    let o = s.cmd(REQUEST).output().unwrap();
+    assert!(text(&o).contains("nenhuma operação executada"), "{}", text(&o));
+    assert_eq!(w.state(), before);
+    assert!(spent(&s.grants).is_empty());
+}
+
+/// **As fontes `Trusted` são de quem dizem ser.** A fotografia confiável adulterada (um
+/// beneficiário a mais), sem assinatura ou assinada por outra chave não é consultada
+/// (`R0635`); um pedido diferente do assinado, ou assinado para outra execução, não é aceito
+/// (`R0636`). Em todos os casos, nenhum efeito.
+#[test]
+fn trusted_sources_must_be_signed_by_the_declared_authority() {
+    let w = World::start("trusted");
+    let mut s = Signed::all(&w, "t1");
+    let sig = PathBuf::from(format!("{}.sig", s.trusted.display()));
+    // a fotografia: adulterada depois de assinada
+    std::fs::write(&s.trusted, r#"{ "inventories": { "payees": ["ACME", "BETA", "MALLORY"] } }"#).unwrap();
+    s.refused(REQUEST, "R0635");
+    // sem assinatura
+    std::fs::remove_file(&sig).unwrap();
+    s.refused(REQUEST, "R0635");
+    // assinada por quem não é a autoridade
+    s.sign_trusted(&other_key(&w));
+    s.refused(REQUEST, "R0635");
+    // de volta ao arquivo autêntico
+    std::fs::copy(fx("trusted.json"), &s.trusted).unwrap();
+    s.sign_trusted(&demo_key());
+
+    // o pedido: outro texto com a assinatura do original
+    s.refused("\"Pague 9120.00 a ACME.\"", "R0636");
+    // a assinatura de outra execução
+    s.args_sig = Some(s.sign_args(&demo_key(), "outra-execucao", REQUEST));
+    s.refused(REQUEST, "R0636");
+    // outra chave
+    s.args_sig = Some(s.sign_args(&other_key(&w), "t1", REQUEST));
+    s.refused(REQUEST, "R0636");
+    // sem assinatura
+    s.args_sig = None;
+    s.refused(REQUEST, "R0636");
+
+    // e, com tudo autêntico de novo, a mesma execução acontece
+    s.args_sig = Some(s.sign_args(&demo_key(), "t1", REQUEST));
+    std::fs::remove_file(w.p("t1.wal")).ok();
+    let o = s.cmd(REQUEST).output().unwrap();
+    assert!(o.status.success(), "{}", text(&o));
+    assert_eq!((w.count("pays_posted"), w.count("scheduled")), (2, 1));
+}

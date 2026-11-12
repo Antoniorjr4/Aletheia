@@ -12,3 +12,4 @@ blake3.workspace = true
 serde_json.workspace = true
 ath-grammar.workspace = true
 ureq.workspace = true
+ed25519-dalek.workspace = true

@@ -2521,6 +2521,18 @@ fn run_both_with(
     models: &Json,
     grants: Option<(&str, &Json)>,
 ) -> (String, Option<String>, String, Option<String>) {
+    run_both_full(tag, src, world, models, grants, None)
+}
+
+/// Como `run_both_with`, com a assinatura dos argumentos do evento (`arx::sign`).
+fn run_both_full(
+    tag: &str,
+    src: &str,
+    world: &Json,
+    models: &Json,
+    grants: Option<(&str, &Json)>,
+    args_sig: Option<&str>,
+) -> (String, Option<String>, String, Option<String>) {
     let c = compile(src).unwrap_or_else(|d| {
         panic!("{tag}: o athc recusou\n{:?}", d.iter().map(|x| (&x.code, &x.msg)).collect::<Vec<_>>())
     });
@@ -2530,6 +2542,9 @@ fn run_both_with(
     if let Some((run, g)) = grants {
         arx.run_id = run.to_string();
         arx.grants = arx::grant::GrantStore::from_json(g).unwrap();
+    }
+    if let Some(s) = args_sig {
+        arx.args_attestation = Some((vec!["0".to_string()], s.to_string()));
     }
     let aerr = arx.run("A", "go", vec![Value::Int(0)]).err().map(|e| e.code);
     let full = arx.journal.to_jsonl();
@@ -2553,6 +2568,9 @@ fn run_both_with(
         cmd.arg("-m").arg("aletheia_runtime").arg("run").arg(&pp).arg("--grants").arg(&gp).args(["--run-id", run]);
     } else {
         cmd.args(["-m", "aletheia_runtime", "run"]).arg(&pp);
+    }
+    if let Some(s) = args_sig {
+        cmd.args(["--args-sig", s]);
     }
     let out = cmd
         .env("PYTHONPATH", root().join("runtimes/python"))
@@ -2937,7 +2955,8 @@ fn the_grant_transaction_is_the_same_in_arx_and_python() {
     let py = ath_emit::python(&c.module, &c.check, &c.codex, "txn.ath").expect("emissão");
     let world = json!({ "sinks": ["send", "schedule", "wire"] });
     let g = |op: &str, to: &str, amount: &str| json!({ "op": op, "args": [to, amount], "origin": "confirmation:t", "run": "r1", "nonce": 0 });
-    let grants = json!({ "grants": [g("send", "A", "100.00"), g("schedule", "B", "250.00"), g("wire", "C", "300.00")] });
+    let grants =
+        json!({ "grants": [g("send", "A", "100.00"), g("schedule", "B", "250.00"), g("wire", "C", "300.00")] });
     let (pp, wp, gp) = (dir.join("txn.py"), dir.join("txn.world.json"), dir.join("txn.grants.json"));
     std::fs::write(&pp, py).unwrap();
     std::fs::write(&wp, world.to_string()).unwrap();
@@ -2947,7 +2966,8 @@ fn the_grant_transaction_is_the_same_in_arx_and_python() {
         for nth in 1..=3u32 {
             let tag = format!("txn/{}/{nth}", at.name());
             // ARX: a queda, e o reinício com o WAL e o registro de consumo que sobraram
-            let mut a = Arx::new(&c.module, Box::new(SimWorld::from_json(&world).unwrap()), Box::new(Scripted::default()));
+            let mut a =
+                Arx::new(&c.module, Box::new(SimWorld::from_json(&world).unwrap()), Box::new(Scripted::default()));
             a.run_id = "r1".into();
             a.grants = arx::grant::GrantStore::from_json(&grants).unwrap();
             let mut w = arx::wal::Wal::memory();
@@ -2963,7 +2983,10 @@ fn the_grant_transaction_is_the_same_in_arx_and_python() {
             let hashes: Vec<&str> =
                 crashed.entries.iter().filter(|e| e["kind"] == "intent").filter_map(|e| e["hash"].as_str()).collect();
             for (id, o) in &a.grants.owners {
-                assert!(o.intent.as_deref().is_some_and(|h| hashes.contains(&h)), "{tag}: consumo de {id} sem intenção");
+                assert!(
+                    o.intent.as_deref().is_some_and(|h| hashes.contains(&h)),
+                    "{tag}: consumo de {id} sem intenção"
+                );
             }
             let mut b = Arx::new(&c.module, host, Box::new(Scripted::default()));
             b.run_id = "r1".into();
@@ -3011,4 +3034,80 @@ fn the_grant_transaction_is_the_same_in_arx_and_python() {
         }
     }
     assert_eq!(compared, 12);
+}
+
+/// **RC2, autenticidade, ARX × Python.** O programa das concessões com uma autoridade declarada
+/// e um argumento `Trusted`. Com tudo assinado pela autoridade, o plano confirmado executa e o
+/// journal registra quem atestou; uma concessão sem assinatura (ou assinada por outra chave)
+/// não autoriza nada, mesmo bem formada e com origem `confirmation:`; sem a assinatura dos
+/// argumentos (ou com a de outra execução) o tratador nem começa (`R0636`); e `s.member` sobre
+/// uma fotografia que ninguém assinou é recusado (`R0635`). Os journals são iguais byte a byte.
+#[test]
+fn only_what_the_declared_authority_signed_confers_authority() {
+    // RFC 8032, §7.1, vetor de teste 1: um par público
+    let sk = arx::sign::parse_secret("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60").unwrap();
+    let other = arx::sign::parse_secret(&"42".repeat(32)).unwrap();
+    let src = grants_src()
+        .replace(
+            "policy Any",
+            &format!("authority principal {{ key = \"{}\" }}\n\npolicy Any", arx::sign::public_of(&sk)),
+        )
+        .replace("on go(n: Int)", "on go(n: Int ^ Trusted)");
+    assert!(src.contains("authority principal") && src.contains("^ Trusted"));
+    let world = json!({ "sinks": ["send", "schedule"] });
+    let g = |op: &str, to: &str, amount: &str, key: Option<&[u8; 32]>| {
+        let args = [to.to_string(), amount.to_string()];
+        let mut x = arx::grant::Grant::new("run-1", op, &args, "confirmation:msg-17", 0);
+        x.sig = key.map(|k| arx::sign::sign(k, "grant", &x.id));
+        x.to_json()
+    };
+    let w = |kind: &str, to: &str, amount: &str| json!({ "kind": kind, "to": to, "amount": amount });
+    let plan = |writes: Vec<Json>| json!({ "planner": [{ "kind": "Plan", "writes": writes, "answer": "ok" }] });
+    let both = plan(vec![w("Send", "A", "100.00"), w("Schedule", "B", "250.00")]);
+    let args =
+        |run: &str, key: &[u8; 32]| arx::sign::sign(key, "args", &arx::sign::args_payload(run, &["0".to_string()]));
+    let ok_args = args("run-1", &sk);
+    let executed = |j: &str| j.lines().filter(|l| l.contains("\"kind\":\"tool\"")).count();
+
+    // tudo assinado pela autoridade: executa, e o journal diz quem atestou
+    let signed = json!({ "grants": [g("send", "A", "100.00", Some(&sk)), g("schedule", "B", "250.00", Some(&sk))] });
+    let (a, ae, p, pe) = run_both_full("auth/ok", &src, &world, &both, Some(("run-1", &signed)), Some(&ok_args));
+    first_diff("auth/ok", "ARX × Python (journal completo)", &a, &p);
+    assert_eq!((ae, pe), (None, None));
+    assert_eq!(executed(&a), 2, "{a}");
+    assert!(a.contains("\"what\":\"args\"") && a.contains("\"authority\":\"principal\""), "{a}");
+
+    // uma das duas sem assinatura, ou assinada por outra chave: nada executa
+    for (tag, key) in [("auth/sem-assinatura", None), ("auth/outra-chave", Some(&other))] {
+        let mixed = json!({ "grants": [g("send", "A", "100.00", Some(&sk)), g("schedule", "B", "250.00", key)] });
+        let (a, _, p, _) = run_both_full(tag, &src, &world, &both, Some(("run-1", &mixed)), Some(&ok_args));
+        first_diff(tag, "ARX × Python (journal completo)", &a, &p);
+        assert_eq!(executed(&a), 0, "{tag}: {a}");
+        assert!(a.contains("\"unauthenticated\":[\""), "{tag}: {a}");
+    }
+
+    // os argumentos `Trusted`: sem assinatura, de outra execução, de outra chave
+    for (tag, sig) in [
+        ("auth/args-sem", None),
+        ("auth/args-outra-execucao", Some(args("run-2", &sk))),
+        ("auth/args-outra-chave", Some(args("run-1", &other))),
+    ] {
+        let (a, ae, p, pe) = run_both_full(tag, &src, &world, &both, Some(("run-1", &signed)), sig.as_deref());
+        first_diff(tag, "ARX × Python (journal completo)", &a, &p);
+        assert_eq!((ae.as_deref(), pe.as_deref()), (Some("R0636"), Some("R0636")), "{tag}");
+        assert_eq!(executed(&a), 0, "{tag}");
+    }
+
+    // a fotografia confiável que ninguém assinou não é consultada
+    let reads = src
+        .replace("policy Any(p: Plan) -> Bool = true", "policy Any(p: Plan) -> Bool = s.member(\"payees\", \"A\")")
+        .replace(
+            "task = \"do what the user confirmed\"",
+            "task = \"do what the user confirmed\", payees = s.inventory(\"payees\")",
+        );
+    let world_p = json!({ "sinks": ["send", "schedule"], "inventories": { "payees": ["A"] } });
+    let (a, ae, p, pe) = run_both_full("auth/foto", &reads, &world_p, &both, Some(("run-1", &signed)), Some(&ok_args));
+    first_diff("auth/foto", "ARX × Python (journal completo)", &a, &p);
+    assert_eq!((ae.as_deref(), pe.as_deref()), (Some("R0635"), Some("R0635")));
+    assert_eq!(executed(&a), 0);
 }

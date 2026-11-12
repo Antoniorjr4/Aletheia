@@ -158,7 +158,7 @@ impl Deps<'_> {
     fn item(&mut self, item: &Item) {
         match item {
             Item::Type(d) => d.variants.iter().flat_map(|v| &v.fields).for_each(|f| self.ty(&f.ty)),
-            Item::Model(_) => {}
+            Item::Model(_) | Item::Authority(_) => {}
             Item::Tool(d) => {
                 d.params.iter().for_each(|p| self.ty(&p.ty));
                 self.ty(&d.ret);
@@ -370,6 +370,10 @@ impl Canon<'_> {
                     self.w(")");
                 }
                 self.w(")");
+            }
+            // A chave da autoridade entra no hash: trocar de autoridade é trocar de programa.
+            Item::Authority(d) => {
+                let _ = write!(self.out, "(authority {:?})", d.key);
             }
             Item::Model(d) => {
                 // O contrato Δ inteiro (números e identidade versionada) entra no hash: mudar o

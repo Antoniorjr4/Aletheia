@@ -15,6 +15,7 @@ pub mod journal;
 pub mod lock;
 pub mod model;
 pub mod remote;
+pub mod sign;
 pub mod value;
 pub mod wal;
 
@@ -196,6 +197,15 @@ pub struct Arx<'m> {
     grants_logged: bool,
     /// O registro de consumo, lido sob a trava, para a recuperação decidir sobre as intenções
     /// que citam concessões (`athc recover`).
+    /// As autoridades que o módulo declara (`authority`): nome e chave pública. Não vazio: toda
+    /// fonte de autoridade exige a assinatura de uma delas.
+    pub authorities: Vec<(String, Option<[u8; 32]>)>,
+    /// A assinatura dos argumentos do evento: os argumentos como escritos e a assinatura.
+    pub args_attestation: Option<(Vec<String>, String)>,
+    /// A fotografia confiável foi conferida (ou não há autoridade declarada).
+    trusted_ok: bool,
+    /// Concessão → a autoridade que a assinou (conferido no primeiro `s.authorizes`).
+    grant_auth: Vec<Option<String>>,
     pub spent_view: Option<std::collections::BTreeMap<String, grant::Owner>>,
     /// Compensação, recuperação e reconciliação são obrigações: não pedem reserva de orçamento.
     obligation: bool,
@@ -307,6 +317,10 @@ impl<'m> Arx<'m> {
             linear: false,
             grants_logged: false,
             spent_view: None,
+            authorities: Vec::new(),
+            args_attestation: None,
+            trusted_ok: false,
+            grant_auth: Vec::new(),
             obligation: false,
         };
         for item in &m.items {
@@ -316,6 +330,11 @@ impl<'m> Arx<'m> {
                 }
                 Item::Model(d) => {
                     a.models.insert(&d.name.name, d);
+                }
+                // uma chave que não é um ponto da curva não verifica nada: a autoridade continua
+                // declarada (tudo exige assinatura) e nenhuma assinatura confere
+                Item::Authority(d) => {
+                    a.authorities.push((d.name.name.clone(), sign::parse_public(&d.key).ok()));
                 }
                 Item::Policy(p) => {
                     a.policies.insert(&p.name.name, p);
@@ -403,6 +422,42 @@ impl<'m> Arx<'m> {
         }
     }
 
+    /// A autoridade declarada cuja assinatura `sig` sobre a carga confere, se alguma.
+    fn signer(&self, kind: &str, payload: &str, sig: Option<&str>) -> Option<String> {
+        let sig = sig?;
+        self.authorities
+            .iter()
+            .find(|(_, k)| k.as_ref().is_some_and(|k| sign::verify(k, kind, payload, sig)))
+            .map(|(n, _)| n.clone())
+    }
+
+    /// **A fotografia confiável é de quem diz ser.** Com uma autoridade declarada, o conteúdo de
+    /// `s.…` só é consultado se o host apresenta a assinatura dela sobre os bytes que leu.
+    fn attest_trusted(&mut self) -> Result<(), RtError> {
+        if self.trusted_ok || self.authorities.is_empty() {
+            return Ok(());
+        }
+        let by = self
+            .host
+            .attestation()
+            .and_then(|(digest, sig)| self.signer("trusted", &digest, Some(&sig)).map(|a| (a, digest)));
+        match by {
+            Some((authority, digest)) => {
+                self.trusted_ok = true;
+                self.journal.push(
+                    self.clock,
+                    "attested",
+                    json!({ "what": "trusted", "digest": digest, "authority": authority }),
+                );
+                Ok(())
+            }
+            None => Err(rt(
+                "R0635",
+                "a fotografia confiável não tem a assinatura de uma autoridade do módulo: `s.…` não é consultado",
+            )),
+        }
+    }
+
     /// Executa `on <event>` do agente. Capacidades concedidas = as declaradas nos parâmetros.
     pub fn run(&mut self, agent: &str, event: &str, args: Vec<Value>) -> Result<Value, RtError> {
         let (a, h) = self
@@ -410,6 +465,30 @@ impl<'m> Arx<'m> {
             .ok_or_else(|| rt("R0001", format!("handler `{agent}.{event}` não encontrado")))?;
         if args.len() != h.params.len() {
             return Err(rt("R0002", format!("`{agent}.{event}` recebe {} argumento(s)", h.params.len())));
+        }
+        // **Os argumentos `Trusted` são de quem diz ser.** Com uma autoridade declarada, um
+        // parâmetro rotulado `Trusted` só é aceito com a assinatura dela sobre a execução e os
+        // argumentos: o pedido de uma execução não vale em outra.
+        let trusted_param =
+            h.params.iter().any(|p| matches!(&p.ty, TypeExpr::Labeled(_, ath_syntax::ast::Label::Trusted, _)));
+        if trusted_param && !self.authorities.is_empty() {
+            let by = self
+                .args_attestation
+                .as_ref()
+                .and_then(|(raw, sig)| self.signer("args", &sign::args_payload(&self.run_id, raw), Some(sig)));
+            match by {
+                Some(authority) => {
+                    self.journal.push(self.clock, "attested", json!({ "what": "args", "authority": authority }))
+                }
+                None => {
+                    return Err(rt(
+                        "R0636",
+                        format!(
+                        "`{agent}.{event}` recebe um argumento `Trusted` sem a assinatura de uma autoridade do módulo"
+                    ),
+                    ))
+                }
+            }
         }
         self.agent = Some(a);
         self.meter.lim_tok = a.budget("tok").map(|v| v as u64);
@@ -543,6 +622,9 @@ impl<'m> Arx<'m> {
                         return Err(rt("R0108", format!("método `s.{}` desconhecido", method.name)).into());
                     }
                     self.log_snapshot();
+                    if method.name != "authorizes" {
+                        self.attest_trusted()?;
+                    }
                     return match (method.name.as_str(), vals.as_slice()) {
                         ("managed", []) => Ok(Value::Text(self.snapshot.managed_text())),
                         ("telemetry", []) => Ok(Value::Text(self.snapshot.telemetry_text())),
@@ -592,14 +674,41 @@ impl<'m> Arx<'m> {
                             self.linear = true;
                             if !self.grants_logged {
                                 self.grants_logged = true;
+                                // com autoridade declarada, só vale a concessão que ela assinou
+                                let auth: Vec<Option<String>> = self
+                                    .grants
+                                    .grants
+                                    .iter()
+                                    .map(|g| self.signer("grant", &g.id, g.sig.as_deref()))
+                                    .collect();
+                                let signed = !self.authorities.is_empty();
+                                let mut refused: Vec<&str> = Vec::new();
+                                if signed {
+                                    for (i, g) in self.grants.grants.iter().enumerate() {
+                                        if auth[i].is_none() {
+                                            self.grants.barred.insert(i);
+                                            refused.push(&g.id);
+                                        }
+                                    }
+                                }
                                 let live: Vec<serde_json::Value> = self
                                     .grants
                                     .grants
                                     .iter()
-                                    .filter(|g| g.run == self.run_id && !self.grants.spent.contains(&g.id))
-                                    .map(|g| g.to_json())
+                                    .enumerate()
+                                    .filter(|(i, g)| {
+                                        g.run == self.run_id
+                                            && !self.grants.spent.contains(&g.id)
+                                            && !self.grants.barred.contains(i)
+                                    })
+                                    .map(|(_, g)| g.to_json())
                                     .collect();
-                                self.journal.push(self.clock, "grants", json!({ "run": self.run_id, "live": live }));
+                                let mut d = json!({ "run": self.run_id, "live": live });
+                                if signed {
+                                    d["unauthenticated"] = json!(refused);
+                                }
+                                self.journal.push(self.clock, "grants", d);
+                                self.grant_auth = auth;
                             }
                             let hit = xs.and_then(|xs| self.grants.find(&self.run_id, op, &xs, &self.claim));
                             if let Some(i) = hit {
@@ -1644,7 +1753,11 @@ impl<'m> Arx<'m> {
         self.grants.commit(guard, &claims, owner);
         for &i in &claims {
             let g = &self.grants.grants[i];
-            auth_rows.push(json!({ "grant": g.id, "op": g.op, "args": g.args, "origin": g.origin, "run": g.run }));
+            let mut row = json!({ "grant": g.id, "op": g.op, "args": g.args, "origin": g.origin, "run": g.run });
+            if let Some(a) = self.grant_auth.get(i).and_then(|a| a.as_ref()) {
+                row["authority"] = json!(a);
+            }
+            auth_rows.push(row);
         }
         if !auth_rows.is_empty() {
             self.journal.push(self.clock, "authorized", json!({ "tool": name, "by": auth_rows }));

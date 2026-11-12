@@ -157,6 +157,11 @@ pub trait Host {
     fn trusted_snapshot(&self) -> TrustedSnapshot {
         TrustedSnapshot::default()
     }
+    /// A assinatura da fotografia confiável: o BLAKE3 dos bytes de onde ela foi lida e a
+    /// assinatura apresentada (`arx::sign`). `None`: o host não tem como atestar a origem.
+    fn attestation(&self) -> Option<(String, String)> {
+        None
+    }
 }
 
 /// Falha injetada: na `nth`-ésima chamada a `tool` (ou em todas, sem `nth`).

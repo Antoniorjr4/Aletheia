@@ -27,6 +27,8 @@ pub struct RemoteHost {
     /// o prazo de cada resposta
     pub timeout: Duration,
     pub snapshot: TrustedSnapshot,
+    /// o BLAKE3 dos bytes de `--trusted` e a assinatura ao lado (`<arquivo>.sig`)
+    pub attestation: Option<(String, String)>,
 }
 
 enum Wire {
@@ -41,7 +43,13 @@ impl RemoteHost {
     pub fn new(addr: &str, run: &str, timeout: f64, snapshot: TrustedSnapshot) -> Result<RemoteHost, String> {
         let addr: SocketAddr =
             addr.trim_start_matches("tcp://").parse().map_err(|_| format!("endereço de host inválido `{addr}`"))?;
-        Ok(RemoteHost { addr, run: run.to_string(), timeout: Duration::from_secs_f64(timeout.max(0.05)), snapshot })
+        Ok(RemoteHost {
+            addr,
+            run: run.to_string(),
+            timeout: Duration::from_secs_f64(timeout.max(0.05)),
+            snapshot,
+            attestation: None,
+        })
     }
 
     /// A fotografia confiável de `{"inventories": {"nome": ["item", …]}}`.
@@ -160,5 +168,9 @@ impl Host for RemoteHost {
 
     fn trusted_snapshot(&self) -> TrustedSnapshot {
         self.snapshot.clone()
+    }
+
+    fn attestation(&self) -> Option<(String, String)> {
+        self.attestation.clone()
     }
 }

@@ -110,6 +110,8 @@ pub struct GrantStore {
     pub spent: BTreeSet<String>,
     /// concessão → quem a consumiu
     pub owners: std::collections::BTreeMap<String, Owner>,
+    /// as concessões que não podem ser usadas: sem a assinatura de uma autoridade declarada
+    pub barred: BTreeSet<usize>,
     /// o registro durável do consumo (`<grants>.spent`), se as concessões vieram de arquivo
     ledger: Option<PathBuf>,
 }
@@ -255,7 +257,11 @@ impl GrantStore {
     /// É uma leitura otimista: quem decide é `begin`, sob a trava.
     pub fn find(&self, run: &str, op: &str, xs: &[String], claimed: &[usize]) -> Option<usize> {
         self.grants.iter().enumerate().position(|(i, g)| {
-            g.run == run && !self.spent.contains(&g.id) && !claimed.contains(&i) && g.matches(op, xs)
+            g.run == run
+                && !self.spent.contains(&g.id)
+                && !self.barred.contains(&i)
+                && !claimed.contains(&i)
+                && g.matches(op, xs)
         })
     }
 
