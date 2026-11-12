@@ -133,11 +133,12 @@ impl Parser {
             Tok::Type => self.type_decl().map(Item::Type),
             Tok::Model => self.model_decl().map(Item::Model),
             Tok::Authority => self.authority_decl().map(Item::Authority),
+            Tok::Witness => self.witness_decl().map(Item::Witness),
             Tok::Tool => self.tool_decl().map(Item::Tool),
             Tok::Policy => self.policy_decl().map(Item::Policy),
             Tok::Agent => self.agent_decl().map(Item::Agent),
             other => Err(self.err(format!(
-                "esperado `type`, `model`, `authority`, `tool`, `policy` ou `agent`, encontrado {}",
+                "esperado `type`, `model`, `authority`, `witness`, `tool`, `policy` ou `agent`, encontrado {}",
                 other.describe()
             ))),
         }
@@ -203,30 +204,66 @@ impl Parser {
             key_span: self.span(),
             ops: None,
             ops_span: self.span(),
+            op_idents: Vec::new(),
+            typed: false,
             max_age: None,
             anchored: false,
+            clock: None,
+            outcomes: None,
         };
-        let mut has_key = false;
+        let (mut has_key, mut textual) = (false, false);
         while *self.peek() != Tok::RBrace {
             let field = self.ident()?;
             self.expect(Tok::Assign)?;
             let span = self.span();
-            let value = self.peek().clone();
-            self.bump();
-            match (field.name.as_str(), value) {
+            match (field.name.as_str(), self.peek().clone()) {
                 ("key", Tok::Str(k)) => {
+                    self.bump();
                     (d.key, d.key_span, has_key) = (k, span, true);
                 }
-                ("ops", Tok::Str(o)) => {
-                    d.ops = Some(o.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect());
-                    d.ops_span = span;
+                // forma tipada: uma lista de operações
+                ("ops", Tok::LBrack) => {
+                    self.bump();
+                    while *self.peek() != Tok::RBrack {
+                        d.op_idents.push(self.ident()?);
+                        if !self.eat(&Tok::Comma) {
+                            break;
+                        }
+                    }
+                    self.expect(Tok::RBrack)?;
+                    d.ops = Some(d.op_idents.iter().map(|i| i.name.clone()).collect());
+                    (d.ops_span, d.typed) = (span, true);
                 }
-                ("max_age", Tok::Int(n)) if n > 0 => d.max_age = Some(n as u64),
-                ("ledger", Tok::Str(l)) if l == "anchored" => d.anchored = true,
+                // forma textual (RC3)
+                ("ops", Tok::Str(o)) => {
+                    self.bump();
+                    d.ops = Some(o.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect());
+                    (d.ops_span, textual) = (span, true);
+                }
+                ("max_age", Tok::Int(n)) if n > 0 => {
+                    self.bump();
+                    d.max_age = Some(n as u64);
+                }
+                ("ledger", Tok::Ident(l)) if l == "anchored" => {
+                    self.bump();
+                    (d.anchored, d.typed) = (true, true);
+                }
+                ("ledger", Tok::Str(l)) if l == "anchored" => {
+                    self.bump();
+                    (d.anchored, textual) = (true, true);
+                }
+                ("clock", Tok::Ident(_)) => {
+                    d.clock = Some(self.ident()?);
+                    d.typed = true;
+                }
+                ("outcomes", Tok::Ident(_)) => {
+                    d.outcomes = Some(self.ident()?);
+                    d.typed = true;
+                }
                 (f, _) => {
                     return Err(self.err(format!(
-                        "campo inválido em `authority`: `{f}` (esperado key = \"ed25519:…\", ops = \"op, op\", \
-                         max_age = segundos, ledger = \"anchored\")"
+                        "campo inválido em `authority`: `{f}` (esperado key = \"ed25519:…\", ops = [op, op], \
+                         max_age = segundos, ledger = anchored, clock = testemunha, outcomes = testemunha)"
                     )))
                 }
             }
@@ -235,6 +272,48 @@ impl Parser {
         self.expect(Tok::RBrace)?;
         if !has_key {
             return Err(self.err("uma autoridade declara `key`".to_string()));
+        }
+        // a forma textual não se mistura com a tipada: a garantia de cada uma é distinta
+        if textual && d.typed {
+            return Err(self.err(format!(
+                "a autoridade `{}` mistura a forma textual (RC3: ops = \"…\", ledger = \"anchored\") com a \
+                 tipada (RC4: ops = [..], ledger = anchored, clock, outcomes)",
+                d.name.name
+            )));
+        }
+        Ok(d)
+    }
+
+    fn witness_decl(&mut self) -> PResult<WitnessDecl> {
+        self.expect(Tok::Witness)?;
+        let name = self.ident()?;
+        self.expect(Tok::LBrace)?;
+        let mut d = WitnessDecl { name, key: String::new(), key_span: self.span(), tolerance: None };
+        let mut has_key = false;
+        while *self.peek() != Tok::RBrace {
+            let field = self.ident()?;
+            self.expect(Tok::Assign)?;
+            let span = self.span();
+            match (field.name.as_str(), self.peek().clone()) {
+                ("key", Tok::Str(k)) => {
+                    self.bump();
+                    (d.key, d.key_span, has_key) = (k, span, true);
+                }
+                ("tolerance", Tok::Int(n)) if n > 0 => {
+                    self.bump();
+                    d.tolerance = Some(n as u64);
+                }
+                (f, _) => {
+                    return Err(self.err(format!(
+                        "campo inválido em `witness`: `{f}` (esperado key = \"ed25519:…\", tolerance = segundos)"
+                    )))
+                }
+            }
+            self.eat(&Tok::Comma);
+        }
+        self.expect(Tok::RBrace)?;
+        if !has_key {
+            return Err(self.err("uma testemunha declara `key`".to_string()));
         }
         Ok(d)
     }

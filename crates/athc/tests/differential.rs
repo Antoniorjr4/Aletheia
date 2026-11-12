@@ -3280,3 +3280,41 @@ fn stamped_authority_decides_the_same_in_arx_and_python() {
     first_diff("rc3/sem-ancora", "ARX × Python (journal completo)", &a, &p);
     assert_eq!((ae.as_deref(), pe.as_deref(), executed(&a)), (Some("R0637"), Some("R0637"), 0), "{a}");
 }
+
+// ------------------------------------------------------------------ v1.0-RC4: o limite do domínio comum
+
+/// **RC4, ARX × Python: onde a garantia não existe, os dois recusam igual.** O programa das
+/// concessões com uma autoridade temporal (forma tipada, testemunhas de tempo e de desfecho).
+/// O protocolo do ciclo de vida exige a âncora, a testemunha e recibos assinados: o ARX sem eles
+/// (o mundo simulado não tem nenhum) e o runtime Python (que não os implementa) recusam com o
+/// mesmo código e o mesmo texto, antes de qualquer efeito, e os journals são iguais. Nenhum dos
+/// dois simula a garantia.
+#[test]
+fn a_temporal_program_is_refused_identically_without_the_protocol() {
+    let sk = arx::sign::parse_secret("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60").unwrap();
+    let notary = arx::sign::parse_secret("4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb").unwrap();
+    let bank = arx::sign::parse_secret("c5aa8df43f9f837bedb7442f31dcb7b166d38535076f094b85ce3a2e0b4458f7").unwrap();
+    let decl = format!(
+        "witness notary {{ key = \"{}\", tolerance = 2 }}\n\nwitness bank {{ key = \"{}\" }}\n\n\
+         authority principal {{\n  key = \"{}\"\n  ops = [send, schedule]\n  max_age = 900\n  ledger = anchored\n  clock = notary\n  outcomes = bank\n}}\n\npolicy Any",
+        arx::sign::public_of(&notary),
+        arx::sign::public_of(&bank),
+        arx::sign::public_of(&sk)
+    );
+    let src = grants_src().replace("policy Any", &decl);
+    let c = compile(&src).unwrap_or_else(|d| panic!("{:?}", d.iter().map(|x| (&x.code, &x.msg)).collect::<Vec<_>>()));
+    let auth = c
+        .module
+        .items
+        .iter()
+        .find_map(|i| if let ath_syntax::ast::Item::Authority(d) = i { Some(d) } else { None })
+        .unwrap();
+    assert_eq!(auth.guarantee(), ath_syntax::ast::Guarantee::Temporal);
+    let world = json!({ "sinks": ["send", "schedule"] });
+    let w = |kind: &str, to: &str, amount: &str| json!({ "kind": kind, "to": to, "amount": amount });
+    let plan = json!({ "planner": [{ "kind": "Plan", "writes": [w("Send", "A", "100.00")], "answer": "ok" }] });
+    let (a, ae, p, pe) = run_both_full("rc4/sem-protocolo", &src, &world, &plan, None, None);
+    first_diff("rc4/sem-protocolo", "ARX × Python (journal completo)", &a, &p);
+    assert_eq!((ae.as_deref(), pe.as_deref()), (Some("R0639"), Some("R0639")));
+    assert!(!a.contains("\"kind\":\"tool\""), "{a}");
+}

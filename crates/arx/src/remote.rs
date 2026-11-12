@@ -29,6 +29,14 @@ pub struct RemoteHost {
     pub snapshot: TrustedSnapshot,
     /// o BLAKE3 dos bytes de `--trusted` e a assinatura ao lado (`<arquivo>.sig`)
     pub attestation: Option<(String, String)>,
+    /// os recibos assinados que o provedor devolveu, por chave de fio (v1.0-RC4)
+    receipts: std::collections::BTreeMap<String, Json>,
+}
+
+/// Os argumentos de uma chamada como vão ao provedor: capacidades e a chave não são
+/// argumentos do provedor (a autoridade fica no ARX).
+pub fn plain_args(args: &[Value]) -> Vec<Json> {
+    args.iter().filter(|v| !matches!(v, Value::Cap(_) | Value::Key(_))).map(Value::to_json).collect()
 }
 
 enum Wire {
@@ -49,6 +57,7 @@ impl RemoteHost {
             timeout: Duration::from_secs_f64(timeout.max(0.05)),
             snapshot,
             attestation: None,
+            receipts: Default::default(),
         })
     }
 
@@ -114,12 +123,14 @@ impl Host for RemoteHost {
     fn call(&mut self, tool: &str, args: &[Value]) -> Result<(Value, f64), HostError> {
         let key = args.iter().find_map(|v| if let Value::Key(k) = v { Some(self.wire_key(*k)) } else { None });
         // capacidades e a chave não são argumentos do provedor: a autoridade fica no ARX
-        let plain: Vec<Json> =
-            args.iter().filter(|v| !matches!(v, Value::Cap(_) | Value::Key(_))).map(Value::to_json).collect();
+        let plain = plain_args(args);
         match self.send(&json!({ "op": "call", "tool": tool, "key": key, "args": plain })) {
             Wire::Unreachable(m) => Err(HostError::Unreachable(m)),
             Wire::Silent(elapsed) => Err(HostError::Timeout { elapsed }),
             Wire::Reply(j, lat) => {
+                if let (Some(k), true) = (&key, j["receipt"].is_object()) {
+                    self.receipts.insert(k.clone(), j["receipt"].clone());
+                }
                 if j["ok"] == json!(true) {
                     Ok((RemoteHost::value(&j["value"]), lat))
                 } else {
@@ -130,8 +141,12 @@ impl Host for RemoteHost {
     }
 
     fn status(&mut self, tool: &str, key: u64) -> (Status, f64) {
-        match self.send(&json!({ "op": "status", "tool": tool, "key": self.wire_key(key) })) {
+        let wire = self.wire_key(key);
+        match self.send(&json!({ "op": "status", "tool": tool, "key": wire })) {
             Wire::Reply(j, lat) => {
+                if j["receipt"].is_object() {
+                    self.receipts.insert(wire, j["receipt"].clone());
+                }
                 let s = match j["status"].as_str() {
                     Some("done") => Status::Done(RemoteHost::value(&j["value"])),
                     Some("not_applied") => Status::NotApplied,
@@ -172,5 +187,9 @@ impl Host for RemoteHost {
 
     fn attestation(&self) -> Option<(String, String)> {
         self.attestation.clone()
+    }
+
+    fn receipt(&mut self, wire: &str) -> Option<Json> {
+        self.receipts.remove(wire)
     }
 }

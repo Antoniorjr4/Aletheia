@@ -46,7 +46,15 @@ fn main() -> ExitCode {
                     let tmp = format!("{pf}.tmp");
                     std::fs::write(&tmp, &addr).and_then(|_| std::fs::rename(&tmp, &pf)).map_err(|x| x.to_string())?;
                 }
-                ath_world::serve(l, c);
+                // com --sign-key, o serviço é testemunha de tempo e assina os recibos (v1.0-RC4)
+                let key = match flag("--sign-key") {
+                    Some(k) => Some(
+                        arx::sign::parse_secret(&std::fs::read_to_string(&k).map_err(|x| format!("`{k}`: {x}"))?)
+                            .map_err(|x| format!("`{k}`: {x}"))?,
+                    ),
+                    None => None,
+                };
+                ath_world::serve_with(l, c, key);
                 Ok(())
             }
             "state" => {

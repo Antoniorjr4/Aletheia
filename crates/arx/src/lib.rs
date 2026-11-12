@@ -13,6 +13,7 @@ pub mod cassette;
 pub mod grant;
 pub mod host;
 pub mod journal;
+pub mod lifecycle;
 pub mod lock;
 pub mod model;
 pub mod remote;
@@ -168,6 +169,13 @@ pub struct Authority {
     pub anchored: bool,
     /// declara vínculos: só vale assinatura com carimbo (programa, execução, prazo)
     pub bound: bool,
+    /// a chave como declarada (`ed25519:…`)
+    pub key_text: String,
+    /// garantia temporal (RC4): forma tipada com escopo, prazo, registro ancorado e testemunhas
+    pub temporal: bool,
+    /// a testemunha de tempo (chave, tolerância) e a de desfechos (chave)
+    pub clock: Option<(String, u64)>,
+    pub outcomes: Option<String>,
 }
 
 pub struct Arx<'m> {
@@ -230,6 +238,12 @@ pub struct Arx<'m> {
     pub now_unix: u64,
     /// chave da operação → o hash da linha do consumo que a pagou (o `close` do WAL o cita)
     spend_of: std::collections::BTreeMap<String, String>,
+    /// O protocolo do ciclo de vida (RC4): registro unificado ancorado e tempo autenticado.
+    pub lc: Option<lifecycle::Lc>,
+    /// as chaves que a recuperação ancorada já decidiu (a recuperação local não as toca)
+    pub lc_handled: BTreeSet<String>,
+    /// o módulo declara autoridade temporal
+    pub temporal: bool,
     pub spent_view: Option<std::collections::BTreeMap<String, grant::Owner>>,
     /// Compensação, recuperação e reconciliação são obrigações: não pedem reserva de orçamento.
     obligation: bool,
@@ -343,6 +357,9 @@ impl<'m> Arx<'m> {
             program: ath_codex::address(m).map(|c| c.root).unwrap_or_default(),
             now_unix: 0,
             spend_of: Default::default(),
+            lc: None,
+            lc_handled: BTreeSet::new(),
+            temporal: false,
             spent_view: None,
             authorities: Vec::new(),
             args_attestation: None,
@@ -361,6 +378,15 @@ impl<'m> Arx<'m> {
                 // uma chave que não é um ponto da curva não verifica nada: a autoridade continua
                 // declarada (tudo exige assinatura) e nenhuma assinatura confere
                 Item::Authority(d) => {
+                    let witness = |r: &Option<Ident>| {
+                        let r = r.as_ref()?;
+                        m.items.iter().find_map(|i| match i {
+                            Item::Witness(w) if w.name.name == r.name => Some(w),
+                            _ => None,
+                        })
+                    };
+                    let temporal = d.guarantee() == Guarantee::Temporal;
+                    a.temporal |= temporal;
                     a.authorities.push(Authority {
                         name: d.name.name.clone(),
                         key: sign::parse_public(&d.key).ok(),
@@ -368,8 +394,13 @@ impl<'m> Arx<'m> {
                         max_age: d.max_age,
                         anchored: d.anchored,
                         bound: d.bound(),
+                        key_text: d.key.clone(),
+                        temporal,
+                        clock: witness(&d.clock).map(|w| (w.key.clone(), w.tolerance.unwrap_or(0))),
+                        outcomes: witness(&d.outcomes).map(|w| w.key.clone()),
                     });
                 }
+                Item::Witness(_) => {}
                 Item::Policy(p) => {
                     a.policies.insert(&p.name.name, p);
                 }
@@ -475,15 +506,17 @@ impl<'m> Arx<'m> {
             let Some(key) = a.key.as_ref() else { continue };
             if let Some(st) = v2 {
                 if st.verify(key, &format!("{kind}2"), base) {
-                    let now = self.now_unix;
+                    // o instante real está em [lo, hi]: atestado pela testemunha (RC4) ou, nas
+                    // formas anteriores, lido do relógio do executor (lo = hi)
+                    let (lo, hi) = self.time_bounds();
                     return if st.program != self.program {
                         Err("assinada para outro programa".into())
                     } else if st.run != self.run_id {
                         Err(format!("assinada para outra execução (`{}`)", st.run))
-                    } else if now < st.issued {
+                    } else if lo < st.issued {
                         Err("ainda não é válida".into())
-                    } else if now > st.expires {
-                        Err(format!("expirou há {} s", now - st.expires))
+                    } else if hi > st.expires {
+                        Err(format!("expirou há {} s", hi - st.expires))
                     } else if a.max_age.is_some_and(|m| st.expires.saturating_sub(st.issued) > m) {
                         Err(format!("validade maior que o `max_age` da autoridade `{}`", a.name))
                     } else if op.is_some_and(|op| a.ops.as_ref().is_some_and(|ops| !ops.iter().any(|o| o == op))) {
@@ -534,6 +567,9 @@ impl<'m> Arx<'m> {
             Ok((authority, digest, v2)) => {
                 self.trusted_ok = true;
                 let mut d = json!({ "what": "trusted", "digest": digest, "authority": authority });
+                if let Some(st) = &v2 {
+                    self.lc_stamp("trusted", st.expires);
+                }
                 if let Some(st) = v2 {
                     d["issued"] = json!(st.issued);
                     d["expires"] = json!(st.expires);
@@ -555,6 +591,9 @@ impl<'m> Arx<'m> {
         if args.len() != h.params.len() {
             return Err(rt("R0002", format!("`{agent}.{event}` recebe {} argumento(s)", h.params.len())));
         }
+        // **RC4.** Um programa com autoridade temporal só executa com o protocolo inteiro: o
+        // registro reaceito, o tempo atestado. Sem isso, nada (`R0639`).
+        self.lc_start()?;
         // **Os argumentos `Trusted` são de quem diz ser.** Com uma autoridade declarada, um
         // parâmetro rotulado `Trusted` só é aceito com a assinatura dela sobre a execução e os
         // argumentos: o pedido de uma execução não vale em outra.
@@ -572,6 +611,9 @@ impl<'m> Arx<'m> {
             match by {
                 Ok((authority, v2)) => {
                     let mut d = json!({ "what": "args", "authority": authority });
+                    if let Some(st) = &v2 {
+                        self.lc_stamp("args", st.expires);
+                    }
                     if let Some(st) = v2 {
                         d["issued"] = json!(st.issued);
                         d["expires"] = json!(st.expires);
@@ -1241,6 +1283,15 @@ impl<'m> Arx<'m> {
                     self.line(format!("reconcile Pending[k{key}]"), "provedor opaco: sem protocolo", 0.0, None);
                     break;
                 }
+                // RC4: um reenvio exige a mesma validade que a fronteira; sem ela, nada sai
+                ProviderClass::Idempotent if self.lc_recheck(key).is_err() => {
+                    self.journal.push(
+                        self.clock,
+                        "expired_at_boundary",
+                        json!({ "key": format!("k{key}"), "reconcile": true }),
+                    );
+                    (Status::Unknown, 0.0)
+                }
                 ProviderClass::Idempotent => match self.host.call(&tool, &args) {
                     Ok((v, lat)) => (Status::Done(v), lat),
                     Err(HostError::Failed(m)) => {
@@ -1378,8 +1429,14 @@ impl<'m> Arx<'m> {
     /// `confirmed` (o desfecho é conhecido) e `closed` (o desfecho está persistido).
     fn wclose(&mut self, key: u64, status: &str, via: &str) {
         if self.wal.is_some() {
+            // RC4: o desfecho vai para a âncora, com o recibo, antes do `close` local
+            let anchored = self.lc_settle(key, status, via);
             self.wcrash(wal::CrashPoint::Confirmed, key);
-            self.wlog("close", json!({ "key": format!("k{key}"), "status": status, "evidence": via }));
+            let mut d = json!({ "key": format!("k{key}"), "status": status, "evidence": via });
+            if let Some((field, h)) = anchored {
+                d[field] = json!(h);
+            }
+            self.wlog("close", d);
             self.wcrash(wal::CrashPoint::Closed, key);
         }
     }
@@ -1427,6 +1484,10 @@ impl<'m> Arx<'m> {
             .cloned()
             .collect();
         for (key, d) in open {
+            // RC4: o que a recuperação ancorada decidiu não é decidido de novo pelo WAL local
+            if self.lc_handled.contains(&key) {
+                continue;
+            }
             let tool = d["tool"].as_str().unwrap_or_default().to_string();
             let Some(decl) = self.tools.get(tool.as_str()).copied() else {
                 self.wlog("escalate", json!({ "key": key, "reason": "ferramenta ausente do programa" }));
@@ -1829,71 +1890,99 @@ impl<'m> Arx<'m> {
             }
             self.wcrash(wal::CrashPoint::Authorized, k);
         }
-        let mut guard = match self.grants.begin(&claims) {
-            Ok(g) => g,
-            Err(grant::SpendError::Taken(id)) => {
-                self.journal.push(self.clock, "contract_refused", json!({ "tool": name, "linear": true, "taken": id }));
+        // **RC4**: com autoridade temporal, a fronteira é o protocolo do ciclo de vida ancorado
+        // (`lifecycle::lc_boundary`). Uma operação autorizada por concessão sem WAL ou sem o
+        // protocolo não executa.
+        if self.temporal && !claims.is_empty() {
+            let Some(k) = walled.filter(|_| self.lc.is_some()) else {
+                return Err(rt("R0639", lifecycle::R0639).into());
+            };
+            self.lc_boundary(name, t, &args, k, &claims)?;
+            for &i in &claims {
+                let g = &self.grants.grants[i];
+                self.grants.spent.insert(g.id.clone());
+                let mut row = json!({ "grant": g.id, "op": g.op, "args": g.args, "origin": g.origin, "run": g.run });
+                if let Some(a) = self.grant_auth.get(i).and_then(|a| a.as_ref()) {
+                    row["authority"] = json!(a);
+                }
+                auth_rows.push(row);
+            }
+        } else {
+            let mut guard = match self.grants.begin(&claims) {
+                Ok(g) => g,
+                Err(grant::SpendError::Taken(id)) => {
+                    self.journal.push(
+                        self.clock,
+                        "contract_refused",
+                        json!({ "tool": name, "linear": true, "taken": id }),
+                    );
+                    return Err(rt(
+                        "R0632",
+                        format!(
+                            "`{name}`: a concessão que autorizava estes argumentos foi consumida por outro executor"
+                        ),
+                    )
+                    .into());
+                }
+                Err(grant::SpendError::Ledger(m)) => return Err(rt("R0633", m).into()),
+            };
+            // com autoridade que exige âncora, não há consumo sem ela
+            if !claims.is_empty() && !self.grants.anchored() && self.authorities.iter().any(|a| a.anchored) {
                 return Err(rt(
-                    "R0632",
-                    format!("`{name}`: a concessão que autorizava estes argumentos foi consumida por outro executor"),
+                    "R0637",
+                    format!("`{name}`: a autoridade exige o registro de consumo ancorado e não há âncora (--anchor)"),
                 )
                 .into());
             }
-            Err(grant::SpendError::Ledger(m)) => return Err(rt("R0633", m).into()),
-        };
-        // com autoridade que exige âncora, não há consumo sem ela
-        if !claims.is_empty() && !self.grants.anchored() && self.authorities.iter().any(|a| a.anchored) {
-            return Err(rt(
-                "R0637",
-                format!("`{name}`: a autoridade exige o registro de consumo ancorado e não há âncora (--anchor)"),
-            )
-            .into());
-        }
-        let ids: Vec<String> = claims.iter().map(|&i| self.grants.grants[i].id.clone()).collect();
-        let mut intent_hash = None;
-        if let Some(k) = walled {
-            let sid = self.saga_ids.last().copied();
-            let mut d = json!({ "key": format!("k{k}"), "tool": name, "provider": t.provider.name(),
-                                "obligation": "reconcile", "saga": sid,
-                                "args": args.iter().map(|v| v.to_json()).collect::<Vec<_>>() });
-            if !ids.is_empty() {
-                d["grants"] = json!(ids);
+            let ids: Vec<String> = claims.iter().map(|&i| self.grants.grants[i].id.clone()).collect();
+            let mut intent_hash = None;
+            if let Some(k) = walled {
+                let sid = self.saga_ids.last().copied();
+                let mut d = json!({ "key": format!("k{k}"), "tool": name, "provider": t.provider.name(),
+                                    "obligation": "reconcile", "saga": sid,
+                                    "args": args.iter().map(|v| v.to_json()).collect::<Vec<_>>() });
+                if !ids.is_empty() {
+                    d["grants"] = json!(ids);
+                }
+                self.wlog("intent", d);
+                intent_hash = self.wal.as_ref().and_then(|w| w.last_hash());
+                self.wcrash(wal::CrashPoint::Logged, k);
             }
-            self.wlog("intent", d);
-            intent_hash = self.wal.as_ref().and_then(|w| w.last_hash());
-            self.wcrash(wal::CrashPoint::Logged, k);
-        }
-        let owner = grant::Owner {
-            run: self.run_id.clone(),
-            program: self.program.clone(),
-            tool: name.to_string(),
-            key: walled.map(|k| format!("k{k}")),
-            intent: intent_hash,
-            line: None,
-        };
-        let spend = self.grants.commit(&mut guard, &claims, owner);
-        if let (Some(k), Some(h)) = (walled, &spend) {
-            self.spend_of.insert(format!("k{k}"), h.clone());
-            // o consumo está gravado; a âncora ainda não avançou
-            self.wcrash(wal::CrashPoint::Spent, k);
-        }
-        // só depois de a âncora avançar o efeito pode sair: todo efeito enviado está ancorado
-        if let Err(grant::SpendError::Ledger(m) | grant::SpendError::Taken(m)) = self.grants.seal(guard) {
-            return Err(rt("R0633", m).into());
-        }
-        for &i in &claims {
-            let g = &self.grants.grants[i];
-            let mut row = json!({ "grant": g.id, "op": g.op, "args": g.args, "origin": g.origin, "run": g.run });
-            if let Some(a) = self.grant_auth.get(i).and_then(|a| a.as_ref()) {
-                row["authority"] = json!(a);
+            let owner = grant::Owner {
+                run: self.run_id.clone(),
+                program: self.program.clone(),
+                tool: name.to_string(),
+                key: walled.map(|k| format!("k{k}")),
+                intent: intent_hash,
+                line: None,
+            };
+            let spend = self.grants.commit(&mut guard, &claims, owner);
+            if let (Some(k), Some(h)) = (walled, &spend) {
+                self.spend_of.insert(format!("k{k}"), h.clone());
+                // o consumo está gravado; a âncora ainda não avançou
+                self.wcrash(wal::CrashPoint::Spent, k);
             }
-            auth_rows.push(row);
+            // só depois de a âncora avançar o efeito pode sair: todo efeito enviado está ancorado
+            if let Err(grant::SpendError::Ledger(m) | grant::SpendError::Taken(m)) = self.grants.seal(guard) {
+                return Err(rt("R0633", m).into());
+            }
+            for &i in &claims {
+                let g = &self.grants.grants[i];
+                let mut row = json!({ "grant": g.id, "op": g.op, "args": g.args, "origin": g.origin, "run": g.run });
+                if let Some(a) = self.grant_auth.get(i).and_then(|a| a.as_ref()) {
+                    row["authority"] = json!(a);
+                }
+                auth_rows.push(row);
+            }
         }
         if !auth_rows.is_empty() {
             self.journal.push(self.clock, "authorized", json!({ "tool": name, "by": auth_rows }));
         }
         if let Some(k) = walled {
             self.wcrash(wal::CrashPoint::Intent, k);
+        }
+        if let Some(k) = key_n {
+            self.lc_final(k)?;
         }
         let t0 = self.clock;
         let hr = self.host.call(name, &args);

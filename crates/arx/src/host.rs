@@ -162,6 +162,11 @@ pub trait Host {
     fn attestation(&self) -> Option<(String, String)> {
         None
     }
+    /// O recibo assinado do provedor para a chave de fio (v1.0-RC4), consumido ao ser lido.
+    /// `None`: o host não assina recibos, ou não recebeu um.
+    fn receipt(&mut self, _wire: &str) -> Option<serde_json::Value> {
+        None
+    }
 }
 
 /// Falha injetada: na `nth`-ésima chamada a `tool` (ou em todas, sem `nth`).

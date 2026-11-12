@@ -89,6 +89,9 @@ uso:
       aberto, reconcilia cada uma pelo protocolo da classe do provedor (idempotent reenvia,
       queryable consulta, opaque escala), compensa as sagas interrompidas e persiste tudo no WAL
       --inspect   só confere e lista; não envia nada
+      --strict-authority (em `athc check`) recusa (E0430) autoridade com garantia mais fraca que a
+                      temporal (RC4): só identidade (RC2), forma textual (RC3) ou tipada incompleta
+      --clock tcp://…   (RC4) a testemunha de tempo autenticado declarada pelo programa
       --retry-escalated
                   tenta de novo as operações escaladas cujo provedor tem protocolo (o serviço
                   estava fora do ar, ou o programa transferiu a obrigação); opaque continua escalada
@@ -108,7 +111,7 @@ fn parse_opts(args: &[String]) -> Result<Opts, String> {
     let mut i = 0;
     while i < args.len() {
         let a = &args[i];
-        if a == "--inspect" || a == "--retry-escalated" {
+        if a == "--inspect" || a == "--retry-escalated" || a == "--strict-authority" {
             flags.entry(a[2..].to_string()).or_default().push("true".into());
             i += 1;
         } else if let Some(name) = a.strip_prefix("--") {
@@ -217,6 +220,33 @@ fn cmd_check(opts: &Opts, st: Style) -> Result<bool, String> {
     let Some(c) = compile_or_report(&path, &src, st) else { return Ok(false) };
     println!("$ athc check {path}");
     print!("{}", summary(&c, st));
+    // **O nível de garantia de cada autoridade** (RC4): a compatibilidade com as formas
+    // anteriores é explícita, nunca confundida com a garantia temporal.
+    let mut weak = Vec::new();
+    for i in &c.module.items {
+        if let ath_syntax::ast::Item::Authority(d) = i {
+            let g = d.guarantee();
+            let missing = d.missing();
+            if g == ath_syntax::ast::Guarantee::Temporal {
+                println!("{} autoridade `{}`: garantia {}", st.green("✓"), d.name.name, g.name());
+            } else {
+                println!(
+                    "{} autoridade `{}`: garantia {} · falta: {}",
+                    st.bold("!"),
+                    d.name.name,
+                    g.name(),
+                    missing.join(", ")
+                );
+                weak.push((d.name.name.clone(), g));
+            }
+        }
+    }
+    if opts.one("strict-authority").is_some() && !weak.is_empty() {
+        for (n, g) in &weak {
+            eprintln!("erro[E0430]: a autoridade `{n}` tem garantia {}, mais fraca que a temporal (RC4) exigida por --strict-authority", g.name());
+        }
+        return Ok(false);
+    }
     Ok(true)
 }
 
@@ -358,7 +388,8 @@ fn cmd_run(opts: &Opts, st: Style) -> Result<bool, String> {
         arx.grants = GrantStore::open(Path::new(g))?;
         // com autoridade declarada, falha fechado na carga: uma concessão sem a assinatura dela
         // recusa o arquivo inteiro (o runtime também a ignora, em `s.authorizes`)
-        if !arx.authorities.is_empty() {
+        // (RC4: num programa temporal a conferência espera o tempo atestado, mais abaixo)
+        if !arx.authorities.is_empty() && !arx.temporal {
             for (i, x) in arx.grants.grants.iter().enumerate() {
                 if let Err(why) = arx.attest_grant(x) {
                     return Err(format!(
@@ -370,19 +401,42 @@ fn cmd_run(opts: &Opts, st: Style) -> Result<bool, String> {
             }
         }
         // a âncora: o registro é confrontado com ela agora, antes de qualquer coisa executar
-        match opts.one("anchor") {
+        // (RC4: com autoridade temporal, a âncora é o registro unificado, ligado abaixo)
+        match opts.one("anchor").filter(|_| !arx.temporal) {
             Some(a) => {
                 let anchor = arx::anchor::TcpAnchor::new(a.strip_prefix("tcp://").unwrap_or(a), 5.0)?;
                 let program = arx.program.clone();
                 arx.grants.attach_anchor(Box::new(anchor), &program, &run_id)?;
             }
-            None if arx.authorities.iter().any(|a| a.anchored) => {
+            None if !arx.temporal && arx.authorities.iter().any(|a| a.anchored) => {
                 return Err(
                     "R0637: a autoridade do programa exige o registro de consumo ancorado; informe --anchor tcp://…"
                         .into(),
                 )
             }
             None => {}
+        }
+    }
+    // **RC4**: o registro unificado e a testemunha de tempo. Sem os dois, um programa com
+    // autoridade temporal não executa (`R0639`, na primeira instrução da execução).
+    if arx.temporal {
+        // o relógio do executor nunca decide num programa temporal: sem tempo atestado, nenhuma
+        // assinatura é válida (falha fechado)
+        arx.now_unix = 0;
+        if let (Some(a), Some(t)) = (opts.one("anchor"), opts.one("clock")) {
+            let reg = arx::lifecycle::TcpRegistry::new(a, 5.0)?;
+            let time = arx::lifecycle::TcpTime::new(t, 5.0)?;
+            arx.attach_lifecycle(Box::new(reg), Box::new(time))?;
+            arx.lc_start().map_err(|e| format!("{}: {}; nenhum efeito", e.code, e.msg))?;
+            for (i, x) in arx.grants.grants.iter().enumerate() {
+                if let Err(why) = arx.attest_grant(x) {
+                    return Err(format!(
+                        "G0001: concessão {} ({}) sem assinatura válida de uma autoridade do programa ({why}, no tempo atestado); nada foi executado",
+                        i + 1,
+                        &x.id[..12]
+                    ));
+                }
+            }
         }
     }
     if let Some(s) = opts.one("args-sig") {
@@ -445,8 +499,9 @@ fn cmd_run(opts: &Opts, st: Style) -> Result<bool, String> {
         }
         if let Some(k) = opts.one("kill-at") {
             let (point, n) = k.split_once(':').ok_or("--kill-at espera ponto:N")?;
-            let point = CrashPoint::parse(point)
-                .ok_or("--kill-at: ponto deve ser authorized, logged, spent, intent, sent, confirmed ou closed")?;
+            let point = CrashPoint::parse(point).ok_or(
+                "--kill-at: ponto deve ser authorized, logged, spent, reserved, intent, sent, confirmed ou closed",
+            )?;
             w.crash = Some((point, n.parse().map_err(|_| "--kill-at: N inválido")?));
             w.crash_mode = CrashMode::Kill;
         }
@@ -460,6 +515,10 @@ fn cmd_run(opts: &Opts, st: Style) -> Result<bool, String> {
         // com âncora, a recuperação é obrigada a confrontar o registro com ela
         if let Some(a) = opts.one("anchor").filter(|_| arx.grants.anchored()) {
             head["anchor"] = json!(a);
+        }
+        // RC4: a recuperação é obrigada a usar o mesmo registro unificado e a mesma testemunha
+        if let (true, Some(a), Some(t)) = (arx.lc.is_some(), opts.one("anchor"), opts.one("clock")) {
+            head["lifecycle"] = json!({ "anchor": a, "clock": t, "scope": arx.lc.as_ref().map(|l| l.scope.clone()) });
         }
         w.append(0.0, "run", head);
         arx.wal = Some(w);
@@ -1292,7 +1351,19 @@ fn recover(opts: &Opts, st: Style) -> Result<u8, String> {
         // as intenções que citam concessões só se decidem com o registro de consumo
         let cites = stw.open().iter().any(|(_, d)| d["grants"].as_array().is_some_and(|a| !a.is_empty()));
         let ledger = opts.one("grants").map(|g| format!("{g}.spent")).or(head["ledger"].as_str().map(String::from));
-        if cites || ledger.is_some() {
+        // RC4: o registro unificado e a testemunha de tempo, os mesmos da execução
+        if arx.temporal {
+            let lc = &head["lifecycle"];
+            let a = opts.one("anchor").map(String::from).or(lc["anchor"].as_str().map(String::from));
+            let t = opts.one("clock").map(String::from).or(lc["clock"].as_str().map(String::from));
+            let (Some(a), Some(t)) = (a, t) else {
+                return Err(format!("R0639: {}; informe --anchor e --clock (nada foi enviado)", arx::lifecycle::R0639));
+            };
+            let reg = arx::lifecycle::TcpRegistry::new(&a, 5.0)?;
+            let time = arx::lifecycle::TcpTime::new(&t, 5.0)?;
+            arx.attach_lifecycle(Box::new(reg), Box::new(time))?;
+        }
+        if !arx.temporal && (cites || ledger.is_some()) {
             let l = ledger.ok_or(
                 "W0007: há intenção em aberto que cita concessões e o WAL não registra o registro de consumo; informe --grants",
             )?;
@@ -1315,13 +1386,31 @@ fn recover(opts: &Opts, st: Style) -> Result<u8, String> {
                 Err(_) => {}
             }
         }
+        let before = wal.log.entries.len();
         arx.wal = Some(wal);
         let fuel = opts.one("fuel").map(|f| f.parse::<u32>().map_err(|_| "--fuel inválido")).transpose()?.unwrap_or(3);
-        actions = arx.recover_with(fuel, opts.one("retry-escalated").is_some());
+        // RC4: primeiro o que a âncora sabe (integridade do WAL, desfechos, liberações); depois a
+        // recuperação local, para o resto (as sagas e as operações sem concessão)
+        if arx.temporal {
+            arx.lc_recover(fuel).map_err(|e| format!("{e} (a recuperação parou antes de qualquer envio)"))?;
+        }
+        arx.recover_with(fuel, opts.one("retry-escalated").is_some());
+        actions = arx.wal.as_ref().map(|w| w.log.entries[before..].to_vec()).unwrap_or_default();
         for a in &actions {
             let d = &a["detail"];
             let key = d["key"].as_str().unwrap_or("-");
             match a["kind"].as_str() {
+                Some("close") if d["evidence"].as_str().is_some_and(|e| e.starts_with("anchor:")) => println!(
+                    "  {} {key} {} · {}",
+                    st.green("●"),
+                    if d["status"] == "done" { "aplicada" } else { "não aplicada" },
+                    match d["evidence"].as_str().unwrap_or_default() {
+                        "anchor:outcome" => "desfecho restaurado do registro ancorado (recibo do provedor), sem consultar o provedor",
+                        "anchor:unsent" => "provadamente não enviada (reserva sem autorização de envio): reserva liberada, concessão livre",
+                        "anchor:released" => "liberação restaurada do registro ancorado",
+                        _ => "a intenção não chegou a reservar: nada saiu, nenhuma concessão consumida",
+                    }
+                ),
                 Some("close") if d["evidence"] == "recovery:unspent" => println!(
                     "  {} {key} não enviada · a intenção existia, o consumo não: {} concessão(ões) continua(m) livre(s)",
                     st.green("●"),

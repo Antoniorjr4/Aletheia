@@ -375,3 +375,59 @@ open Aletheia
 
 /-- info: 'Aletheia.Anchor.expired_stays_expired' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Anchor.expired_stays_expired
+
+-- v1.0-RC4: o ciclo de vida verificado do efeito (`Aletheia/Lifecycle.lean`)
+
+/-- info: 'Aletheia.Lifecycle.window_brackets' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Lifecycle.window_brackets
+
+/-- info: 'Aletheia.Lifecycle.valid_at_now' does not depend on any axioms -/
+#guard_msgs in #print axioms Lifecycle.valid_at_now
+
+/-- info: 'Aletheia.Lifecycle.valid_implies_fresh' does not depend on any axioms -/
+#guard_msgs in #print axioms Lifecycle.valid_implies_fresh
+
+/-- info: 'Aletheia.Lifecycle.local_clock_irrelevant' does not depend on any axioms -/
+#guard_msgs in #print axioms Lifecycle.local_clock_irrelevant
+
+/-- info: 'Aletheia.Lifecycle.inv_of_reach' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Lifecycle.inv_of_reach
+
+/-- info: 'Aletheia.Lifecycle.no_expired_effect' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Lifecycle.no_expired_effect
+
+/-- info: 'Aletheia.Lifecycle.expired_never_revalidates' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Lifecycle.expired_never_revalidates
+
+/-- info: 'Aletheia.Lifecycle.sent_has_history' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Lifecycle.sent_has_history
+
+/-- info: 'Aletheia.Lifecycle.outcome_has_evidence' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Lifecycle.outcome_has_evidence
+
+/-- info: 'Aletheia.Lifecycle.no_rollback_reauthorizes' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Lifecycle.no_rollback_reauthorizes
+
+/-- info: 'Aletheia.Lifecycle.release_sound' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Lifecycle.release_sound
+
+/-- info: 'Aletheia.Lifecycle.one_effect_per_grant' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Lifecycle.one_effect_per_grant
+
+/-- info: 'Aletheia.Lifecycle.decide_ignores_local' does not depend on any axioms -/
+#guard_msgs in #print axioms Lifecycle.decide_ignores_local
+
+/-- info: 'Aletheia.Lifecycle.decide_sound' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Lifecycle.decide_sound
+
+/-- info: 'Aletheia.Lifecycle.opaque_ambiguity' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Lifecycle.opaque_ambiguity
+
+/-- info: 'Aletheia.Lifecycle.opaque_undecidable' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Lifecycle.opaque_undecidable
+
+/-- info: 'Aletheia.Lifecycle.expected_is_decide' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Lifecycle.expected_is_decide
+
+/-- info: 'Aletheia.Lifecycle.rc3_local_clock_counterexample' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Lifecycle.rc3_local_clock_counterexample
