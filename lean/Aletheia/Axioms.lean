@@ -308,3 +308,35 @@ open Aletheia
 
 /-- info: 'Aletheia.Grant.relation_is_reusable' depends on axioms: [propext] -/
 #guard_msgs in #print axioms Grant.relation_is_reusable
+
+-- v1.0-RC2: concessão e intenção, uma transação (`Aletheia/Txn.lean`)
+
+/-- info: 'Aletheia.Txn.spent_has_intent' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Txn.spent_has_intent
+
+/-- info: 'Aletheia.Txn.at_most_one_sender' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Txn.at_most_one_sender
+
+/-- info: 'Aletheia.Txn.unsent_never_left' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Txn.unsent_never_left
+
+/-- info: 'Aletheia.Txn.nothing_never_left' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Txn.nothing_never_left
+
+/-- info: 'Aletheia.Txn.consumed_is_recoverable' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Txn.consumed_is_recoverable
+
+/-- info: 'Aletheia.Txn.unsent_leaves_grant' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Txn.unsent_leaves_grant
+
+/-- info: 'Aletheia.Txn.crash_reachable' does not depend on any axioms -/
+#guard_msgs in #print axioms Txn.crash_reachable
+
+/-- info: 'Aletheia.Txn.expected_is_recover' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Txn.expected_is_recover
+
+/-- info: 'Aletheia.Txn.rc1_window' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Txn.rc1_window
+
+/-- info: 'Aletheia.Txn.rc1_race' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Txn.rc1_race

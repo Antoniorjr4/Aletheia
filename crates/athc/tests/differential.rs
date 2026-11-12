@@ -2940,7 +2940,25 @@ agent A(bank: Cap[Bank.Transfer], keys: Cap[IdemKey.Mint]) budget [tok <= 1000, 
 "#
 }
 
-/// **RC2, ARX × Python na fronteira da autorização.** O mesmo programa, as mesmas concessões e
+/// A decisão de `Aletheia.Txn.expected` para o ponto de queda, lida do fonte Lean: o modelo
+/// formal é o oráculo do teste, e o Lean prova que a tabela é a função `recover`.
+fn lean_decision(point: &str) -> String {
+    let src = std::fs::read_to_string(root().join("lean/Aletheia/Txn.lean")).unwrap();
+    let table = src.split("def expected : List (Point × Decision) :=").nth(1).expect("Txn.lean: `expected`");
+    let table = &table[..table.find(']').expect("Txn.lean: fim de `expected`")];
+    let pairs: Vec<(String, String)> = table
+        .split('(')
+        .skip(1)
+        .map(|p| {
+            let mut it = p.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty());
+            (it.next().unwrap().to_string(), it.next().unwrap().to_string())
+        })
+        .collect();
+    assert_eq!(pairs.len(), 4, "Txn.lean: `expected` tem quatro pontos de queda");
+    pairs.into_iter().find(|(p, _)| p == point).unwrap_or_else(|| panic!("Txn.lean: ponto `{point}`")).1
+}
+
+/// **RC2, Lean × ARX × Python na fronteira da autorização.** O mesmo programa, as mesmas concessões e
 /// os mesmos pontos de queda (incluídos os dois novos: `authorized`, antes de qualquer
 /// persistência, e `logged`, entre a intenção e o consumo) nos dois runtimes: o WAL depois da
 /// recuperação é o mesmo, byte a byte. E as decisões são as de `lean/Aletheia/Txn.lean`:
@@ -3003,12 +3021,15 @@ fn the_grant_transaction_is_the_same_in_arx_and_python() {
                 .rev()
                 .find(|e| (e["kind"] == "close" || e["kind"] == "escalate") && e["detail"]["key"] == key.as_str())
                 .map(|e| e["detail"]["evidence"].as_str().unwrap_or("escalated").to_string());
-            let expect = match (at, nth) {
-                (CrashPoint::Authorized, _) => None,
-                (CrashPoint::Logged, _) => Some("recovery:unspent"),
-                (_, 1) => Some("recovery:resend"),
-                (_, 2) => Some("recovery:status"),
-                _ => Some("escalated"),
+            // a decisão vem da tabela `expected` de `Txn.lean` (provada igual a `recover`);
+            // `byClass` é o protocolo da classe do provedor da operação
+            let expect = match (lean_decision(at.name()).as_str(), nth) {
+                ("nothing", _) => None,
+                ("unsent", _) => Some("recovery:unspent"),
+                ("byClass", 1) => Some("recovery:resend"),
+                ("byClass", 2) => Some("recovery:status"),
+                ("byClass", _) => Some("escalated"),
+                (d, _) => panic!("decisão desconhecida em Txn.lean: {d}"),
             };
             assert_eq!(ev.as_deref(), expect, "{tag}");
             assert!(st.open().is_empty(), "{tag}: intenção sem desfecho");
