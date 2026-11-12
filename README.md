@@ -37,6 +37,20 @@ $ athc check examples/rollout.ath
 ✓ Codex              12 objetos BLAKE3, raiz #9ecbfccad097
 ```
 
+## v1.0-RC2: autorização, persistência e efeito
+
+```sh
+scripts/rc2-smoke.sh
+```
+
+O RC2 fecha a fronteira que o RC1 deixou como hipótese. A concessão linear e a intenção do WAL
+formam uma transação (intenção → consumo → envio, sob trava entre processos): uma queda nunca
+deixa concessão gasta sem obrigação recuperável, e dois processos nunca gastam a mesma
+concessão. O programa declara quem pode conceder (`authority nome { key = "ed25519:…" }`), e só
+vale a concessão, a fotografia confiável e o pedido que essa chave assinou. O protocolo está
+modelado em `lean/Aletheia/Txn.lean`, e a tabela de decisões do Lean é o oráculo do teste
+diferencial. Detalhes, evidências e limitações em [`docs/RC2.md`](docs/RC2.md).
+
 ## v1.0-RC1: ponta a ponta
 
 ```sh
