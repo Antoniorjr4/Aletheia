@@ -1,0 +1,16 @@
+test a_grant_does_not_authorize_another_program ... FAILED
+test a_rolled_back_ledger_does_not_reinstate_spent_grants ... FAILED
+test an_old_trusted_snapshot_is_not_accepted_in_a_later_run ... FAILED
+test recovery_does_not_reinstate_a_grant_whose_effect_left ... FAILED
+thread 'a_grant_does_not_authorize_another_program' panicked at crates/athc/tests/rc3.rs:253:5:
+assertion `left == right` failed: a concessão de um programa foi aceita por outro
+  left: 2
+thread 'a_rolled_back_ledger_does_not_reinstate_spent_grants' panicked at crates/athc/tests/rc3.rs:204:9:
+assertion `left == right` failed: file: o agendamento foi repetido depois do retrocesso
+  left: 2
+thread 'an_old_trusted_snapshot_is_not_accepted_in_a_later_run' panicked at crates/athc/tests/rc3.rs:235:5:
+assertion `left == right` failed: a fotografia de outra execução foi aceita
+  left: 2
+thread 'recovery_does_not_reinstate_a_grant_whose_effect_left' panicked at crates/athc/tests/rc3.rs:222:5:
+a recuperação liberou a concessão de um efeito que saiu
+test result: FAILED. 0 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.09s
