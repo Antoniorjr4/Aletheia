@@ -68,7 +68,8 @@ pub fn open(db: &Path) -> rusqlite::Result<Connection> {
            id INTEGER PRIMARY KEY AUTOINCREMENT, tool TEXT NOT NULL, nth INTEGER, kind TEXT NOT NULL,
            ms INTEGER NOT NULL DEFAULT 0, used INTEGER NOT NULL DEFAULT 0);
          CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v INTEGER NOT NULL);
-         CREATE TABLE IF NOT EXISTS log (seq INTEGER PRIMARY KEY AUTOINCREMENT, line TEXT NOT NULL);",
+         CREATE TABLE IF NOT EXISTS log (seq INTEGER PRIMARY KEY AUTOINCREMENT, line TEXT NOT NULL);
+         CREATE TABLE IF NOT EXISTS anchors (scope TEXT PRIMARY KEY, seq INTEGER NOT NULL, head TEXT NOT NULL);",
     )?;
     Ok(c)
 }
@@ -125,7 +126,10 @@ pub fn state(c: &Connection) -> rusqlite::Result<Json> {
         ledger.push(row?);
     }
     let count = |tool: &str, state: &str| ledger.iter().filter(|e| e["tool"] == tool && e["state"] == state).count();
+    // a marca da âncora (v1.0-RC3): quantos consumos estão ancorados, no escopo mais adiantado
+    let anchored: i64 = c.query_row("SELECT COALESCE(MAX(seq), 0) FROM anchors", [], |r| r.get(0))?;
     Ok(json!({
+        "anchored": anchored,
         "accounts": accounts,
         "counts": { "pays_posted": count("pay", "posted"), "pays_refunded": count("pay", "reversed"),
                     "scheduled": count("schedule", "scheduled"), "wires": count("wire", "sent"),
@@ -287,6 +291,53 @@ fn handle(db: &Mutex<Connection>, req: &Json) -> Reply {
     };
     match req["op"].as_str() {
         Some("ping") => Reply::Line(json!({ "ok": true })),
+        // **A âncora** (v1.0-RC3, `arx::anchor`): por escopo, a marca do registro de consumo.
+        // `advance` é um compare-and-swap que só anda um passo para a frente; nunca volta. O
+        // serviço não vê concessões, só hashes. Num deployment, é um processo e um banco
+        // separados dos do provedor (`ath-world serve` em outra porta, outro arquivo).
+        Some("anchor") => {
+            let Some(scope) = req["scope"].as_str() else { return err("âncora sem escopo".into()) };
+            let cur: rusqlite::Result<Option<(i64, String)>> = c
+                .query_row("SELECT seq, head FROM anchors WHERE scope = ?1", params![scope], |r| {
+                    Ok((r.get(0)?, r.get(1)?))
+                })
+                .optional();
+            let (seq, head) = match cur {
+                Ok(Some(x)) => x,
+                Ok(None) => (0, "0".repeat(64)),
+                Err(e) => return err(e.to_string()),
+            };
+            if req["do"] == "read" {
+                return Reply::Line(json!({ "ok": true, "seq": seq, "head": head }));
+            }
+            let m = |j: &Json| Some((j["seq"].as_i64()?, j["head"].as_str()?.to_string()));
+            let (Some(from), Some(to)) = (m(&req["from"]), m(&req["to"])) else {
+                return err("avanço sem marcas".into());
+            };
+            if (seq, head.clone()) == to {
+                return Reply::Line(json!({ "ok": true, "seq": seq, "head": head }));
+            }
+            if (seq, head.clone()) != from || to.0 != from.0 + 1 {
+                log(
+                    &c,
+                    format!(
+                        "anchor {} recusado: atual {seq}, pedido {} -> {}",
+                        &scope[..12.min(scope.len())],
+                        from.0,
+                        to.0
+                    ),
+                );
+                return Reply::Line(json!({ "ok": false, "conflict": true, "seq": seq, "head": head }));
+            }
+            match c.execute(
+                "INSERT INTO anchors (scope, seq, head) VALUES (?1, ?2, ?3)
+                 ON CONFLICT(scope) DO UPDATE SET seq = excluded.seq, head = excluded.head",
+                params![scope, to.0, to.1],
+            ) {
+                Ok(_) => Reply::Line(json!({ "ok": true, "seq": to.0, "head": to.1 })),
+                Err(e) => err(e.to_string()),
+            }
+        }
         Some("state") => match state(&c) {
             Ok(s) => Reply::Line(json!({ "ok": true, "value": s })),
             Err(e) => err(e.to_string()),

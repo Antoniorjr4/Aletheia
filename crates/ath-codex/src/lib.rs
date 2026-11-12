@@ -373,7 +373,13 @@ impl Canon<'_> {
             }
             // A chave da autoridade entra no hash: trocar de autoridade é trocar de programa.
             Item::Authority(d) => {
-                let _ = write!(self.out, "(authority {:?})", d.key);
+                let _ = write!(self.out, "(authority {:?}", d.key);
+                // os vínculos também são identidade do programa (só aparecem quando declarados:
+                // o hash de um módulo do RC2 não muda)
+                if d.bound() {
+                    let _ = write!(self.out, " (ops {:?}) (max_age {:?}) (anchored {})", d.ops, d.max_age, d.anchored);
+                }
+                let _ = write!(self.out, ")");
             }
             Item::Model(d) => {
                 // O contrato Δ inteiro (números e identidade versionada) entra no hash: mudar o

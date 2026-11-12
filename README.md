@@ -37,6 +37,20 @@ $ athc check examples/rollout.ath
 ✓ Codex              12 objetos BLAKE3, raiz #9ecbfccad097
 ```
 
+## v1.0-RC3: autoridade durável e integridade temporal
+
+```sh
+scripts/rc3-smoke.sh
+```
+
+No RC3 a história de uma autorização é verificável do início ao desfecho. O registro de consumo
+é uma cadeia de hashes confrontada com uma âncora monotônica fora do disco do executor: um
+registro adulterado, retrocedido ou bifurcado é recusado antes de qualquer efeito e na
+recuperação. A declaração `authority` distingue identidade (`key`), contexto (`ops`, conferido
+pelo compilador), validade (`max_age`) e história (`ledger = "anchored"`); o que ela assina vale
+para um programa, uma execução e um prazo. Modelo de confiança, evidências e limitações em
+[`docs/RC3.md`](docs/RC3.md).
+
 ## v1.0-RC2: autorização, persistência e efeito
 
 ```sh

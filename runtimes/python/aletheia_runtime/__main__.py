@@ -165,6 +165,7 @@ def main(argv: list) -> int:
     if one("grants"):
         rt.run_id = one("run-id") or ""
         rt.load_grants(json.load(open(one("grants"), encoding="utf-8")))
+    rt.now_unix = int(one("now") or 0)
     if one("args-sig"):
         rt.run_id = one("run-id") or ""
         rt.args_attestation = (opts.get("arg-json", []), one("args-sig"))

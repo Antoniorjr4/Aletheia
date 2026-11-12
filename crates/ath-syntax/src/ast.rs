@@ -85,8 +85,25 @@ impl Item {
 #[derive(Clone, Debug)]
 pub struct AuthorityDecl {
     pub name: Ident,
+    /// **identidade**: a chave pública
     pub key: String,
     pub key_span: Span,
+    /// **contexto**: as operações (`s.authorizes("op", …)`) que ela pode conceder
+    /// (`ops = "pay, schedule"`); ausente: qualquer uma
+    pub ops: Option<Vec<String>>,
+    pub ops_span: Span,
+    /// **validade**: a duração máxima, em segundos, de qualquer coisa que ela assine
+    pub max_age: Option<u64>,
+    /// `ledger = "anchored"`: o consumo das concessões dela exige âncora monotônica
+    pub anchored: bool,
+}
+
+impl AuthorityDecl {
+    /// A autoridade declara vínculos (v1.0-RC3): o que ela assina tem de estar ligado ao
+    /// programa, à execução e a um intervalo de validade. Só com `key`, vale o formato do RC2.
+    pub fn bound(&self) -> bool {
+        self.ops.is_some() || self.max_age.is_some() || self.anchored
+    }
 }
 
 #[derive(Clone, Debug)]

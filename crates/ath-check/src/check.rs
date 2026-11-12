@@ -198,6 +198,8 @@ pub struct Ctx<'m> {
     /// `infer`s (por span) e os inventários confiáveis que o seu prompt recebe
     /// (`s.managed()`, `s.inventory("k")`).
     anchored: HashMap<Span, BTreeSet<String>>,
+    /// as operações de `s.authorizes("op", …)` nos contratos, com o lugar
+    auth_ops: Vec<(String, Span)>,
 }
 
 use Stratum::{E0, E1, E2, E3, E5, E6};
@@ -226,6 +228,7 @@ impl<'m> Ctx<'m> {
             in_handle: false,
             taint_calls: false,
             anchored: HashMap::new(),
+            auth_ops: Vec::new(),
         }
     }
 
@@ -599,6 +602,46 @@ impl<'m> Ctx<'m> {
         for item in &m.items {
             if let Item::Agent(a) = item {
                 self.check_agent(a);
+            }
+        }
+        self.check_authority_scope();
+    }
+
+    /// **O escopo das autoridades fecha com os contratos (E0427).** Se toda autoridade do
+    /// módulo declara `ops`, uma operação que nenhuma delas pode conceder nunca seria
+    /// autorizada: o contrato é inatingível. E um `ops` que cita uma operação que nenhum
+    /// contrato usa é um erro de digitação que daria a falsa impressão de escopo.
+    fn check_authority_scope(&mut self) {
+        let auths: Vec<&AuthorityDecl> =
+            self.m.items.iter().filter_map(|i| if let Item::Authority(d) = i { Some(d) } else { None }).collect();
+        let used = std::mem::take(&mut self.auth_ops);
+        for d in &auths {
+            for op in d.ops.iter().flatten() {
+                if !used.iter().any(|(u, _)| u == op) {
+                    self.push(Diag::new(
+                        E2,
+                        "E0427",
+                        format!("a autoridade `{}` concede `{op}`, que nenhum contrato usa", d.name.name),
+                        d.ops_span,
+                        "nenhum `requires s.authorizes(…)` com esta operação",
+                    ));
+                }
+            }
+        }
+        if !auths.is_empty() && auths.iter().all(|d| d.ops.is_some()) {
+            for (op, span) in &used {
+                if !auths.iter().any(|d| d.ops.iter().flatten().any(|o| o == op)) {
+                    self.push(
+                        Diag::new(
+                            E2,
+                            "E0427",
+                            format!("nenhuma autoridade do módulo pode conceder `{op}`"),
+                            *span,
+                            "este contrato nunca seria satisfeito",
+                        )
+                        .help("acrescente a operação ao `ops` de uma autoridade"),
+                    );
+                }
             }
         }
     }
@@ -1547,6 +1590,13 @@ impl<'m> Ctx<'m> {
                     // contrato de uma ferramenta, onde há um efeito para consumi-la. Uma política
                     // é pura e pode ser avaliada várias vezes; não decide com concessões.
                     let member = method.name != "inventory";
+                    if method.name == "authorizes" {
+                        if let Some(Expr { kind: ExprKind::Str(op), .. }) = args.first() {
+                            if !self.auth_ops.iter().any(|(_, sp)| *sp == method.span) {
+                                self.auth_ops.push((op.clone(), method.span));
+                            }
+                        }
+                    }
                     if method.name == "authorizes" && !self.in_requires {
                         self.push(
                             Diag::new(

@@ -2533,6 +2533,20 @@ fn run_both_full(
     grants: Option<(&str, &Json)>,
     args_sig: Option<&str>,
 ) -> (String, Option<String>, String, Option<String>) {
+    run_both_at(tag, src, world, models, grants, args_sig, 0)
+}
+
+/// Como `run_both_full`, no instante `now` (segundos Unix): a validade das assinaturas com
+/// carimbo é conferida contra ele nos dois runtimes.
+fn run_both_at(
+    tag: &str,
+    src: &str,
+    world: &Json,
+    models: &Json,
+    grants: Option<(&str, &Json)>,
+    args_sig: Option<&str>,
+    now: u64,
+) -> (String, Option<String>, String, Option<String>) {
     let c = compile(src).unwrap_or_else(|d| {
         panic!("{tag}: o athc recusou\n{:?}", d.iter().map(|x| (&x.code, &x.msg)).collect::<Vec<_>>())
     });
@@ -2546,6 +2560,7 @@ fn run_both_full(
     if let Some(s) = args_sig {
         arx.args_attestation = Some((vec!["0".to_string()], s.to_string()));
     }
+    arx.now_unix = now;
     let aerr = arx.run("A", "go", vec![Value::Int(0)]).err().map(|e| e.code);
     let full = arx.journal.to_jsonl();
     let dir = scratch();
@@ -2571,6 +2586,9 @@ fn run_both_full(
     }
     if let Some(s) = args_sig {
         cmd.args(["--args-sig", s]);
+    }
+    if now > 0 {
+        cmd.args(["--now", &now.to_string()]);
     }
     let out = cmd
         .env("PYTHONPATH", root().join("runtimes/python"))
@@ -3131,4 +3149,134 @@ fn only_what_the_declared_authority_signed_confers_authority() {
     first_diff("auth/foto", "ARX × Python (journal completo)", &a, &p);
     assert_eq!((ae.as_deref(), pe.as_deref()), (Some("R0635"), Some("R0635")));
     assert_eq!(executed(&a), 0);
+}
+
+// ------------------------------------------------------------------ v1.0-RC3: escopo, validade e contexto da autoridade
+
+/// **RC3, ARX × Python.** Uma autoridade com vínculos (`ops`, `max_age`): o que ela assina
+/// carrega o programa (raiz do Codex), a execução e o prazo. Os dois runtimes tomam a mesma
+/// decisão e escrevem o mesmo journal, byte a byte, para: tudo em ordem; concessão expirada,
+/// ainda não válida, com prazo maior que `max_age`, de outro programa, no formato do RC2, e
+/// fora do escopo da autoridade que a assinou; pedido expirado e de outro programa. E uma
+/// autoridade que exige o registro ancorado não consome em nenhum dos dois sem âncora (`R0637`).
+#[test]
+fn stamped_authority_decides_the_same_in_arx_and_python() {
+    use arx::sign::Stamp;
+    let sk = arx::sign::parse_secret("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60").unwrap();
+    let sk2 = arx::sign::parse_secret(&"42".repeat(32)).unwrap();
+    const NOW: u64 = 1_800_000_000;
+    let authority = |name: &str, key: &[u8; 32], fields: &str| {
+        format!("authority {name} {{\n  key = \"{}\"\n{fields}}}\n\n", arx::sign::public_of(key))
+    };
+    let program = |auths: &str| {
+        grants_src()
+            .replace("policy Any", &format!("{auths}policy Any"))
+            .replace("on go(n: Int)", "on go(n: Int ^ Trusted)")
+    };
+    let src = program(&authority("principal", &sk, "  ops = \"send, schedule\"\n  max_age = 900\n"));
+    let root_of = |src: &str| {
+        compile(src)
+            .unwrap_or_else(|d| panic!("{:?}", d.iter().map(|x| (&x.code, &x.msg)).collect::<Vec<_>>()))
+            .codex
+            .root
+    };
+    let root = root_of(&src);
+    let world = json!({ "sinks": ["send", "schedule"] });
+    // uma concessão com carimbo: (programa, emissão, duração), ou só a assinatura do RC2
+    let g = |op: &str, to: &str, amount: &str, key: &[u8; 32], stamp: Option<(&str, u64, u64)>| {
+        let args = [to.to_string(), amount.to_string()];
+        let mut x = arx::grant::Grant::new("run-1", op, &args, "confirmation:msg-17", 0);
+        match stamp {
+            Some((p, issued, ttl)) => {
+                let st = Stamp::sign(key, "grant2", &x.id, p, "run-1", issued, issued + ttl);
+                (x.program, x.issued, x.expires, x.sig) =
+                    (Some(st.program), Some(st.issued), Some(st.expires), Some(st.sig));
+            }
+            None => x.sig = Some(arx::sign::sign(key, "grant", &x.id)),
+        }
+        x.to_json()
+    };
+    let args = |p: &str, issued: u64, ttl: u64| {
+        let base = arx::sign::args_payload("run-1", &["0".to_string()]);
+        Stamp::sign(&sk, "args2", &base, p, "run-1", issued, issued + ttl).to_json().to_string()
+    };
+    let w = |kind: &str, to: &str, amount: &str| json!({ "kind": kind, "to": to, "amount": amount });
+    let both = json!({ "planner": [{ "kind": "Plan", "writes": [w("Send", "A", "100.00"), w("Schedule", "B", "250.00")], "answer": "ok" }] });
+    let executed = |j: &str| j.lines().filter(|l| l.contains("\"kind\":\"tool\"")).count();
+    let fresh = Some((root.as_str(), NOW - 10, 600));
+    let ok_args = args(&root, NOW - 10, 600);
+
+    // tudo em ordem
+    let good = json!({ "grants": [g("send", "A", "100.00", &sk, fresh), g("schedule", "B", "250.00", &sk, fresh)] });
+    let (a, ae, p, pe) = run_both_at("rc3/ok", &src, &world, &both, Some(("run-1", &good)), Some(&ok_args), NOW);
+    first_diff("rc3/ok", "ARX × Python (journal completo)", &a, &p);
+    assert_eq!((ae, pe, executed(&a)), (None, None, 2), "{a}");
+    assert!(a.contains("\"expires\":") && a.contains("\"refused\":{}"), "{a}");
+
+    // a segunda concessão não vale: nada executa, e o journal diz por quê
+    let cases: Vec<(&str, &str, Json)> = vec![
+        ("expirada", "expirou", g("schedule", "B", "250.00", &sk, Some((&root, NOW - 5000, 600)))),
+        ("futura", "ainda não é válida", g("schedule", "B", "250.00", &sk, Some((&root, NOW + 500, 600)))),
+        ("max_age", "max_age", g("schedule", "B", "250.00", &sk, Some((&root, NOW - 10, 90_000)))),
+        ("outro-programa", "outro programa", g("schedule", "B", "250.00", &sk, Some(("outro", NOW - 10, 600)))),
+        ("formato-rc2", "exige assinatura ligada", g("schedule", "B", "250.00", &sk, None)),
+        ("outra-chave", "sem a assinatura", g("schedule", "B", "250.00", &sk2, fresh)),
+    ];
+    for (tag, why, bad) in cases {
+        let tag = format!("rc3/{tag}");
+        let mixed = json!({ "grants": [g("send", "A", "100.00", &sk, fresh), bad] });
+        let (a, _, p, _) = run_both_at(&tag, &src, &world, &both, Some(("run-1", &mixed)), Some(&ok_args), NOW);
+        first_diff(&tag, "ARX × Python (journal completo)", &a, &p);
+        assert_eq!(executed(&a), 0, "{tag}: {a}");
+        assert!(a.contains(why), "{tag}: o journal não diz `{why}`\n{a}");
+    }
+
+    // o escopo: duas autoridades; a que só concede `send` assina um `schedule`
+    let two = program(&format!(
+        "{}{}",
+        authority("pagadora", &sk2, "  ops = \"send\"\n  max_age = 900\n"),
+        authority("principal", &sk, "  ops = \"send, schedule\"\n  max_age = 900\n")
+    ));
+    let root2 = root_of(&two);
+    let f2 = Some((root2.as_str(), NOW - 10, 600));
+    let scoped = json!({ "grants": [g("send", "A", "100.00", &sk2, f2), g("schedule", "B", "250.00", &sk2, f2)] });
+    let (a, _, p, _) = run_both_at(
+        "rc3/escopo",
+        &two,
+        &world,
+        &both,
+        Some(("run-1", &scoped)),
+        Some(&args(&root2, NOW - 10, 600)),
+        NOW,
+    );
+    first_diff("rc3/escopo", "ARX × Python (journal completo)", &a, &p);
+    assert_eq!(executed(&a), 0, "{a}");
+    assert!(a.contains("fora do escopo da autoridade `pagadora`"), "{a}");
+
+    // o pedido `Trusted`: expirado, e assinado para outro programa
+    for (tag, sig) in
+        [("rc3/args-expirado", args(&root, NOW - 5000, 600)), ("rc3/args-outro-programa", args("outro", NOW - 10, 600))]
+    {
+        let (a, ae, p, pe) = run_both_at(tag, &src, &world, &both, Some(("run-1", &good)), Some(&sig), NOW);
+        first_diff(tag, "ARX × Python (journal completo)", &a, &p);
+        assert_eq!((ae.as_deref(), pe.as_deref(), executed(&a)), (Some("R0636"), Some("R0636"), 0), "{tag}");
+    }
+
+    // registro ancorado exigido, sem âncora: nenhum dos dois consome
+    let anchored =
+        program(&authority("principal", &sk, "  ops = \"send, schedule\"\n  max_age = 900\n  ledger = \"anchored\"\n"));
+    let root3 = root_of(&anchored);
+    let f3 = Some((root3.as_str(), NOW - 10, 600));
+    let g3 = json!({ "grants": [g("send", "A", "100.00", &sk, f3), g("schedule", "B", "250.00", &sk, f3)] });
+    let (a, ae, p, pe) = run_both_at(
+        "rc3/sem-ancora",
+        &anchored,
+        &world,
+        &both,
+        Some(("run-1", &g3)),
+        Some(&args(&root3, NOW - 10, 600)),
+        NOW,
+    );
+    first_diff("rc3/sem-ancora", "ARX × Python (journal completo)", &a, &p);
+    assert_eq!((ae.as_deref(), pe.as_deref(), executed(&a)), (Some("R0637"), Some("R0637"), 0), "{a}");
 }

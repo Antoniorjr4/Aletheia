@@ -69,6 +69,9 @@ uso:
       argumentos exatos, vale para a execução R e é consumida por um efeito. --from lê
       {\"operations\": [{\"op\": …, \"args\": […]}]}; uma entrada marcada \"ambiguous\" é recusada
       --sign chave    assina cada concessão com a chave privada da autoridade (`athc keygen`)
+      --program P --ttl S
+                      (v1.0-RC3) liga a assinatura ao programa P (raiz do Codex) e a um prazo de
+                      S segundos (padrão 600); vale também para `athc sign`
   athc keygen --out chave
       gera um par Ed25519: grava a chave privada em `chave` (modo 0600) e imprime a pública, que
       o programa declara: authority nome { key = \"ed25519:…\" }
@@ -76,6 +79,10 @@ uso:
   athc sign --key chave --run R --arg X … [--out pedido.sig]
       assina uma fonte Trusted: a fotografia confiável (grava confiável.json.sig) ou os
       argumentos do evento da execução R (imprime a assinatura; passe-a em `run --args-sig`)
+  athc run … --anchor tcp://host:porta
+      (v1.0-RC3) ancora o registro de consumo num estado monotônico fora do disco do executor
+      (`ath-world serve`): um registro retrocedido (L0002) ou bifurcado (L0003) é recusado antes
+      de qualquer efeito. Obrigatório se a autoridade declara ledger = \"anchored\"
   athc recover <arquivo.ath> --wal execução.wal --host tcp://… [--trusted confiável.json]
                [--fuel 3] [--timeout s] [--report relatório.json] [--inspect] [--retry-escalated]
       recupera uma execução interrompida: confere a integridade do WAL, lista as obrigações em
@@ -346,25 +353,36 @@ fn cmd_run(opts: &Opts, st: Style) -> Result<bool, String> {
     let mut arx = Arx::new(&c.module, world, provider);
     arx.contracts = athc::contract_hashes(&c);
     arx.run_id = run_id.clone();
+    arx.now_unix = now_unix();
     if let Some(g) = opts.one("grants") {
         arx.grants = GrantStore::open(Path::new(g))?;
         // com autoridade declarada, falha fechado na carga: uma concessão sem a assinatura dela
         // recusa o arquivo inteiro (o runtime também a ignora, em `s.authorizes`)
         if !arx.authorities.is_empty() {
             for (i, x) in arx.grants.grants.iter().enumerate() {
-                let ok = x.sig.as_deref().is_some_and(|s| {
-                    arx.authorities
-                        .iter()
-                        .any(|(_, k)| k.as_ref().is_some_and(|k| arx::sign::verify(k, "grant", &x.id, s)))
-                });
-                if !ok {
+                if let Err(why) = arx.attest_grant(x) {
                     return Err(format!(
-                        "G0001: concessão {} ({}) sem assinatura válida de uma autoridade do programa; nada foi executado",
+                        "G0001: concessão {} ({}) sem assinatura válida de uma autoridade do programa ({why}); nada foi executado",
                         i + 1,
                         &x.id[..12]
                     ));
                 }
             }
+        }
+        // a âncora: o registro é confrontado com ela agora, antes de qualquer coisa executar
+        match opts.one("anchor") {
+            Some(a) => {
+                let anchor = arx::anchor::TcpAnchor::new(a.strip_prefix("tcp://").unwrap_or(a), 5.0)?;
+                let program = arx.program.clone();
+                arx.grants.attach_anchor(Box::new(anchor), &program, &run_id)?;
+            }
+            None if arx.authorities.iter().any(|a| a.anchored) => {
+                return Err(
+                    "R0637: a autoridade do programa exige o registro de consumo ancorado; informe --anchor tcp://…"
+                        .into(),
+                )
+            }
+            None => {}
         }
     }
     if let Some(s) = opts.one("args-sig") {
@@ -428,7 +446,7 @@ fn cmd_run(opts: &Opts, st: Style) -> Result<bool, String> {
         if let Some(k) = opts.one("kill-at") {
             let (point, n) = k.split_once(':').ok_or("--kill-at espera ponto:N")?;
             let point = CrashPoint::parse(point)
-                .ok_or("--kill-at: ponto deve ser authorized, logged, intent, sent, confirmed ou closed")?;
+                .ok_or("--kill-at: ponto deve ser authorized, logged, spent, intent, sent, confirmed ou closed")?;
             w.crash = Some((point, n.parse().map_err(|_| "--kill-at: N inválido")?));
             w.crash_mode = CrashMode::Kill;
         }
@@ -438,6 +456,10 @@ fn cmd_run(opts: &Opts, st: Style) -> Result<bool, String> {
         if let Some(l) = arx.grants.ledger() {
             let abs = std::path::absolute(l).unwrap_or_else(|_| l.to_path_buf());
             head["ledger"] = json!(abs.display().to_string());
+        }
+        // com âncora, a recuperação é obrigada a confrontar o registro com ela
+        if let Some(a) = opts.one("anchor").filter(|_| arx.grants.anchored()) {
+            head["anchor"] = json!(a);
         }
         w.append(0.0, "run", head);
         arx.wal = Some(w);
@@ -1030,6 +1052,7 @@ fn cmd_grant(opts: &Opts) -> Result<bool, String> {
         Some(k) => Some(read_secret(k)?),
         None => None,
     };
+    let stamp = stamp_opts(opts)?;
     let mut doc = if out.exists() { read_json(&out)? } else { json!({ "grants": [] }) };
     // a carga confere as que já estão no arquivo (origem, id) antes de acrescentar
     let mut store = GrantStore::from_json(&doc)?;
@@ -1043,7 +1066,16 @@ fn cmd_grant(opts: &Opts) -> Result<bool, String> {
             nonce += 1;
         };
         // a assinatura cobre a identidade: execução, operação, argumentos, origem e nonce
-        g.sig = secret.as_ref().map(|k| arx::sign::sign(k, "grant", &g.id));
+        match (&secret, &stamp) {
+            // com vínculos: o programa, a execução e o prazo entram no que é assinado
+            (Some(k), Some((program, issued, expires))) => {
+                let st = arx::sign::Stamp::sign(k, "grant2", &g.id, program, run, *issued, *expires);
+                (g.program, g.issued, g.expires, g.sig) =
+                    (Some(st.program), Some(st.issued), Some(st.expires), Some(st.sig));
+            }
+            (Some(k), None) => g.sig = Some(arx::sign::sign(k, "grant", &g.id)),
+            _ => {}
+        }
         println!(
             "concedido {} · {}({}) · execução {} · origem {}{}",
             &g.id[..12],
@@ -1066,6 +1098,22 @@ fn cmd_grant(opts: &Opts) -> Result<bool, String> {
 fn read_secret(path: &str) -> Result<[u8; 32], String> {
     let t = std::fs::read_to_string(path).map_err(|e| format!("chave `{path}`: {e}"))?;
     arx::sign::parse_secret(&t).map_err(|e| format!("chave `{path}`: {e}"))
+}
+
+fn now_unix() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+/// `--program arquivo.ath [--ttl segundos] [--issued instante]`: o carimbo de uma assinatura com
+/// vínculos — a raiz do Codex do programa e o intervalo de validade.
+fn stamp_opts(opts: &Opts) -> Result<Option<(String, u64, u64)>, String> {
+    let Some(p) = opts.one("program") else { return Ok(None) };
+    let src = std::fs::read_to_string(p).map_err(|e| format!("falha ao ler `{p}`: {e}"))?;
+    let c = athc::compile(&src).map_err(|d| format!("`{p}` não compila ({} diagnóstico(s))", d.len()))?;
+    let num = |k: &str| opts.one(k).map(|v| v.parse::<u64>().map_err(|_| format!("--{k} inválido"))).transpose();
+    let issued = num("issued")?.unwrap_or_else(now_unix);
+    let ttl = num("ttl")?.unwrap_or(600);
+    Ok(Some((c.codex.root, issued, issued + ttl)))
 }
 
 /// `athc keygen`: o par da autoridade. A privada fica com o principal; a pública vai no programa.
@@ -1097,9 +1145,18 @@ fn cmd_keygen(opts: &Opts) -> Result<bool, String> {
 /// `athc sign`: a autoridade assina uma fonte Trusted (a fotografia ou os argumentos do evento).
 fn cmd_sign(opts: &Opts) -> Result<bool, String> {
     let key = read_secret(opts.one("key").ok_or("informe --key (a chave privada da autoridade)")?)?;
+    let stamp = stamp_opts(opts)?;
     if let Some(t) = opts.one("trusted") {
         let bytes = std::fs::read(t).map_err(|e| format!("falha ao ler `{t}`: {e}"))?;
-        let sig = arx::sign::sign(&key, "trusted", &arx::sign::trusted_payload(&bytes));
+        let digest = arx::sign::trusted_payload(&bytes);
+        let sig = match &stamp {
+            Some((program, issued, expires)) => {
+                let run =
+                    opts.one("run").ok_or("com --program, a fotografia é assinada para uma execução: informe --run")?;
+                arx::sign::Stamp::sign(&key, "trusted2", &digest, program, run, *issued, *expires).to_json().to_string()
+            }
+            None => arx::sign::sign(&key, "trusted", &digest),
+        };
         let out = format!("{t}.sig");
         std::fs::write(&out, format!("{sig}\n")).map_err(|e| format!("falha ao gravar `{out}`: {e}"))?;
         println!("assinado {t} → {out} · {}", arx::sign::public_of(&key));
@@ -1107,7 +1164,13 @@ fn cmd_sign(opts: &Opts) -> Result<bool, String> {
     }
     let run = opts.one("run").ok_or("informe --trusted ARQUIVO, ou --run R com os --arg do evento")?;
     let raw: Vec<String> = opts.flags.get("arg").cloned().unwrap_or_default();
-    let sig = arx::sign::sign(&key, "args", &arx::sign::args_payload(run, &raw));
+    let base = arx::sign::args_payload(run, &raw);
+    let sig = match &stamp {
+        Some((program, issued, expires)) => {
+            arx::sign::Stamp::sign(&key, "args2", &base, program, run, *issued, *expires).to_json().to_string()
+        }
+        None => arx::sign::sign(&key, "args", &base),
+    };
     match opts.one("out") {
         Some(o) => std::fs::write(o, format!("{sig}\n")).map_err(|e| format!("falha ao gravar `{o}`: {e}"))?,
         None => println!("{sig}"),
@@ -1233,8 +1296,19 @@ fn recover(opts: &Opts, st: Style) -> Result<u8, String> {
             let l = ledger.ok_or(
                 "W0007: há intenção em aberto que cita concessões e o WAL não registra o registro de consumo; informe --grants",
             )?;
-            match arx::grant::ledger_owners(Path::new(&l)) {
+            // uma execução ancorada só é recuperada com a âncora: um registro retrocedido ou
+            // bifurcado interrompe a recuperação (L0002, L0003), tenha ou não intenção em aberto
+            let anchor_url = opts.one("anchor").map(String::from).or(head["anchor"].as_str().map(String::from));
+            let mut anchor = match &anchor_url {
+                Some(a) => Some(arx::anchor::TcpAnchor::new(a.strip_prefix("tcp://").unwrap_or(a), 5.0)?),
+                None => None,
+            };
+            let program = arx.program.clone();
+            let bound = anchor.as_mut().map(|a| (a as &mut dyn arx::anchor::Anchor, program.as_str(), run.as_str()));
+            let anchored = bound.is_some();
+            match arx::grant::ledger_owners(Path::new(&l), bound) {
                 Ok(v) => arx.spent_view = Some(v),
+                Err(e) if anchored => return Err(format!("{e} (a recuperação não enviou nem escreveu nada)")),
                 Err(e) if cites => {
                     return Err(format!("W0007: {e}; sem ele não há como saber se a operação saiu (nada foi enviado)"))
                 }
