@@ -148,12 +148,14 @@ não consomem; formato do RC1 continua lido), `wal.rs` (`W0006`) e `sign.rs`.
 
 ### 6.1 Um defeito na demonstração do RC1, encontrado pela trava
 
-O passo 5c de `scripts/rc-smoke.sh` ("SIGKILL externo") enviava o `kill -9` ao subshell que o
-bash cria para uma função em segundo plano, e não ao `athc`. O `athc` continuava vivo, à espera
+O passo 5c de `scripts/rc-smoke.sh` ("SIGKILL externo") enviava o `kill -9` ao processo que o
+bash cria para uma função em segundo plano. Conforme a versão do bash, esse processo é o próprio
+`athc` (foi o caso no CI) ou um subshell com o `athc` como filho (foi o caso neste ambiente).
+No segundo caso o sinal não chegava ao `athc`. Ali o `athc` continuava vivo, à espera
 da resposta retida, enquanto `athc recover` rodava sobre o mesmo WAL: dois executores num WAL,
 exatamente a situação que a hipótese 5 proibia. No RC1 isso passava sem aviso (o provedor
 `idempotent` deduplicava). Com a trava, a recuperação parou com `W0006`. O script agora mata o
-`athc`. O teste correspondente em `tests/rc1.rs` sempre matou o processo certo
+`athc` nos dois casos. O teste correspondente em `tests/rc1.rs` sempre matou o processo certo
 (`Child::kill`), então o resultado relatado para o RC1 nesse cenário vale pelo teste, não pelo
 passo 5c do script.
 
