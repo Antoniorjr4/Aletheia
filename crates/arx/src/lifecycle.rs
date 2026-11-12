@@ -124,7 +124,7 @@ impl std::fmt::Display for TimeError {
             TimeError::Invalid(m) => write!(f, "{c}: tempo não autenticado: {m}"),
             TimeError::Rewound { got, floor } => write!(
                 f,
-                "{c}: RETROCESSO TEMPORAL. A testemunha atesta {got}, abaixo do piso {floor} do registro ancorado"
+                "{c}: RETROCESSO TEMPORAL. A testemunha atesta {got}, abaixo do piso {floor} (o maior instante já ancorado ou já aceito)"
             ),
             TimeError::Late { rtt, tolerance } => {
                 write!(f, "{c}: a resposta de tempo levou {rtt:.2} s, acima da tolerância declarada de {tolerance} s")
