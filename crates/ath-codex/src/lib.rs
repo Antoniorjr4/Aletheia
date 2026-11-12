@@ -158,7 +158,9 @@ impl Deps<'_> {
     fn item(&mut self, item: &Item) {
         match item {
             Item::Type(d) => d.variants.iter().flat_map(|v| &v.fields).for_each(|f| self.ty(&f.ty)),
-            Item::Model(_) | Item::Authority(_) => {}
+            // a autoridade tipada depende das testemunhas que cita (o hash delas entra no dela)
+            Item::Authority(d) => d.clock.iter().chain(&d.outcomes).for_each(|w| self.name(&w.name)),
+            Item::Model(_) | Item::Witness(_) => {}
             Item::Tool(d) => {
                 d.params.iter().for_each(|p| self.ty(&p.ty));
                 self.ty(&d.ret);
@@ -372,6 +374,33 @@ impl Canon<'_> {
                 self.w(")");
             }
             // A chave da autoridade entra no hash: trocar de autoridade é trocar de programa.
+            // Forma tipada (RC4): serialização canônica, independente da ordem e da grafia da
+            // declaração. As operações vão ordenadas; as testemunhas, pela chave e tolerância (o
+            // nome é só um rótulo); o nível de garantia vai explícito.
+            Item::Authority(d) if d.typed => {
+                let mut ops = d.ops.clone().unwrap_or_default();
+                ops.sort();
+                ops.dedup();
+                let wit = |r: &Option<Ident>| {
+                    r.as_ref()
+                        .and_then(|r| self.hashes.get(&r.name))
+                        .map(|h| format!("#{h}"))
+                        .unwrap_or_else(|| "none".into())
+                };
+                let (clock, outcomes) = (wit(&d.clock), wit(&d.outcomes));
+                let _ = write!(
+                    self.out,
+                    "(authority/typed {:?} (guarantee {}) (ops {}) (max_age {:?}) (ledger {}) (clock {clock}) (outcomes {outcomes}))",
+                    d.key,
+                    d.guarantee().tag(),
+                    ops.join(" "),
+                    d.max_age,
+                    if d.anchored { "anchored" } else { "local" }
+                );
+            }
+            Item::Witness(d) => {
+                let _ = write!(self.out, "(witness {:?} {:?})", d.key, d.tolerance);
+            }
             Item::Authority(d) => {
                 let _ = write!(self.out, "(authority {:?}", d.key);
                 // os vínculos também são identidade do programa (só aparecem quando declarados:

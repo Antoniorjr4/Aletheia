@@ -93,6 +93,12 @@ jobs:
       # a âncora, e fontes de autoridade com programa, execução e prazo.
       - name: scripts/rc3-smoke.sh
         run: NO_COLOR=1 scripts/rc3-smoke.sh
+      # v1.0-RC4: autoridade temporal e ciclo de vida verificado. Tempo autenticado (relógio
+      # local manipulado, repetição, retrocesso, atraso, congelamento), revalidação na fronteira,
+      # desfechos ancorados com recibo, liberação da operação provadamente não enviada, e o
+      # limite do provedor opaco preservado.
+      - name: scripts/rc4-smoke.sh
+        run: NO_COLOR=1 scripts/rc4-smoke.sh
 
   lean:
     # O núcleo λ_Ath mecanizado: T1 (preservação e progresso, com capacidades lineares e

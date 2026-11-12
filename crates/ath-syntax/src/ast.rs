@@ -46,6 +46,7 @@ pub enum Item {
     Type(TypeDecl),
     Model(ModelDecl),
     Authority(AuthorityDecl),
+    Witness(WitnessDecl),
     Tool(ToolDecl),
     Policy(PolicyDecl),
     Agent(AgentDecl),
@@ -57,6 +58,7 @@ impl Item {
             Item::Type(d) => &d.name,
             Item::Model(d) => &d.name,
             Item::Authority(d) => &d.name,
+            Item::Witness(d) => &d.name,
             Item::Tool(d) => &d.name,
             Item::Policy(d) => &d.name,
             Item::Agent(d) => &d.name,
@@ -72,6 +74,7 @@ impl Item {
             Item::Type(_) => "type",
             Item::Model(_) => "model",
             Item::Authority(_) => "authority",
+            Item::Witness(_) => "witness",
             Item::Tool(_) => "tool",
             Item::Policy(_) => "policy",
             Item::Agent(_) => "agent",
@@ -79,31 +82,133 @@ impl Item {
     }
 }
 
-/// `authority nome { key = "ed25519:…" }`: quem pode conceder autoridade a este programa. Com
-/// uma autoridade declarada, concessões, fotografia confiável e argumentos `Trusted` só valem
-/// assinados por ela (`arx::sign`).
+/// `authority nome { … }`: quem pode conceder autoridade a este programa. Com uma autoridade
+/// declarada, concessões, fotografia confiável e argumentos `Trusted` só valem assinados por
+/// ela (`arx::sign`).
+///
+/// Duas formas:
+///
+/// * **textual** (RC2/RC3): `key = "…"`, `ops = "a, b"`, `max_age = N`, `ledger = "anchored"`;
+/// * **tipada** (RC4): `ops = [a, b]` (operações resolvidas contra os contratos
+///   `requires s.authorizes(…)`), `ledger = anchored`, `clock = testemunha` (a fonte de tempo
+///   autenticado) e `outcomes = testemunha` (quem assina a evidência dos desfechos).
+///
+/// As duas formas não se misturam numa mesma autoridade, e o nível de garantia de cada uma é
+/// explícito (`guarantee`): a compatibilidade nunca se confunde com a garantia mais forte.
 #[derive(Clone, Debug)]
 pub struct AuthorityDecl {
     pub name: Ident,
     /// **identidade**: a chave pública
     pub key: String,
     pub key_span: Span,
-    /// **contexto**: as operações (`s.authorizes("op", …)`) que ela pode conceder
-    /// (`ops = "pay, schedule"`); ausente: qualquer uma
+    /// **contexto**: as operações (`s.authorizes("op", …)`) que ela pode conceder; ausente:
+    /// qualquer uma
     pub ops: Option<Vec<String>>,
     pub ops_span: Span,
+    /// na forma tipada, cada operação com o seu lugar (para resolução e diagnósticos)
+    pub op_idents: Vec<Ident>,
+    /// a forma tipada (RC4)
+    pub typed: bool,
     /// **validade**: a duração máxima, em segundos, de qualquer coisa que ela assine
     pub max_age: Option<u64>,
-    /// `ledger = "anchored"`: o consumo das concessões dela exige âncora monotônica
+    /// `ledger = anchored`: o consumo das concessões dela exige âncora monotônica
     pub anchored: bool,
+    /// a testemunha de tempo autenticado (forma tipada)
+    pub clock: Option<Ident>,
+    /// a testemunha que assina a evidência dos desfechos (forma tipada)
+    pub outcomes: Option<Ident>,
+}
+
+/// O nível de garantia de uma autoridade declarada, do mais fraco ao mais forte.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Guarantee {
+    /// só `key` (RC2): identidade, sem contexto, prazo ou história
+    Identity,
+    /// forma textual (RC3): escopo em texto, prazo pelo relógio do executor
+    Textual,
+    /// forma tipada sem todos os vínculos do protocolo RC4
+    Typed,
+    /// forma tipada com escopo, prazo, registro ancorado, tempo autenticado e evidência de
+    /// desfecho: o ciclo de vida inteiro é verificável (RC4)
+    Temporal,
+}
+
+impl Guarantee {
+    pub fn name(self) -> &'static str {
+        match self {
+            Guarantee::Identity => "identidade (RC2)",
+            Guarantee::Textual => "textual (RC3)",
+            Guarantee::Typed => "tipada, incompleta",
+            Guarantee::Temporal => "temporal (RC4)",
+        }
+    }
+
+    pub fn tag(self) -> &'static str {
+        match self {
+            Guarantee::Identity => "identity",
+            Guarantee::Textual => "textual",
+            Guarantee::Typed => "typed",
+            Guarantee::Temporal => "temporal",
+        }
+    }
 }
 
 impl AuthorityDecl {
-    /// A autoridade declara vínculos (v1.0-RC3): o que ela assina tem de estar ligado ao
-    /// programa, à execução e a um intervalo de validade. Só com `key`, vale o formato do RC2.
+    /// A autoridade declara vínculos: o que ela assina tem de estar ligado ao programa, à
+    /// execução e a um intervalo de validade. Só com `key`, vale o formato do RC2.
     pub fn bound(&self) -> bool {
-        self.ops.is_some() || self.max_age.is_some() || self.anchored
+        self.ops.is_some() || self.max_age.is_some() || self.anchored || self.typed
     }
+
+    /// O que falta para a garantia temporal (RC4).
+    pub fn missing(&self) -> Vec<&'static str> {
+        let mut m = Vec::new();
+        if !self.typed {
+            m.push("forma tipada (ops = [..], ledger = anchored)");
+        }
+        if self.ops.is_none() {
+            m.push("escopo (ops)");
+        }
+        if self.max_age.is_none() {
+            m.push("validade (max_age)");
+        }
+        if !self.anchored {
+            m.push("história ancorada (ledger = anchored)");
+        }
+        if self.clock.is_none() {
+            m.push("tempo autenticado (clock)");
+        }
+        if self.outcomes.is_none() {
+            m.push("evidência de desfecho (outcomes)");
+        }
+        m
+    }
+
+    pub fn guarantee(&self) -> Guarantee {
+        if self.typed {
+            if self.missing().is_empty() {
+                Guarantee::Temporal
+            } else {
+                Guarantee::Typed
+            }
+        } else if self.bound() {
+            Guarantee::Textual
+        } else {
+            Guarantee::Identity
+        }
+    }
+}
+
+/// `witness nome { key = "ed25519:…", tolerance = N }`: uma testemunha externa cuja assinatura
+/// o programa aceita como evidência. Referida por uma autoridade como `clock` (o tempo
+/// autenticado; `tolerance` é o atraso máximo admitido, em segundos, entre o pedido e a
+/// resposta) ou como `outcomes` (os recibos do provedor).
+#[derive(Clone, Debug)]
+pub struct WitnessDecl {
+    pub name: Ident,
+    pub key: String,
+    pub key_span: Span,
+    pub tolerance: Option<u64>,
 }
 
 #[derive(Clone, Debug)]

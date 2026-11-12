@@ -37,6 +37,22 @@ $ athc check examples/rollout.ath
 ✓ Codex              12 objetos BLAKE3, raiz #9ecbfccad097
 ```
 
+## v1.0-RC4: autoridade temporal e ciclo de vida verificado
+
+```sh
+scripts/rc4-smoke.sh
+```
+
+Na RC4 o relógio do executor não decide mais nada. O prazo de cada concessão é conferido num
+tempo atestado por uma testemunha declarada no programa (`witness`, usada como `clock`), com
+nonce, tolerância de atraso, piso monotônico e detecção de congelamento, e é reconferido
+imediatamente antes de cada efeito. A âncora passa a ser o registro unificado do ciclo de vida
+(`reserve → send → outcome`, ou `release` quando nada saiu) e só aceita o que a evidência
+sustenta, inclusive o recibo assinado do provedor. A autoridade é tipada
+(`ops = [pay, schedule, wire]`, resolvida contra os contratos) e o nível de garantia de cada uma
+é explícito. O protocolo está modelado em `lean/Aletheia/Lifecycle.lean`, que também prova o
+limite do provedor opaco. Detalhes em [`docs/RC4.md`](docs/RC4.md).
+
 ## v1.0-RC3: autoridade durável e integridade temporal
 
 ```sh

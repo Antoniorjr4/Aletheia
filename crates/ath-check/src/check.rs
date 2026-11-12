@@ -560,22 +560,8 @@ impl<'m> Ctx<'m> {
                 Item::Model(d) => {
                     self.models.insert(d.name.name.clone(), d);
                 }
-                Item::Authority(d) => {
-                    // a forma da chave é conferida aqui; o ponto da curva, na carga (`arx::sign`)
-                    let hex = d.key.strip_prefix("ed25519:");
-                    if !hex.is_some_and(|h| h.len() == 64 && h.bytes().all(|b| b.is_ascii_hexdigit())) {
-                        self.push(
-                            Diag::new(
-                                E0,
-                                "E0426",
-                                format!("chave inválida na autoridade `{}`", d.name.name),
-                                d.key_span,
-                                "esperado `ed25519:` e 64 dígitos hexadecimais",
-                            )
-                            .help("gere um par com `athc keygen --out chave` e declare a chave pública impressa"),
-                        );
-                    }
-                }
+                Item::Authority(d) => self.check_key("autoridade", &d.name.name, &d.key, d.key_span),
+                Item::Witness(d) => self.check_key("testemunha", &d.name.name, &d.key, d.key_span),
                 Item::Tool(d) => {
                     self.tools.insert(d.name.name.clone(), d);
                 }
@@ -607,6 +593,97 @@ impl<'m> Ctx<'m> {
         self.check_authority_scope();
     }
 
+    /// A forma da chave é conferida aqui; o ponto da curva, na carga (`arx::sign`).
+    fn check_key(&mut self, what: &str, name: &str, key: &str, span: Span) {
+        let hex = key.strip_prefix("ed25519:");
+        if !hex.is_some_and(|h| h.len() == 64 && h.bytes().all(|b| b.is_ascii_hexdigit())) {
+            self.push(
+                Diag::new(
+                    E0,
+                    "E0426",
+                    format!("chave inválida na {what} `{name}`"),
+                    span,
+                    "esperado `ed25519:` e 64 dígitos hexadecimais",
+                )
+                .help("gere um par com `athc keygen --out chave` e declare a chave pública impressa"),
+            );
+        }
+    }
+
+    /// **A autoridade tipada (RC4).** Cada operação de `ops = [..]` é resolvida contra os
+    /// contratos `requires s.authorizes("op", …)` do módulo: inexistente é `E0427`, repetida é
+    /// `E0428`. `clock` e `outcomes` são resolvidas contra as testemunhas declaradas (`E0429`);
+    /// a testemunha de tempo declara a tolerância de atraso admitida.
+    fn check_typed_authority(&mut self, d: &AuthorityDecl, used: &[(String, Span)]) {
+        let mut seen: Vec<&Ident> = Vec::new();
+        for op in &d.op_idents {
+            if let Some(first) = seen.iter().find(|s| s.name == op.name) {
+                let first = first.span;
+                self.push(
+                    Diag::new(
+                        E2,
+                        "E0428",
+                        format!("operação `{}` repetida na autoridade `{}`", op.name, d.name.name),
+                        op.span,
+                        "repetida",
+                    )
+                    .secondary(first, "primeira declaração"),
+                );
+                continue;
+            }
+            seen.push(op);
+            if !used.iter().any(|(u, _)| *u == op.name) {
+                let known: Vec<&str> = {
+                    let mut k: Vec<&str> = used.iter().map(|(u, _)| u.as_str()).collect();
+                    k.sort();
+                    k.dedup();
+                    k
+                };
+                self.push(
+                    Diag::new(
+                        E2,
+                        "E0427",
+                        format!("a autoridade `{}` cita a operação inexistente `{}`", d.name.name, op.name),
+                        op.span,
+                        "nenhum contrato `requires s.authorizes(…)` com esta operação",
+                    )
+                    .note(format!(
+                        "operações concedíveis neste módulo: {}",
+                        if known.is_empty() { "nenhuma".to_string() } else { known.join(", ") }
+                    )),
+                );
+            }
+        }
+        if d.op_idents.is_empty() && d.ops.is_some() {
+            self.push(Diag::new(
+                E2,
+                "E0427",
+                format!("a autoridade `{}` não concede operação alguma", d.name.name),
+                d.ops_span,
+                "`ops = []`",
+            ));
+        }
+        let witnesses: Vec<&WitnessDecl> =
+            self.m.items.iter().filter_map(|i| if let Item::Witness(w) = i { Some(w) } else { None }).collect();
+        for (role, r) in [("clock", &d.clock), ("outcomes", &d.outcomes)] {
+            let Some(r) = r else { continue };
+            match witnesses.iter().find(|w| w.name.name == r.name) {
+                None => self.push(Diag::new(
+                    E2,
+                    "E0429",
+                    format!("`{role} = {}`: a testemunha `{}` não está declarada", r.name, r.name),
+                    r.span,
+                    "declare `witness nome { key = \"ed25519:…\" }`",
+                )),
+                Some(w) if role == "clock" && w.tolerance.is_none() => self.push(
+                    Diag::new(E2, "E0429", format!("a testemunha de tempo `{}` não declara `tolerance`", w.name.name), r.span, "usada como `clock`")
+                        .note("o atraso máximo admitido entre o pedido e a resposta de tempo é parte da garantia: declare-o (segundos)"),
+                ),
+                Some(_) => {}
+            }
+        }
+    }
+
     /// **O escopo das autoridades fecha com os contratos (E0427).** Se toda autoridade do
     /// módulo declara `ops`, uma operação que nenhuma delas pode conceder nunca seria
     /// autorizada: o contrato é inatingível. E um `ops` que cita uma operação que nenhum
@@ -616,6 +693,10 @@ impl<'m> Ctx<'m> {
             self.m.items.iter().filter_map(|i| if let Item::Authority(d) = i { Some(d) } else { None }).collect();
         let used = std::mem::take(&mut self.auth_ops);
         for d in &auths {
+            if d.typed {
+                self.check_typed_authority(d, &used);
+                continue;
+            }
             for op in d.ops.iter().flatten() {
                 if !used.iter().any(|(u, _)| u == op) {
                     self.push(Diag::new(

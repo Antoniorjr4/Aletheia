@@ -82,6 +82,7 @@ version = "0.0.1"
 name = "ath-world"
 version = "0.0.1"
 dependencies = [
+ "arx",
  "rusqlite",
  "serde_json",
 ]

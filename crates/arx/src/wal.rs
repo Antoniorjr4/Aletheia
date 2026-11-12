@@ -35,6 +35,8 @@ pub enum CrashPoint {
     Logged,
     /// o consumo está no registro; a âncora ainda não avançou (v1.0-RC3)
     Spent,
+    /// a reserva está ancorada; a autorização de envio ainda não (v1.0-RC4)
+    Reserved,
     /// a intenção e o consumo estão persistidos (e ancorados); nada foi enviado
     Intent,
     Sent,
@@ -48,6 +50,7 @@ impl CrashPoint {
             "authorized" => CrashPoint::Authorized,
             "logged" => CrashPoint::Logged,
             "spent" => CrashPoint::Spent,
+            "reserved" => CrashPoint::Reserved,
             "intent" => CrashPoint::Intent,
             "sent" => CrashPoint::Sent,
             "confirmed" => CrashPoint::Confirmed,
@@ -60,6 +63,7 @@ impl CrashPoint {
             CrashPoint::Authorized => "authorized",
             CrashPoint::Logged => "logged",
             CrashPoint::Spent => "spent",
+            CrashPoint::Reserved => "reserved",
             CrashPoint::Intent => "intent",
             CrashPoint::Sent => "sent",
             CrashPoint::Confirmed => "confirmed",

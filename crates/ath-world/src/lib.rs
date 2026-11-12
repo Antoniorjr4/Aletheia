@@ -69,7 +69,11 @@ pub fn open(db: &Path) -> rusqlite::Result<Connection> {
            ms INTEGER NOT NULL DEFAULT 0, used INTEGER NOT NULL DEFAULT 0);
          CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v INTEGER NOT NULL);
          CREATE TABLE IF NOT EXISTS log (seq INTEGER PRIMARY KEY AUTOINCREMENT, line TEXT NOT NULL);
-         CREATE TABLE IF NOT EXISTS anchors (scope TEXT PRIMARY KEY, seq INTEGER NOT NULL, head TEXT NOT NULL);",
+         CREATE TABLE IF NOT EXISTS anchors (scope TEXT PRIMARY KEY, seq INTEGER NOT NULL, head TEXT NOT NULL);
+         CREATE TABLE IF NOT EXISTS lc_scopes (scope TEXT PRIMARY KEY, meta TEXT NOT NULL);
+         CREATE TABLE IF NOT EXISTS lc_entries (scope TEXT NOT NULL, seq INTEGER NOT NULL, entry TEXT NOT NULL,
+                                                PRIMARY KEY (scope, seq));
+         CREATE TABLE IF NOT EXISTS clock_last (id INTEGER PRIMARY KEY CHECK (id = 1), t INTEGER NOT NULL, resp TEXT NOT NULL);",
     )?;
     Ok(c)
 }
@@ -99,7 +103,7 @@ pub fn seed(c: &Connection, j: &Json) -> Result<(), String> {
 }
 
 pub fn add_fault(c: &Connection, tool: &str, nth: Option<i64>, kind: &str, ms: i64) -> Result<(), String> {
-    if !["refuse", "lost", "drop_reply", "hang", "status_unknown"].contains(&kind) {
+    if !["refuse", "lost", "drop_reply", "hang", "status_unknown", "skew", "freeze", "replay"].contains(&kind) {
         return Err(format!("falha desconhecida `{kind}`"));
     }
     c.execute("INSERT INTO faults (tool, nth, kind, ms) VALUES (?1, ?2, ?3, ?4)", params![tool, nth, kind, ms])
@@ -128,8 +132,18 @@ pub fn state(c: &Connection) -> rusqlite::Result<Json> {
     let count = |tool: &str, state: &str| ledger.iter().filter(|e| e["tool"] == tool && e["state"] == state).count();
     // a marca da âncora (v1.0-RC3): quantos consumos estão ancorados, no escopo mais adiantado
     let anchored: i64 = c.query_row("SELECT COALESCE(MAX(seq), 0) FROM anchors", [], |r| r.get(0))?;
+    // o registro unificado (v1.0-RC4): quantos registros de cada tipo
+    let mut lc = serde_json::Map::new();
+    let mut st = c.prepare("SELECT entry FROM lc_entries")?;
+    for e in st.query_map([], |r| r.get::<_, String>(0))? {
+        let e: Json = serde_json::from_str(&e?).unwrap_or_default();
+        let k = e["kind"].as_str().unwrap_or("?").to_string();
+        let n = lc.get(&k).and_then(|v| v.as_u64()).unwrap_or(0) + 1;
+        lc.insert(k, json!(n));
+    }
     Ok(json!({
         "anchored": anchored,
+        "lifecycle": lc,
         "accounts": accounts,
         "counts": { "pays_posted": count("pay", "posted"), "pays_refunded": count("pay", "reversed"),
                     "scheduled": count("schedule", "scheduled"), "wires": count("wire", "sent"),
@@ -362,9 +376,17 @@ fn handle(db: &Mutex<Connection>, req: &Json) -> Reply {
                 // opaque: o serviço não tem como saber
                 _ => return Reply::Line(json!({ "ok": true, "status": "unknown" })),
             };
+            // toda consulta fica no registro do serviço (v1.0-RC4: a recuperação que volta ao
+            // provedor por um desfecho já confirmado tem de ser observável)
             match r {
-                Ok(Some(v)) => Reply::Line(json!({ "ok": true, "status": "done", "value": v })),
-                Ok(None) => Reply::Line(json!({ "ok": true, "status": "not_applied" })),
+                Ok(Some(v)) => {
+                    log(&c, format!("status {tool} {k}: done"));
+                    Reply::Line(json!({ "ok": true, "status": "done", "value": v }))
+                }
+                Ok(None) => {
+                    log(&c, format!("status {tool} {k}: not_applied"));
+                    Reply::Line(json!({ "ok": true, "status": "not_applied" }))
+                }
                 Err(e) => err(e.to_string()),
             }
         }
@@ -455,7 +477,7 @@ fn handle(db: &Mutex<Connection>, req: &Json) -> Reply {
     }
 }
 
-fn serve_one(db: &Mutex<Connection>, stream: TcpStream) {
+fn serve_one(svc: &Svc, stream: TcpStream) {
     let mut line = String::new();
     let Ok(clone) = stream.try_clone() else { return };
     if BufReader::new(clone).read_line(&mut line).is_err() {
@@ -463,7 +485,7 @@ fn serve_one(db: &Mutex<Connection>, stream: TcpStream) {
     }
     let Ok(req) = serde_json::from_str::<Json>(&line) else { return };
     let mut stream = stream;
-    match handle(db, &req) {
+    match dispatch(svc, &req) {
         Reply::Silence => {}
         Reply::Line(j) => {
             let _ = stream.write_all(format!("{j}\n").as_bytes());
@@ -478,9 +500,190 @@ fn serve_one(db: &Mutex<Connection>, stream: TcpStream) {
 
 /// Atende até o processo ser encerrado. Uma thread por conexão; o banco é serializado.
 pub fn serve(listener: TcpListener, conn: Connection) {
-    let db = Arc::new(Mutex::new(conn));
+    serve_with(listener, conn, None)
+}
+
+/// O serviço com uma chave de assinatura (v1.0-RC4): com ela, ele responde como **testemunha
+/// de tempo** (operação `time`) e devolve **recibos assinados** dos desfechos (`call`, `status`).
+/// Sem ela, como antes.
+pub fn serve_with(listener: TcpListener, conn: Connection, key: Option<[u8; 32]>) {
+    let svc = Arc::new(Svc { db: Mutex::new(conn), key });
     for stream in listener.incoming().flatten() {
-        let db = db.clone();
-        std::thread::spawn(move || serve_one(&db, stream));
+        let svc = svc.clone();
+        std::thread::spawn(move || serve_one(&svc, stream));
+    }
+}
+
+pub struct Svc {
+    db: Mutex<Connection>,
+    key: Option<[u8; 32]>,
+}
+
+fn now_ceil() -> u64 {
+    let d = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
+    d.as_secs() + u64::from(d.subsec_nanos() > 0)
+}
+
+/// **A testemunha de tempo.** Assina o instante (arredondado para cima) sobre o nonce do pedido.
+/// Falhas injetáveis (ferramenta `time`), para os testes do verificador do executor: `skew`
+/// (desloca `ms` segundos, com sinal), `freeze` (repete o último instante, assinado de novo),
+/// `replay` (devolve a última resposta inteira, de outro pedido) e `hang` (atrasa `ms`).
+fn time_reply(svc: &Svc, req: &Json) -> Reply {
+    let err = |m: &str| Reply::Line(json!({ "ok": false, "error": m }));
+    let Some(key) = svc.key else { return err("este serviço não é testemunha de tempo (sem --sign-key)") };
+    let Some(nonce) = req["nonce"].as_str() else { return err("pedido de tempo sem nonce") };
+    let c = svc.db.lock().unwrap_or_else(|p| p.into_inner());
+    let n: i64 = c
+        .query_row(
+            "INSERT INTO calls (tool, n) VALUES ('time', 1) ON CONFLICT(tool) DO UPDATE SET n = n + 1 RETURNING n",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    let last: Option<(i64, String)> = c
+        .query_row("SELECT t, resp FROM clock_last WHERE id = 1", [], |r| Ok((r.get(0)?, r.get(1)?)))
+        .optional()
+        .ok()
+        .flatten();
+    let f = fault(&c, "time", n, &["skew", "freeze", "replay", "hang"]).ok().flatten();
+    let mut t = now_ceil() as i64;
+    match f.as_ref().map(|(k, ms)| (k.as_str(), *ms)) {
+        Some(("replay", _)) => {
+            if let Some((_, resp)) = last {
+                return Reply::Line(serde_json::from_str(&resp).unwrap_or_default());
+            }
+        }
+        Some(("freeze", _)) => t = last.map_or(t, |l| l.0),
+        Some(("skew", s)) => t += s,
+        _ => {}
+    }
+    let t = t.max(0) as u64;
+    let sig = arx::sign::sign(&key, "time", &arx::lifecycle::time_payload(nonce, t));
+    let reply = json!({ "ok": true, "t": t, "nonce": nonce, "sig": sig });
+    let _ = c.execute(
+        "INSERT INTO clock_last (id, t, resp) VALUES (1, ?1, ?2) ON CONFLICT(id) DO UPDATE SET t = ?1, resp = ?2",
+        params![t as i64, reply.to_string()],
+    );
+    match f {
+        Some((k, ms)) if k == "hang" => Reply::Late(reply, ms.max(0) as u64),
+        _ => Reply::Line(reply),
+    }
+}
+
+/// **O registro unificado** (v1.0-RC4, `arx::lifecycle`). Por escopo, os registros do ciclo de
+/// vida, cada um aceito pelas regras de `arx::lifecycle::accept`: evidência, não forma. O escopo
+/// é aberto com a sua configuração de confiança, e o identificador dele é o hash dela.
+fn lifecycle_reply(svc: &Svc, req: &Json) -> Reply {
+    let err = |m: String| Reply::Line(json!({ "ok": false, "error": m }));
+    let Some(scope) = req["scope"].as_str() else { return err("registro sem escopo".into()) };
+    let mut c = svc.db.lock().unwrap_or_else(|p| p.into_inner());
+    let meta_of = |c: &Connection| -> Option<arx::lifecycle::Meta> {
+        let m: String =
+            c.query_row("SELECT meta FROM lc_scopes WHERE scope = ?1", params![scope], |r| r.get(0)).ok()?;
+        arx::lifecycle::Meta::from_json(&serde_json::from_str(&m).ok()?)
+    };
+    let chain_of = |c: &Connection| -> Vec<arx::lifecycle::Entry> {
+        let Ok(mut st) = c.prepare("SELECT entry FROM lc_entries WHERE scope = ?1 ORDER BY seq") else {
+            return Vec::new();
+        };
+        st.query_map(params![scope], |r| r.get::<_, String>(0))
+            .map(|rows| {
+                rows.flatten()
+                    .filter_map(|e| serde_json::from_str(&e).ok().and_then(|j| arx::lifecycle::Entry::from_json(&j)))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    match req["do"].as_str() {
+        Some("open") => {
+            let Some(meta) = arx::lifecycle::Meta::from_json(&req["meta"]) else {
+                return err("configuração ilegível".into());
+            };
+            if meta.scope() != scope {
+                return err("o escopo não é o hash da configuração de confiança".into());
+            }
+            match c.execute(
+                "INSERT OR IGNORE INTO lc_scopes (scope, meta) VALUES (?1, ?2)",
+                params![scope, meta.to_json().to_string()],
+            ) {
+                Ok(_) => Reply::Line(json!({ "ok": true })),
+                Err(e) => err(e.to_string()),
+            }
+        }
+        Some("read") => {
+            let chain: Vec<Json> = chain_of(&c).iter().map(|e| e.to_json()).collect();
+            Reply::Line(json!({ "ok": true, "chain": chain }))
+        }
+        Some("append") => {
+            let Some(meta) = meta_of(&c) else { return err("escopo não aberto".into()) };
+            let mut chain = chain_of(&c);
+            let (Some(seq), Some(kind)) = (req["seq"].as_u64(), req["kind"].as_str()) else {
+                return err("acréscimo sem posição ou tipo".into());
+            };
+            match arx::lifecycle::MemRegistry::append_to(&meta, &mut chain, seq, kind, req["body"].clone()) {
+                Ok(e) => {
+                    let tx = match c.transaction() {
+                        Ok(t) => t,
+                        Err(e) => return err(e.to_string()),
+                    };
+                    let r = tx.execute(
+                        "INSERT INTO lc_entries (scope, seq, entry) VALUES (?1, ?2, ?3)",
+                        params![scope, e.seq as i64, e.to_json().to_string()],
+                    );
+                    match r.and_then(|_| tx.commit()) {
+                        Ok(()) => Reply::Line(json!({ "ok": true, "entry": e.to_json() })),
+                        Err(_) => Reply::Line(json!({ "ok": false, "conflict": true })),
+                    }
+                }
+                Err(arx::lifecycle::AppendError::Conflict) => Reply::Line(json!({ "ok": false, "conflict": true })),
+                Err(arx::lifecycle::AppendError::Refused(m)) | Err(arx::lifecycle::AppendError::Unreachable(m)) => {
+                    let _ = c.execute(
+                        "INSERT INTO log (line) VALUES (?1)",
+                        params![format!("lifecycle {} {kind} recusado: {m}", &scope[..12.min(scope.len())])],
+                    );
+                    Reply::Line(json!({ "ok": false, "refused": true, "error": m }))
+                }
+            }
+        }
+        _ => err("operação de registro desconhecida".into()),
+    }
+}
+
+/// O recibo assinado de um desfecho: a evidência que a âncora exige.
+fn with_receipt(svc: &Svc, req: &Json, reply: Json) -> Json {
+    let (Some(key), Some(wire)) = (svc.key, req["key"].as_str()) else { return reply };
+    let tool = req["tool"].as_str().unwrap_or_default();
+    let show = |v: &Json| v.as_str().map(String::from).unwrap_or_else(|| v.to_string());
+    let (args, status, value) = match req["op"].as_str() {
+        Some("call") => {
+            let args = arx::lifecycle::args_hash(req["args"].as_array().map(Vec::as_slice).unwrap_or_default());
+            if reply["ok"] == true {
+                (args, "done", show(&reply["value"]))
+            } else {
+                (args, "refused", show(&reply["error"]))
+            }
+        }
+        Some("status") => match reply["status"].as_str() {
+            Some("done") => ("-".to_string(), "done", show(&reply["value"])),
+            Some("not_applied") => ("-".to_string(), "not_applied", String::new()),
+            _ => return reply,
+        },
+        _ => return reply,
+    };
+    let r = arx::lifecycle::Receipt::sign(&key, wire, tool, &args, status, &value);
+    let mut reply = reply;
+    reply["receipt"] = r.to_json();
+    reply
+}
+
+fn dispatch(svc: &Svc, req: &Json) -> Reply {
+    match req["op"].as_str() {
+        Some("time") => time_reply(svc, req),
+        Some("lifecycle") => lifecycle_reply(svc, req),
+        _ => match handle(&svc.db, req) {
+            Reply::Line(j) => Reply::Line(with_receipt(svc, req, j)),
+            Reply::Late(j, ms) => Reply::Late(with_receipt(svc, req, j), ms),
+            Reply::Silence => Reply::Silence,
+        },
     }
 }

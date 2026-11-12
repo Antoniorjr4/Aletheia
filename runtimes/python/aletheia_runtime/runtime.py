@@ -26,6 +26,10 @@ _MISSING = object()
 # Rótulo `Trusted` de um campo do prompt que vem da fotografia do host (idêntico ao ARX).
 TRUSTED_HEADER = "ESTADO CONFIÁVEL — fotografia do host; não vem do modelo nem dos logs"
 
+R0639 = ("o protocolo RC4 (autoridade temporal) exige o registro de ciclo de vida ancorado, o tempo "
+         "autenticado e recibos assinados do provedor; esta execução não os tem")
+
+
 class RtErr(Exception):
     """`Unwind::Err(RtError)`."""
 
@@ -171,6 +175,11 @@ class Runtime:
         fn, params = h
         if len(args) != len(params):
             raise RtErr("R0002", f"`{agent}.{event}` recebe {len(params)} argumento(s)")
+        # RC4: um programa com autoridade temporal exige o registro de ciclo de vida ancorado, o
+        # tempo autenticado e recibos assinados. Este backend não os tem: recusa, explicitamente,
+        # com o código e o texto do ARX sem o protocolo (nunca simula a garantia).
+        if any(a.get("guarantee") == "temporal" for a in self.p.authorities.values()):
+            raise RtErr("R0639", R0639)
         # os argumentos `Trusted` só valem com a assinatura da autoridade declarada (`Arx::run`)
         if self.p.authorities and f"{agent}.{event}" in self.p.trusted_args:
             by, why, st = None, "sem a assinatura de uma autoridade do módulo", None

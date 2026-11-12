@@ -210,7 +210,8 @@ pub fn python(m: &Module, _check: &CheckResult, codex: &Codex, source: &str) -> 
             let Item::Authority(d) = i else { return None };
             // só com `key`, a chave como texto (como no RC2); com vínculos, o registro inteiro
             let v = if d.bound() {
-                json!({ "key": d.key, "ops": d.ops, "max_age": d.max_age, "anchored": d.anchored, "bound": true })
+                json!({ "key": d.key, "ops": d.ops, "max_age": d.max_age, "anchored": d.anchored, "bound": true,
+                        "guarantee": d.guarantee().tag() })
             } else {
                 json!(d.key)
             };
