@@ -1,0 +1,13 @@
+test a_confirmed_outcome_does_not_vanish_with_the_wal ... FAILED
+test a_forged_ledger_line_is_never_anchored ... FAILED
+test a_provably_unsent_operation_releases_its_grant ... FAILED
+test a_rewound_local_clock_does_not_revalidate_an_expired_grant ... FAILED
+thread 'a_confirmed_outcome_does_not_vanish_with_the_wal' panicked at crates/athc/tests/rc4.rs:225:5:
+assertion `left == right` failed: a recuperação foi ao provedor por um desfecho já confirmado
+thread 'a_forged_ledger_line_is_never_anchored' panicked at crates/athc/tests/rc4.rs:254:5:
+assertion `left == right` failed: a linha forjada foi ancorada
+thread 'a_provably_unsent_operation_releases_its_grant' panicked at crates/athc/tests/rc4.rs:269:5:
+assertion `left == right` failed: a recuperação consultou o provedor sobre o que provadamente não saiu
+thread 'a_rewound_local_clock_does_not_revalidate_an_expired_grant' panicked at crates/athc/tests/rc4.rs:209:5:
+assertion `left == right` failed: o relógio atrasado revalidou concessões expiradas
+test result: FAILED. 0 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.83s

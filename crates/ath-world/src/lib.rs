@@ -362,9 +362,17 @@ fn handle(db: &Mutex<Connection>, req: &Json) -> Reply {
                 // opaque: o serviço não tem como saber
                 _ => return Reply::Line(json!({ "ok": true, "status": "unknown" })),
             };
+            // toda consulta fica no registro do serviço (v1.0-RC4: a recuperação que volta ao
+            // provedor por um desfecho já confirmado tem de ser observável)
             match r {
-                Ok(Some(v)) => Reply::Line(json!({ "ok": true, "status": "done", "value": v })),
-                Ok(None) => Reply::Line(json!({ "ok": true, "status": "not_applied" })),
+                Ok(Some(v)) => {
+                    log(&c, format!("status {tool} {k}: done"));
+                    Reply::Line(json!({ "ok": true, "status": "done", "value": v }))
+                }
+                Ok(None) => {
+                    log(&c, format!("status {tool} {k}: not_applied"));
+                    Reply::Line(json!({ "ok": true, "status": "not_applied" }))
+                }
                 Err(e) => err(e.to_string()),
             }
         }
