@@ -33,7 +33,9 @@ pub enum CrashPoint {
     Authorized,
     /// a intenção (que cita as concessões) está no WAL; o consumo ainda não está no registro
     Logged,
-    /// a intenção e o consumo estão persistidos; nada foi enviado
+    /// o consumo está no registro; a âncora ainda não avançou (v1.0-RC3)
+    Spent,
+    /// a intenção e o consumo estão persistidos (e ancorados); nada foi enviado
     Intent,
     Sent,
     Confirmed,
@@ -45,6 +47,7 @@ impl CrashPoint {
         Some(match s {
             "authorized" => CrashPoint::Authorized,
             "logged" => CrashPoint::Logged,
+            "spent" => CrashPoint::Spent,
             "intent" => CrashPoint::Intent,
             "sent" => CrashPoint::Sent,
             "confirmed" => CrashPoint::Confirmed,
@@ -56,6 +59,7 @@ impl CrashPoint {
         match self {
             CrashPoint::Authorized => "authorized",
             CrashPoint::Logged => "logged",
+            CrashPoint::Spent => "spent",
             CrashPoint::Intent => "intent",
             CrashPoint::Sent => "sent",
             CrashPoint::Confirmed => "confirmed",

@@ -104,3 +104,95 @@ mod tests {
         assert!(parse_public("ed25519:zz").is_err() && parse_public(&PUBLIC[8..]).is_err());
     }
 }
+
+// ------------------------------------------------------------------ v1.0-RC3: o que se assina tem contexto e prazo
+
+/// **O carimbo** de uma assinatura com vínculos: para que programa (raiz do Codex), para que
+/// execução, e em que intervalo (segundos Unix) ela vale. A assinatura cobre a carga **e** o
+/// carimbo: mudar qualquer campo a invalida.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Stamp {
+    pub program: String,
+    pub run: String,
+    pub issued: u64,
+    pub expires: u64,
+    pub sig: String,
+}
+
+/// A carga com o carimbo: o que a autoridade de fato assina (tipos `grant2`, `trusted2`, `args2`).
+pub fn stamped(base: &str, program: &str, run: &str, issued: u64, expires: u64) -> String {
+    format!("{base}\n{program}\n{run}\n{issued}\n{expires}")
+}
+
+impl Stamp {
+    pub fn sign(
+        secret: &[u8; 32],
+        kind: &str,
+        base: &str,
+        program: &str,
+        run: &str,
+        issued: u64,
+        expires: u64,
+    ) -> Stamp {
+        Stamp {
+            program: program.into(),
+            run: run.into(),
+            issued,
+            expires,
+            sig: sign(secret, kind, &stamped(base, program, run, issued, expires)),
+        }
+    }
+
+    pub fn verify(&self, public: &[u8; 32], kind: &str, base: &str) -> bool {
+        verify(public, kind, &stamped(base, &self.program, &self.run, self.issued, self.expires), &self.sig)
+    }
+
+    pub fn to_json(&self) -> serde_json::Value {
+        serde_json::json!({ "v": 2, "program": self.program, "run": self.run, "issued": self.issued,
+                            "expires": self.expires, "sig": self.sig })
+    }
+
+    pub fn from_json(j: &serde_json::Value) -> Option<Stamp> {
+        Some(Stamp {
+            program: j["program"].as_str()?.to_string(),
+            run: j["run"].as_str()?.to_string(),
+            issued: j["issued"].as_u64()?,
+            expires: j["expires"].as_u64()?,
+            sig: j["sig"].as_str()?.to_string(),
+        })
+    }
+
+    /// Uma atestação apresentada como texto: o JSON de um carimbo, ou (formato do RC2) só a
+    /// assinatura `ed25519:…`.
+    pub fn parse(text: &str) -> (Option<String>, Option<Stamp>) {
+        let t = text.trim();
+        match serde_json::from_str::<serde_json::Value>(t) {
+            Ok(j) if j.is_object() => (None, Stamp::from_json(&j)),
+            _ => (Some(t.to_string()), None),
+        }
+    }
+}
+
+#[cfg(test)]
+mod stamp_tests {
+    use super::*;
+
+    #[test]
+    fn a_stamp_binds_program_run_and_validity() {
+        let sk = parse_secret("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60").unwrap();
+        let pk = parse_public(&public_of(&sk)).unwrap();
+        let s = Stamp::sign(&sk, "trusted2", "digest", "prog", "r1", 100, 200);
+        assert!(s.verify(&pk, "trusted2", "digest"));
+        for forged in [
+            Stamp { program: "outro".into(), ..s.clone() },
+            Stamp { run: "r2".into(), ..s.clone() },
+            Stamp { issued: 0, ..s.clone() },
+            Stamp { expires: 9_999, ..s.clone() },
+        ] {
+            assert!(!forged.verify(&pk, "trusted2", "digest"));
+        }
+        assert!(!s.verify(&pk, "args2", "digest") && !s.verify(&pk, "trusted2", "outro"));
+        assert_eq!(Stamp::parse(&s.to_json().to_string()), (None, Some(s.clone())));
+        assert_eq!(Stamp::parse("ed25519:ab\n"), (Some("ed25519:ab".into()), None));
+    }
+}

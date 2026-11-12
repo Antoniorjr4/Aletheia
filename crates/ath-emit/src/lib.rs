@@ -206,7 +206,16 @@ pub fn python(m: &Module, _check: &CheckResult, codex: &Codex, source: &str) -> 
     let authorities: serde_json::Map<String, Json> = m
         .items
         .iter()
-        .filter_map(|i| if let Item::Authority(d) = i { Some((d.name.name.clone(), json!(d.key))) } else { None })
+        .filter_map(|i| {
+            let Item::Authority(d) = i else { return None };
+            // só com `key`, a chave como texto (como no RC2); com vínculos, o registro inteiro
+            let v = if d.bound() {
+                json!({ "key": d.key, "ops": d.ops, "max_age": d.max_age, "anchored": d.anchored, "bound": true })
+            } else {
+                json!(d.key)
+            };
+            Some((d.name.name.clone(), v))
+        })
         .collect();
     if authorities.is_empty() {
         let _ = writeln!(out, "\nPROGRAM = Program(MODULE, CODEX_ROOT, TOOLS, MODELS, AGENTS)");

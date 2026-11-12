@@ -197,19 +197,46 @@ impl Parser {
         self.expect(Tok::Authority)?;
         let name = self.ident()?;
         self.expect(Tok::LBrace)?;
-        let field = self.ident()?;
-        if field.name != "key" {
-            return Err(self.err(format!("uma autoridade declara `key`, encontrado `{}`", field.name)));
-        }
-        self.expect(Tok::Assign)?;
-        let key_span = self.span();
-        let Tok::Str(key) = self.peek().clone() else {
-            return Err(self.err("esperada a chave pública entre aspas (`ed25519:…`)".to_string()));
+        let mut d = AuthorityDecl {
+            name,
+            key: String::new(),
+            key_span: self.span(),
+            ops: None,
+            ops_span: self.span(),
+            max_age: None,
+            anchored: false,
         };
-        self.bump();
-        self.eat(&Tok::Comma);
+        let mut has_key = false;
+        while *self.peek() != Tok::RBrace {
+            let field = self.ident()?;
+            self.expect(Tok::Assign)?;
+            let span = self.span();
+            let value = self.peek().clone();
+            self.bump();
+            match (field.name.as_str(), value) {
+                ("key", Tok::Str(k)) => {
+                    (d.key, d.key_span, has_key) = (k, span, true);
+                }
+                ("ops", Tok::Str(o)) => {
+                    d.ops = Some(o.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect());
+                    d.ops_span = span;
+                }
+                ("max_age", Tok::Int(n)) if n > 0 => d.max_age = Some(n as u64),
+                ("ledger", Tok::Str(l)) if l == "anchored" => d.anchored = true,
+                (f, _) => {
+                    return Err(self.err(format!(
+                        "campo inválido em `authority`: `{f}` (esperado key = \"ed25519:…\", ops = \"op, op\", \
+                         max_age = segundos, ledger = \"anchored\")"
+                    )))
+                }
+            }
+            self.eat(&Tok::Comma);
+        }
         self.expect(Tok::RBrace)?;
-        Ok(AuthorityDecl { name, key, key_span })
+        if !has_key {
+            return Err(self.err("uma autoridade declara `key`".to_string()));
+        }
+        Ok(d)
     }
 
     fn params(&mut self) -> PResult<Vec<Param>> {
