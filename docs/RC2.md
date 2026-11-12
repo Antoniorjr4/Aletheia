@@ -9,8 +9,9 @@ scripts/rc2-smoke.sh     # a demonstração, num comando (exit 0 = todas as conf
 cargo test -p athc --test rc2
 ```
 
-O RC1 continua intacto como referência: `examples/rc1/`, `crates/athc/tests/rc1.rs` e
-`scripts/rc-smoke.sh` não foram alterados e continuam passando.
+O RC1 continua como referência: `examples/rc1/` e `crates/athc/tests/rc1.rs` não foram
+alterados e continuam passando. `scripts/rc-smoke.sh` mudou em uma linha, por um defeito que a
+trava do WAL revelou (seção 6.1).
 
 ## 1. Os dois contraexemplos, reproduzidos antes de corrigir
 
@@ -144,6 +145,17 @@ não consomem; formato do RC1 continua lido), `wal.rs` (`W0006`) e `sign.rs`.
 | 5. "Um executor por WAL. Não há trava." | Eliminada: `W0006`. |
 | (não escrita) consumo e intenção em dois passos | Eliminada: seção 2. |
 | 1 a 3 (classe do provedor, `fsync`, `SIGKILL` ≠ queda de energia) | Continuam. |
+
+### 6.1 Um defeito na demonstração do RC1, encontrado pela trava
+
+O passo 5c de `scripts/rc-smoke.sh` ("SIGKILL externo") enviava o `kill -9` ao subshell que o
+bash cria para uma função em segundo plano, e não ao `athc`. O `athc` continuava vivo, à espera
+da resposta retida, enquanto `athc recover` rodava sobre o mesmo WAL: dois executores num WAL,
+exatamente a situação que a hipótese 5 proibia. No RC1 isso passava sem aviso (o provedor
+`idempotent` deduplicava). Com a trava, a recuperação parou com `W0006`. O script agora mata o
+`athc`. O teste correspondente em `tests/rc1.rs` sempre matou o processo certo
+(`Child::kill`), então o resultado relatado para o RC1 nesse cenário vale pelo teste, não pelo
+passo 5c do script.
 
 ## 7. Limitações
 

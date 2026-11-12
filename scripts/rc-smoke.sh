@@ -121,7 +121,10 @@ run kill-ext models-legit.json > "$OUT/kill-ext.out" 2>&1 &
 PID=$!
 for _ in $(seq 1 200); do [ "$(get counts.receipts)" = 2 ] && break; sleep 0.05; done
 check "o comprovante está no banco e o processo ainda espera a resposta" "$(get counts.receipts)" "2"
-kill -9 "$PID"; set +e; wait "$PID" 2>/dev/null; code=$?; set -e
+# `run … &` põe a função num subshell: $! é o subshell, e o athc é filho dele. O sinal vai para
+# o athc (v1.0-RC2: antes ia para o subshell, e o athc seguia vivo durante a recuperação; a
+# trava do WAL, W0006, foi quem mostrou).
+kill -9 "$(pgrep -P "$PID" -x athc)"; set +e; wait "$PID" 2>/dev/null; code=$?; set -e
 check "o processo morreu por SIGKILL" "$code" "137"
 recover kill-ext
 check "um comprovante a mais, não dois" "$(get counts.receipts)" "2"
