@@ -628,4 +628,142 @@ mod tests {
         let forged = json!({ "grants": [{ "id": "00", "op": "send", "args": ["A", "1"], "origin": "confirmation:x", "run": "r1" }] });
         assert!(GrantStore::from_json(&forged).is_err());
     }
+
+    // ---------------------------------------------------------------- v1.0-RC3: cadeia e âncora
+
+    use crate::anchor::{Anchor, AnchorError, Mark, MemAnchor};
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    /// Uma âncora compartilhada entre "processos" do teste (cada `GrantStore` é um executor).
+    #[derive(Debug, Clone, Default)]
+    struct Shared(Rc<RefCell<MemAnchor>>);
+
+    impl Anchor for Shared {
+        fn read(&mut self, s: &str) -> Result<Mark, AnchorError> {
+            self.0.borrow_mut().read(s)
+        }
+        fn advance(&mut self, s: &str, from: &Mark, to: &Mark) -> Result<(), AnchorError> {
+            self.0.borrow_mut().advance(s, from, to)
+        }
+    }
+
+    fn anchored(p: &std::path::Path, a: &Shared) -> Result<GrantStore, String> {
+        let mut s = GrantStore::open(p)?;
+        s.attach_anchor(Box::new(a.clone()), "prog", "r1")?;
+        Ok(s)
+    }
+
+    fn spend(s: &mut GrantStore, i: usize) -> Result<(), SpendError> {
+        let mut gd = s.begin(&[i])?;
+        s.commit(
+            &mut gd,
+            &[i],
+            Owner { run: "r1".into(), program: "prog".into(), tool: "send".into(), ..Owner::default() },
+        );
+        s.seal(gd)
+    }
+
+    fn three(name: &str) -> PathBuf {
+        file(name, json!([g("send", &["A", "1"], 0), g("send", &["B", "2"], 0), g("send", &["C", "3"], 0)]))
+    }
+
+    /// A cadeia vê o meio; a âncora vê o fim. Um prefixo íntegro do registro é uma cadeia
+    /// íntegra (o contraexemplo do RC2), e só a âncora o recusa.
+    #[test]
+    fn the_chain_sees_the_middle_and_the_anchor_sees_the_end() {
+        let p = three("chain");
+        let ledger = PathBuf::from(format!("{}.spent", p.display()));
+        let a = Shared::default();
+        let mut s = anchored(&p, &a).unwrap();
+        for i in 0..3 {
+            spend(&mut s, i).unwrap();
+        }
+        let real = std::fs::read_to_string(&ledger).unwrap();
+        let ls: Vec<&str> = real.lines().collect();
+        let put = |v: &[&str]| std::fs::write(&ledger, v.iter().map(|l| format!("{l}\n")).collect::<String>()).unwrap();
+        // um prefixo: a cadeia aceita (sem âncora, as concessões voltam a estar livres) …
+        put(&ls[..1]);
+        assert_eq!(GrantStore::open(&p).unwrap().spent.len(), 1, "a cadeia sozinha não vê o retrocesso");
+        // … e a âncora recusa
+        assert!(anchored(&p, &a).unwrap_err().starts_with("L0002"));
+        put(&[]);
+        assert!(anchored(&p, &a).unwrap_err().starts_with("L0002"));
+        // o meio: removido, trocado, alterado
+        put(&[ls[0], ls[2]]);
+        assert!(GrantStore::open(&p).unwrap_err().starts_with("L0001"));
+        put(&[ls[1], ls[0], ls[2]]);
+        assert!(GrantStore::open(&p).unwrap_err().starts_with("L0001"));
+        put(&[ls[0], &ls[1].replace("\"tool\":\"send\"", "\"tool\":\"sent\""), ls[2]]);
+        assert!(GrantStore::open(&p).unwrap_err().starts_with("L0001"));
+        // outro escopo: o mesmo registro não serve a outro programa nem a outra execução
+        put(&ls);
+        let mut other = GrantStore::open(&p).unwrap();
+        assert!(other.attach_anchor(Box::new(a.clone()), "outro", "r1").unwrap_err().starts_with("L0004"));
+        // íntegro e na marca: aceito, e tudo continua gasto
+        assert_eq!(anchored(&p, &a).unwrap().spent.len(), 3);
+    }
+
+    /// Uma bifurcação bem encadeada (a última linha reescrita, com `prev` e `hash` certos) passa
+    /// pela cadeia e para na âncora. E o registro um consumo à frente da âncora (queda entre a
+    /// gravação e o avanço) é adiantado, uma vez.
+    #[test]
+    fn a_fork_stops_at_the_anchor_and_one_unanchored_spend_rolls_forward() {
+        let p = three("fork");
+        let ledger = PathBuf::from(format!("{}.spent", p.display()));
+        let a = Shared::default();
+        let mut s = anchored(&p, &a).unwrap();
+        spend(&mut s, 0).unwrap();
+        // a queda entre a gravação e o avanço: `commit` sem `seal`
+        let mut gd = s.begin(&[1]).unwrap();
+        s.commit(
+            &mut gd,
+            &[1],
+            Owner { run: "r1".into(), program: "prog".into(), tool: "send".into(), ..Owner::default() },
+        );
+        drop(gd);
+        drop(s);
+        assert_eq!(a.0.borrow().marks.values().next().unwrap().seq, 1);
+        let mut s = anchored(&p, &a).unwrap();
+        assert_eq!((s.spent.len(), a.0.borrow().marks.values().next().unwrap().seq), (2, 2), "adiantada");
+        spend(&mut s, 2).unwrap();
+        // a bifurcação: a última linha reescrita para outra concessão
+        let real = std::fs::read_to_string(&ledger).unwrap();
+        let mut ls: Vec<String> = real.lines().map(String::from).collect();
+        let mut e: Json = serde_json::from_str(&ls[2]).unwrap();
+        e.as_object_mut().unwrap().remove("hash");
+        e["grants"] = json!(["f".repeat(64)]);
+        e["hash"] = json!(line_hash(&e));
+        ls[2] = e.to_string();
+        std::fs::write(&ledger, ls.iter().map(|l| format!("{l}\n")).collect::<String>()).unwrap();
+        assert!(GrantStore::open(&p).is_ok(), "a cadeia aceita a bifurcação");
+        assert!(anchored(&p, &a).unwrap_err().starts_with("L0003"));
+        // duas linhas à frente da âncora não são uma queda: recusado
+        std::fs::write(&ledger, &real).unwrap();
+        a.0.borrow_mut().marks.values_mut().for_each(|m| *m = Mark::zero());
+        assert!(anchored(&p, &a).unwrap_err().starts_with("L0003"));
+    }
+
+    /// Dois executores com **cópias** do mesmo registro (duas máquinas, um backup): a trava do
+    /// arquivo não os separa, a âncora sim. O primeiro avança; o segundo, com a cópia velha, é
+    /// recusado sem consumir. E com a âncora fora do ar ninguém consome.
+    #[test]
+    fn the_anchor_arbitrates_between_copies_of_the_ledger() {
+        let (p1, p2) = (three("copy-a"), three("copy-b"));
+        let a = Shared::default();
+        let (mut s1, mut s2) = (anchored(&p1, &a).unwrap(), anchored(&p2, &a).unwrap());
+        spend(&mut s1, 0).unwrap();
+        match spend(&mut s2, 0) {
+            Err(SpendError::Ledger(m)) => assert!(m.starts_with("L0002"), "{m}"),
+            x => panic!("a cópia velha consumiu: {x:?}"),
+        }
+        assert!(s2.spent.is_empty());
+        a.0.borrow_mut().down = 1;
+        match spend(&mut s1, 1) {
+            Err(SpendError::Ledger(m)) => assert!(m.starts_with("L0005"), "{m}"),
+            x => panic!("consumiu sem âncora: {x:?}"),
+        }
+        assert_eq!(s1.spent.len(), 1);
+        spend(&mut s1, 1).unwrap();
+    }
 }

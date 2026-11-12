@@ -126,7 +126,10 @@ pub fn state(c: &Connection) -> rusqlite::Result<Json> {
         ledger.push(row?);
     }
     let count = |tool: &str, state: &str| ledger.iter().filter(|e| e["tool"] == tool && e["state"] == state).count();
+    // a marca da âncora (v1.0-RC3): quantos consumos estão ancorados, no escopo mais adiantado
+    let anchored: i64 = c.query_row("SELECT COALESCE(MAX(seq), 0) FROM anchors", [], |r| r.get(0))?;
     Ok(json!({
+        "anchored": anchored,
         "accounts": accounts,
         "counts": { "pays_posted": count("pay", "posted"), "pays_refunded": count("pay", "reversed"),
                     "scheduled": count("schedule", "scheduled"), "wires": count("wire", "sent"),

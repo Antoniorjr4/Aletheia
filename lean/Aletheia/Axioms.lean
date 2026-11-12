@@ -340,3 +340,38 @@ open Aletheia
 
 /-- info: 'Aletheia.Txn.rc1_race' depends on axioms: [propext] -/
 #guard_msgs in #print axioms Txn.rc1_race
+
+-- v1.0-RC3: autoridade durável (`Aletheia/Anchor.lean`)
+
+/-- info: 'Aletheia.Anchor.anchor_monotone' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Anchor.anchor_monotone
+
+/-- info: 'Aletheia.Anchor.sent_anchored' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Anchor.sent_anchored
+
+/-- info: 'Aletheia.Anchor.accepted_keeps_spent' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Anchor.accepted_keeps_spent
+
+/-- info: 'Aletheia.Anchor.rollback_rejected' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Anchor.rollback_rejected
+
+/-- info: 'Aletheia.Anchor.fork_rejected' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Anchor.fork_rejected
+
+/-- info: 'Aletheia.Anchor.rc2_chain_accepts_rollback' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Anchor.rc2_chain_accepts_rollback
+
+/-- info: 'Aletheia.Anchor.rc3_rejects_that_rollback' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Anchor.rc3_rejects_that_rollback
+
+/-- info: 'Aletheia.Anchor.fresh_is_recent' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Anchor.fresh_is_recent
+
+/-- info: 'Aletheia.Anchor.fresh_is_scoped' does not depend on any axioms -/
+#guard_msgs in #print axioms Anchor.fresh_is_scoped
+
+/-- info: 'Aletheia.Anchor.other_run_is_stale' does not depend on any axioms -/
+#guard_msgs in #print axioms Anchor.other_run_is_stale
+
+/-- info: 'Aletheia.Anchor.expired_stays_expired' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Anchor.expired_stays_expired
