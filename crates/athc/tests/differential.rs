@@ -3318,3 +3318,21 @@ fn a_temporal_program_is_refused_identically_without_the_protocol() {
     assert_eq!((ae.as_deref(), pe.as_deref()), (Some("R0639"), Some("R0639")));
     assert!(!a.contains("\"kind\":\"tool\""), "{a}");
 }
+
+/// **v1.0-RC5: um programa com `bind` é recusado igual sem a ligação.** O backend Python não
+/// fala com provedores reais; o ARX, sem a ligação, também não executa. Os dois recusam com o
+/// mesmo código e o mesmo journal, antes de qualquer chamada: a garantia nunca é simulada.
+#[test]
+fn a_bound_program_is_refused_identically_without_the_binding() {
+    let decl = "bind api {\n  url = \"https://api.example\"\n  auth = secret(\"API_TOKEN\")\n  send = \"POST /v1/send -> id\"\n}\n\npolicy Any";
+    let src = grants_src().replace("policy Any", decl);
+    let c = compile(&src).unwrap_or_else(|d| panic!("{:?}", d.iter().map(|x| (&x.code, &x.msg)).collect::<Vec<_>>()));
+    assert!(c.module.items.iter().any(|i| matches!(i, ath_syntax::ast::Item::Bind(_))));
+    let world = json!({ "sinks": ["send", "schedule"] });
+    let w = |kind: &str, to: &str, amount: &str| json!({ "kind": kind, "to": to, "amount": amount });
+    let plan = json!({ "planner": [{ "kind": "Plan", "writes": [w("Send", "A", "100.00")], "answer": "ok" }] });
+    let (a, ae, p, pe) = run_both_full("rc5/sem-ligacao", &src, &world, &plan, None, None);
+    first_diff("rc5/sem-ligacao", "ARX × Python (journal completo)", &a, &p);
+    assert_eq!((ae.as_deref(), pe.as_deref()), (Some("R0641"), Some("R0641")));
+    assert!(!a.contains("\"kind\":\"tool\""), "{a}");
+}

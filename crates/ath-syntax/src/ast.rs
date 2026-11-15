@@ -47,6 +47,7 @@ pub enum Item {
     Model(ModelDecl),
     Authority(AuthorityDecl),
     Witness(WitnessDecl),
+    Bind(BindDecl),
     Tool(ToolDecl),
     Policy(PolicyDecl),
     Agent(AgentDecl),
@@ -59,6 +60,7 @@ impl Item {
             Item::Model(d) => &d.name,
             Item::Authority(d) => &d.name,
             Item::Witness(d) => &d.name,
+            Item::Bind(d) => &d.name,
             Item::Tool(d) => &d.name,
             Item::Policy(d) => &d.name,
             Item::Agent(d) => &d.name,
@@ -75,6 +77,7 @@ impl Item {
             Item::Model(_) => "model",
             Item::Authority(_) => "authority",
             Item::Witness(_) => "witness",
+            Item::Bind(_) => "bind",
             Item::Tool(_) => "tool",
             Item::Policy(_) => "policy",
             Item::Agent(_) => "agent",
@@ -196,6 +199,54 @@ impl AuthorityDecl {
         } else {
             Guarantee::Identity
         }
+    }
+}
+
+/// `bind nome { url = env("V") | "https://…", auth = secret("V"), status = "GET /rota",
+/// ferramenta = "MÉTODO /rota -> campo", … }` (v1.0-RC5): liga ferramentas declaradas a uma API
+/// HTTP, sem código de cola. O corpo da requisição são os parâmetros nomeados da ferramenta; a
+/// chave vai em `Idempotency-Key`; `auth` nomeia um segredo do ambiente do executor, que o
+/// programa não tem como ler.
+#[derive(Clone, Debug)]
+pub struct BindDecl {
+    pub name: Ident,
+    pub url: BindUrl,
+    pub url_span: Span,
+    /// o nome da variável de ambiente que guarda o segredo (nunca o valor)
+    pub auth: Option<String>,
+    /// a rota de consulta por chave, para os provedores `queryable`
+    pub status: Option<Route>,
+    pub routes: Vec<(Ident, Route)>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum BindUrl {
+    Lit(String),
+    Env(String),
+}
+
+/// `"MÉTODO /caminho -> campo"`: o campo da resposta que é o resultado (opcional).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Route {
+    pub method: String,
+    pub path: String,
+    pub field: Option<String>,
+}
+
+impl Route {
+    pub fn parse(s: &str) -> Option<Route> {
+        let (call, field) = match s.split_once("->") {
+            Some((c, f)) => (c.trim(), Some(f.trim().to_string())),
+            None => (s.trim(), None),
+        };
+        let (method, path) = call.split_once(' ')?;
+        let path = path.trim();
+        let word = |f: &str| !f.is_empty() && f.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+        let ok = matches!(method, "GET" | "POST" | "PUT" | "PATCH")
+            && path.starts_with('/')
+            && path.chars().all(|c| c.is_ascii_alphanumeric() || "/-_.".contains(c))
+            && field.as_deref().is_none_or(word);
+        ok.then(|| Route { method: method.to_string(), path: path.to_string(), field })
     }
 }
 

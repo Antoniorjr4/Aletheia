@@ -519,6 +519,166 @@ pub struct Svc {
     key: Option<[u8; 32]>,
 }
 
+// ------------------------------------------------------------------ a face HTTP (v1.0-RC5)
+
+/// O recurso REST de cada ferramenta: (método, caminho, ferramenta, campos na ordem dos
+/// argumentos). É a API a que `bind` liga um programa, sem código de cola:
+///
+/// | rota | ferramenta |
+/// |---|---|
+/// | `POST /v1/payments` `{to, amount, memo}` | `pay` |
+/// | `POST /v1/refunds` `{to, amount, memo}` | `refund` |
+/// | `POST /v1/schedules` `{to, amount, date}` | `schedule` |
+/// | `POST /v1/wires` `{to, amount}` | `wire` |
+/// | `POST /v1/receipts` `{note}` | `receipt` |
+/// | `GET /v1/statement?account=` · `GET /v1/balance?account=` · `GET /v1/conserved` | leituras |
+/// | `GET /v1/operations?tool=&key=` | o `status` por chave |
+/// | `GET /v1/whoami` | devolve o cabeçalho `Authorization` recebido (para testar a redação de segredos) |
+///
+/// A chave vem em `Idempotency-Key`. Com `token`, toda requisição exige
+/// `Authorization: Bearer <token>` (401 sem ele). Resposta: 200 `{"id": valor, …}`; recusa do
+/// provedor: 422 `{"error": …}`. As falhas controladas valem como no protocolo de linha.
+const ROUTES: [(&str, &str, &str, &[&str]); 8] = [
+    ("POST", "/v1/payments", "pay", &["to", "amount", "memo"]),
+    ("POST", "/v1/refunds", "refund", &["to", "amount", "memo"]),
+    ("POST", "/v1/schedules", "schedule", &["to", "amount", "date"]),
+    ("POST", "/v1/wires", "wire", &["to", "amount"]),
+    ("POST", "/v1/receipts", "receipt", &["note"]),
+    ("GET", "/v1/statement", "statement", &["account"]),
+    ("GET", "/v1/balance", "balance", &["account"]),
+    ("GET", "/v1/conserved", "conserved", &[]),
+];
+
+fn pct_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < b.len() {
+        match b[i] {
+            b'%' if b.len() >= i + 3 && s.is_char_boundary(i + 1) && s.is_char_boundary(i + 3) => {
+                match u8::from_str_radix(&s[i + 1..i + 3], 16) {
+                    Ok(v) => {
+                        out.push(v);
+                        i += 3;
+                    }
+                    Err(_) => {
+                        out.push(b'%');
+                        i += 1;
+                    }
+                }
+            }
+            b'+' => {
+                out.push(b' ');
+                i += 1;
+            }
+            c => {
+                out.push(c);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+fn http_reply(stream: &mut TcpStream, code: u16, body: &Json) {
+    let reason = match code {
+        200 => "OK",
+        401 => "Unauthorized",
+        404 => "Not Found",
+        422 => "Unprocessable Entity",
+        _ => "Bad Request",
+    };
+    let b = body.to_string();
+    let _ = stream.write_all(
+        format!("HTTP/1.1 {code} {reason}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{b}", b.len())
+            .as_bytes(),
+    );
+}
+
+fn serve_http_one(svc: &Svc, token: Option<&str>, stream: TcpStream) {
+    use std::io::Read;
+    let Ok(clone) = stream.try_clone() else { return };
+    let mut rd = BufReader::new(clone);
+    let mut stream = stream;
+    let mut first = String::new();
+    if rd.read_line(&mut first).is_err() {
+        return;
+    }
+    let mut parts = first.split_whitespace();
+    let (Some(method), Some(target)) = (parts.next(), parts.next()) else { return };
+    let (mut len, mut key, mut auth) = (0usize, None, None);
+    loop {
+        let mut h = String::new();
+        if rd.read_line(&mut h).is_err() || h.trim().is_empty() {
+            break;
+        }
+        if let Some((n, v)) = h.split_once(':') {
+            match n.trim().to_ascii_lowercase().as_str() {
+                "content-length" => len = v.trim().parse().unwrap_or(0),
+                "idempotency-key" => key = Some(v.trim().to_string()),
+                "authorization" => auth = Some(v.trim().to_string()),
+                _ => {}
+            }
+        }
+    }
+    let mut body = vec![0u8; len.min(1 << 20)];
+    if rd.read_exact(&mut body).is_err() {
+        return;
+    }
+    if token.is_some_and(|t| auth.as_deref() != Some(&format!("Bearer {t}"))) {
+        return http_reply(&mut stream, 401, &json!({ "error": "unauthorized" }));
+    }
+    let (path, query) = target.split_once('?').unwrap_or((target, ""));
+    let q: std::collections::BTreeMap<String, String> =
+        query.split('&').filter_map(|kv| kv.split_once('=')).map(|(k, v)| (pct_decode(k), pct_decode(v))).collect();
+    if (method, path) == ("GET", "/v1/whoami") {
+        return http_reply(&mut stream, 200, &json!({ "id": auth.unwrap_or_default() }));
+    }
+    let req = if (method, path) == ("GET", "/v1/operations") {
+        json!({ "op": "status", "tool": q.get("tool"), "key": q.get("key") })
+    } else {
+        let Some((_, _, tool, fields)) = ROUTES.iter().find(|(m, p, _, _)| (*m, *p) == (method, path)) else {
+            return http_reply(&mut stream, 404, &json!({ "error": format!("{method} {path}: rota desconhecida") }));
+        };
+        let doc: Json = serde_json::from_slice(&body).unwrap_or(Json::Null);
+        let args: Vec<Json> = fields
+            .iter()
+            .map(|f| if method == "GET" { q.get(*f).map(|v| json!(v)).unwrap_or(Json::Null) } else { doc[*f].clone() })
+            .collect();
+        json!({ "op": "call", "tool": tool, "key": key, "args": args })
+    };
+    let send = |stream: &mut TcpStream, j: Json| {
+        if j.get("status").is_some() {
+            http_reply(stream, 200, &j)
+        } else if j["ok"] == json!(true) {
+            let mut out = json!({ "id": j["value"] });
+            if j["receipt"].is_object() {
+                out["receipt"] = j["receipt"].clone();
+            }
+            http_reply(stream, 200, &out)
+        } else {
+            http_reply(stream, 422, &json!({ "error": j["error"] }))
+        }
+    };
+    match dispatch(svc, &req) {
+        Reply::Silence => {}
+        Reply::Line(j) => send(&mut stream, j),
+        Reply::Late(j, ms) => {
+            std::thread::sleep(std::time::Duration::from_millis(ms));
+            send(&mut stream, j)
+        }
+    }
+}
+
+/// O mesmo serviço, por HTTP/1.1 (v1.0-RC5): a API REST acima. Uma thread por conexão.
+pub fn serve_http(listener: TcpListener, conn: Connection, key: Option<[u8; 32]>, token: Option<String>) {
+    let svc = Arc::new(Svc { db: Mutex::new(conn), key });
+    for stream in listener.incoming().flatten() {
+        let (svc, token) = (svc.clone(), token.clone());
+        std::thread::spawn(move || serve_http_one(&svc, token.as_deref(), stream));
+    }
+}
+
 fn now_ceil() -> u64 {
     let d = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
     d.as_secs() + u64::from(d.subsec_nanos() > 0)

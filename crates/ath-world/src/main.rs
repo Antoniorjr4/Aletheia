@@ -54,6 +54,15 @@ fn main() -> ExitCode {
                     ),
                     None => None,
                 };
+                // com --http, a face REST (v1.0-RC5); o token vem do ambiente, nunca da linha de comando
+                if std::env::args().any(|a| a == "--http") {
+                    let token = match flag("--token-env") {
+                        Some(v) => Some(std::env::var(&v).map_err(|_| format!("`{v}` não está no ambiente"))?),
+                        None => None,
+                    };
+                    ath_world::serve_http(l, c, key, token);
+                    return Ok(());
+                }
                 ath_world::serve_with(l, c, key);
                 Ok(())
             }

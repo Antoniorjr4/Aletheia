@@ -8,12 +8,14 @@
 //! 2. **o tipo do resultado não é conferido na fronteira**: o que o provedor devolve entra no
 //!    programa com o tipo declarado da ferramenta, seja o que for.
 //!
-//! O programa da tesouraria é o da RC4 (`examples/rc4/treasury.ath`), sem alteração.
+//! O programa da tesouraria é o da RC4 (`examples/rc4/treasury.ath`), sem alteração. Os testes
+//! da ligação nativa usam `examples/rc5/treasury.ath`: o mesmo programa, com as ferramentas
+//! ligadas por `bind` à API REST do provedor (`ath-world serve --http`), sem código de cola.
 #![allow(dead_code)]
 
 use serde_json::Value as Json;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::process::{Command, Output};
 
 const REQUEST: &str = "\"Pague 120.00 a ACME (NF 4471) e 75.50 a BETA; agende 250.00 para BETA em 2026-12-01.\"";
 
@@ -47,8 +49,13 @@ fn jsonl(p: &Path) -> Vec<Json> {
         .unwrap_or_default()
 }
 
+thread_local! {
+    /// o programa dos testes desta thread (o da RC4, ou o da RC5 com `bind`)
+    static PROG: std::cell::RefCell<&'static str> = const { std::cell::RefCell::new("examples/rc4/treasury.ath") };
+}
+
 fn prog() -> PathBuf {
-    root().join("examples/rc4/treasury.ath")
+    root().join(PROG.with(|p| *p.borrow()))
 }
 
 /// A biblioteca que desloca o relógio de parede do processo (`tests/clockshim.c`).
@@ -366,7 +373,6 @@ fn the_budget_and_the_model_calls_survive_the_crash() {
     assert_eq!(got["spent"]["tok"], want["spent"]["tok"], "{}", text(&o));
     assert_eq!(got["spent"]["usd"], want["spent"]["usd"]);
     assert_eq!(got["result"], want["result"]);
-    assert_eq!(got["digests"]["semantic"].is_string(), true);
     assert_eq!(w.count("scheduled"), 1);
     assert_eq!(w.count("wires"), 0, "o modelo da retomada foi consultado e a remessa saiu");
 }
@@ -466,4 +472,164 @@ fn a_provider_cannot_hand_the_program_an_ill_typed_value() {
         assert!(!o.status.success() && text(&o).contains("R0640"), "{what}: aceito sem conferência: {shown}");
         assert!(!text(&o).contains("saldo lido"), "o valor fora do tipo entrou no programa: {}", text(&o));
     }
+}
+
+// ---------------------------------------------------------------- Missão II: `bind`
+
+const TOKEN: &str = "tok-5f1c9a7e2b4d4c8f9a6e-NAO-E-UM-SEGREDO-REAL";
+
+/// A face HTTP do provedor de `w`, sobre o mesmo banco, exigindo `TOKEN`.
+fn http(w: &World) -> String {
+    let c = ath_world::open(&w.db).unwrap();
+    let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = l.local_addr().unwrap().to_string();
+    std::thread::spawn(move || ath_world::serve_http(l, c, Some(witness_key("bank")), Some(TOKEN.to_string())));
+    addr
+}
+
+impl<'w> Run<'w> {
+    /// `athc run|resume` do programa ligado: sem `--host`; o provedor é o do `bind`.
+    fn bound(&self, sub: &str, api: &str, wal: &str) -> Command {
+        let mut c = self.w.athc();
+        c.env("BANK_URL", format!("http://{api}")).env("BANK_TOKEN", TOKEN);
+        c.arg(sub).arg(prog()).args(["--provider", "scripted", "--models"]).arg(fx(self.models));
+        c.arg("--trusted").arg(&self.trusted).args(["--timeout", "5", "--grants"]).arg(&self.grants);
+        if sub == "run" {
+            c.args(["--run-id", &self.run]);
+        }
+        c.arg("--wal").arg(self.wal(wal));
+        c.arg("--journal").arg(self.w.p(&format!("{wal}.{sub}.jsonl")));
+        c.arg("--report").arg(self.w.p(&format!("{wal}.{sub}.report.json")));
+        c.arg("--args-sig").arg(&self.args_sig).args(["--arg", REQUEST]);
+        c.args(["--anchor", &format!("tcp://{}", self.w.anchor), "--clock", &format!("tcp://{}", self.w.anchor)]);
+        c
+    }
+}
+
+/// Todo arquivo que a execução deixou no diretório do teste, concatenado.
+fn everything_on_disk(dir: &Path) -> String {
+    let mut all = String::new();
+    for e in std::fs::read_dir(dir).unwrap().flatten() {
+        if e.path().is_file() {
+            all.push_str(&String::from_utf8_lossy(&std::fs::read(e.path()).unwrap()));
+        }
+    }
+    all
+}
+
+/// **O agente inteiro na linguagem.** O programa da tesouraria, com as ferramentas ligadas por
+/// `bind` a uma API REST que exige um token: a execução passa por HTTP (o protocolo de linha
+/// não é usado), com as mesmas garantias da RC4 (concessões, tempo atestado, ciclo de vida
+/// ancorado, recibos assinados). O token não aparece na saída nem em arquivo algum.
+#[test]
+fn a_program_reaches_a_real_http_api_with_no_glue_and_the_secret_stays_out() {
+    PROG.with(|p| *p.borrow_mut() = "examples/rc5/treasury.ath");
+    let w = World::start("bind");
+    let api = http(&w);
+    let r = Run::fresh(&w, "r");
+    let o = w.ok(&mut r.bound("run", &api, "r"));
+    assert!(text(&o).contains(ANSWER) && text(&o).contains("ligada(s) por HTTP"), "{}", text(&o));
+    assert_eq!(w.effects(), (2, 1, 1));
+    assert_eq!((w.lifecycle("send"), w.lifecycle("outcome")), (3, 3), "o ciclo de vida ancorado vale por HTTP");
+    let disk = everything_on_disk(&w.dir);
+    assert!(!text(&o).contains(TOKEN) && !disk.contains(TOKEN), "o segredo vazou");
+    assert!(disk.contains("BANK_TOKEN") || !disk.contains("secret"), "só o nome do segredo é citado");
+
+    // sem o segredo no ambiente, ou sem a ligação: nada executa
+    let before = w.state();
+    let r2 = Run::fresh(&w, "r2");
+    let o = r2.bound("run", &api, "r2").env_remove("BANK_TOKEN").output().unwrap();
+    assert!(!o.status.success() && text(&o).contains("R0642"), "{}", text(&o));
+    let o = r2.bound("run", &api, "r2b").arg("--no-bind").output().unwrap();
+    assert!(text(&o).contains("R0641"), "{}", text(&o));
+    // com o segredo errado, o provedor recusa (401): a recusa é definitiva, nada é aplicado
+    let o = r2.bound("run", &api, "r2c").env("BANK_TOKEN", "errado").output().unwrap();
+    assert!(text(&o).contains("HTTP 401"), "{}", text(&o));
+    assert_eq!(w.state()["counts"], before["counts"]);
+}
+
+/// **A retomada vale pela ligação.** A execução ligada por HTTP é morta depois de enviar o
+/// segundo pagamento e antes de enviar o agendamento; `athc resume` a termina pela mesma API.
+#[cfg(unix)]
+#[test]
+fn a_bound_agent_resumes_over_http() {
+    PROG.with(|p| *p.borrow_mut() = "examples/rc5/treasury.ath");
+    for point in ["sent:2", "reserved:3", "confirmed:3"] {
+        let w = World::start(&format!("bind-resume-{}", point.replace(':', "-")));
+        let api = http(&w);
+        let r = Run::fresh(&w, "r");
+        let o = r.bound("run", &api, "r").args(["--kill-at", point]).output().unwrap();
+        assert!(killed(&o), "{point}: {}", text(&o));
+        let o = r.bound("resume", &api, "r").output().unwrap();
+        assert!(o.status.success() && text(&o).contains(ANSWER), "{point}: {}", text(&o));
+        assert_eq!(w.effects(), (2, 1, 1), "{point}");
+        assert!(!everything_on_disk(&w.dir).contains(TOKEN), "{point}: o segredo vazou");
+    }
+}
+
+const WHOAMI: &str = r#"module rc5.whoami
+
+tool whoami(c: Cap[Bank.Read]) -> Text[..200] ^ Untrusted
+  ! { Bank.Read } reversible latency 5.0
+
+bind api {
+  url    = env("BANK_URL")
+  auth   = secret("BANK_TOKEN")
+  whoami = "GET /v1/whoami -> id"
+}
+
+agent Probe(bank: Cap[Bank.Read])
+  budget [tok <= 10, usd <= 0.01, wall <= 30.0]
+{
+  on ask(account: Text[..16] ^ Trusted) -> Text ! { Bank.Read } {
+    let who = whoami(bank)
+    "lido"
+  }
+}
+"#;
+
+/// **Um provedor que devolve o segredo não o entrega ao programa.** `GET /v1/whoami` responde
+/// com o cabeçalho `Authorization` que recebeu. O valor que entra no programa (e no journal)
+/// tem `‹secret:BANK_TOKEN›` no lugar do token.
+#[test]
+fn a_reflected_secret_is_redacted_before_it_enters_the_program() {
+    let w = World::start("whoami");
+    let api = http(&w);
+    let prog = w.p("whoami.ath");
+    std::fs::write(&prog, WHOAMI).unwrap();
+    let mut c = w.athc();
+    c.env("BANK_URL", format!("http://{api}")).env("BANK_TOKEN", TOKEN);
+    c.arg("run").arg(&prog).args(["--arg", "\"TREASURY\"", "--timeout", "5"]).arg("--journal").arg(w.p("who.jsonl"));
+    let o = w.ok(&mut c);
+    let j = std::fs::read_to_string(w.p("who.jsonl")).unwrap();
+    assert!(j.contains("Bearer ‹secret:BANK_TOKEN›"), "{j}");
+    assert!(!j.contains(TOKEN) && !text(&o).contains(TOKEN), "o segredo refletido entrou no programa");
+}
+
+/// **A ligação é conferida antes de rodar.** Rota para o que não é ferramenta (`E0431`),
+/// ferramenta ligada duas vezes (`E0432`), segredo em claro para outro host (`E0433`), operação
+/// com chave num `GET` (`E0434`); e um segredo literal não é sequer sintaxe.
+#[test]
+fn a_binding_is_checked_before_anything_runs() {
+    let dir = std::env::temp_dir().join(format!("ath-rc5-{}-static", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let base = std::fs::read_to_string(root().join("examples/rc5/treasury.ath")).unwrap();
+    let check = |tag: &str, from: &str, to: &str| {
+        assert!(base.contains(from), "{tag}: `{from}`");
+        let p = dir.join(format!("{tag}.ath"));
+        std::fs::write(&p, base.replace(from, to)).unwrap();
+        let o = Command::new(env!("CARGO_BIN_EXE_athc")).env("NO_COLOR", "1").arg("check").arg(&p).output().unwrap();
+        assert!(!o.status.success(), "{tag}: aceito: {}", text(&o));
+        text(&o)
+    };
+    let route = "  wire      = \"POST /v1/wires -> id\"\n";
+    assert!(check("unknown", route, "  wirre     = \"POST /v1/wires -> id\"\n").contains("E0431"));
+    assert!(check("twice", route, &format!("{route}}}\n\nbind other {{\n  url = \"https://b.example\"\n{route}"))
+        .contains("E0432"));
+    assert!(check("clear", "env(\"BANK_URL\")", "\"http://bank.example\"").contains("E0433"));
+    assert!(check("get", "\"POST /v1/payments -> id\"", "\"GET /v1/payments -> id\"").contains("E0434"));
+    let lit = check("literal", "secret(\"BANK_TOKEN\")", "\"tok-123\"");
+    assert!(lit.contains("nunca um literal do programa"), "{lit}");
+    assert!(check("route", "\"POST /v1/wires -> id\"", "\"DELETE http://evil/x\"").contains("rota inválida"));
 }

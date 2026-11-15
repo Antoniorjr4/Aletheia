@@ -218,8 +218,14 @@ pub fn python(m: &Module, _check: &CheckResult, codex: &Codex, source: &str) -> 
             Some((d.name.name.clone(), v))
         })
         .collect();
+    // RC5: as ligações (`bind`). O backend Python não fala com provedores reais: recusa.
+    let binds: Vec<Json> =
+        m.items.iter().filter_map(|i| if let Item::Bind(b) = i { Some(json!(b.name.name)) } else { None }).collect();
+    let bind_line =
+        if binds.is_empty() { String::new() } else { format!("PROGRAM.binds = {}\n", py(&Json::Array(binds))) };
     if authorities.is_empty() {
         let _ = writeln!(out, "\nPROGRAM = Program(MODULE, CODEX_ROOT, TOOLS, MODELS, AGENTS)");
+        out.push_str(&bind_line);
     } else {
         let mut trusted: Vec<Json> = Vec::new();
         for i in &m.items {
@@ -238,6 +244,7 @@ pub fn python(m: &Module, _check: &CheckResult, codex: &Codex, source: &str) -> 
         let _ = writeln!(out, "TRUSTED_ARGS = {}", py(&Json::Array(trusted)));
         let _ =
             writeln!(out, "PROGRAM = Program(MODULE, CODEX_ROOT, TOOLS, MODELS, AGENTS, AUTHORITIES, TRUSTED_ARGS)");
+        out.push_str(&bind_line);
     }
     Ok(out)
 }

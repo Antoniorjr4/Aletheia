@@ -9,6 +9,7 @@
 //! - todo efeito e toda amostra vão para um journal encadeado por hash.
 
 pub mod anchor;
+pub mod bind;
 pub mod cassette;
 pub mod grant;
 pub mod host;
@@ -205,6 +206,9 @@ pub struct Arx<'m> {
     pub diverged: Option<String>,
     /// na retomada, a recuperação fecha as intenções e deixa as sagas para a re-execução
     pub skip_sagas: bool,
+    /// o módulo declara `bind`, e o host desta execução é a ligação (`bind::BoundHost`)
+    pub binds: bool,
+    pub bound: bool,
     /// a fita das entradas (`<wal>.tape`): `input`, `ret`, `value`. O WAL fica como na RC4.
     pub tape: Option<wal::Wal>,
     /// as concessões que as operações já decididas desta execução consumiram: na re-execução
@@ -358,6 +362,8 @@ impl<'m> Arx<'m> {
             resume: None,
             diverged: None,
             skip_sagas: false,
+            binds: false,
+            bound: false,
             tape: None,
             replay_grants: BTreeSet::new(),
             mint_seq: 0,
@@ -424,6 +430,7 @@ impl<'m> Arx<'m> {
                     });
                 }
                 Item::Witness(_) => {}
+                Item::Bind(_) => a.binds = true,
                 Item::Policy(p) => {
                     a.policies.insert(&p.name.name, p);
                 }
@@ -613,6 +620,10 @@ impl<'m> Arx<'m> {
             .ok_or_else(|| rt("R0001", format!("handler `{agent}.{event}` não encontrado")))?;
         if args.len() != h.params.len() {
             return Err(rt("R0002", format!("`{agent}.{event}` recebe {} argumento(s)", h.params.len())));
+        }
+        // **RC5.** Um programa que liga ferramentas a provedores reais só executa com a ligação.
+        if self.binds && !self.bound {
+            return Err(rt("R0641", bind::R0641));
         }
         // **RC4.** Um programa com autoridade temporal só executa com o protocolo inteiro: o
         // registro reaceito, o tempo atestado. Sem isso, nada (`R0639`).
@@ -1162,7 +1173,10 @@ impl<'m> Arx<'m> {
             };
             let key = op.args.iter().find_map(|v| if let Value::Key(k) = v { Some(format!("k{k}")) } else { None });
             // RC5: uma compensação que a execução original já fez não é refeita
-            let done = self.resume.as_ref().and_then(|rs| rs.compensated.get(&(sid, key.clone().unwrap_or_default())).copied());
+            let done = self
+                .resume
+                .as_ref()
+                .and_then(|rs| rs.compensated.get(&(sid, key.clone().unwrap_or_default())).copied());
             if let Some(ok) = done {
                 self.journal.push(
                     self.clock,
@@ -1644,8 +1658,11 @@ impl<'m> Arx<'m> {
                     self.wlog("close", d)
                 }
                 None => {
-                    let reason =
-                        if decl.provider == ProviderClass::Opaque { "opaque: sem protocolo" } else { "sem resposta conclusiva" };
+                    let reason = if decl.provider == ProviderClass::Opaque {
+                        "opaque: sem protocolo"
+                    } else {
+                        "sem resposta conclusiva"
+                    };
                     self.wlog("escalate", json!({ "key": key, "reason": reason, "attempts": tries }))
                 }
             }
@@ -1960,7 +1977,12 @@ impl<'m> Arx<'m> {
                     Err(_) => "desvio do tratador".into(),
                 };
                 self.journal.push(self.clock, "replayed", json!({ "tool": name, "key": key, "n": n }));
-                self.line(format!("↻ {name}({})", key.clone().unwrap_or_default()), shown, 0.0, Some((true, "do WAL".into())));
+                self.line(
+                    format!("↻ {name}({})", key.clone().unwrap_or_default()),
+                    shown,
+                    0.0,
+                    Some((true, "do WAL".into())),
+                );
                 return out;
             }
             if let (Some(k), Some(intent)) = (key_n, intent) {
@@ -1974,7 +1996,8 @@ impl<'m> Arx<'m> {
                 }
                 let r: R<Value> = match outcome {
                     Some((s, d)) if s == "done" => {
-                        let Some(v) = self.resume.as_ref().and_then(|rs| rs.values.get(&format!("k{k}"))).and_then(resume::dec)
+                        let Some(v) =
+                            self.resume.as_ref().and_then(|rs| rs.values.get(&format!("k{k}"))).and_then(resume::dec)
                         else {
                             return Err(self.diverge(format!(
                                 "R0651 k{k}: o desfecho `done` não tem o valor na fita; a retomada não inventa resultados"
