@@ -2040,6 +2040,29 @@ impl<'m> Arx<'m> {
         r
     }
 
+    /// O monitor do tipo do resultado: `Some(motivo)` se o valor que o provedor devolveu não
+    /// habita o tipo declarado. Cobre os tipos de dados que atravessam a fronteira (`Int`,
+    /// `Bool`, `Text`, com os seus limites, e listas deles) e confere a resposta crua de um
+    /// provedor real (`RemoteHost`, `bind`).
+    fn monitor(&mut self, t: &ToolDecl, out: &Value) -> Option<String> {
+        use ath_grammar::Shape;
+        // (o mundo simulado em memória não é um provedor: não há resposta crua a conferir)
+        let raw = self.host.raw()?;
+        let shape = ath_grammar::shape_of(self.m, &t.ret).ok()?;
+        fn scalar(s: &Shape) -> bool {
+            match s {
+                Shape::Int { .. } | Shape::Bool | Shape::Text { .. } => true,
+                Shape::List { elem, .. } => scalar(elem),
+                _ => false,
+            }
+        }
+        if !scalar(&shape) {
+            return None;
+        }
+        let _ = out;
+        ath_grammar::check(&shape, &json!({ "value": raw })).err().map(|m| m.replace("`value`", "o resultado"))
+    }
+
     /// Envenena a retomada: o programa pediu algo que o WAL não registra.
     fn diverge(&mut self, msg: String) -> Unwind {
         self.journal.push(self.clock, "diverged", json!({ "msg": msg }));
@@ -2302,6 +2325,11 @@ impl<'m> Arx<'m> {
                 return self.on_timeout(t, args, k);
             }
         };
+        // **RC5: o monitor do tipo na fronteira** (`lean/Aletheia/Boundary.lean`). O que o
+        // provedor devolveu é conferido contra o tipo declarado da ferramenta; a contabilidade
+        // do efeito (que aconteceu) segue normalmente, e o valor fora do tipo não entra no
+        // programa: a chamada falha com a culpa atribuída ao provedor (`R0640`).
+        let blame = self.monitor(t, &out);
         // RC5: o valor que o provedor devolveu vai para a fita antes de o desfecho ser fechado
         // no WAL: um `close done` sempre tem o seu valor
         if let (Some(k), Some(v)) = (key_n, resume::enc(&out)) {
@@ -2328,6 +2356,23 @@ impl<'m> Arx<'m> {
                 "latency": lat,
             }),
         );
+        if let Some(why) = blame {
+            self.journal.push(self.clock, "provider_blame", json!({ "tool": name, "key": key, "why": why }));
+            self.line(
+                format!("{name}({})", shown.join(", ")),
+                format!("resultado fora do tipo `{}`", t.ret.unlabeled().sig()),
+                lat,
+                Some((false, format!("culpa do provedor: {why}"))),
+            );
+            return Err(rt(
+                "R0640",
+                format!(
+                    "`{name}`: o provedor devolveu um valor fora do tipo declarado `{}` ({why}); o valor não entrou no programa",
+                    t.ret.unlabeled().sig()
+                ),
+            )
+            .into());
+        }
         let detail = match &out {
             Value::Text(s) if s.lines().count() > 1 => format!("{} linhas de texto", s.lines().count()),
             Value::Unit => "ok".into(),

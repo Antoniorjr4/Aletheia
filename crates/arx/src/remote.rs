@@ -31,6 +31,8 @@ pub struct RemoteHost {
     pub attestation: Option<(String, String)>,
     /// os recibos assinados que o provedor devolveu, por chave de fio (v1.0-RC4)
     receipts: std::collections::BTreeMap<String, Json>,
+    /// a resposta crua da última chamada bem-sucedida, para o monitor de tipo (v1.0-RC5)
+    last_raw: Option<Json>,
 }
 
 /// Os argumentos de uma chamada como vão ao provedor: capacidades e a chave não são
@@ -58,6 +60,7 @@ impl RemoteHost {
             snapshot,
             attestation: None,
             receipts: Default::default(),
+            last_raw: None,
         })
     }
 
@@ -132,6 +135,7 @@ impl Host for RemoteHost {
                     self.receipts.insert(k.clone(), j["receipt"].clone());
                 }
                 if j["ok"] == json!(true) {
+                    self.last_raw = Some(j["value"].clone());
                     Ok((RemoteHost::value(&j["value"]), lat))
                 } else {
                     Err(HostError::Failed(j["error"].as_str().unwrap_or("erro do provedor").to_string()))
@@ -191,5 +195,9 @@ impl Host for RemoteHost {
 
     fn receipt(&mut self, wire: &str) -> Option<Json> {
         self.receipts.remove(wire)
+    }
+
+    fn raw(&mut self) -> Option<Json> {
+        self.last_raw.take()
     }
 }
