@@ -633,3 +633,150 @@ fn a_binding_is_checked_before_anything_runs() {
     assert!(lit.contains("nunca um literal do programa"), "{lit}");
     assert!(check("route", "\"POST /v1/wires -> id\"", "\"DELETE http://evil/x\"").contains("rota inválida"));
 }
+
+// ---------------------------------------------------------------- RC5.1: a consolidação
+//
+// Quatro achados da revisão da RC5, reproduzidos como testes que falham nela
+// (`docs/evidence/rc5.1-achados-na-rc5.txt`): o monitor de tipo contornado pela retomada, a
+// fita reescrita aceita, e o `202 Accepted` tratado como efeito concluído. (O quarto, a
+// classificação de endereço local, é um teste de unidade de `arx::bind`.)
+
+const NOTE: &str = r#"module rc5.note
+
+tool note(c: Cap[Bank.Pay], text: Text[..16], k: own IdemKey) -> Text[..8]
+  ! { Bank.Pay } irrevocable provider idempotent latency 5.0
+BIND
+agent Clerk(bank: Cap[Bank.Pay], keys: Cap[IdemKey.Mint])
+  budget [tok <= 10, usd <= 0.01, wall <= 30.0]
+{
+  on ask(text: Text[..16] ^ Trusted) -> Text ! { Bank.Pay, TimeoutUnknown } {
+    commit note(bank, text, keys.mint())
+  }
+
+  handle timeout_unknown(p: own Pending[_]) -> Text {
+    reconcile p fuel 2 else {
+      transfer p
+      "pendente"
+    }
+  }
+}
+"#;
+
+struct Probe {
+    dir: PathBuf,
+    prog: PathBuf,
+}
+
+impl Probe {
+    fn new(tag: &str, bind: &str) -> Probe {
+        let dir = std::env::temp_dir().join(format!("ath-rc5-{}-{tag}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let prog = dir.join("note.ath");
+        std::fs::write(&prog, NOTE.replace("BIND", bind)).unwrap();
+        Probe { dir, prog }
+    }
+
+    fn athc(&self, sub: &str) -> Command {
+        let mut c = Command::new(env!("CARGO_BIN_EXE_athc"));
+        c.env("NO_COLOR", "1").arg(sub).arg(&self.prog).args(["--timeout", "5", "--arg", "\"oi\""]);
+        c.arg("--wal").arg(self.dir.join("n.wal")).arg("--journal").arg(self.dir.join(format!("{sub}.jsonl")));
+        if sub == "run" {
+            c.args(["--run-id", "n"]);
+        }
+        c
+    }
+
+    /// Reescreve a fita aplicando `f` ao detalhe de cada registro, com o encadeamento refeito:
+    /// o que faz um adversário que escreve no disco do executor.
+    fn rewrite_tape(&self, f: impl Fn(&str, &mut Json)) {
+        let path = self.dir.join("n.wal.tape");
+        rewrite_chain(&path, f);
+    }
+}
+
+fn rewrite_chain(path: &Path, f: impl Fn(&str, &mut Json)) {
+    let mut log = arx::journal::Journal::default();
+    for l in std::fs::read_to_string(path).unwrap().lines() {
+        let e: Json = serde_json::from_str(l).unwrap();
+        let mut d = e["detail"].clone();
+        let kind = e["kind"].as_str().unwrap().to_string();
+        f(&kind, &mut d);
+        log.push(e["t"].as_f64().unwrap_or(0.0), &kind, d);
+    }
+    let out: Vec<String> = log.entries.iter().map(|e| e.to_string()).collect();
+    std::fs::write(path, out.join("\n") + "\n").unwrap();
+}
+
+/// **Achado 1: o monitor de tipo vale também na retomada.** O provedor devolve um valor fora
+/// do tipo e o processo morre depois de fechar o desfecho, antes de o programa ver o erro. A
+/// retomada não entrega o valor: a chamada falha com `R0640`, como falharia sem queda. E um
+/// valor da fita reescrito para fora do tipo também não entra.
+#[cfg(unix)]
+#[test]
+fn an_ill_typed_value_does_not_enter_through_resume() {
+    let p = Probe::new("mon-resume", "");
+    let addr = lying_provider(serde_json::json!("9".repeat(5000)));
+    let host = format!("tcp://{addr}");
+    let o = p.athc("run").args(["--host", &host, "--kill-at", "closed:1"]).output().unwrap();
+    assert!(killed(&o), "{}", text(&o));
+    let o = p.athc("resume").args(["--host", &host]).output().unwrap();
+    assert!(
+        !o.status.success() && text(&o).contains("R0640"),
+        "o valor fora do tipo entrou pela retomada: {}",
+        text(&o)
+    );
+    assert!(!text(&o).contains("99999"), "{}", text(&o));
+
+    // uma execução correta; depois a fita é reescrita com um valor fora do tipo
+    let p = Probe::new("mon-tape", "");
+    let host = format!("tcp://{}", lying_provider(serde_json::json!("ok-1")));
+    let o = p.athc("run").args(["--host", &host]).output().unwrap();
+    assert!(o.status.success() && text(&o).contains("resultado: \"ok-1\""), "{}", text(&o));
+    p.rewrite_tape(|kind, d| {
+        if kind == "ret" {
+            d["r"] = serde_json::json!({ "ok": { "t": "9".repeat(5000) } });
+        }
+    });
+    let o = p.athc("resume").args(["--host", &host]).output().unwrap();
+    assert!(!o.status.success() && text(&o).contains("R0640"), "o valor reescrito na fita entrou: {}", text(&o));
+}
+
+/// **Achado 2: a fita reescrita é recusada.** Numa execução ancorada, o adversário reescreve a
+/// fita (zera o medidor de orçamento gravado) e refaz o encadeamento. A âncora guarda a marca
+/// da fita a cada operação com chave: a retomada recusa a fita que não passa por ela (`L0008`)
+/// e nada é enviado.
+#[cfg(unix)]
+#[test]
+fn a_rewritten_tape_is_refused_by_the_anchor() {
+    let w = World::start("tape");
+    let r = Run::fresh(&w, "r");
+    let o = r.cmd("r").args(["--kill-at", "sent:3"]).output().unwrap();
+    assert!(killed(&o), "{}", text(&o));
+    let before = w.state();
+    rewrite_chain(&w.p("r.wal.tape"), |kind, d| {
+        if kind == "ret" && d["meter"].is_array() {
+            d["meter"] = serde_json::json!([0, 0.0, 0.0]);
+        }
+    });
+    let o = r.resume("r").output().unwrap();
+    assert!(!o.status.success() && text(&o).contains("L0008"), "a fita reescrita foi aceita: {}", text(&o));
+    assert_eq!(w.state()["counts"]["scheduled"], before["counts"]["scheduled"]);
+    assert_eq!(w.count("receipts"), 0);
+}
+
+/// **Achado 4: `202 Accepted` não é um efeito concluído.** A API aceita o pedido e não o
+/// processa. A ferramenta promete o efeito, não a aceitação: a chamada não é fechada como
+/// `done`; é o `TimeoutUnknown` da linguagem, e o tratador do programa a transfere.
+#[test]
+fn an_accepted_request_is_not_a_completed_effect() {
+    let w = World::start("accepted");
+    let api = http(&w);
+    let p =
+        Probe::new("accepted", "\nbind api {\n  url  = env(\"BANK_URL\")\n  note = \"POST /v1/accepted -> id\"\n}\n");
+    let o = p.athc("run").env("BANK_URL", format!("http://{api}")).output().unwrap();
+    assert!(!text(&o).contains("resultado: \"queued\""), "202 foi tratado como efeito concluído: {}", text(&o));
+    assert!(text(&o).contains("resultado: \"pendente\""), "{}", text(&o));
+    let wal = std::fs::read_to_string(p.dir.join("n.wal")).unwrap();
+    assert!(!wal.contains("\"status\":\"done\"") && wal.contains("\"escalate\""), "{wal}");
+}

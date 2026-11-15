@@ -349,3 +349,28 @@ impl Host for BoundHost {
         self.last_raw.take().or_else(|| self.inner.raw())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// **Achado 3 da revisão da RC5.** Só o próprio host é local. Um literal IPv6 qualquer,
+    /// um endereço mapeado, ou `localhost` na parte de credenciais de outra URL não são.
+    #[test]
+    fn only_the_own_host_is_loopback() {
+        for u in ["http://127.0.0.1:8080/v1", "http://localhost", "http://[::1]:9000/x", "http://127.9.9.9"] {
+            assert!(loopback(u), "{u}");
+        }
+        for u in [
+            "http://[::ffff:198.51.100.10]",
+            "http://[2001:db8::1]:80/",
+            "http://localhost:x@evil.example/",
+            "http://127.0.0.1@evil.example/",
+            "http://localhost.evil.example",
+            "http://198.51.100.10",
+            "http://[",
+        ] {
+            assert!(!loopback(u), "{u} foi classificado como o próprio host");
+        }
+    }
+}

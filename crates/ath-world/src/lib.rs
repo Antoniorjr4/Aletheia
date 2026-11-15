@@ -631,6 +631,16 @@ fn serve_http_one(svc: &Svc, token: Option<&str>, stream: TcpStream) {
     let (path, query) = target.split_once('?').unwrap_or((target, ""));
     let q: std::collections::BTreeMap<String, String> =
         query.split('&').filter_map(|kv| kv.split_once('=')).map(|(k, v)| (pct_decode(k), pct_decode(v))).collect();
+    // `202 Accepted`: o pedido foi aceito e NÃO é processado (para testar que a aceitação não
+    // é tratada como o efeito)
+    if (method, path) == ("POST", "/v1/accepted") {
+        let b = json!({ "id": "queued" }).to_string();
+        let _ = stream.write_all(
+            format!("HTTP/1.1 202 Accepted\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{b}", b.len())
+                .as_bytes(),
+        );
+        return;
+    }
     if (method, path) == ("GET", "/v1/whoami") {
         return http_reply(&mut stream, 200, &json!({ "id": auth.unwrap_or_default() }));
     }
