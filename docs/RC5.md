@@ -79,10 +79,12 @@ que as reivindique é recusada pelo registro de consumo (relido sob trava) ou pe
 
 **Medido** (`tests/rc5.rs`, processos reais e `SIGKILL`):
 
-* a matriz inteira: 6 pontos de queda × 4 operações com chave. Em 23 dos 24 casos o estado do
-  provedor depois da retomada é o da execução sem queda. No caso restante (o agendamento morto
-  entre a autorização de envio e o envio) a chamada falha com `R0600`, com os pagamentos no
-  lugar e nada duplicado: é a linha "com concessão" da tabela;
+* a matriz inteira: 6 pontos de queda × 4 operações com chave, 24 casos. Em 22 o processo é
+  morto e o estado do provedor depois da retomada é o da execução sem queda. Em 1 (`reserved`
+  na quarta operação, que não tem concessão e portanto não tem esse ponto) a execução termina
+  sem queda, e retomá-la não muda nada. No caso restante (o agendamento morto entre a
+  autorização de envio e o envio) a chamada falha com `R0600`, com os pagamentos no lugar e
+  nada duplicado: é a linha "com concessão" da tabela;
 * três quedas seguidas (a retomada também é morta, duas vezes) e a quarta execução termina;
 * retomar uma execução terminada não chama o provedor (zero chamadas ao vivo);
 * o gasto da execução retomada (tokens e dólares) é o da execução sem queda, e um modelo que
@@ -217,7 +219,7 @@ backend Python não implementa a fita nem `resume`.
   cortado não é detectado. O provedor recebe o segredo: ele é confiado com ele.
 * **A autorização consumida não volta.** Uma operação com concessão morta entre a autorização
   de envio e o envio, num provedor `queryable`, falha na retomada: a âncora não libera uma
-  concessão depois de autorizar o envio. É o caso 1 em 24 da matriz.
+  concessão depois de autorizar o envio. É 1 dos 24 casos da matriz.
 * **Uma amostra pode ser perdida.** Se a queda vem entre a resposta do modelo e a gravação na
   fita, a retomada consulta o modelo de novo: o custo daquela chamada não fica registrado.
 * **O tempo de parede do orçamento é o lógico.** O tempo em que o agente ficou morto não conta.
@@ -227,6 +229,8 @@ backend Python não implementa a fita nem `resume`.
   no tempo atestado de agora; se expiraram, é preciso assinar de novo.
 * **`recover` e `resume` são alternativas.** Depois de `athc recover` compensar a saga, a
   execução está encerrada (`R0653`). Uma execução no mundo simulado não é retomável.
+* **Não há catálogo único de códigos** (`athc explain`): os códigos estão nas tabelas de
+  `docs/RC1.md` a `docs/RC5.md`.
 * **O monitor cobre escalares e listas deles**, em provedores reais.
 * **O modelo de `Resume.lean` é o do provedor que deduplica.** A chave nova, as concessões e o
   ciclo de vida ancorado na retomada estão nos testes, não no modelo.
