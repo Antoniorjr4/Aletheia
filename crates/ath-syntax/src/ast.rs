@@ -225,6 +225,36 @@ pub enum BindUrl {
     Env(String),
 }
 
+/// A autoridade (`host[:porta]`) de uma url http(s), ou `None` se a url não é http(s), não tem
+/// host, ou carrega credenciais (`usuário@`): uma url de `bind` nunca as carrega.
+pub fn url_authority(url: &str) -> Option<&str> {
+    let rest = url.strip_prefix("http://").or_else(|| url.strip_prefix("https://"))?;
+    let auth = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    (!auth.is_empty() && !auth.contains('@')).then_some(auth)
+}
+
+/// A url aponta para **o próprio host**? Só `localhost` e os endereços de loopback (`127.0.0.0/8`,
+/// `[::1]`). Qualquer outra coisa (outro literal IPv6, um endereço mapeado, um nome que começa
+/// com `localhost`, uma url com credenciais ou malformada) não é: na dúvida, é outro host.
+pub fn loopback_url(url: &str) -> bool {
+    let Some(auth) = url_authority(url) else { return false };
+    let port_ok = |p: &str| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit());
+    let host = if let Some(r) = auth.strip_prefix('[') {
+        match r.split_once(']') {
+            Some((h, "")) => h,
+            Some((h, tail)) if tail.strip_prefix(':').is_some_and(port_ok) => h,
+            _ => return false,
+        }
+    } else {
+        match auth.rsplit_once(':') {
+            Some((h, p)) if port_ok(p) => h,
+            Some(_) => return false,
+            None => auth,
+        }
+    };
+    host == "localhost" || host.parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback())
+}
+
 /// `"MÉTODO /caminho -> campo"`: o campo da resposta que é o resultado (opcional).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Route {

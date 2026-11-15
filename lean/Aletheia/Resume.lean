@@ -25,7 +25,10 @@ quiser, inclusive entre o envio e a gravação da resposta.
 * **R2 provedor**: a operação com chave é deduplicada pelo provedor (`idempotent`), ou o
   desfecho da operação interrompida foi decidido pela recuperação antes da re-execução (o
   protocolo de cada classe é o de `Wal.lean` e `Lifecycle.lean`; aqui ele é o `call` idempotente).
-* **R3 fita**: a fita é um prefixo do que foi observado (é encadeada e só cresce).
+* **R3 fita**: a fita é um prefixo do que foi observado. O encadeamento não a autentica: quem
+  escreve no disco do executor pode refazê-lo. O executável sustenta R3 com a marca da fita na
+  âncora (execuções com autoridade temporal: `Arx::tape_seal`, `L0008`) e, sem âncora, R3 é
+  confiança no disco. O tipo dos valores não depende de R3: ver `replayC`.
 
 Não modelado: a chave nova da operação provadamente não enviada (`resume::key_for`), as
 concessões e o ciclo de vida ancorado (estão em `Txn.lean`, `Anchor.lean`, `Lifecycle.lean`).
@@ -155,7 +158,9 @@ inductive Reach0 (p0 : Prog) (prov : Nat → Nat → Nat → Nat) : Cfg → Prop
 
 /-- **A retomada refina a execução sem queda.** Tudo o que é alcançável com quedas e
 retomadas, em qualquer ponto e em qualquer número, é alcançável sem queda nenhuma: a queda
-não cria comportamento. -/
+não cria comportamento. Vale **neste modelo** (provedor que deduplica, sem concessões nem ciclo
+de vida ancorado); a composição com as chaves novas, as concessões e a âncora é sustentada
+pelos testes, não por uma prova integrada. -/
 theorem crash_refines {p0 : Prog} {prov : Nat → Nat → Nat → Nat} {c : Cfg}
     (h : Reach p0 prov c) : Reach0 p0 prov c := by
   induction h with
@@ -167,7 +172,7 @@ theorem crash_refines {p0 : Prog} {prov : Nat → Nat → Nat → Nat} {c : Cfg}
     | record hp hl => exact .record ih hp hl
     | crash hr => rw [crash_is_identity hc hr]; exact ih
 
-/-! ## Exatamente uma vez -/
+/-! ## No máximo uma vez -/
 
 theorem lookup_none_not_mem : ∀ (w : World) (key : Nat),
     lookup w key = none → key ∉ w.map Prod.fst
@@ -189,9 +194,11 @@ theorem call_nodup {prov : Nat → Nat → Nat → Nat} {w : World} (key tool ar
     simp only [List.map_cons, List.nodup_cons]
     exact ⟨lookup_none_not_mem w key e, h⟩
 
-/-- **Exatamente uma vez.** Com quantas quedas e retomadas for, o provedor aplica cada chave
-no máximo uma vez: nenhuma operação é duplicada. -/
-theorem exactly_once {p0 : Prog} {prov : Nat → Nat → Nat → Nat} {c : Cfg}
+/-- **No máximo uma vez.** Com quantas quedas e retomadas for, o provedor aplica cada chave
+no máximo uma vez: nenhuma operação é duplicada. É uma propriedade de segurança, sob R2. **Não
+diz que toda operação termina**: uma operação pode nunca ser aplicada (a concessão consumida
+por uma tentativa que o provedor não aplicou, por exemplo). -/
+theorem at_most_once {p0 : Prog} {prov : Nat → Nat → Nat → Nat} {c : Cfg}
     (h : Reach p0 prov c) : (c.world.map Prod.fst).Nodup := by
   induction h with
   | init => simp
@@ -249,7 +256,9 @@ theorem spent_append (cost : Req → Nat → Nat) : ∀ (t : Tape) (r : Req) (a 
       omega
 
 /-- **O gasto só cresce, e a queda não o zera.** O orçamento gasto é função da fita: nenhum
-passo o diminui, e o passo de queda e retomada o deixa exatamente como estava. -/
+passo o diminui, e o passo de queda e retomada o deixa exatamente como estava. Cobre **o que
+foi gravado**: uma amostra cuja resposta se perdeu entre o modelo e a fita não está aqui, e a
+integridade da fita é hipótese (R3). -/
 theorem budget_survives {p0 : Prog} {prov : Nat → Nat → Nat → Nat} (cost : Req → Nat → Nat)
     {c c' : Cfg} (s : Step p0 prov c c') : spent cost c.tape ≤ spent cost c'.tape := by
   cases s with
@@ -270,5 +279,49 @@ re-execução não devolve programa nenhum: não há passo de retomada (`R0650`)
 theorem divergence_stops (r r' : Req) (a : Nat) (k : Nat → Prog) (t : Tape) (h : r ≠ r') :
     replay (.ask r k) ((r', a) :: t) = none := by
   simp [replay, h]
+
+/-! ## A re-execução conferida pelo monitor (RC5.1) -/
+
+/-- A re-execução que confere cada entrada da fita com `ok` (o monitor de tipo da fronteira)
+antes de entregá-la ao programa. É a do executável desde a RC5.1: o valor que vem da fita passa
+pela mesma conferência do valor que vem do provedor. -/
+def replayC (ok : Req → Nat → Bool) : Prog → Tape → Option Prog
+  | p, [] => some p
+  | .done _, _ :: _ => none
+  | .ask r k, (r', a) :: t => if r = r' ∧ ok r a = true then replayC ok (k a) t else none
+
+/-- **Nada entra pela fita sem passar pelo monitor.** Se a re-execução conferida devolve um
+programa, toda entrada que ela entregou satisfaz `ok`, qualquer que seja a fita (inclusive uma
+fita reescrita por quem controla o disco). -/
+theorem replayC_checked (ok : Req → Nat → Bool) : ∀ (t : Tape) (p p' : Prog),
+    replayC ok p t = some p' → ∀ e ∈ t, ok e.1 e.2 = true
+  | [], _, _, _ => by intro e he; cases he
+  | (r', a) :: t, .done v, p', h => by simp [replayC] at h
+  | (r', a) :: t, .ask r k, p', h => by
+      simp only [replayC] at h
+      by_cases c : r = r' ∧ ok r a = true
+      · rw [if_pos c] at h
+        intro e he
+        simp only [List.mem_cons] at he
+        rcases he with he | he
+        · rw [he]; exact c.1 ▸ c.2
+        · exact replayC_checked ok t (k a) p' h e he
+      · simp [c] at h
+
+/-- **Sem culpa indevida.** Numa fita em que toda entrada satisfaz `ok`, a re-execução
+conferida é a re-execução: o monitor não muda o que uma fita íntegra retoma. -/
+theorem replayC_agrees (ok : Req → Nat → Bool) : ∀ (t : Tape) (p : Prog),
+    (∀ e ∈ t, ok e.1 e.2 = true) → replayC ok p t = replay p t
+  | [], p, _ => by cases p <;> rfl
+  | (r', a) :: t, .done v, _ => by simp [replayC, replay]
+  | (r', a) :: t, .ask r k, h => by
+      have ha : ok r' a = true := h (r', a) (by simp)
+      have ht : ∀ e ∈ t, ok e.1 e.2 = true := fun e he => h e (by simp [he])
+      simp only [replayC, replay]
+      by_cases c : r = r'
+      · subst c
+        simp only [ha, and_self, if_true]
+        exact replayC_agrees ok t (k a) ht
+      · simp [c]
 
 end Aletheia.Resume

@@ -152,7 +152,10 @@ impl Host for RemoteHost {
                     self.receipts.insert(wire, j["receipt"].clone());
                 }
                 let s = match j["status"].as_str() {
-                    Some("done") => Status::Done(RemoteHost::value(&j["value"])),
+                    Some("done") => {
+                        self.last_raw = Some(j["value"].clone());
+                        Status::Done(RemoteHost::value(&j["value"]))
+                    }
                     Some("not_applied") => Status::NotApplied,
                     _ => Status::Unknown,
                 };

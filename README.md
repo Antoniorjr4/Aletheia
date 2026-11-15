@@ -47,12 +47,14 @@ Na RC5 um arquivo `.ath` basta para um agente existir no mundo. `bind` liga as f
 API HTTP na própria linguagem, sem adaptador: os parâmetros nomeados são o corpo da requisição,
 a chave vai em `Idempotency-Key`, o resultado volta por um monitor de tipo (`R0640`), e o
 segredo é uma referência ao ambiente do executor, que o programa não tem como ler e que não vai
-a journal, WAL nem prompt. `athc resume` retoma um agente morto por `SIGKILL`: fecha as
+a journal, WAL nem prompt. `athc resume` continua um agente morto por `SIGKILL`: fecha as
 obrigações em aberto e re-executa o programa com as entradas já observadas vindas de uma fita ao
 lado do WAL, sem chamar de novo o modelo nem os provedores, até a fronteira da queda. Em Lean:
-a queda não cria comportamento (`crash_refines`), cada chave é aplicada no máximo uma vez
-(`exactly_once`) e o que o programa observa não depende do valor do segredo
-(`secret_noninterference`). Detalhes e limites em [`docs/RC5.md`](docs/RC5.md).
+no modelo de retomada, a queda não cria comportamento (`crash_refines`) e cada chave é aplicada
+no máximo uma vez (`at_most_once`); no modelo simbólico, o que o programa observa não depende do
+valor do segredo (`secret_noninterference`). A RC5.1 fechou quatro achados da revisão (o monitor
+de tipo na retomada, a marca da fita na âncora, a classificação de host local, `202 Accepted`).
+Ainda não há supervisor: quem dispara `athc resume` é o operador ou um script. Detalhes e limites em [`docs/RC5.md`](docs/RC5.md).
 
 ## v1.0-RC4: autoridade temporal e ciclo de vida verificado
 

@@ -19,6 +19,16 @@ pub mod lock;
 pub mod model;
 pub mod remote;
 pub mod resume;
+
+/// O escopo, na âncora, da `slot`-ésima fita de uma execução (`id` = programa e execução).
+fn tape_scope(id: &str, slot: u32) -> String {
+    blake3::hash(format!("aletheia/v1/tape\n{id}\n{slot}").as_bytes()).to_hex().to_string()
+}
+
+/// O compromisso da âncora com a fita: o comprimento e o hash do último registro.
+fn tape_commit(len: u64, head: &str) -> String {
+    blake3::hash(format!("aletheia/v1/tape-mark\n{len}\n{head}").as_bytes()).to_hex().to_string()
+}
 pub mod sign;
 pub mod value;
 pub mod wal;
@@ -211,6 +221,11 @@ pub struct Arx<'m> {
     pub bound: bool,
     /// a fita das entradas (`<wal>.tape`): `input`, `ret`, `value`. O WAL fica como na RC4.
     pub tape: Option<wal::Wal>,
+    tape_anchor: Option<Box<dyn anchor::Anchor>>,
+    tape_id: String,
+    tape_slot: u32,
+    tape_mark: anchor::Mark,
+    tape_sealed: u64,
     /// as concessões que as operações já decididas desta execução consumiram: na re-execução
     /// a conferência antecipada (`refine`) as vê livres, e a fronteira não as consome de novo
     pub replay_grants: BTreeSet<String>,
@@ -365,6 +380,11 @@ impl<'m> Arx<'m> {
             binds: false,
             bound: false,
             tape: None,
+            tape_anchor: None,
+            tape_id: String::new(),
+            tape_slot: 0,
+            tape_mark: anchor::Mark::zero(),
+            tape_sealed: 0,
             replay_grants: BTreeSet::new(),
             mint_seq: 0,
             tool_seq: 0,
@@ -1400,10 +1420,16 @@ impl<'m> Arx<'m> {
         self.obligation = prev;
         match outcome {
             Some(Ok(v)) => {
+                // RC5.1: o valor que a reconciliação obteve entra no programa pelo mesmo monitor
+                let blame = self.monitor(decl, &v, false);
                 if let Some(j) = resume::enc(&v) {
-                    self.tlog("value", json!({ "key": format!("k{key}"), "value": j }));
+                    self.tlog("value", json!({ "key": format!("k{key}"), "value": j, "blame": blame }));
                 }
                 self.wclose(key, "done", "reconcile");
+                if let Some(why) = blame {
+                    self.journal.push(self.clock, "resolved", json!({ "key": format!("k{key}"), "status": "done" }));
+                    return Err(self.blamed(&tool, &Some(format!("k{key}")), decl, &why, "na reconciliação"));
+                }
                 self.journal.push(self.clock, "resolved", json!({ "key": format!("k{key}"), "status": "done" }));
                 self.line(
                     format!("Pending[k{key}] resolvida"),
@@ -1471,6 +1497,76 @@ impl<'m> Arx<'m> {
         if let Some(w) = self.wal.as_mut() {
             w.append(t, kind, detail);
         }
+    }
+
+    /// **A marca da fita na âncora (RC5.1).** A fita é local e quem escreve no disco pode
+    /// reescrevê-la com o encadeamento refeito. Numa execução ancorada, a âncora guarda (por
+    /// execução, só avançando) quantos registros a fita tem e o hash do último, antes de cada
+    /// operação com chave sair e ao fim da execução. A retomada só aceita uma fita que passa
+    /// pela marca (`tape_attach`, `L0008`): o que foi observado antes do último efeito,
+    /// inclusive o orçamento gasto, não pode ser reescrito nem apagado.
+    pub fn tape_seal(&mut self) -> Result<(), String> {
+        let (Some(a), Some(t)) = (self.tape_anchor.as_mut(), self.tape.as_ref()) else { return Ok(()) };
+        // (a âncora avança um passo por vez: a marca é o número do selo e o compromisso com o
+        // comprimento e a cabeça da fita)
+        let len = t.log.entries.len() as u64;
+        if len <= self.tape_sealed {
+            return Ok(());
+        }
+        loop {
+            let to = anchor::Mark { seq: self.tape_mark.seq + 1, head: tape_commit(len, &t.log.head) };
+            match a.advance(&tape_scope(&self.tape_id, self.tape_slot), &self.tape_mark, &to) {
+                Ok(()) => {
+                    self.tape_mark = to;
+                    self.tape_sealed = len;
+                    return Ok(());
+                }
+                // o primeiro selo de uma execução nova: outro executor da mesma execução tomou
+                // este escopo; a fita deste processo fica no seguinte
+                Err(anchor::AnchorError::Conflict(_)) if self.tape_mark.seq == 0 && self.tape_slot < 4096 => {
+                    self.tape_slot += 1;
+                }
+                Err(e) => return Err(format!("a âncora não guardou a marca da fita: {e:?}; nada foi enviado")),
+            }
+        }
+    }
+
+    /// Liga a fita à âncora. Cada fita de uma execução (programa, execução) tem o seu escopo:
+    /// uma execução nova toma o primeiro livre; a retomada procura o escopo cuja marca se
+    /// compromete com um prefixo **desta** fita, e recusa a fita se nenhum o faz (`L0008`).
+    pub fn tape_attach(&mut self, mut a: Box<dyn anchor::Anchor>, program: &str, run: &str) -> Result<(), String> {
+        self.tape_id = format!("{program}\n{run}");
+        let mut marks = Vec::new();
+        loop {
+            let m = a
+                .read(&tape_scope(&self.tape_id, marks.len() as u32))
+                .map_err(|e| format!("L0005: a âncora da fita não respondeu: {e:?}; nada foi executado"))?;
+            if m.seq == 0 {
+                break;
+            }
+            marks.push(m);
+        }
+        self.tape_slot = marks.len() as u32;
+        if self.resume.is_some() && !marks.is_empty() {
+            let entries = self.tape.as_ref().map(|t| t.log.entries.as_slice()).unwrap_or_default();
+            let found = marks.iter().enumerate().find_map(|(slot, m)| {
+                entries.iter().enumerate().find_map(|(i, e)| {
+                    let n = i as u64 + 1;
+                    (tape_commit(n, e["hash"].as_str().unwrap_or_default()) == m.head).then_some((slot, n))
+                })
+            });
+            let Some((slot, sealed)) = found else {
+                return Err(format!(
+                    "L0008: a fita não passa por nenhuma marca da âncora ({} fita(s) marcada(s) nesta execução): foi reescrita, truncada ou trocada; nada foi executado",
+                    marks.len()
+                ));
+            };
+            self.tape_slot = slot as u32;
+            self.tape_mark = marks[slot].clone();
+            self.tape_sealed = sealed;
+        }
+        self.tape_anchor = Some(a);
+        Ok(())
     }
 
     /// Acrescenta um registro à fita das entradas, se houver.
@@ -1946,11 +2042,12 @@ impl<'m> Arx<'m> {
                     )));
                 }
                 // a entrada observada antes da queda: o relógio e o medidor voltam ao que eram
-                self.clock = rec["clock"].as_f64().unwrap_or(self.clock);
+                self.clock = rec["clock"].as_f64().unwrap_or(0.0).max(self.clock);
                 if let Some(m) = rec["meter"].as_array() {
-                    self.meter.tok = m.first().and_then(|x| x.as_u64()).unwrap_or(self.meter.tok);
-                    self.meter.usd = m.get(1).and_then(|x| x.as_f64()).unwrap_or(self.meter.usd);
-                    self.meter.wall = m.get(2).and_then(|x| x.as_f64()).unwrap_or(self.meter.wall);
+                    // (só para cima: a fita nunca diminui o que a re-execução já contou)
+                    self.meter.tok = m.first().and_then(|x| x.as_u64()).unwrap_or(0).max(self.meter.tok);
+                    self.meter.usd = m.get(1).and_then(|x| x.as_f64()).unwrap_or(0.0).max(self.meter.usd);
+                    self.meter.wall = m.get(2).and_then(|x| x.as_f64()).unwrap_or(0.0).max(self.meter.wall);
                 }
                 if rec["pushed"] == json!(true) && in_saga {
                     self.push_op(t, &args, held);
@@ -1961,7 +2058,13 @@ impl<'m> Arx<'m> {
                 let r = &rec["r"];
                 let val = |k: &str| resume::dec(&r[k]).unwrap_or(Value::Unit);
                 let out: R<Value> = if !r["ok"].is_null() {
-                    Ok(val("ok"))
+                    // RC5.1: o valor da fita passa pelo monitor de tipo como passou ao vivo
+                    let v = val("ok");
+                    let _ = self.host.raw();
+                    match self.monitor(t, &v, true) {
+                        Some(why) => Err(self.blamed(&name, &key, t, &why, "na fita")),
+                        None => Ok(v),
+                    }
                 } else if let Some(e) = r["err"].as_array() {
                     Err(rt(e[0].as_str().unwrap_or("R0600"), e[1].as_str().unwrap_or_default()).into())
                 } else if !r["ret"].is_null() {
@@ -1996,8 +2099,11 @@ impl<'m> Arx<'m> {
                 }
                 let r: R<Value> = match outcome {
                     Some((s, d)) if s == "done" => {
-                        let Some(v) =
-                            self.resume.as_ref().and_then(|rs| rs.values.get(&format!("k{k}"))).and_then(resume::dec)
+                        let Some(v) = self
+                            .resume
+                            .as_ref()
+                            .and_then(|rs| rs.values.get(&format!("k{k}")))
+                            .and_then(|x| resume::dec(&x["value"]))
                         else {
                             return Err(self.diverge(format!(
                                 "R0651 k{k}: o desfecho `done` não tem o valor na fita; a retomada não inventa resultados"
@@ -2012,6 +2118,21 @@ impl<'m> Arx<'m> {
                             "resumed",
                             json!({ "tool": name, "key": key, "outcome": "done", "evidence": d["evidence"] }),
                         );
+                        // RC5.1: o efeito aconteceu (e está contabilizado); o valor só entra no
+                        // programa se habita o tipo. A culpa gravada ao vivo vale aqui, e o valor
+                        // que veio da recuperação ou do recibo é conferido agora.
+                        let recorded = self
+                            .resume
+                            .as_ref()
+                            .and_then(|rs| rs.values.get(&format!("k{k}")))
+                            .and_then(|x| x["blame"].as_str().map(String::from));
+                        let _ = self.host.raw();
+                        if let Some(why) = recorded.or_else(|| self.monitor(t, &v, true)) {
+                            let e = self.blamed(&name, &key, t, &why, "no desfecho gravado");
+                            let r: R<Value> = Err(e);
+                            self.record_ret(&name, &key, n, &ah, &r, false);
+                            return r;
+                        }
                         self.line(
                             format!("↻ {name}(k{k})"),
                             v.show(),
@@ -2056,6 +2177,14 @@ impl<'m> Arx<'m> {
         if let Some(rs) = self.resume.as_mut() {
             rs.live += 1;
         }
+        // RC5.1: antes de um efeito sair, a âncora guarda a marca da fita (`tape_seal`)
+        if key_n.is_some() {
+            if let Err(e) = self.tape_seal() {
+                self.committing = false;
+                self.call_site = None;
+                return Err(rt("L0005", e).into());
+            }
+        }
         let depth = self.sagas.last().map_or(0, |f| f.len());
         let r = self.call_tool_live(t, args);
         let pushed = self.sagas.last().map_or(0, |f| f.len()) > depth;
@@ -2067,10 +2196,18 @@ impl<'m> Arx<'m> {
     /// habita o tipo declarado. Cobre os tipos de dados que atravessam a fronteira (`Int`,
     /// `Bool`, `Text`, com os seus limites, e listas deles) e confere a resposta crua de um
     /// provedor real (`RemoteHost`, `bind`).
-    fn monitor(&mut self, t: &ToolDecl, out: &Value) -> Option<String> {
+    ///
+    /// `strict`: sem resposta crua, confere o valor convertido. É o caso de todo valor que
+    /// chega ao programa **sem passar pelo provedor agora**: o que a retomada lê da fita e o
+    /// que a recuperação gravou. Ao vivo (`strict = false`), só a resposta crua de um provedor
+    /// real é conferida: o mundo simulado em memória não é um provedor.
+    fn monitor(&mut self, t: &ToolDecl, out: &Value, strict: bool) -> Option<String> {
         use ath_grammar::Shape;
-        // (o mundo simulado em memória não é um provedor: não há resposta crua a conferir)
-        let raw = self.host.raw()?;
+        let raw = match (self.host.raw(), strict) {
+            (Some(r), _) => r,
+            (None, true) => out.to_json(),
+            (None, false) => return None,
+        };
         let shape = ath_grammar::shape_of(self.m, &t.ret).ok()?;
         fn scalar(s: &Shape) -> bool {
             match s {
@@ -2082,8 +2219,20 @@ impl<'m> Arx<'m> {
         if !scalar(&shape) {
             return None;
         }
-        let _ = out;
         ath_grammar::check(&shape, &json!({ "value": raw })).err().map(|m| m.replace("`value`", "o resultado"))
+    }
+
+    /// A culpa do provedor (`R0640`), num caminho que não é a chamada ao vivo.
+    fn blamed(&mut self, name: &str, key: &Option<String>, t: &ToolDecl, why: &str, wher: &str) -> Unwind {
+        self.journal.push(self.clock, "provider_blame", json!({ "tool": name, "key": key, "why": why, "where": wher }));
+        rt(
+            "R0640",
+            format!(
+                "`{name}`: valor fora do tipo declarado `{}` {wher} ({why}); o valor não entrou no programa",
+                t.ret.unlabeled().sig()
+            ),
+        )
+        .into()
     }
 
     /// Envenena a retomada: o programa pediu algo que o WAL não registra.
@@ -2352,11 +2501,12 @@ impl<'m> Arx<'m> {
         // provedor devolveu é conferido contra o tipo declarado da ferramenta; a contabilidade
         // do efeito (que aconteceu) segue normalmente, e o valor fora do tipo não entra no
         // programa: a chamada falha com a culpa atribuída ao provedor (`R0640`).
-        let blame = self.monitor(t, &out);
+        let blame = self.monitor(t, &out, false);
         // RC5: o valor que o provedor devolveu vai para a fita antes de o desfecho ser fechado
         // no WAL: um `close done` sempre tem o seu valor
+        // (com a culpa, se houver: a retomada que encontrar este desfecho falha como aqui)
         if let (Some(k), Some(v)) = (key_n, resume::enc(&out)) {
-            self.tlog("value", json!({ "key": format!("k{k}"), "value": v }));
+            self.tlog("value", json!({ "key": format!("k{k}"), "value": v, "blame": blame }));
         }
         self.clock += lat;
         self.meter.settle(0, t.usd, lat);

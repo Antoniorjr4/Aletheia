@@ -18,7 +18,8 @@
 //! | o que o HTTP diz | o que a linguagem vê |
 //! |---|---|
 //! | a conexão não abriu | `Unreachable`: nada saiu do processo |
-//! | 2xx | o valor (`-> campo`, se a rota o nomeia), conferido contra o tipo |
+//! | 200, 201, 204 | o valor (`-> campo`, se a rota o nomeia), conferido contra o tipo |
+//! | 202 e os outros 2xx | `Timeout`: o pedido foi aceito, o efeito não está concluído |
 //! | 4xx (menos 408) | `Failed`: recusa do provedor, o efeito não aconteceu |
 //! | 408, 5xx, prazo, resposta cortada | `Timeout`: o `TimeoutUnknown` da linguagem |
 //!
@@ -58,10 +59,9 @@ pub struct BoundHost {
     receipts: BTreeMap<String, Json>,
 }
 
+/// Só o próprio host (`ath_syntax::ast::loopback_url`): na dúvida, é outro host.
 fn loopback(url: &str) -> bool {
-    let rest = url.split("://").nth(1).unwrap_or(url);
-    let host = rest.split(['/', ':']).next().unwrap_or_default();
-    matches!(host, "127.0.0.1" | "localhost" | "[")
+    ath_syntax::ast::loopback_url(url)
 }
 
 fn urlencode(s: &str) -> String {
@@ -98,8 +98,10 @@ impl BoundHost {
                 })?,
             };
             let base = base.trim_end_matches('/').to_string();
-            if !(base.starts_with("http://") || base.starts_with("https://")) {
-                return Err(format!("R0642: `bind {name}`: a url não é http(s); nada foi executado"));
+            if ath_syntax::ast::url_authority(&base).is_none() {
+                return Err(format!(
+                    "R0642: `bind {name}`: a url não é http(s), não tem host ou carrega credenciais; nada foi executado"
+                ));
             }
             local &= loopback(&base);
             let secret = match &b.auth {
@@ -275,7 +277,10 @@ impl Host for BoundHost {
         let route = b.route.clone();
         let (status, body, lat) = self.http(b, &route, &fields, key.as_deref())?;
         match status {
-            200..=299 => {
+            // O efeito concluído: 200, 201, 204. Um `202 Accepted` (ou qualquer outro 2xx) diz
+            // que o pedido foi recebido, não que o efeito que a ferramenta promete aconteceu:
+            // é resultado desconhecido, e a consulta por chave (`status`) é quem o decide.
+            200 | 201 | 204 => {
                 let doc: Json = serde_json::from_str(&body).unwrap_or(Json::String(body));
                 let doc = self.scrub(&doc);
                 if let (Some(k), true) = (&key, doc["receipt"].is_object()) {
@@ -288,7 +293,7 @@ impl Host for BoundHost {
                 self.last_raw = Some(v.clone());
                 Ok((BoundHost::value(&v), lat))
             }
-            408 | 500..=599 => Err(HostError::Timeout { elapsed: lat }),
+            202..=299 | 408 | 500..=599 => Err(HostError::Timeout { elapsed: lat }),
             s => Err(HostError::Failed(format!("HTTP {s}: {}", self.excerpt(&body)))),
         }
     }
@@ -307,7 +312,10 @@ impl Host for BoundHost {
                     self.receipts.insert(wire, doc["receipt"].clone());
                 }
                 let s = match doc["status"].as_str() {
-                    Some("done") => Status::Done(BoundHost::value(&doc["value"])),
+                    Some("done") => {
+                        self.last_raw = Some(doc["value"].clone());
+                        Status::Done(BoundHost::value(&doc["value"]))
+                    }
                     Some("not_applied") => Status::NotApplied,
                     _ => Status::Unknown,
                 };

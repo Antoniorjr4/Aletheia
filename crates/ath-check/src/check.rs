@@ -620,8 +620,7 @@ impl<'m> Ctx<'m> {
         let mut seen: Vec<&Ident> = Vec::new();
         for b in binds {
             if let (BindUrl::Lit(u), Some(secret)) = (&b.url, &b.auth) {
-                let host = u.split("://").nth(1).unwrap_or(u).split(['/', ':']).next().unwrap_or_default();
-                if u.starts_with("http://") && !matches!(host, "127.0.0.1" | "localhost") {
+                if u.starts_with("http://") && !ath_syntax::ast::loopback_url(u) {
                     self.push(
                         Diag::new(
                             E2,
@@ -635,11 +634,11 @@ impl<'m> Ctx<'m> {
                 }
             }
             if let BindUrl::Lit(u) = &b.url {
-                if !(u.starts_with("http://") || u.starts_with("https://")) {
+                if ath_syntax::ast::url_authority(u).is_none() {
                     self.push(Diag::new(
                         E0,
                         "E0431",
-                        format!("a url de `bind {}` não é http(s)", b.name.name),
+                        format!("a url de `bind {}` não é http(s), ou carrega credenciais", b.name.name),
                         b.url_span,
                         "esperado `http://…`, `https://…` ou `env(\"NOME\")`",
                     ));

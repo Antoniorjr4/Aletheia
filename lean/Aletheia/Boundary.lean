@@ -124,9 +124,11 @@ def observed (σ : Env) (resp : List Atom) : List (Nat × Nat) :=
 theorem inst_scrub (σ₁ σ₂ : Env) (a : Atom) : inst σ₁ (scrub a) = inst σ₂ (scrub a) := by
   cases a <;> rfl
 
-/-- **Não interferência do segredo.** Qualquer que seja o provedor (`p` devolve o que quiser,
-inclusive cópias do segredo), o que o programa observa é o mesmo para quaisquer dois valores
-do segredo: nada do que o programa vê, grava ou envia a um modelo depende do valor. -/
+/-- **Não interferência do segredo, no modelo simbólico.** Qualquer que seja o provedor
+simbólico (`p` devolve o que quiser, inclusive cópias do segredo), o que o programa observa é o
+mesmo para quaisquer dois valores do segredo. **Não é uma garantia contra qualquer API**: um
+provedor que transforma o segredo (B1), ou que o usa mal do lado dele, está fora do modelo. O
+provedor recebe a credencial e é confiado com ela. -/
 theorem secret_noninterference (σ₁ σ₂ : Env) (p : Nat → List Atom) (req : Nat) :
     observed σ₁ (p req) = observed σ₂ (p req) := by
   unfold observed

@@ -606,6 +606,39 @@ fn a_reflected_secret_is_redacted_before_it_enters_the_program() {
     assert!(!j.contains(TOKEN) && !text(&o).contains(TOKEN), "o segredo refletido entrou no programa");
 }
 
+/// **Achado 3: um segredo não sai em claro para outro host, qualquer que seja a forma da url.**
+/// A url vem do ambiente; a recusa (`R0643`, `R0642`) vem antes de qualquer conexão.
+#[test]
+fn a_secret_never_leaves_in_clear_for_another_host() {
+    let dir = std::env::temp_dir().join(format!("ath-rc5-{}-loopback", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let prog = dir.join("whoami.ath");
+    std::fs::write(&prog, WHOAMI).unwrap();
+    for (url, code) in [
+        ("http://[::ffff:198.51.100.10]", "R0643"),
+        ("http://[2001:db8::1]:8080", "R0643"),
+        ("http://localhost.evil.example", "R0643"),
+        ("http://localhost:x@evil.example", "R0642"),
+        ("http://127.0.0.1@evil.example", "R0642"),
+    ] {
+        let mut c = Command::new(env!("CARGO_BIN_EXE_athc"));
+        c.env("NO_COLOR", "1").env("BANK_URL", url).env("BANK_TOKEN", TOKEN);
+        c.arg("run")
+            .arg(&prog)
+            .args(["--arg", "\"TREASURY\"", "--timeout", "1"])
+            .arg("--journal")
+            .arg(dir.join("j.jsonl"));
+        let t0 = std::time::Instant::now();
+        let o = c.output().unwrap();
+        assert!(!o.status.success() && text(&o).contains(code), "{url}: {}", text(&o));
+        assert!(
+            text(&o).contains("nada foi executado") && t0.elapsed().as_secs_f64() < 0.9,
+            "{url}: houve tentativa de conexão"
+        );
+    }
+}
+
 /// **A ligação é conferida antes de rodar.** Rota para o que não é ferramenta (`E0431`),
 /// ferramenta ligada duas vezes (`E0432`), segredo em claro para outro host (`E0433`), operação
 /// com chave num `GET` (`E0434`); e um segredo literal não é sequer sintaxe.
@@ -628,6 +661,9 @@ fn a_binding_is_checked_before_anything_runs() {
     assert!(check("twice", route, &format!("{route}}}\n\nbind other {{\n  url = \"https://b.example\"\n{route}"))
         .contains("E0432"));
     assert!(check("clear", "env(\"BANK_URL\")", "\"http://bank.example\"").contains("E0433"));
+    // RC5.1: só o próprio host é local. Um literal IPv6 qualquer não é; credenciais na url, nunca.
+    assert!(check("clear6", "env(\"BANK_URL\")", "\"http://[::ffff:198.51.100.10]\"").contains("E0433"));
+    assert!(check("userinfo", "env(\"BANK_URL\")", "\"http://localhost:x@evil.example\"").contains("E0431"));
     assert!(check("get", "\"POST /v1/payments -> id\"", "\"GET /v1/payments -> id\"").contains("E0434"));
     let lit = check("literal", "secret(\"BANK_TOKEN\")", "\"tok-123\"");
     assert!(lit.contains("nunca um literal do programa"), "{lit}");
@@ -763,6 +799,22 @@ fn a_rewritten_tape_is_refused_by_the_anchor() {
     assert!(!o.status.success() && text(&o).contains("L0008"), "a fita reescrita foi aceita: {}", text(&o));
     assert_eq!(w.state()["counts"]["scheduled"], before["counts"]["scheduled"]);
     assert_eq!(w.count("receipts"), 0);
+
+    // a fita truncada antes da marca, e a fita apagada: também recusadas, nada é enviado
+    for (what, keep) in [("truncada", 2usize), ("apagada", 0)] {
+        let w = World::start(&format!("tape-{what}"));
+        let r = Run::fresh(&w, "r");
+        let o = r.cmd("r").args(["--kill-at", "sent:3"]).output().unwrap();
+        assert!(killed(&o), "{}", text(&o));
+        let tape = std::fs::read_to_string(w.p("r.wal.tape")).unwrap();
+        let kept: Vec<&str> = tape.lines().take(keep).collect();
+        std::fs::write(w.p("r.wal.tape"), kept.iter().map(|l| format!("{l}\n")).collect::<String>()).unwrap();
+        let before = w.state();
+        let o = r.resume("r").output().unwrap();
+        assert!(!o.status.success() && text(&o).contains("L0008"), "fita {what} aceita: {}", text(&o));
+        assert_eq!(w.state()["counts"], before["counts"], "fita {what}");
+        assert_eq!(w.count("receipts"), 0, "fita {what}");
+    }
 }
 
 /// **Achado 4: `202 Accepted` não é um efeito concluído.** A API aceita o pedido e não o
@@ -773,8 +825,8 @@ fn an_accepted_request_is_not_a_completed_effect() {
     let w = World::start("accepted");
     let api = http(&w);
     let p =
-        Probe::new("accepted", "\nbind api {\n  url  = env(\"BANK_URL\")\n  note = \"POST /v1/accepted -> id\"\n}\n");
-    let o = p.athc("run").env("BANK_URL", format!("http://{api}")).output().unwrap();
+        Probe::new("accepted", "\nbind api {\n  url  = env(\"BANK_URL\")\n  auth = secret(\"BANK_TOKEN\")\n  note = \"POST /v1/accepted -> id\"\n}\n");
+    let o = p.athc("run").env("BANK_URL", format!("http://{api}")).env("BANK_TOKEN", TOKEN).output().unwrap();
     assert!(!text(&o).contains("resultado: \"queued\""), "202 foi tratado como efeito concluído: {}", text(&o));
     assert!(text(&o).contains("resultado: \"pendente\""), "{}", text(&o));
     let wal = std::fs::read_to_string(p.dir.join("n.wal")).unwrap();

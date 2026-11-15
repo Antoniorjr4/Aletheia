@@ -14,6 +14,8 @@
 #      aplicada uma só vez; o modelo não é consultado de novo; o orçamento é o da execução sem queda
 #   5. a retomada também é morta; a terceira termina; retomar a execução terminada não chama ninguém
 #   6. a retomada recusa outra história (R0652) e uma execução encerrada por `recover` (R0653)
+#   7. (RC5.1) a fita truncada é recusada pela marca da âncora (L0008); um literal IPv6 que não
+#      é o próprio host não recebe o segredo em claro (R0643); 202 Accepted não é efeito concluído
 #
 # Três papéis, dois processos: o provedor (o banco: API REST com token, recibos assinados) e a
 # âncora (também a testemunha de tempo), em bancos SQLite separados.
@@ -181,5 +183,46 @@ blocked "outros argumentos" R0652 "$ATHC" resume "$PROG" --provider scripted --m
 "$ATHC" recover "$PROG" --wal "$OUT/z.wal" --timeout 5 > "$OUT/z.recover.out" 2>&1 || true
 check "athc recover encerrou a execução (saga compensada)" "$(get counts.pays_refunded)" "2"
 blocked "execução encerrada por recover" R0653 go resume z z
+
+step "7. RC5.1: a fita truncada, o host que não é o próprio, e o 202 Accepted"
+world tape; authorize t
+set +e; go run t t --kill-at sent:3 > /dev/null 2>&1; set -e
+head -n 2 "$OUT/t.wal.tape" > "$OUT/t.tape.cut" && cp "$OUT/t.tape.cut" "$OUT/t.wal.tape"
+blocked "a fita truncada antes da marca da âncora" L0008 go resume t t
+blocked "segredo em claro para um literal IPv6 que não é o próprio host" R0643 \
+  env BANK_URL='http://[::ffff:198.51.100.10]' "$ATHC" run "$OUT/probe.ath" --arg '"TREASURY"' --journal "$OUT/p6.jsonl"
+blocked "url com credenciais" R0642 \
+  env BANK_URL='http://localhost:x@evil.example' "$ATHC" run "$OUT/probe.ath" --arg '"TREASURY"' --journal "$OUT/p7.jsonl"
+cat > "$OUT/note.ath" <<'ATH'
+module rc5.note
+
+tool note(c: Cap[Bank.Pay], text: Text[..16], k: own IdemKey) -> Text[..8]
+  ! { Bank.Pay } irrevocable provider idempotent latency 5.0
+
+bind api {
+  url  = env("BANK_URL")
+  auth = secret("BANK_TOKEN")
+  note = "POST /v1/accepted -> id"
+}
+
+agent Clerk(bank: Cap[Bank.Pay], keys: Cap[IdemKey.Mint])
+  budget [tok <= 10, usd <= 0.01, wall <= 30.0]
+{
+  on ask(text: Text[..16] ^ Trusted) -> Text ! { Bank.Pay, TimeoutUnknown } {
+    commit note(bank, text, keys.mint())
+  }
+
+  handle timeout_unknown(p: own Pending[_]) -> Text {
+    reconcile p fuel 2 else {
+      transfer p
+      "pendente"
+    }
+  }
+}
+ATH
+"$ATHC" run "$OUT/note.ath" --arg '"oi"' --wal "$OUT/note.wal" --journal "$OUT/note.jsonl" > "$OUT/note.out" 2>&1 || true
+grep -q 'resultado: "pendente"' "$OUT/note.out" || { cat "$OUT/note.out"; die "202 Accepted foi tratado como efeito concluído"; }
+grep -q '"status":"done"' "$OUT/note.wal" && die "202 Accepted fechou a operação como done"
+ok "202 Accepted: resultado desconhecido, a obrigação foi transferida (não fechada como done)"
 
 printf '\n\033[1;32mv1.0-RC5: todas as conferências passaram.\033[0m\n'

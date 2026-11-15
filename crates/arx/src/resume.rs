@@ -52,7 +52,8 @@ pub struct Resume {
     pub seq_rets: BTreeMap<u64, Json>,
     /// ordem da amostra → a resposta do modelo
     pub inputs: BTreeMap<u64, Json>,
-    /// chave → o valor que o provedor devolveu à recuperação
+    /// chave → o registro do valor que o provedor devolveu (`value` e, se o monitor de tipo o
+    /// recusou, `blame`)
     pub values: HashMap<String, Json>,
     /// chave → a intenção mais recente
     pub intents: HashMap<String, Json>,
@@ -88,7 +89,7 @@ impl Resume {
                 },
                 Some("value") => {
                     if let Some(k) = key {
-                        r.values.insert(k, d["value"].clone());
+                        r.values.insert(k, d.clone());
                     }
                 }
                 Some("input") => {

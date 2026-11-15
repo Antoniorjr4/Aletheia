@@ -446,8 +446,8 @@ open Aletheia
 /-- info: 'Aletheia.Resume.crash_refines' depends on axioms: [propext] -/
 #guard_msgs in #print axioms Resume.crash_refines
 
-/-- info: 'Aletheia.Resume.exactly_once' depends on axioms: [propext] -/
-#guard_msgs in #print axioms Resume.exactly_once
+/-- info: 'Aletheia.Resume.at_most_once' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Resume.at_most_once
 
 /-- info: 'Aletheia.Resume.tape_is_evidence' depends on axioms: [propext] -/
 #guard_msgs in #print axioms Resume.tape_is_evidence
@@ -481,3 +481,11 @@ open Aletheia
 
 /-- info: 'Aletheia.Boundary.without_scrub_it_leaks' depends on axioms: [propext] -/
 #guard_msgs in #print axioms Boundary.without_scrub_it_leaks
+
+-- v1.0-RC5.1: a re-execução conferida pelo monitor
+
+/-- info: 'Aletheia.Resume.replayC_checked' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Resume.replayC_checked
+
+/-- info: 'Aletheia.Resume.replayC_agrees' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Resume.replayC_agrees

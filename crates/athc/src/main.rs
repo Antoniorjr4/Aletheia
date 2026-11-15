@@ -675,7 +675,17 @@ fn cmd_run(opts: &Opts, st: Style, resume: bool) -> Result<bool, String> {
         shown.join(", "),
         st.dim(&format!("provedor: {provider_name}"))
     );
+    // RC5.1: numa execução com autoridade temporal (a âncora é parte do protocolo), a âncora
+    // guarda também a marca da fita das entradas
+    if let (Some(a), true) = (opts.one("anchor"), arx.tape.is_some() && arx.temporal) {
+        let anchor = arx::anchor::TcpAnchor::new(a.strip_prefix("tcp://").unwrap_or(a), 5.0)?;
+        arx.tape_attach(Box::new(anchor), &c.codex.root, &run_id)?;
+    }
     let result = arx.run(&agent, &event, args);
+    // (a marca final da fita: o que a execução inteira observou)
+    if let Err(e) = arx.tape_seal() {
+        eprintln!("aviso: {e}");
+    }
     println!("  {}", st.dim(&format!("{:>7}  {:>7}", "t", "+Δt")));
     for ev in &arx.events {
         println!(
