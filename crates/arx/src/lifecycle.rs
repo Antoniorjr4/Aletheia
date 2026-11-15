@@ -1046,9 +1046,13 @@ impl<'m> Arx<'m> {
             let st = self.lc_state(&mut lc)?;
             let att = lc.time.attest(&lc.scope, &st.head).map_err(time_err)?;
             self.grants.spent.extend(st.taken.keys().cloned());
+            for id in &self.replay_grants {
+                self.grants.spent.remove(id);
+            }
             // as chaves são do escopo, não do processo: uma nova execução na mesma `run` numera
             // depois da maior chave já ancorada (uma chave liberada nunca é reaproveitada)
             let top = st.ops.keys().filter_map(|k| k.strip_prefix('k')?.parse::<u64>().ok()).max().unwrap_or(0);
+            // (RC5: na retomada a chave é função da ordem da cunhagem, `resume::key_for`)
             self.next_key = self.next_key.max(top + 1);
             self.journal.push(self.clock, "time", json!({ "t": att.t, "floor": st.floor, "anchored": st.len }));
             Ok(())
@@ -1444,6 +1448,7 @@ impl<'m> Arx<'m> {
                         "close",
                         json!({ "key": key, "status": status, "evidence": "anchor:outcome", "outcome": h }),
                     );
+                    self.tlog("value", json!({ "key": key, "value": { "t": r.value } }));
                 }
                 continue;
             }
@@ -1563,6 +1568,7 @@ impl<'m> Arx<'m> {
                             "recovery:status"
                         };
                         self.wlog("close", json!({ "key": key, "status": status, "evidence": ev, "attempts": attempt, "outcome": e.hash }));
+                        self.tlog("value", json!({ "key": key, "value": { "t": r.value } }));
                         return;
                     }
                     Err(AppendError::Conflict) => continue,

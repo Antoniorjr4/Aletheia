@@ -17,6 +17,7 @@ pub mod lifecycle;
 pub mod lock;
 pub mod model;
 pub mod remote;
+pub mod resume;
 pub mod sign;
 pub mod value;
 pub mod wal;
@@ -26,7 +27,7 @@ use ath_syntax::ast::*;
 use ath_syntax::{est_tokens, parse_expr_str};
 use host::{Host, HostError, Status, TrustedSnapshot};
 use journal::Journal;
-use model::{ModelProvider, Request};
+use model::{Completion, ModelProvider, Request};
 use serde_json::json;
 use std::collections::{BTreeSet, HashMap};
 use std::rc::Rc;
@@ -198,6 +199,20 @@ pub struct Arx<'m> {
     pub events: Vec<Event>,
     scopes: Vec<Vec<(String, Value)>>,
     next_key: u64,
+    /// **RC5**: a retomada (`resume.rs`). Com ela, as entradas gravadas vêm do WAL.
+    pub resume: Option<resume::Resume>,
+    /// a divergência que envenenou a retomada (`R0650`): nada sai depois dela
+    pub diverged: Option<String>,
+    /// na retomada, a recuperação fecha as intenções e deixa as sagas para a re-execução
+    pub skip_sagas: bool,
+    /// a fita das entradas (`<wal>.tape`): `input`, `ret`, `value`. O WAL fica como na RC4.
+    pub tape: Option<wal::Wal>,
+    /// as concessões que as operações já decididas desta execução consumiram: na re-execução
+    /// a conferência antecipada (`refine`) as vê livres, e a fronteira não as consome de novo
+    pub replay_grants: BTreeSet<String>,
+    mint_seq: u64,
+    tool_seq: u64,
+    infer_seq: u64,
     committing: bool,
     agent: Option<&'m AgentDecl>,
     sagas: Vec<Vec<SagaOp<'m>>>,
@@ -340,6 +355,14 @@ impl<'m> Arx<'m> {
             events: Vec::new(),
             scopes: Vec::new(),
             next_key: 1,
+            resume: None,
+            diverged: None,
+            skip_sagas: false,
+            tape: None,
+            replay_grants: BTreeSet::new(),
+            mint_seq: 0,
+            tool_seq: 0,
+            infer_seq: 0,
             committing: false,
             agent: None,
             sagas: Vec::new(),
@@ -864,8 +887,17 @@ impl<'m> Arx<'m> {
                 let r = self.eval(recv)?;
                 match (&r, method.name.as_str()) {
                     (Value::Cap(c), "mint") if c.contains("IdemKey.Mint") => {
-                        let k = self.next_key;
-                        self.next_key += 1;
+                        self.mint_seq += 1;
+                        let k = match &self.resume {
+                            // na retomada a chave é função da ordem da cunhagem: a original, ou
+                            // uma geração nova se a original morreu sem ser aplicada
+                            Some(rs) => rs.key_for(self.mint_seq),
+                            None => {
+                                let k = self.next_key;
+                                self.next_key += 1;
+                                k
+                            }
+                        };
                         self.journal.push(self.clock, "mint", json!({ "key": format!("k{k}") }));
                         Ok(Value::Key(k))
                     }
@@ -1129,6 +1161,23 @@ impl<'m> Arx<'m> {
                 continue;
             };
             let key = op.args.iter().find_map(|v| if let Value::Key(k) = v { Some(format!("k{k}")) } else { None });
+            // RC5: uma compensação que a execução original já fez não é refeita
+            let done = self.resume.as_ref().and_then(|rs| rs.compensated.get(&(sid, key.clone().unwrap_or_default())).copied());
+            if let Some(ok) = done {
+                self.journal.push(
+                    self.clock,
+                    "compensate",
+                    json!({ "of": op.tool.name.name, "tool": comp.name.name, "key": key, "ok": ok, "replayed": true }),
+                );
+                if !ok {
+                    residual.push(format!("{}: a compensação falhou antes da queda", comp.name.name));
+                }
+                continue;
+            }
+            if self.diverged.is_some() {
+                residual.push(format!("{}: retomada divergente, nada é enviado", comp.name.name));
+                continue;
+            }
             match self.host.call(&comp.name.name, &op.args) {
                 Ok((out, lat)) => {
                     self.clock += lat;
@@ -1337,6 +1386,9 @@ impl<'m> Arx<'m> {
         self.obligation = prev;
         match outcome {
             Some(Ok(v)) => {
+                if let Some(j) = resume::enc(&v) {
+                    self.tlog("value", json!({ "key": format!("k{key}"), "value": j }));
+                }
                 self.wclose(key, "done", "reconcile");
                 self.journal.push(self.clock, "resolved", json!({ "key": format!("k{key}"), "status": "done" }));
                 self.line(
@@ -1398,7 +1450,19 @@ impl<'m> Arx<'m> {
                 detail["spend"] = json!(h);
             }
         }
+        // RC5: a re-execução reproduz os registros de saga da execução original; não os duplica
+        if kind.starts_with("saga_") && self.resume.as_mut().is_some_and(|rs| rs.absorb(kind, &detail)) {
+            return;
+        }
         if let Some(w) = self.wal.as_mut() {
+            w.append(t, kind, detail);
+        }
+    }
+
+    /// Acrescenta um registro à fita das entradas, se houver.
+    pub(crate) fn tlog(&mut self, kind: &str, detail: serde_json::Value) {
+        let t = self.clock;
+        if let Some(w) = self.tape.as_mut() {
             w.append(t, kind, detail);
         }
     }
@@ -1538,20 +1602,27 @@ impl<'m> Arx<'m> {
                 .map(|(p, j)| self.arg_from_json(j, &p.ty))
                 .collect();
             let mut outcome: Option<bool> = None;
+            let mut value: Option<Value> = None;
             let mut tries = 0;
             if decl.provider != ProviderClass::Opaque {
                 for _ in 0..fuel {
                     tries += 1;
                     let r = match decl.provider {
                         ProviderClass::Idempotent => match args.as_ref().map(|a| self.host.call(&tool, a)) {
-                            Some(Ok(_)) => Some(true),
+                            Some(Ok((v, _))) => {
+                                value = Some(v);
+                                Some(true)
+                            }
                             // só uma resposta do provedor é evidência: o provedor inalcançável
                             // (`Unreachable`) e o prazo esgotado deixam a obrigação em aberto
                             Some(Err(HostError::Failed(_))) => Some(false),
                             Some(Err(HostError::Unreachable(_) | HostError::Timeout { .. })) | None => None,
                         },
                         _ => match self.host.status(&tool, kn).0 {
-                            Status::Done(_) => Some(true),
+                            Status::Done(v) => {
+                                value = Some(v);
+                                Some(true)
+                            }
                             Status::NotApplied => Some(false),
                             Status::Unknown => None,
                         },
@@ -1564,16 +1635,24 @@ impl<'m> Arx<'m> {
             }
             let via = if decl.provider == ProviderClass::Idempotent { "recovery:resend" } else { "recovery:status" };
             match outcome {
-                Some(b) => self.wlog(
-                    "close",
-                    json!({ "key": key, "status": if b { "done" } else { "failed" }, "evidence": via, "attempts": tries }),
-                ),
+                Some(b) => {
+                    let d = json!({ "key": key, "status": if b { "done" } else { "failed" }, "evidence": via, "attempts": tries });
+                    // RC5: o valor que o provedor devolveu, para a retomada (na fita)
+                    if let Some(v) = value.as_ref().and_then(resume::enc) {
+                        self.tlog("value", json!({ "key": key, "value": v }));
+                    }
+                    self.wlog("close", d)
+                }
                 None => {
                     let reason =
                         if decl.provider == ProviderClass::Opaque { "opaque: sem protocolo" } else { "sem resposta conclusiva" };
                     self.wlog("escalate", json!({ "key": key, "reason": reason, "attempts": tries }))
                 }
             }
+        }
+        // RC5: na retomada, as sagas interrompidas continuam; quem as termina é o programa
+        if self.skip_sagas {
+            return self.wal.as_ref().map(|w| w.log.entries[before..].to_vec()).unwrap_or_default();
         }
         // as sagas interrompidas: compensa o que foi ou pode ter sido aplicado, menos o refutado
         let st = wal::WalState::of(&self.wal.as_ref().expect("wal").log);
@@ -1800,7 +1879,195 @@ impl<'m> Arx<'m> {
         }
     }
 
+    /// **A fronteira de toda chamada (RC5).** Com WAL, grava o que a chamada devolveu ao
+    /// programa (`ret`); na retomada, devolve do WAL o que já foi observado, sem tocar no mundo,
+    /// e decide a operação interrompida pelo desfecho que a recuperação gravou (`resume.rs`).
     fn call_tool(&mut self, t: &'m ToolDecl, args: Vec<Value>) -> R<Value> {
+        let name = t.name.name.clone();
+        let key_n = args.iter().find_map(|v| if let Value::Key(k) = v { Some(*k) } else { None });
+        let n = if key_n.is_none() {
+            self.tool_seq += 1;
+            Some(self.tool_seq)
+        } else {
+            None
+        };
+        if self.tape.is_none() {
+            return self.call_tool_live(t, args);
+        }
+        let key = key_n.map(|k| format!("k{k}"));
+        let ah = resume::args_hash(&args);
+        let clear = |me: &mut Self| {
+            me.committing = false;
+            me.call_site = None;
+        };
+        if self.diverged.is_some() {
+            clear(self);
+            return Err(rt("R0650", "retomada divergente: nenhuma chamada sai depois da divergência").into());
+        }
+        let in_saga = !self.sagas.is_empty();
+        let held = if in_saga { self.comp_reserve(t) } else { (0.0, 0.0) };
+        if let Some(rs) = &self.resume {
+            let rec = match (&key, n) {
+                (Some(k), _) => rs.rets.get(k).cloned(),
+                (None, Some(n)) => rs.seq_rets.get(&n).cloned(),
+                _ => None,
+            };
+            let intent = key.as_ref().and_then(|k| rs.intents.get(k).cloned());
+            let outcome = key.as_ref().and_then(|k| rs.outcome.get(k).cloned());
+            let same = |d: &serde_json::Value| {
+                d["tool"] == json!(name)
+                    && (d["args"] == json!(ah)
+                        || d["args"] == json!(args.iter().map(|v| v.to_json()).collect::<Vec<_>>()))
+            };
+            let what = key.clone().unwrap_or_else(|| format!("chamada {}", n.unwrap_or_default()));
+            if let Some(rec) = rec {
+                clear(self);
+                if !same(&rec) {
+                    return Err(self.diverge(format!(
+                        "{what}: o WAL registra `{}` com outros argumentos; o programa pede `{name}`",
+                        rec["tool"].as_str().unwrap_or("?")
+                    )));
+                }
+                // a entrada observada antes da queda: o relógio e o medidor voltam ao que eram
+                self.clock = rec["clock"].as_f64().unwrap_or(self.clock);
+                if let Some(m) = rec["meter"].as_array() {
+                    self.meter.tok = m.first().and_then(|x| x.as_u64()).unwrap_or(self.meter.tok);
+                    self.meter.usd = m.get(1).and_then(|x| x.as_f64()).unwrap_or(self.meter.usd);
+                    self.meter.wall = m.get(2).and_then(|x| x.as_f64()).unwrap_or(self.meter.wall);
+                }
+                if rec["pushed"] == json!(true) && in_saga {
+                    self.push_op(t, &args, held);
+                }
+                if let Some(rs) = self.resume.as_mut() {
+                    rs.replayed += 1;
+                }
+                let r = &rec["r"];
+                let val = |k: &str| resume::dec(&r[k]).unwrap_or(Value::Unit);
+                let out: R<Value> = if !r["ok"].is_null() {
+                    Ok(val("ok"))
+                } else if let Some(e) = r["err"].as_array() {
+                    Err(rt(e[0].as_str().unwrap_or("R0600"), e[1].as_str().unwrap_or_default()).into())
+                } else if !r["ret"].is_null() {
+                    Err(Unwind::Ret(val("ret")))
+                } else if !r["resume"].is_null() {
+                    Err(Unwind::Resume(val("resume")))
+                } else {
+                    Err(Unwind::Abort(val("abort")))
+                };
+                let shown = match &out {
+                    Ok(v) => v.show(),
+                    Err(Unwind::Err(e)) => format!("{} {}", e.code, e.msg),
+                    Err(_) => "desvio do tratador".into(),
+                };
+                self.journal.push(self.clock, "replayed", json!({ "tool": name, "key": key, "n": n }));
+                self.line(format!("↻ {name}({})", key.clone().unwrap_or_default()), shown, 0.0, Some((true, "do WAL".into())));
+                return out;
+            }
+            if let (Some(k), Some(intent)) = (key_n, intent) {
+                // a operação que a queda interrompeu: a recuperação já a decidiu
+                clear(self);
+                if !same(&intent) {
+                    return Err(self.diverge(format!(
+                        "{what}: o WAL registra a intenção de `{}` com outros argumentos; o programa pede `{name}`",
+                        intent["tool"].as_str().unwrap_or("?")
+                    )));
+                }
+                let r: R<Value> = match outcome {
+                    Some((s, d)) if s == "done" => {
+                        let Some(v) = self.resume.as_ref().and_then(|rs| rs.values.get(&format!("k{k}"))).and_then(resume::dec)
+                        else {
+                            return Err(self.diverge(format!(
+                                "R0651 k{k}: o desfecho `done` não tem o valor na fita; a retomada não inventa resultados"
+                            )));
+                        };
+                        self.meter.settle(0, t.usd, 0.0);
+                        if t.class == EffClass::Compensable && in_saga {
+                            self.push_op(t, &args, held);
+                        }
+                        self.journal.push(
+                            self.clock,
+                            "resumed",
+                            json!({ "tool": name, "key": key, "outcome": "done", "evidence": d["evidence"] }),
+                        );
+                        self.line(
+                            format!("↻ {name}(k{k})"),
+                            v.show(),
+                            0.0,
+                            Some((true, format!("aplicada uma vez ({})", d["evidence"].as_str().unwrap_or("?")))),
+                        );
+                        Ok(v)
+                    }
+                    Some((s, d)) if s == "failed" => {
+                        self.journal.push(
+                            self.clock,
+                            "resumed",
+                            json!({ "tool": name, "key": key, "outcome": "failed", "evidence": d["evidence"] }),
+                        );
+                        let why = if d["evidence"] == "recovery:status" {
+                            "o provedor respondeu que não aplicou, e a autorização daquela tentativa foi consumida"
+                        } else {
+                            "recusada pelo provedor"
+                        };
+                        Err(rt("R0600", format!("`{name}`: {why} (desfecho da recuperação)")).into())
+                    }
+                    Some(_) => {
+                        // escalada: é o `TimeoutUnknown` da linguagem, e o tratador decide
+                        if t.class == EffClass::Compensable && in_saga {
+                            self.push_op(t, &args, held);
+                        }
+                        self.journal.push(
+                            self.clock,
+                            "timeout_unknown",
+                            json!({ "tool": name, "key": key, "provider": t.provider.name(), "resumed": true }),
+                        );
+                        self.on_timeout(t, args.clone(), k)
+                    }
+                    None => Err(self.diverge(format!(
+                        "R0651 k{k}: intenção em aberto sem desfecho; a retomada exige a recuperação antes"
+                    ))),
+                };
+                self.record_ret(&name, &key, n, &ah, &r, false);
+                return r;
+            }
+        }
+        if let Some(rs) = self.resume.as_mut() {
+            rs.live += 1;
+        }
+        let depth = self.sagas.last().map_or(0, |f| f.len());
+        let r = self.call_tool_live(t, args);
+        let pushed = self.sagas.last().map_or(0, |f| f.len()) > depth;
+        self.record_ret(&name, &key, n, &ah, &r, pushed);
+        r
+    }
+
+    /// Envenena a retomada: o programa pediu algo que o WAL não registra.
+    fn diverge(&mut self, msg: String) -> Unwind {
+        self.journal.push(self.clock, "diverged", json!({ "msg": msg }));
+        self.diverged = Some(msg.clone());
+        rt("R0650", format!("retomada divergente: {msg}")).into()
+    }
+
+    /// Grava no WAL o que a chamada devolveu ao programa, com o relógio e o medidor.
+    fn record_ret(&mut self, tool: &str, key: &Option<String>, n: Option<u64>, ah: &str, r: &R<Value>, pushed: bool) {
+        if self.diverged.is_some() {
+            return;
+        }
+        let body = match r {
+            Ok(v) => resume::enc(v).map(|j| json!({ "ok": j })),
+            Err(Unwind::Err(e)) => Some(json!({ "err": [e.code, e.msg] })),
+            Err(Unwind::Ret(v)) => resume::enc(v).map(|j| json!({ "ret": j })),
+            Err(Unwind::Resume(v)) => resume::enc(v).map(|j| json!({ "resume": j })),
+            Err(Unwind::Abort(v)) => resume::enc(v).map(|j| json!({ "abort": j })),
+        };
+        let Some(body) = body else { return };
+        self.tlog(
+            "ret",
+            json!({ "key": key, "n": n, "tool": tool, "args": ah, "r": body, "clock": self.clock,
+                    "meter": [self.meter.tok, self.meter.usd, self.meter.wall], "pushed": pushed }),
+        );
+    }
+
+    fn call_tool_live(&mut self, t: &'m ToolDecl, args: Vec<Value>) -> R<Value> {
         let committed = std::mem::replace(&mut self.committing, false);
         let site = self.call_site.take();
         let name = &t.name.name;
@@ -2035,6 +2302,11 @@ impl<'m> Arx<'m> {
                 return self.on_timeout(t, args, k);
             }
         };
+        // RC5: o valor que o provedor devolveu vai para a fita antes de o desfecho ser fechado
+        // no WAL: um `close done` sempre tem o seu valor
+        if let (Some(k), Some(v)) = (key_n, resume::enc(&out)) {
+            self.tlog("value", json!({ "key": format!("k{k}"), "value": v }));
+        }
         self.clock += lat;
         self.meter.settle(0, t.usd, lat);
         if t.class == EffClass::Compensable {
@@ -2111,7 +2383,58 @@ impl<'m> Arx<'m> {
         self.meter.reserve(est_in + cap, cost(est_in, cap), time(cap), &format!("infer {}", d.model))?;
         let req = Request { model: &d.model, prompt: &d.prompt, shape: &shape, max_tokens: out_cap, reasoning };
         let provider = self.provider.name();
-        let c = self.provider.complete(&req).map_err(|m| rt("R0621", m))?;
+        // RC5: a amostra é uma entrada do programa. Com WAL, é gravada quando chega; na
+        // retomada, vem do WAL (conferida pelo modelo e pelo prompt) e o modelo não é chamado.
+        self.infer_seq += 1;
+        let nth = self.infer_seq;
+        let ph = blake3::hash(d.prompt.as_bytes()).to_hex().to_string();
+        if self.diverged.is_some() {
+            return Err(rt("R0650", "retomada divergente: nenhuma chamada sai depois da divergência").into());
+        }
+        let rec = self.resume.as_ref().and_then(|rs| rs.inputs.get(&nth).cloned());
+        let c = match rec {
+            Some(rec) => {
+                if rec["model"] != json!(d.model) || rec["prompt"] != json!(ph) {
+                    return Err(self.diverge(format!(
+                        "amostra {nth}: o WAL registra outro prompt para `{}`",
+                        rec["model"].as_str().unwrap_or("?")
+                    )));
+                }
+                if let Some(rs) = self.resume.as_mut() {
+                    rs.replayed += 1;
+                }
+                let s = |k: &str| rec[k].as_str().map(String::from);
+                Completion {
+                    text: s("text").unwrap_or_default(),
+                    tok_in: rec["tok_in"].as_u64(),
+                    tok_out: rec["tok_out"].as_u64(),
+                    tok_reasoning: rec["tok_reasoning"].as_u64(),
+                    reasoning: s("reasoning"),
+                    note: s("note"),
+                    latency: rec["latency"].as_f64(),
+                    queued: rec["queued"].as_f64().unwrap_or(0.0),
+                    retries: rec["retries"].as_u64().unwrap_or(0) as u32,
+                    request_id: s("request_id"),
+                    finish_reason: s("finish_reason"),
+                    served_model: s("served_model"),
+                }
+            }
+            None => {
+                let c = self.provider.complete(&req).map_err(|m| rt("R0621", m))?;
+                if let Some(rs) = self.resume.as_mut() {
+                    rs.live += 1;
+                }
+                self.tlog(
+                    "input",
+                    json!({ "n": nth, "model": d.model, "prompt": ph, "text": c.text, "tok_in": c.tok_in,
+                            "tok_out": c.tok_out, "tok_reasoning": c.tok_reasoning, "reasoning": c.reasoning,
+                            "note": c.note, "latency": c.latency, "queued": c.queued, "retries": c.retries,
+                            "request_id": c.request_id, "finish_reason": c.finish_reason,
+                            "served_model": c.served_model }),
+                );
+                c
+            }
+        };
         let tok_in = c.tok_in.unwrap_or(est_in);
         let mut text = c.text.clone();
         let mut tok_out = c.tok_out.unwrap_or_else(|| est_tokens(&text));

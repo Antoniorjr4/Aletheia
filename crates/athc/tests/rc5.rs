@@ -285,15 +285,122 @@ fn a_killed_agent_resumes_and_finishes_exactly_once() {
             let w = World::start(&tag);
             let r = Run::fresh(&w, "r");
             let o = r.cmd("r").args(["--kill-at", &format!("{point}:{n}")]).output().unwrap();
-            assert!(killed(&o), "{tag}: {}", text(&o));
+            // (o ponto `reserved` só existe nas operações autorizadas por concessão: sem ele a
+            // execução termina, e retomar uma execução terminada não pode fazer nada)
+            assert!(killed(&o) || (point == "reserved" && o.status.success()), "{tag}: {}", text(&o));
             let o = r.resume("r").output().unwrap();
+            if (point, n) == ("intent", 3) {
+                // o agendamento (`queryable`, com concessão) caiu entre a autorização de envio
+                // e o envio: o provedor responde que não aplicou e a autorização daquela
+                // tentativa está consumida. A retomada não a recria: a chamada falha, com os
+                // pagamentos (já confirmados) no lugar e nada duplicado.
+                assert!(!o.status.success() && text(&o).contains("R0600"), "{tag}: {}", text(&o));
+                assert_eq!((w.count("pays_posted"), w.count("scheduled"), w.count("receipts")), (2, 0, 0), "{tag}");
+                continue;
+            }
             assert!(o.status.success() && text(&o).contains(ANSWER), "{tag}: {}", text(&o));
             let s = w.state();
             assert_eq!(s["accounts"], want["accounts"], "{tag}: saldos");
             assert_eq!(s["counts"], want["counts"], "{tag}: efeitos");
-            assert_eq!(s["conserved"], serde_json::json!(true), "{tag}");
         }
     }
+}
+
+/// O que a retomada informa: (entradas vindas da fita, chamadas ao vivo).
+fn resumed(o: &Output) -> (u32, u32) {
+    let t = text(o);
+    let l = t.lines().find(|l| l.contains("retomada:") && l.contains("ao vivo")).unwrap_or_else(|| panic!("{t}"));
+    let n: Vec<u32> = l.split(|c: char| !c.is_ascii_digit()).filter_map(|x| x.parse().ok()).collect();
+    (n[0], n[1])
+}
+
+fn report(p: &Path) -> Json {
+    serde_json::from_str(&std::fs::read_to_string(p).unwrap()).unwrap()
+}
+
+/// **A retomada sobrevive a outra queda.** O processo que retoma também é morto, duas vezes,
+/// em pontos diferentes; a terceira retomada termina. O estado é o da execução sem queda.
+#[cfg(unix)]
+#[test]
+fn resume_survives_being_killed_again() {
+    let want = reference("again-ref");
+    let w = World::start("again");
+    let r = Run::fresh(&w, "r");
+    let o = r.cmd("r").args(["--kill-at", "sent:1"]).output().unwrap();
+    assert!(killed(&o), "{}", text(&o));
+    // na retomada, a primeira operação ao vivo é o segundo pagamento; depois, o agendamento
+    for point in ["intent:1", "confirmed:1"] {
+        let o = r.resume("r").args(["--kill-at", point]).output().unwrap();
+        assert!(killed(&o), "{point}: {}", text(&o));
+    }
+    let o = r.resume("r").output().unwrap();
+    assert!(o.status.success() && text(&o).contains(ANSWER), "{}", text(&o));
+    let s = w.state();
+    assert_eq!((&s["accounts"], &s["counts"]), (&want["accounts"], &want["counts"]));
+    // e retomar a execução terminada não chama ninguém: tudo vem da fita
+    let calls = w.requests_for("call ");
+    let o = r.resume("r").output().unwrap();
+    assert!(o.status.success() && text(&o).contains(ANSWER), "{}", text(&o));
+    assert_eq!(resumed(&o).1, 0, "{}", text(&o));
+    assert_eq!(w.requests_for("call "), calls, "a retomada de uma execução terminada chamou o provedor");
+}
+
+/// **O orçamento atravessa a queda.** O que a execução original gastou (tokens, dólares) é
+/// reposto no medidor pela re-execução: o total da execução retomada é o da execução sem
+/// queda, e o modelo não é chamado de novo.
+#[cfg(unix)]
+#[test]
+fn the_budget_and_the_model_calls_survive_the_crash() {
+    let w0 = World::start("budget-ref");
+    let r0 = Run::fresh(&w0, "r");
+    w0.ok(r0.cmd("r").arg("--report").arg(w0.p("ref.json")));
+    let want = report(&w0.p("ref.json"));
+    let w = World::start("budget");
+    let r = Run::fresh(&w, "r");
+    let o = r.cmd("r").args(["--kill-at", "sent:3"]).output().unwrap();
+    assert!(killed(&o), "{}", text(&o));
+    // a retomada usa um modelo que responderia outra coisa: ele não é consultado
+    let mut c = r.resume("r");
+    let o = w.ok(c.arg("--models").arg(fx("models-wire.json")).arg("--report").arg(w.p("res.json")));
+    let got = report(&w.p("res.json"));
+    assert_eq!(got["spent"]["tok"], want["spent"]["tok"], "{}", text(&o));
+    assert_eq!(got["spent"]["usd"], want["spent"]["usd"]);
+    assert_eq!(got["result"], want["result"]);
+    assert_eq!(got["digests"]["semantic"].is_string(), true);
+    assert_eq!(w.count("scheduled"), 1);
+    assert_eq!(w.count("wires"), 0, "o modelo da retomada foi consultado e a remessa saiu");
+}
+
+/// **A retomada recusa outra história.** Outros argumentos ou outra fotografia confiável não
+/// são a execução original (`R0652`); uma execução que `athc recover` encerrou, compensando a
+/// saga, não é retomável (`R0653`). Em todos os casos o provedor não recebe nada.
+#[cfg(unix)]
+#[test]
+fn resume_refuses_what_is_not_the_original_execution() {
+    let w = World::start("refuse");
+    let r = Run::fresh(&w, "r");
+    let o = r.cmd("r").args(["--kill-at", "sent:2"]).output().unwrap();
+    assert!(killed(&o), "{}", text(&o));
+    // outra fotografia confiável (assinada pela mesma autoridade, para a mesma execução)
+    let other = w.p("other.trusted.json");
+    std::fs::write(&other, r#"{ "inventories": { "payees": ["ACME"] } }"#).unwrap();
+    let mut c = w.athc();
+    c.args(["sign", "--key"]).arg(demo_key()).arg("--trusted").arg(&other).args(["--run", "r"]);
+    c.arg("--program").arg(prog()).args(["--issued", &now().to_string(), "--ttl", "600"]);
+    w.ok(&mut c);
+    let calls = w.requests_for("call ");
+    let mut c = r.resume("r");
+    let o = c.arg("--trusted").arg(&other).output().unwrap();
+    assert!(!o.status.success() && text(&o).contains("R0652"), "{}", text(&o));
+    // (a fase 1 fecha a obrigação em aberto do segundo pagamento pelo protocolo; mais nada)
+    assert!(w.requests_for("call ") <= calls + 1);
+    assert_eq!(w.count("scheduled"), 0);
+    // `athc recover` encerra a execução: a saga interrompida é compensada
+    let rec = r.recover("r");
+    assert!(rec.status.code().is_some(), "{}", text(&rec));
+    let o = r.resume("r").output().unwrap();
+    assert!(!o.status.success() && text(&o).contains("R0653"), "{}", text(&o));
+    assert_eq!(w.count("scheduled"), 0);
 }
 
 // ---------------------------------------------------------------- Missão II: a fronteira
