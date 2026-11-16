@@ -107,6 +107,9 @@ jobs:
       # v1.0-RC7: execução parcial sob política (`keeping`), sem rede, contra a face /gh/issues
       - name: scripts/rc7-smoke.sh
         run: NO_COLOR=1 scripts/rc7-smoke.sh
+      # v1.0-RC8: o resumo composto pelo programa a partir do que foi feito, sem rede
+      - name: scripts/rc8-smoke.sh
+        run: NO_COLOR=1 scripts/rc8-smoke.sh
 
   github-sandbox:
     # v1.0-RC6: uma tarefa útil contra uma API independente. examples/rc6/triage.ath lê issues,

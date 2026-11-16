@@ -564,6 +564,10 @@ impl Canon<'_> {
                     self.expr(value);
                     self.w(")");
                     self.locals.push(name.name.clone());
+                    // v1.0-RC8: `keeping … as nome` liga um segundo local, logo depois
+                    if let ExprKind::Refine { keep: Some(Keep { bind: Some(b), .. }), .. } = &value.kind {
+                        self.locals.push(b.name.clone());
+                    }
                 }
                 Stmt::Expr(e) => self.expr(e),
             }
@@ -603,7 +607,7 @@ impl Canon<'_> {
             ExprKind::Call { callee, args } => {
                 self.w("(call ");
                 match callee.name.as_str() {
-                    "fit" | "sample" => {
+                    "fit" | "sample" | "text" | "join" => {
                         let _ = write!(self.out, "prim:{}", callee.name);
                     }
                     n => self.reference(n),
@@ -703,6 +707,9 @@ impl Canon<'_> {
                 if let Some(k) = keep {
                     let _ = write!(self.out, " (keep {:?} ", k.field.name);
                     self.reference(&k.policy.name);
+                    if k.bind.is_some() {
+                        self.w(" as");
+                    }
                     self.w(")");
                 }
                 let _ = write!(self.out, " (retry {retry}) ");

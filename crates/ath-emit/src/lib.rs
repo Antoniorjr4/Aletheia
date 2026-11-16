@@ -426,6 +426,11 @@ impl<'m> Gen<'m> {
                     let a = self.expr(value)?;
                     let p = self.bind(&name.name);
                     self.line(format!("{p} = {a}"));
+                    // v1.0-RC8: `keeping … as nome`
+                    if let ExprKind::Refine { keep: Some(Keep { bind: Some(b), .. }), .. } = &value.kind {
+                        let q = self.bind(&b.name);
+                        self.line(format!("{q} = R.last_dropped"));
+                    }
                 }
                 Stmt::Expr(e) => {
                     self.expr(e)?;
@@ -727,6 +732,8 @@ impl<'m> Gen<'m> {
                 self.indented(|g| {
                     let a = g.block(els)?;
                     g.line(format!("{t} = {a}"));
+                    // v1.0-RC8: o plano vem do `else`: `as` liga uma lista vazia
+                    g.line("R.last_dropped = []");
                     Ok(())
                 })?;
                 t
@@ -832,6 +839,15 @@ impl<'m> Gen<'m> {
             "len" => {
                 let a = self.expr(&args[0])?;
                 return Ok(self.assign("t", format!("R.len_({a})")));
+            }
+            "text" => {
+                let a = self.expr(&args[0])?;
+                return Ok(self.assign("t", format!("R.text_({a})")));
+            }
+            "join" => {
+                let a = self.expr(&args[0])?;
+                let b = self.expr(&args[1])?;
+                return Ok(self.assign("t", format!("R.join_({a}, {b})")));
             }
             _ => {}
         }

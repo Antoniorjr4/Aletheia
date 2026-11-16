@@ -535,3 +535,32 @@ open Aletheia
 
 /-- info: 'Aletheia.Prune.checking_before_pruning_is_unsound' does not depend on any axioms -/
 #guard_msgs in #print axioms Prune.checking_before_pruning_is_unsound
+
+-- v1.0-RC8: o relatório é do que foi executado (keeping … as, join, ++)
+
+/-- info: 'Aletheia.Report.report_is_exact' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Report.report_is_exact
+
+/-- info: 'Aletheia.Report.report_cites_only_what_ran' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Report.report_cites_only_what_ran
+
+/-- info: 'Aletheia.Report.keeping_sees_only_the_accepted' does not depend on any axioms -/
+#guard_msgs in #print axioms Report.keeping_sees_only_the_accepted
+
+/-- info: 'Aletheia.Report.rejected_content_is_invisible' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Report.rejected_content_is_invisible
+
+/-- info: 'Aletheia.Report.dropped_exact' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Report.dropped_exact
+
+/-- info: 'Aletheia.Report.model_summary_can_misreport' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Report.model_summary_can_misreport
+
+/-- info: 'Aletheia.Report.append_length_le' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Report.append_length_le
+
+/-- info: 'Aletheia.Report.joinL_length_le' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Report.joinL_length_le
+
+/-- info: 'Aletheia.Report.composed_with_dropped_is_not_low' does not depend on any axioms -/
+#guard_msgs in #print axioms Report.composed_with_dropped_is_not_low

@@ -282,6 +282,8 @@ class Runtime:
         raise RtErr("R0103", "operando inválido")
 
     def field(self, v, name: str):
+        if isinstance(v, list):  # v1.0-RC8: projeção numa lista de registros
+            return [self.field(x, name) for x in v]
         if isinstance(v, Adt):
             for k, x in v.fields:
                 if k == name:
@@ -531,6 +533,20 @@ class Runtime:
         if not isinstance(v, str):
             raise RtErr("R0103", "`fit` sobre valor não textual")
         return v[: max(n, 0) * 4]
+
+    def text_(self, v) -> str:
+        if not is_int(v):
+            raise RtErr("R0103", "`text` sobre valor que não é inteiro")
+        return str(v)
+
+    def join_(self, v, sep) -> str:
+        if not isinstance(v, list):
+            raise RtErr("R0103", "`join` sobre valor que não é lista")
+        if not isinstance(sep, str):
+            raise RtErr("R0103", "`join` com separador não textual")
+        if not all(isinstance(x, str) for x in v):
+            raise RtErr("R0103", "`join` sobre lista que não é de textos")
+        return sep.join(v)
 
     def len_(self, v) -> int:
         if not isinstance(v, list):
@@ -1086,16 +1102,20 @@ class Runtime:
             return _MISSING
         fields = list(v.fields)
         fields[pos] = (field, kept)
+        self._dropped = dropped
         return Adt(v.ty, v.variant, fields)
 
     def refine(self, d, policy, name: str, retry: int, lifted=None, keep=None):
         if not isinstance(d, Draft):
             raise RtErr("R0105", "`refine` sobre valor que não é rascunho")
+        # v1.0-RC8: o que `keeping … as nome` liga; no `else`, nada
+        self.last_dropped = []
         for attempt in range(1, retry + 1):
             v = self._sample(d, attempt)
             if v is _MISSING:
                 self.journal.push(self.clock, "decode_reject", {"attempt": attempt})
                 continue
+            self._dropped = []
             if keep is not None:
                 v = self._prune(v, keep, attempt)
                 if v is _MISSING:
@@ -1108,6 +1128,7 @@ class Runtime:
                     continue
             if accepted:
                 self.journal.push(self.clock, "endorse", {"policy": name, "value": to_json(v), "attempt": attempt})
+                self.last_dropped = list(self._dropped)
                 return True, v
             self.journal.push(self.clock, "policy_reject", {"policy": name, "value": to_json(v), "attempt": attempt})
         self.journal.push(self.clock, "refine_exhausted", {"policy": name, "attempts": retry})

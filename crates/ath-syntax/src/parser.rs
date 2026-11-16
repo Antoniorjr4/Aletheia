@@ -1102,7 +1102,14 @@ impl Parser {
                     let field = self.ident()?;
                     self.expect(Tok::By)?;
                     let policy = self.ident()?;
-                    keep = Some(Keep { field, policy });
+                    // `as` é palavra contextual aqui (não é reservada)
+                    let bind = if matches!(self.peek(), Tok::Ident(w) if w == "as") {
+                        self.bump();
+                        Some(self.ident()?)
+                    } else {
+                        None
+                    };
+                    keep = Some(Keep { field, policy, bind });
                 }
                 let mut retry = 1;
                 if self.eat(&Tok::Retry) {

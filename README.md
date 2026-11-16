@@ -37,6 +37,21 @@ $ athc check examples/rollout.ath
 ✓ Codex              12 objetos BLAKE3, raiz #9ecbfccad097
 ```
 
+## v1.0-RC8: o relatório é do que foi feito
+
+```sh
+scripts/rc8-smoke.sh              # sem rede
+```
+
+Na RC7, a nota injetada era deixada de fora, mas o título e o resumo da issue de resumo eram
+texto do modelo e citavam a canário (8 de 10 com o modelo real). Na RC8 o modelo só propõe as
+notas; o programa compõe o relatório depois de enviar os comentários, das notas que restaram
+(`text`, `join`, projeção `notes.issue`, literais e `++` com o comprimento provado), e o que foi
+deixado de fora fica ligado por `keeping … as fora`, como dado `Untrusted`: pode ser contado e
+relatado, não pode escolher nem alimentar uma ação. Em Lean, o relatório cita exatamente o que
+foi executado e o conteúdo do que foi recusado não alcança nada (`report_is_exact`,
+`rejected_content_is_invisible`). Detalhes em [`docs/RC8.md`](docs/RC8.md).
+
 ## v1.0-RC7: execução parcial sob política
 
 ```sh
