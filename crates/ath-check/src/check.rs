@@ -669,6 +669,60 @@ impl<'m> Ctx<'m> {
                 }
                 seen.push(t);
                 let keyed = decl.params.iter().any(|p| p.ty.unlabeled().base_name() == "IdemKey");
+                // v1.0-RC6: um parâmetro do caminho é um parâmetro de dados da ferramenta
+                let data = |n: &str| {
+                    decl.params
+                        .iter()
+                        .any(|p| p.name.name == n && matches!(p.ty.unlabeled().base_name(), "Text" | "Int"))
+                };
+                let finder = b.finds.iter().find(|(f, _)| f.name == t.name).map(|(_, r)| r);
+                for r in std::iter::once(route).chain(finder) {
+                    for n in r.path_params() {
+                        if !data(n) {
+                            self.push(
+                                Diag::new(
+                                    E0,
+                                    "E0435",
+                                    format!("a rota de `{}` usa `{{{n}}}`, que não é um parâmetro `Text` ou `Int` da ferramenta", t.name),
+                                    t.span,
+                                    "parâmetro de caminho sem origem",
+                                )
+                                .help("o caminho só recebe dados que o programa passa à ferramenta; o host é sempre o da `url`"),
+                            );
+                        }
+                    }
+                }
+                let marker = b.keys.iter().find(|(k, _)| k.name == t.name).map(|(_, p)| p.as_str());
+                let text =
+                    |n: &str| decl.params.iter().any(|p| p.name.name == n && p.ty.unlabeled().base_name() == "Text");
+                if let Some(p) = marker {
+                    if !keyed || !text(p) || route.path_params().contains(&p) {
+                        self.push(
+                            Diag::new(
+                                E0,
+                                "E0436",
+                                format!("`{}.key = \"{p}\"`: a chave viaja num parâmetro `Text` do corpo de uma ferramenta com `own IdemKey`", t.name),
+                                t.span,
+                                "marcador de chave sem lugar",
+                            )
+                            .help("declare a chave na ferramenta e escolha um parâmetro de texto que o provedor guarda e devolve"),
+                        );
+                    }
+                }
+                if let Some(f) = finder {
+                    if marker.is_none() || f.method != "GET" {
+                        self.push(
+                            Diag::new(
+                                E0,
+                                "E0436",
+                                format!("`{}.find` é um `GET` e exige `{}.key`", t.name, t.name),
+                                t.span,
+                                "consulta por chave sem marcador",
+                            )
+                            .help("a consulta acha a operação pelo marcador que `.key` põe no parâmetro"),
+                        );
+                    }
+                }
                 if route.method == "GET" && (keyed || decl.class != EffClass::Reversible) {
                     self.push(
                         Diag::new(

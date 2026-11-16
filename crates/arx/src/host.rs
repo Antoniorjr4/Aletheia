@@ -167,6 +167,11 @@ pub trait Host {
     fn receipt(&mut self, _wire: &str) -> Option<serde_json::Value> {
         None
     }
+    /// A consulta por chave com os argumentos da operação (v1.0-RC6): uma API real pode precisar
+    /// deles para achá-la (o recurso em que ela foi criada). O padrão os ignora.
+    fn status_with(&mut self, tool: &str, key: u64, _args: &[Value]) -> (Status, f64) {
+        self.status(tool, key)
+    }
     /// A resposta crua do provedor à última chamada bem-sucedida (v1.0-RC5), consumida ao ser
     /// lida: é o que o monitor de tipo confere. `None`: o host só tem o valor convertido.
     fn raw(&mut self) -> Option<serde_json::Value> {

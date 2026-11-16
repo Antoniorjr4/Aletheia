@@ -217,6 +217,12 @@ pub struct BindDecl {
     /// a rota de consulta por chave, para os provedores `queryable`
     pub status: Option<Route>,
     pub routes: Vec<(Ident, Route)>,
+    /// `ferramenta.key = "parâmetro"` (v1.0-RC6): o provedor ignora `Idempotency-Key`; a chave
+    /// viaja como um marcador no fim deste parâmetro de texto
+    pub keys: Vec<(Ident, String)>,
+    /// `ferramenta.find = "GET /rota -> campo"` (v1.0-RC6): a consulta por chave; a operação é o
+    /// elemento da lista devolvida que carrega o marcador
+    pub finds: Vec<(Ident, Route)>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -272,11 +278,25 @@ impl Route {
         let (method, path) = call.split_once(' ')?;
         let path = path.trim();
         let word = |f: &str| !f.is_empty() && f.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+        // v1.0-RC6: `{parâmetro}` num segmento do caminho; uma query literal depois de `?`;
+        // `-> [].campo` projeta o campo de cada elemento de uma lista
+        let (segs, query) = path.split_once('?').unwrap_or((path, ""));
+        let seg_ok = |s: &str| match s.strip_prefix('{').and_then(|x| x.strip_suffix('}')) {
+            Some(name) => word(name),
+            None => s.chars().all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c)),
+        };
         let ok = matches!(method, "GET" | "POST" | "PUT" | "PATCH")
-            && path.starts_with('/')
-            && path.chars().all(|c| c.is_ascii_alphanumeric() || "/-_.".contains(c))
-            && field.as_deref().is_none_or(word);
+            && segs.starts_with('/')
+            && segs.split('/').skip(1).all(|s| !s.is_empty() && seg_ok(s))
+            && query.chars().all(|c| c.is_ascii_alphanumeric() || "=&_-.".contains(c))
+            && field.as_deref().is_none_or(|f| word(f.strip_prefix("[].").unwrap_or(f)));
         ok.then(|| Route { method: method.to_string(), path: path.to_string(), field })
+    }
+
+    /// Os parâmetros da ferramenta que vão no caminho (`{nome}`), na ordem.
+    pub fn path_params(&self) -> Vec<&str> {
+        let segs = self.path.split('?').next().unwrap_or_default();
+        segs.split('/').filter_map(|s| s.strip_prefix('{').and_then(|x| x.strip_suffix('}'))).collect()
     }
 }
 

@@ -1438,7 +1438,7 @@ impl<'m> Arx<'m> {
                     // o provedor não foi alcançado: o reenvio não saiu e nada se aprendeu
                     Err(HostError::Unreachable(_)) => (Status::Unknown, 0.0),
                 },
-                ProviderClass::Queryable => self.host.status(&tool, key),
+                ProviderClass::Queryable => self.host.status_with(&tool, key, &args),
             };
             self.clock += lat;
             self.meter.settle(0, 0.0, lat);
@@ -1760,7 +1760,7 @@ impl<'m> Arx<'m> {
                             Some(Err(HostError::Failed(_))) => Some(false),
                             Some(Err(HostError::Unreachable(_) | HostError::Timeout { .. })) | None => None,
                         },
-                        _ => match self.host.status(&tool, kn).0 {
+                        _ => match self.host.status_with(&tool, kn, args.as_deref().unwrap_or_default()).0 {
                             Status::Done(v) => {
                                 value = Some(v);
                                 Some(true)

@@ -46,6 +46,29 @@ struct Bound {
     params: Vec<Option<String>>,
     secret: Option<usize>,
     status: Option<Route>,
+    /// v1.0-RC6: o parâmetro de texto que carrega o marcador da chave, e a consulta que o acha
+    marker: Option<String>,
+    find: Option<Route>,
+}
+
+/// O marcador da chave no texto que o provedor guarda: um comentário HTML com a identidade da
+/// execução e a chave. É por ele que a consulta (`.find`) reconhece a operação.
+fn marker(wire: &str) -> String {
+    format!("<!-- aletheia:{wire} -->")
+}
+
+/// O resultado de uma resposta: ela inteira, um campo, ou (`[].campo`) o campo de cada elemento.
+fn extract(field: &Option<String>, doc: &Json) -> Json {
+    match field.as_deref() {
+        None => doc.clone(),
+        Some(f) => match f.strip_prefix("[].") {
+            Some(each) => match doc.as_array() {
+                Some(a) => Json::Array(a.iter().map(|e| e.get(each).cloned().unwrap_or(Json::Null)).collect()),
+                None => Json::Null,
+            },
+            None => doc.get(f).cloned().unwrap_or(Json::Null),
+        },
+    }
 }
 
 pub struct BoundHost {
@@ -137,7 +160,15 @@ impl BoundHost {
                     .collect();
                 tools.insert(
                     tool.name.clone(),
-                    Bound { base: base.clone(), route: route.clone(), params, secret, status: b.status.clone() },
+                    Bound {
+                        base: base.clone(),
+                        route: route.clone(),
+                        params,
+                        secret,
+                        status: b.status.clone(),
+                        marker: b.keys.iter().find(|(k, _)| k.name == tool.name).map(|(_, p)| p.clone()),
+                        find: b.finds.iter().find(|(k, _)| k.name == tool.name).map(|(_, r)| r.clone()),
+                    },
                 );
             }
         }
@@ -205,9 +236,28 @@ impl BoundHost {
         route: &Route,
         fields: &Map<String, Json>,
         key: Option<&str>,
-    ) -> Result<(u16, String, f64), HostError> {
-        let mut url = format!("{}{}", b.base, route.path);
+    ) -> Result<(u16, String, f64, bool), HostError> {
+        // v1.0-RC6: `{parâmetro}` no caminho recebe o argumento, codificado como UM segmento
+        // (uma `/` no valor não cria caminho); o host é sempre o da `url`. O que vai no
+        // caminho não vai no corpo nem na query.
+        let mut fields = fields.clone();
+        let (segs, query) = route.path.split_once('?').unwrap_or((&route.path, ""));
+        let path: Vec<String> = segs
+            .split('/')
+            .map(|seg| match seg.strip_prefix('{').and_then(|x| x.strip_suffix('}')) {
+                Some(name) => {
+                    let v = fields.remove(name).unwrap_or(Json::Null);
+                    urlencode(&v.as_str().map(String::from).unwrap_or_else(|| v.to_string()))
+                }
+                None => seg.to_string(),
+            })
+            .collect();
+        let mut url = format!("{}{}", b.base, path.join("/"));
+        let fields = &fields;
         let get = route.method == "GET";
+        if !query.is_empty() {
+            url = format!("{url}?{query}");
+        }
         if get && !fields.is_empty() {
             let q: Vec<String> = fields
                 .iter()
@@ -216,7 +266,7 @@ impl BoundHost {
                     format!("{}={}", urlencode(k), urlencode(&v))
                 })
                 .collect();
-            url = format!("{url}?{}", q.join("&"));
+            url = format!("{url}{}{}", if query.is_empty() { "?" } else { "&" }, q.join("&"));
         }
         let auth = b.secret.map(|i| format!("Bearer {}", self.secrets[i].1));
         let t0 = Instant::now();
@@ -248,8 +298,14 @@ impl BoundHost {
         match sent {
             Ok(mut resp) => {
                 let status = resp.status().as_u16();
+                // há mais páginas? (`Link: …; rel="next"`): quem não achou não pode concluir
+                let more = resp
+                    .headers()
+                    .get("link")
+                    .and_then(|v| v.to_str().ok())
+                    .is_some_and(|l| l.contains("rel=\"next\""));
                 match resp.body_mut().read_to_string() {
-                    Ok(body) => Ok((status, body, elapsed)),
+                    Ok(body) => Ok((status, body, elapsed, more)),
                     // a resposta foi cortada: o efeito pode ter acontecido
                     Err(_) => Err(HostError::Timeout { elapsed }),
                 }
@@ -308,8 +364,14 @@ impl Host for BoundHost {
                 fields.insert(n.clone(), v.to_json());
             }
         }
+        // v1.0-RC6: num provedor que ignora `Idempotency-Key`, a chave viaja como marcador no
+        // fim de um parâmetro de texto (só no fio: o valor do programa não muda)
+        if let (Some(p), Some(k)) = (&b.marker, &key) {
+            let text = fields.get(p).and_then(|v| v.as_str()).unwrap_or_default().to_string();
+            fields.insert(p.clone(), json!(format!("{text}\n\n{}", marker(k))));
+        }
         let route = b.route.clone();
-        let (status, body, lat) = self.http(b, &route, &fields, key.as_deref())?;
+        let (status, body, lat, _) = self.http(b, &route, &fields, key.as_deref())?;
         match status {
             // O efeito concluído: 200, 201, 204. Um `202 Accepted` (ou qualquer outro 2xx) diz
             // que o pedido foi recebido, não que o efeito que a ferramenta promete aconteceu:
@@ -320,10 +382,7 @@ impl Host for BoundHost {
                 if let (Some(k), true) = (&key, doc["receipt"].is_object()) {
                     self.receipts.insert(k.clone(), doc["receipt"].clone());
                 }
-                let v = match &route.field {
-                    Some(f) => doc.get(f).cloned().unwrap_or(Json::Null),
-                    None => doc,
-                };
+                let v = extract(&route.field, &doc);
                 self.last_raw = Some(v.clone());
                 Ok((BoundHost::value(&v), lat))
             }
@@ -340,7 +399,7 @@ impl Host for BoundHost {
         fields.insert("tool".into(), json!(tool));
         fields.insert("key".into(), json!(wire));
         match self.http(b, &route, &fields, None) {
-            Ok((200..=299, body, lat)) => {
+            Ok((200..=299, body, lat, _)) => {
                 let doc: Json = self.scrub(&serde_json::from_str(&body).unwrap_or(Json::Null));
                 if doc["receipt"].is_object() {
                     self.receipts.insert(wire, doc["receipt"].clone());
@@ -355,7 +414,51 @@ impl Host for BoundHost {
                 };
                 (s, lat)
             }
-            Ok((_, _, lat)) => (Status::Unknown, lat),
+            Ok((_, _, lat, _)) => (Status::Unknown, lat),
+            Err(_) => (Status::Unknown, 0.0),
+        }
+    }
+
+    /// **A consulta por chave numa API que não conhece chaves (v1.0-RC6).** `.find` lista o
+    /// recurso em que a operação foi criada; a operação é o elemento que carrega o marcador.
+    /// Achado: `Done`, com o campo que a rota nomeia. Não achado, numa lista completa:
+    /// `NotApplied`. Não achado e há mais páginas, ou a consulta falhou: `Unknown` (ausência
+    /// numa página não é prova de ausência).
+    fn status_with(&mut self, tool: &str, key: u64, args: &[Value]) -> (Status, f64) {
+        let Some(b) = self.tools.get(tool) else { return self.inner.status_with(tool, key, args) };
+        let Some(find) = b.find.clone() else { return self.status(tool, key) };
+        let wire = format!("{}:k{key}", self.run);
+        let mark = marker(&wire);
+        // só os parâmetros do caminho da consulta saem: o resto dos argumentos não é filtro
+        let wanted = find.path_params();
+        let mut fields = Map::new();
+        for (name, v) in b.params.iter().zip(args) {
+            if let Some(n) = name.as_ref().filter(|n| wanted.contains(&n.as_str())) {
+                fields.insert(n.clone(), v.to_json());
+            }
+        }
+        if fields.len() != wanted.len() {
+            return (Status::Unknown, 0.0);
+        }
+        match self.http(b, &find, &fields, None) {
+            Ok((200, body, lat, more)) => {
+                let doc: Json = self.scrub(&serde_json::from_str(&body).unwrap_or(Json::Null));
+                let Some(items) = doc.as_array() else { return (Status::Unknown, lat) };
+                let carries = |e: &Json| {
+                    e.as_object().is_some_and(|o| o.values().any(|v| v.as_str().is_some_and(|s| s.contains(&mark))))
+                };
+                match items.iter().find(|e| carries(e)) {
+                    Some(e) => {
+                        let field = find.field.as_ref().map(|f| f.strip_prefix("[].").unwrap_or(f).to_string());
+                        let v = extract(&field, e);
+                        self.last_raw = Some(v.clone());
+                        (Status::Done(BoundHost::value(&v)), lat)
+                    }
+                    None if more => (Status::Unknown, lat),
+                    None => (Status::NotApplied, lat),
+                }
+            }
+            Ok((_, _, lat, _)) => (Status::Unknown, lat),
             Err(_) => (Status::Unknown, 0.0),
         }
     }
