@@ -20,7 +20,7 @@
 //! | `wrong-id` | a resposta de `add_issue_comment` vem com outro id |
 //! | `crash-after-apply` | o primeiro `add_issue_comment` é aplicado e o processo morre sem responder |
 //! | `error-after-apply` | o primeiro `add_issue_comment` é aplicado e a resposta é `isError` |
-//! | `untrusted-label` | rotula o resultado de `add_issue_comment` com `_meta.ifc` não confiável |
+//! | `untrusted-label` | rotula todo resultado com `_meta.ifc` não confiável (como o do GitHub, com `--features=ifc_labels`, num repositório público) |
 //! | `env-dump` | `issue_read` devolve no título os nomes das variáveis do próprio ambiente |
 //! | `slow` | o primeiro `add_issue_comment` é aplicado e respondido depois de 3 s |
 //! | `no-structured` | não manda `structuredContent` onde a saída tem esquema |
@@ -339,7 +339,7 @@ impl Mcp {
                         }
                         Err(e) => json!({ "content": [{ "type": "text", "text": e }], "isError": true }),
                     };
-                    if comment && self.mode("untrusted-label") {
+                    if self.mode("untrusted-label") {
                         r["_meta"]["ifc"] = json!({ "integrity": "untrusted", "confidentiality": "public" });
                     }
                     let reply_id =

@@ -1,0 +1,28 @@
+-- v1.0-RC9: a sonda de rótulo. Um programa que lê o título de uma issue pelo servidor MCP do
+-- GitHub e o declara confiável (`-> Text[..300]`, sem rótulo). Com `--features=ifc_labels`, o
+-- servidor rotula o conteúdo de issues de um repositório público como não confiável
+-- (`_meta.ifc`); a declaração contradiz o rótulo, e o valor não entra no programa (`R0649`). O
+-- rótulo do servidor só rebaixa: num repositório privado ele diz confiável, e nada muda.
+--
+-- Só lê: não há efeito que a recusa precise impedir. Usado por scripts/rc9-github-mcp.sh.
+module rc9.label_probe
+
+tool issue_title(c: Cap[Repo.Read], issue: Text[..8]) -> Text[..300]
+  ! { Repo.Read } reversible latency 10.0
+
+bind github {
+  mcp  = env("GITHUB_MCP_SERVER")
+  auth = secret("GH_TOKEN") as "GITHUB_PERSONAL_ACCESS_TOKEN"
+  arg.owner = env("GITHUB_OWNER")
+  arg.repo  = env("GITHUB_REPO")
+
+  issue_title = "issue_read(method: 'get', owner: @owner, repo: @repo, issue_number: int(issue)) -> issue.title"
+}
+
+agent Probe(repo: Cap[Repo.Read])
+  budget [tok <= 10, usd <= 0.01, wall <= 60.0]
+{
+  on probe(a: Text[..8] ^ Trusted) -> Text ! { Repo.Read } {
+    issue_title(repo, a)
+  }
+}

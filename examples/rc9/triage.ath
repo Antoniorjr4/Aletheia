@@ -37,9 +37,11 @@ model planner {
 tool issue_title(c: Cap[Repo.Read], issue: Text[..8]) -> Text[..300] ^ Untrusted
   ! { Repo.Read } reversible latency 10.0
 
--- o servidor devolve a url do comentário (`html_url`): é por ela que a consulta o acha
+-- o servidor devolve a url do comentário (`html_url`): é por ela que a consulta o acha. A
+-- listagem em que a consulta a acha é conteúdo de terceiros (o servidor do GitHub a rotula assim
+-- num repositório público), e o programa declara o que recebe dela pelo que ela é
 tool comment(c: Cap[Repo.Write], issue: Text[..8] ^ Endorsed, body: Text[..300] ^ Endorsed,
-             k: own IdemKey) -> Text[..200]
+             k: own IdemKey) -> Text[..200] ^ Untrusted
   ! { Repo.Write } irrevocable provider queryable latency 10.0
   requires s.member("issues", issue)
 

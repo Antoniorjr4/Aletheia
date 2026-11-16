@@ -262,7 +262,7 @@ fn the_declaration_is_checked_against_the_real_schemas() {
         (
             "id-int",
             &[
-                ("k: own IdemKey) -> Text[..200]", "k: own IdemKey) -> Int[1..9000000000]"),
+                ("k: own IdemKey) -> Text[..200] ^ Untrusted", "k: own IdemKey) -> Int[1..9000000000]"),
                 ("body: body) -> html_url", "body: body) -> id"),
             ],
             "`id` é string",
@@ -377,22 +377,21 @@ fn the_server_gets_only_its_secret() {
 }
 
 /// **Um rótulo do servidor só rebaixa.** O servidor rotula como não confiável o resultado de
-/// `add_issue_comment`, que o programa declara confiável. O comentário foi feito (o efeito é
-/// contado, não reenviado), e o valor não entra no programa: culpa do provedor (`R0649`).
+/// `add_issue_comment`. O programa o declara `^ Untrusted`: não há contradição, e a triagem
+/// termina. Declarado confiável, o comentário é feito (o efeito é contado, não reenviado), e o
+/// valor não entra no programa: culpa do provedor (`R0649`).
 #[test]
 fn an_untrusted_label_on_a_trusted_result_is_blamed() {
-    let w = World::start("label");
+    let w = World::start("label-ok");
     let o = w.athc("run", &prog(), &w.models(&[injected()]), "untrusted-label").output().unwrap();
+    assert!(o.status.success(), "{}", text(&o));
+    let w = World::start("label");
+    let p = variant(&w, "trusted", &[("k: own IdemKey) -> Text[..200] ^ Untrusted", "k: own IdemKey) -> Text[..200]")]);
+    let o = w.athc("run", &p, &w.models(&[injected()]), "untrusted-label").output().unwrap();
     assert!(!o.status.success());
     assert!(text(&o).contains("R0649"), "{}", text(&o));
     assert_eq!(w.comments(), vec![(1, 1)]);
     assert_eq!(w.summaries().len(), 0);
-    // declarado `^ Untrusted`, o mesmo rótulo não é contradição: o programa já o trata assim
-    let w = World::start("label-ok");
-    let p =
-        variant(&w, "untrusted", &[("k: own IdemKey) -> Text[..200]", "k: own IdemKey) -> Text[..200] ^ Untrusted")]);
-    let o = w.athc("run", &p, &w.models(&[injected()]), "untrusted-label").output().unwrap();
-    assert!(o.status.success(), "{}", text(&o));
 }
 
 /// **Sem resposta no prazo.** O primeiro comentário é aplicado e respondido depois do prazo:

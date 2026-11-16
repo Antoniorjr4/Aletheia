@@ -672,7 +672,7 @@ impl BoundHost {
         };
         // o rótulo do servidor só rebaixa: não confiável num resultado declarado confiável é
         // culpa do provedor (o valor não entra); confiável não muda nada
-        if trusted && r["_meta"]["ifc"]["integrity"] == "untrusted" {
+        if trusted && !unit && r["_meta"]["ifc"]["integrity"] == "untrusted" {
             self.blame = Some(format!(
                 "R0649: o servidor rotula o resultado de `{name}` como não confiável (`_meta.ifc`), e o programa o declara confiável"
             ));
@@ -715,7 +715,7 @@ impl BoundHost {
             total += lat;
             // um resultado de erro, um pedido de entrada, ou um rótulo do servidor que contradiz
             // um resultado declarado confiável: a consulta não decide
-            let contradicts = self.mcp_tools[tool].trusted && r["_meta"]["ifc"]["integrity"] == "untrusted";
+            let contradicts = self.mcp_tools[tool].trusted && !unit && r["_meta"]["ifc"]["integrity"] == "untrusted";
             if r["isError"] == json!(true) || r["resultType"] == "input_required" || contradicts {
                 return (Status::Unknown, total);
             }
@@ -919,10 +919,15 @@ impl Host for BoundHost {
                     s.starts
                 ));
             }
+            let mut by: BTreeMap<&str, usize> = BTreeMap::new();
+            for m in &s.refused {
+                *by.entry(m.as_str()).or_default() += 1;
+            }
+            let shown: Vec<String> = by.iter().map(|(m, n)| format!("{m} ×{n}")).collect();
             out.push(format!(
                 "{} pedido(s) do servidor ao cliente recusado(s){}",
                 s.refused.len(),
-                if s.refused.is_empty() { String::new() } else { format!(": {}", s.refused.join(", ")) }
+                if shown.is_empty() { String::new() } else { format!(" ({})", shown.join(", ")) }
             ));
         }
         out

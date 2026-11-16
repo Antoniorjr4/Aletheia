@@ -110,6 +110,10 @@ jobs:
       # v1.0-RC8: o resumo composto pelo programa a partir do que foi feito, sem rede
       - name: scripts/rc8-smoke.sh
         run: NO_COLOR=1 scripts/rc8-smoke.sh
+      # v1.0-RC9: ferramentas de um servidor MCP (a face do ath-world, com os esquemas reais do
+      # servidor do GitHub e modos hostis), sem rede
+      - name: scripts/rc9-smoke.sh
+        run: NO_COLOR=1 scripts/rc9-smoke.sh
 
   github-sandbox:
     # v1.0-RC6: uma tarefa útil contra uma API independente. examples/rc6/triage.ath lê issues,
@@ -133,6 +137,15 @@ jobs:
         run: |
           if [ -z "$GH_TOKEN" ]; then echo "sem SANDBOX_GITHUB_TOKEN: pulado"; exit 0; fi
           NO_COLOR=1 scripts/rc6-github.sh
+      # v1.0-RC9: a mesma triagem pelo servidor MCP OFICIAL do GitHub (o binário publicado,
+      # versão fixada e soma conferida), por stdio. O download do servidor usa o token do
+      # workflow; o token do sandbox vai só para o ambiente do processo do servidor.
+      - name: scripts/rc9-github-mcp.sh
+        env:
+          GITHUB_TOKEN_DOWNLOAD: ${{ github.token }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then echo "sem SANDBOX_GITHUB_TOKEN: pulado"; exit 0; fi
+          NO_COLOR=1 scripts/rc9-github-mcp.sh
 
   lean:
     # O núcleo λ_Ath mecanizado: T1 (preservação e progresso, com capacidades lineares e
