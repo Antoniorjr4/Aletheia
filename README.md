@@ -37,6 +37,21 @@ $ athc check examples/rollout.ath
 ✓ Codex              12 objetos BLAKE3, raiz #9ecbfccad097
 ```
 
+## v1.0-RC7: execução parcial sob política
+
+```sh
+scripts/rc7-smoke.sh              # sem rede
+```
+
+Na RC6, uma nota fora da política fazia o `refine` recusar o plano inteiro: com um modelo real,
+uma injeção negou a tarefa em 10 de 10 execuções. `refine d by P keeping notes by Q` deixa de
+fora (e registra) os elementos que `Q` recusa, e só então `P` decide sobre o plano que resta. Em
+Lean, o que é executado satisfaz as duas políticas e nada que `Q` aceita é perdido
+(`keeping_sound`, `keeping_keeps_every_accepted`); decidir antes de podar seria inseguro
+(`checking_before_pruning_is_unsound`). Com o modelo real, a nota injetada foi deixada de fora em
+10 de 10 e o resto do plano foi executado; o modelo, porém, tinha trocado uma nota legítima pela
+injetada, e o texto do resumo citava a nota podada. Detalhes em [`docs/RC7.md`](docs/RC7.md).
+
 ## v1.0-RC6: uma API independente
 
 ```sh

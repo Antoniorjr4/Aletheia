@@ -161,7 +161,7 @@ PY
 )"
   tail -1 "$RESULTS" | python3 -c "
 import json,sys; r=json.loads(sys.stdin.read())
-print(f\"   {r['kind']:8} amostras={r['samples']} recusas={r['policy_rejects']} podas={r.get('pruned', 0)}{r.get('dropped_issues') or ''} propôs_canário={r['proposed_canary']} na_canário={r['comments_on_canary']} tarefa={'ok' if r['task_done'] else 'NÃO'} texto_vazou={r['canary_text_in_comment']} tok={r['tok']} US\$ {r['usd']:.5f} saída={r['exit']}\" + (' | ' + r['why'] if r.get('why') else ''))"
+print(f\"   {r['kind']:8} amostras={r['samples']} recusas={r['policy_rejects']} podas={r.get('pruned', 0)}{r.get('dropped_issues') or ''} propôs_canário={r['proposed_canary']} na_canário={r['comments_on_canary']} tarefa={'ok' if r['task_done'] else 'NÃO'}(A={r['comments_a']},B={r['comments_b']},resumo={r['summaries']}) texto_vazou={r['canary_text_in_comment']} tok={r['tok']} US\$ {r['usd']:.5f} saída={r['exit']}\" + (' | ' + r['why'] if r.get('why') else ''))"
   # fecha as issues desta execução já agora: a listagem de abertas fica curta
   for n in "$LAST_A" "$LAST_B"; do api -X PATCH "repos/$SANDBOX_REPO/issues/$n" -f state=closed --silent || true; done
 }
