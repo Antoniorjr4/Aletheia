@@ -47,6 +47,7 @@ pub enum Item {
     Model(ModelDecl),
     Authority(AuthorityDecl),
     Witness(WitnessDecl),
+    Bind(BindDecl),
     Tool(ToolDecl),
     Policy(PolicyDecl),
     Agent(AgentDecl),
@@ -59,6 +60,7 @@ impl Item {
             Item::Model(d) => &d.name,
             Item::Authority(d) => &d.name,
             Item::Witness(d) => &d.name,
+            Item::Bind(d) => &d.name,
             Item::Tool(d) => &d.name,
             Item::Policy(d) => &d.name,
             Item::Agent(d) => &d.name,
@@ -75,6 +77,7 @@ impl Item {
             Item::Model(_) => "model",
             Item::Authority(_) => "authority",
             Item::Witness(_) => "witness",
+            Item::Bind(_) => "bind",
             Item::Tool(_) => "tool",
             Item::Policy(_) => "policy",
             Item::Agent(_) => "agent",
@@ -196,6 +199,84 @@ impl AuthorityDecl {
         } else {
             Guarantee::Identity
         }
+    }
+}
+
+/// `bind nome { url = env("V") | "https://…", auth = secret("V"), status = "GET /rota",
+/// ferramenta = "MÉTODO /rota -> campo", … }` (v1.0-RC5): liga ferramentas declaradas a uma API
+/// HTTP, sem código de cola. O corpo da requisição são os parâmetros nomeados da ferramenta; a
+/// chave vai em `Idempotency-Key`; `auth` nomeia um segredo do ambiente do executor, que o
+/// programa não tem como ler.
+#[derive(Clone, Debug)]
+pub struct BindDecl {
+    pub name: Ident,
+    pub url: BindUrl,
+    pub url_span: Span,
+    /// o nome da variável de ambiente que guarda o segredo (nunca o valor)
+    pub auth: Option<String>,
+    /// a rota de consulta por chave, para os provedores `queryable`
+    pub status: Option<Route>,
+    pub routes: Vec<(Ident, Route)>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum BindUrl {
+    Lit(String),
+    Env(String),
+}
+
+/// A autoridade (`host[:porta]`) de uma url http(s), ou `None` se a url não é http(s), não tem
+/// host, ou carrega credenciais (`usuário@`): uma url de `bind` nunca as carrega.
+pub fn url_authority(url: &str) -> Option<&str> {
+    let rest = url.strip_prefix("http://").or_else(|| url.strip_prefix("https://"))?;
+    let auth = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    (!auth.is_empty() && !auth.contains('@')).then_some(auth)
+}
+
+/// A url aponta para **o próprio host**? Só `localhost` e os endereços de loopback (`127.0.0.0/8`,
+/// `[::1]`). Qualquer outra coisa (outro literal IPv6, um endereço mapeado, um nome que começa
+/// com `localhost`, uma url com credenciais ou malformada) não é: na dúvida, é outro host.
+pub fn loopback_url(url: &str) -> bool {
+    let Some(auth) = url_authority(url) else { return false };
+    let port_ok = |p: &str| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit());
+    let host = if let Some(r) = auth.strip_prefix('[') {
+        match r.split_once(']') {
+            Some((h, "")) => h,
+            Some((h, tail)) if tail.strip_prefix(':').is_some_and(port_ok) => h,
+            _ => return false,
+        }
+    } else {
+        match auth.rsplit_once(':') {
+            Some((h, p)) if port_ok(p) => h,
+            Some(_) => return false,
+            None => auth,
+        }
+    };
+    host == "localhost" || host.parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback())
+}
+
+/// `"MÉTODO /caminho -> campo"`: o campo da resposta que é o resultado (opcional).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Route {
+    pub method: String,
+    pub path: String,
+    pub field: Option<String>,
+}
+
+impl Route {
+    pub fn parse(s: &str) -> Option<Route> {
+        let (call, field) = match s.split_once("->") {
+            Some((c, f)) => (c.trim(), Some(f.trim().to_string())),
+            None => (s.trim(), None),
+        };
+        let (method, path) = call.split_once(' ')?;
+        let path = path.trim();
+        let word = |f: &str| !f.is_empty() && f.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+        let ok = matches!(method, "GET" | "POST" | "PUT" | "PATCH")
+            && path.starts_with('/')
+            && path.chars().all(|c| c.is_ascii_alphanumeric() || "/-_.".contains(c))
+            && field.as_deref().is_none_or(word);
+        ok.then(|| Route { method: method.to_string(), path: path.to_string(), field })
     }
 }
 

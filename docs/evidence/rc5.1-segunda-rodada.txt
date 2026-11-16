@@ -1,0 +1,13 @@
+# v1.0-RC5.1, segunda rodada: dois achados da revisão, como testes que falham
+# commit base: b272ec0
+$ cargo test -p athc --test rc5 -- a_rewritten_tape_is_refused_before every_recorded_variant
+test every_recorded_variant_is_checked_on_replay ... FAILED
+test a_rewritten_tape_is_refused_before_recovery_sends_anything ... FAILED
+thread 'every_recorded_variant_is_checked_on_replay' (478) panicked at crates/athc/tests/rc5.rs:890:9:
+abort-int: a variante reescrita entrou: ↻ retomada, fase 1: as obrigações em aberto
+◀ resultado: 7
+thread 'a_rewritten_tape_is_refused_before_recovery_sends_anything' (477) panicked at crates/athc/tests/rc5.rs:862:5:
+assertion `left == right` failed: o provedor foi chamado antes da recusa da fita: ↻ retomada, fase 1: as obrigações em aberto
+  left: 2
+ right: 1
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.88s

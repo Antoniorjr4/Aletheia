@@ -167,6 +167,11 @@ pub trait Host {
     fn receipt(&mut self, _wire: &str) -> Option<serde_json::Value> {
         None
     }
+    /// A resposta crua do provedor à última chamada bem-sucedida (v1.0-RC5), consumida ao ser
+    /// lida: é o que o monitor de tipo confere. `None`: o host só tem o valor convertido.
+    fn raw(&mut self) -> Option<serde_json::Value> {
+        None
+    }
 }
 
 /// Falha injetada: na `nth`-ésima chamada a `tool` (ou em todas, sem `nth`).

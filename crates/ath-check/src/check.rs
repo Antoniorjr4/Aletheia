@@ -562,6 +562,7 @@ impl<'m> Ctx<'m> {
                 }
                 Item::Authority(d) => self.check_key("autoridade", &d.name.name, &d.key, d.key_span),
                 Item::Witness(d) => self.check_key("testemunha", &d.name.name, &d.key, d.key_span),
+                Item::Bind(_) => {}
                 Item::Tool(d) => {
                     self.tools.insert(d.name.name.clone(), d);
                 }
@@ -607,6 +608,80 @@ impl<'m> Ctx<'m> {
                 )
                 .help("gere um par com `athc keygen --out chave` e declare a chave pública impressa"),
             );
+        }
+    }
+
+    /// **A ligação nativa (RC5).** Cada rota de um `bind` nomeia uma ferramenta declarada
+    /// (`E0431`), ligada uma só vez (`E0432`). Um segredo não viaja em claro para outro host
+    /// (`E0433`), e uma operação com chave, que muda o mundo, não é um `GET` (`E0434`).
+    fn check_binds(&mut self) {
+        let binds: Vec<&BindDecl> =
+            self.m.items.iter().filter_map(|i| if let Item::Bind(b) = i { Some(b) } else { None }).collect();
+        let mut seen: Vec<&Ident> = Vec::new();
+        for b in binds {
+            if let (BindUrl::Lit(u), Some(secret)) = (&b.url, &b.auth) {
+                if u.starts_with("http://") && !ath_syntax::ast::loopback_url(u) {
+                    self.push(
+                        Diag::new(
+                            E2,
+                            "E0433",
+                            format!("o segredo `{secret}` de `bind {}` viajaria em claro", b.name.name),
+                            b.url_span,
+                            "http sem TLS para outro host",
+                        )
+                        .help("use `https://`, ou ligue ao próprio host (127.0.0.1)"),
+                    );
+                }
+            }
+            if let BindUrl::Lit(u) = &b.url {
+                if ath_syntax::ast::url_authority(u).is_none() {
+                    self.push(Diag::new(
+                        E0,
+                        "E0431",
+                        format!("a url de `bind {}` não é http(s), ou carrega credenciais", b.name.name),
+                        b.url_span,
+                        "esperado `http://…`, `https://…` ou `env(\"NOME\")`",
+                    ));
+                }
+            }
+            for (t, route) in &b.routes {
+                let Some(decl) = self.tools.get(t.name.as_str()).copied() else {
+                    self.push(
+                        Diag::new(
+                            E0,
+                            "E0431",
+                            format!("`bind {}` liga `{}`, que não é uma ferramenta do módulo", b.name.name, t.name),
+                            t.span,
+                            "ferramenta não declarada",
+                        )
+                        .help("cada rota de um `bind` tem o nome de uma `tool` (fora `url`, `auth` e `status`)"),
+                    );
+                    continue;
+                };
+                if seen.iter().any(|s| s.name == t.name) {
+                    self.push(Diag::new(
+                        E0,
+                        "E0432",
+                        format!("a ferramenta `{}` é ligada mais de uma vez", t.name),
+                        t.span,
+                        "segunda ligação",
+                    ));
+                }
+                seen.push(t);
+                let keyed = decl.params.iter().any(|p| p.ty.unlabeled().base_name() == "IdemKey");
+                if route.method == "GET" && (keyed || decl.class != EffClass::Reversible) {
+                    self.push(
+                        Diag::new(
+                            E2,
+                            "E0434",
+                            format!("`{}` muda o mundo e está ligada a um `GET`", t.name),
+                            t.span,
+                            "operação com chave, ou não `reversible`",
+                        )
+                        .help("`GET` é para leituras; ligue a operação a `POST`, `PUT` ou `PATCH`"),
+                    );
+                }
+            }
         }
     }
 
@@ -689,6 +764,7 @@ impl<'m> Ctx<'m> {
     /// autorizada: o contrato é inatingível. E um `ops` que cita uma operação que nenhum
     /// contrato usa é um erro de digitação que daria a falsa impressão de escopo.
     fn check_authority_scope(&mut self) {
+        self.check_binds();
         let auths: Vec<&AuthorityDecl> =
             self.m.items.iter().filter_map(|i| if let Item::Authority(d) = i { Some(d) } else { None }).collect();
         let used = std::mem::take(&mut self.auth_ops);

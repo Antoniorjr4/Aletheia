@@ -46,6 +46,16 @@ uso:
                   OPENAI_API_KEY, OPENAI_BASE_URL (ex.: https://api.groq.com/openai/v1), ALETHEIA_MODEL
                   ou pelos argumentos --model ID --base-url URL
                   [--constraint json-schema|gbnf|none] [--schema core|full]
+  athc resume <arquivo.ath> --wal execução.wal [as mesmas fontes de `run`: --trusted, --grants,
+                         --args-sig, --arg, --anchor, --clock, --host] [--journal saída.jsonl]
+      (v1.0-RC5) retoma, num processo novo, a execução interrompida que o WAL registra: fecha as
+      obrigações em aberto pelo protocolo de cada provedor (sem compensar as sagas) e re-executa
+      o programa, com as entradas já observadas vindas da fita `<wal>.tape` (o modelo e os
+      provedores não são chamados de novo), até a fronteira da queda; dali em diante, ao vivo.
+      R0650 retomada divergente · R0652 outra fotografia ou outros argumentos · R0653 execução
+      já encerrada por `athc recover`
+      (um programa com `bind` alcança a API do provedor por HTTP: a url e o segredo vêm do
+      ambiente do executor; --no-bind executa sem a ligação e o programa recusa, R0641)
   athc grammar <arquivo.ath> --type T [--format all|schema|gbnf|shape] [--decode 'proposta']
       mostra a gramática derivada do tipo T e, com --decode, a decodificação mascarada de uma proposta
   athc hash <arquivo.ath> [--codex dir]
@@ -111,7 +121,7 @@ fn parse_opts(args: &[String]) -> Result<Opts, String> {
     let mut i = 0;
     while i < args.len() {
         let a = &args[i];
-        if a == "--inspect" || a == "--retry-escalated" || a == "--strict-authority" {
+        if a == "--inspect" || a == "--retry-escalated" || a == "--strict-authority" || a == "--no-bind" {
             flags.entry(a[2..].to_string()).or_default().push("true".into());
             i += 1;
         } else if let Some(name) = a.strip_prefix("--") {
@@ -164,7 +174,8 @@ fn main() -> ExitCode {
     };
     let r = match cmd.as_str() {
         "check" => cmd_check(&opts, st),
-        "run" => cmd_run(&opts, st),
+        "run" => cmd_run(&opts, st, false),
+        "resume" => cmd_resume(&opts, st),
         "hash" => cmd_hash(&opts, st),
         "grammar" => cmd_grammar(&opts, st),
         "verify-journal" => cmd_verify(&opts, st),
@@ -220,6 +231,23 @@ fn cmd_check(opts: &Opts, st: Style) -> Result<bool, String> {
     let Some(c) = compile_or_report(&path, &src, st) else { return Ok(false) };
     println!("$ athc check {path}");
     print!("{}", summary(&c, st));
+    // **As ligações** (RC5): o que o programa alcança no mundo, e com que segredo (só o nome).
+    for i in &c.module.items {
+        if let ath_syntax::ast::Item::Bind(b) = i {
+            let url = match &b.url {
+                ath_syntax::ast::BindUrl::Lit(u) => u.clone(),
+                ath_syntax::ast::BindUrl::Env(v) => format!("env({v})"),
+            };
+            println!(
+                "{} ligação `{}`: {} ferramenta(s) → {url}{}{}",
+                st.green("✓"),
+                b.name.name,
+                b.routes.len(),
+                b.auth.as_ref().map(|s| format!(" · segredo `{s}` (por referência)")).unwrap_or_default(),
+                if b.status.is_some() { " · consulta por chave" } else { "" }
+            );
+        }
+    }
     // **O nível de garantia de cada autoridade** (RC4): a compatibilidade com as formas
     // anteriores é explícita, nunca confundida com a garantia temporal.
     let mut weak = Vec::new();
@@ -339,13 +367,76 @@ fn fixture(opts: &Opts, flag: &str, file: &str, default_name: &str) -> Option<Pa
     candidate.exists().then_some(candidate)
 }
 
-fn cmd_run(opts: &Opts, st: Style) -> Result<bool, String> {
+/// **`athc resume` (RC5)**: retoma, num processo novo, a execução que um WAL registra. Primeiro
+/// a recuperação fecha as intenções em aberto pelo protocolo de cada provedor (sem compensar as
+/// sagas: elas continuam); depois o programa é re-executado desde o início, com as entradas já
+/// observadas vindas do WAL, e segue ao vivo a partir da fronteira da queda (`arx::resume`).
+fn cmd_resume(opts: &Opts, st: Style) -> Result<bool, String> {
+    if opts.one("wal").is_none() {
+        return Err("`athc resume` exige --wal (a execução a retomar)".into());
+    }
+    // RC5.1: a fita é conferida contra a âncora ANTES da fase de recuperação. A recuperação
+    // reenvia operações idempotentes em aberto: nenhuma chamada sai com a fita adulterada.
+    if let Some(a) = opts.one("anchor") {
+        let (path, src) = load(opts)?;
+        let Some(c) = compile_or_report(&path, &src, st) else { return Ok(false) };
+        let temporal = c
+            .module
+            .items
+            .iter()
+            .any(|i| matches!(i, Item::Authority(d) if d.guarantee() == ath_syntax::ast::Guarantee::Temporal));
+        if temporal {
+            let wp = opts.one("wal").unwrap_or_default();
+            let wal = Wal::open(PathBuf::from(wp)).map_err(|e| e.to_string())?;
+            let run = wal.log.entries.first().and_then(|e| e["detail"]["run"].as_str()).unwrap_or_default().to_string();
+            let tape = Wal::open(PathBuf::from(format!("{wp}.tape"))).map_err(|e| e.to_string())?;
+            let mut anchor = arx::anchor::TcpAnchor::new(a.strip_prefix("tcp://").unwrap_or(a), 5.0)?;
+            arx::tape_verify(&mut anchor, &c.codex.root, &run, &tape.log.entries, true)?;
+        }
+    }
+    let mut pre = Opts { file: opts.file.clone(), flags: opts.flags.clone() };
+    pre.flags.insert("intents-only".into(), vec![String::new()]);
+    pre.flags.remove("kill-at");
+    println!("{} retomada, fase 1: as obrigações em aberto", st.bold("↻"));
+    let code = recover(&pre, st)?;
+    if code == 2 {
+        return Ok(false);
+    }
+    println!("{} retomada, fase 2: o programa, das entradas gravadas até a fronteira da queda", st.bold("↻"));
+    cmd_run(opts, st, true)
+}
+
+fn cmd_run(opts: &Opts, st: Style, resume: bool) -> Result<bool, String> {
     let (path, src) = load(opts)?;
     let Some(c) = compile_or_report(&path, &src, st) else { return Ok(false) };
+    // RC5: a execução a retomar. O WAL diz qual é (execução, agente, evento, argumentos).
+    let mut resumed: Option<(Wal, serde_json::Value)> = None;
+    let mut in_tape: Option<Wal> = None;
+    if resume {
+        let wp = opts.one("wal").unwrap_or_default();
+        let w = Wal::open(PathBuf::from(wp)).map_err(|e| e.to_string())?;
+        if w.read.fresh {
+            return Err(format!("W0003: o WAL `{wp}` não existe: não há execução a retomar"));
+        }
+        let head = w.log.entries.first().filter(|e| e["kind"] == "run").map(|e| e["detail"].clone());
+        let Some(head) = head else {
+            return Err(format!("W0004: o WAL `{wp}` não começa com o registro da execução (`run`)"));
+        };
+        if head["program"].as_str() != Some(c.codex.root.as_str()) {
+            return Err(format!(
+                "W0004: o WAL é de outro programa (Codex #{}), não de `{path}` (Codex #{})",
+                ath_codex::short(head["program"].as_str().unwrap_or_default()),
+                ath_codex::short(&c.codex.root)
+            ));
+        }
+        in_tape = Some(Wal::open(PathBuf::from(format!("{wp}.tape"))).map_err(|e| e.to_string())?);
+        resumed = Some((w, head));
+    }
+    let head_str = |k: &str| resumed.as_ref().and_then(|(_, h)| h[k].as_str().map(String::from));
     println!("{} verificado: E0 E1 E2 E3 E5 E6 · Codex #{}", st.green("✓"), ath_codex::short(&c.codex.root));
 
-    let agent = match opts.one("agent") {
-        Some(a) => a.to_string(),
+    let agent = match opts.one("agent").map(String::from).or(head_str("agent")) {
+        Some(a) => a,
         None => c
             .module
             .items
@@ -357,11 +448,15 @@ fn cmd_run(opts: &Opts, st: Style) -> Result<bool, String> {
         Some(p) => read_json(&p)?,
         None => json!({}),
     };
-    let run_id = opts.one("run-id").map(String::from).unwrap_or_else(fresh_run_id);
+    let run_id = head_str("run").or(opts.one("run-id").map(String::from)).unwrap_or_else(fresh_run_id);
+    let has_binds = c.module.items.iter().any(|i| matches!(i, Item::Bind(_))) && opts.one("no-bind").is_none();
     let world: Box<dyn Host> = match opts.one("host") {
         Some(addr) => Box::new(remote_host(opts, addr, &run_id)?),
+        // RC5: com `bind`, o provedor é o do programa; o host só traz a fotografia confiável
+        None if has_binds && opts.one("world").is_none() => Box::new(remote_host(opts, NO_HOST, &run_id)?),
         None => Box::new(SimWorld::from_json(&world_json)?),
     };
+    let (world, bound) = bind_host(opts, &c.module, world, &run_id)?;
     let mut tape: Option<(Rc<RefCell<Vec<arx::model::Exchange>>>, serde_json::Value)> = None;
     let provider: Box<dyn ModelProvider> = if let Some(cp) = opts.one("replay") {
         let c = Cassette::load(Path::new(cp))?;
@@ -380,9 +475,30 @@ fn cmd_run(opts: &Opts, st: Style) -> Result<bool, String> {
         build_provider(opts, &path)?
     };
     let provider_name = provider.name();
+    // a fotografia confiável é uma entrada do programa: a retomada exige a mesma
+    let trusted_hash = blake3::hash(format!("{:?}", world.trusted_snapshot()).as_bytes()).to_hex().to_string();
     let mut arx = Arx::new(&c.module, world, provider);
+    if let Some((w, head)) = &resumed {
+        let tp = in_tape.as_ref().expect("fita");
+        let rs = arx::resume::Resume::of(&w.log, &tp.log);
+        let origin = tp.log.entries.first().map(|e| e["detail"].clone()).unwrap_or_default();
+        if rs.settled_by_recovery {
+            return Err(
+                "R0653: `athc recover` já compensou as sagas desta execução: ela foi encerrada e não é retomável"
+                    .into(),
+            );
+        }
+        let _ = head;
+        if origin["trusted"].as_str().is_some_and(|h| h != trusted_hash) {
+            return Err(
+                "R0652: a fotografia confiável (`--trusted`) não é a da execução original; nada foi executado".into()
+            );
+        }
+        arx.resume = Some(rs);
+    }
     arx.contracts = athc::contract_hashes(&c);
     arx.run_id = run_id.clone();
+    arx.bound = bound;
     arx.now_unix = now_unix();
     if let Some(g) = opts.one("grants") {
         arx.grants = GrantStore::open(Path::new(g))?;
@@ -439,14 +555,27 @@ fn cmd_run(opts: &Opts, st: Style) -> Result<bool, String> {
             }
         }
     }
+    // RC5: as concessões das operações já decididas desta execução. A re-execução passa pela
+    // conferência antecipada (`refine`) como a original passou; a fronteira dessas operações
+    // devolve o desfecho gravado e não consome nada. Uma operação nova que as reivindique é
+    // recusada pelo registro de consumo (relido sob trava) ou pela âncora.
+    if let Some(rs) = &arx.resume {
+        for (k, d) in &rs.intents {
+            let dead = k.strip_prefix('k').and_then(|n| n.parse().ok()).is_some_and(|n| rs.dead(n));
+            for id in d["grants"].as_array().into_iter().flatten().filter_map(|x| x.as_str()).filter(|_| !dead) {
+                arx.replay_grants.insert(id.to_string());
+                arx.grants.spent.remove(id);
+            }
+        }
+    }
     if let Some(s) = opts.one("args-sig") {
         // a assinatura, ou o arquivo que a contém
         let sig = std::fs::read_to_string(s).map(|t| t.trim().to_string()).unwrap_or_else(|_| s.to_string());
         arx.args_attestation = Some((opts.flags.get("arg").cloned().unwrap_or_default(), sig));
     }
     let args_src: Vec<String> = opts.flags.get("arg").cloned().unwrap_or_default();
-    let event = match opts.one("on") {
-        Some(e) => e.to_string(),
+    let event = match opts.one("on").map(String::from).or(head_str("event")) {
+        Some(e) => e,
         None => c
             .module
             .items
@@ -477,7 +606,27 @@ fn cmd_run(opts: &Opts, st: Style) -> Result<bool, String> {
             std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
         }
     }
-    if let Some(wp) = opts.one("wal") {
+    if let Some((_, head)) = &resumed {
+        let now: Vec<serde_json::Value> = args.iter().map(Value::to_json).collect();
+        if head["args"] != json!(now) {
+            return Err("R0652: os argumentos (`--arg`) não são os da execução original; nada foi executado".into());
+        }
+    }
+    if let Some((mut w, _)) = resumed {
+        if let Some(k) = opts.one("kill-at") {
+            let (point, n) = k.split_once(':').ok_or("--kill-at espera ponto:N")?;
+            let point = CrashPoint::parse(point).ok_or("--kill-at: ponto inválido")?;
+            w.crash = Some((point, n.parse().map_err(|_| "--kill-at: N inválido")?));
+            w.crash_mode = CrashMode::Kill;
+        }
+        let gen = arx.resume.as_ref().map_or(0, |r| r.generation) + 1;
+        if let Some(t) = in_tape.as_mut() {
+            t.append(0.0, "resume", json!({ "generation": gen }));
+        }
+        arx.wal = Some(w);
+        arx.tape = in_tape;
+        arx.journal.stream_to(&jpath).map_err(|e| format!("falha ao abrir o journal: {e}"))?;
+    } else if let Some(wp) = opts.one("wal") {
         // todo efeito não reversível precisa de chave: sem ela não há intenção a persistir
         for i in &c.module.items {
             if let Item::Tool(t) = i {
@@ -522,6 +671,15 @@ fn cmd_run(opts: &Opts, st: Style) -> Result<bool, String> {
         }
         w.append(0.0, "run", head);
         arx.wal = Some(w);
+        // RC5: a fita das entradas, ao lado do WAL (que continua byte a byte o da RC4)
+        // (uma fita sem o seu WAL é órfã: o WAL é novo, ela é posta de lado)
+        let tp = PathBuf::from(format!("{wp}.tape"));
+        if std::fs::metadata(&tp).is_ok_and(|m| m.len() > 0) {
+            std::fs::rename(&tp, format!("{wp}.tape.orphan")).map_err(|e| e.to_string())?;
+        }
+        let mut t = Wal::open(tp).map_err(|e| e.to_string())?;
+        t.append(0.0, "origin", json!({ "run": run_id, "program": c.codex.root, "trusted": trusted_hash }));
+        arx.tape = Some(t);
         arx.journal.stream_to(&jpath).map_err(|e| format!("falha ao abrir o journal: {e}"))?;
     } else if opts.one("kill-at").is_some() {
         return Err("`--kill-at` exige `--wal`".into());
@@ -536,7 +694,17 @@ fn cmd_run(opts: &Opts, st: Style) -> Result<bool, String> {
         shown.join(", "),
         st.dim(&format!("provedor: {provider_name}"))
     );
+    // RC5.1: numa execução com autoridade temporal (a âncora é parte do protocolo), a âncora
+    // guarda também a marca da fita das entradas
+    if let (Some(a), true) = (opts.one("anchor"), arx.tape.is_some() && arx.temporal) {
+        let anchor = arx::anchor::TcpAnchor::new(a.strip_prefix("tcp://").unwrap_or(a), 5.0)?;
+        arx.tape_attach(Box::new(anchor), &c.codex.root, &run_id)?;
+    }
     let result = arx.run(&agent, &event, args);
+    // (a marca final da fita: o que a execução inteira observou)
+    if let Err(e) = arx.tape_seal() {
+        eprintln!("aviso: {e}");
+    }
     println!("  {}", st.dim(&format!("{:>7}  {:>7}", "t", "+Δt")));
     for ev in &arx.events {
         println!(
@@ -554,7 +722,20 @@ fn cmd_run(opts: &Opts, st: Style) -> Result<bool, String> {
             println!("  {:>7}  {:>7}  {}", "", "", mark);
         }
     }
+    if let Some(rs) = &arx.resume {
+        println!(
+            "{} retomada: {} entrada(s) do WAL, {} chamada(s) ao vivo{}",
+            st.bold("↻"),
+            rs.replayed,
+            rs.live,
+            arx.diverged.as_ref().map(|d| format!(" · DIVERGENTE: {d}")).unwrap_or_default()
+        );
+    }
     let ok = match &result {
+        Ok(v) if arx.diverged.is_some() => {
+            println!("{} abortado: R0650 retomada divergente (resultado descartado: {})", st.red("✗"), v.show());
+            false
+        }
         Ok(v) => {
             println!("{} resultado: {}", st.bold("◀"), v.show());
             true
@@ -1052,6 +1233,10 @@ fn fresh_run_id() -> String {
     format!("run-{}", &h[..12])
 }
 
+/// O endereço de um host sem provedor: num programa com `bind`, só a fotografia confiável vem
+/// do host; uma ferramenta sem ligação fica inacessível (a porta 9 descarta).
+const NO_HOST: &str = "127.0.0.1:9";
+
 fn remote_host(opts: &Opts, addr: &str, run: &str) -> Result<RemoteHost, String> {
     let mut attestation = None;
     let snapshot = match opts.one("trusted") {
@@ -1071,6 +1256,27 @@ fn remote_host(opts: &Opts, addr: &str, run: &str) -> Result<RemoteHost, String>
     let mut h = RemoteHost::new(addr, run, timeout, snapshot)?;
     h.attestation = attestation;
     Ok(h)
+}
+
+/// RC5: se o módulo declara `bind`, o host desta execução é a ligação: as ferramentas ligadas
+/// vão à API HTTP; o resto (e a fotografia confiável) continua no host dado. `--no-bind`
+/// executa sem a ligação (o programa recusa com `R0641`, como no backend Python).
+fn bind_host(
+    opts: &Opts,
+    m: &ath_syntax::ast::Module,
+    inner: Box<dyn Host>,
+    run: &str,
+) -> Result<(Box<dyn Host>, bool), String> {
+    let has = m.items.iter().any(|i| matches!(i, Item::Bind(_)));
+    if !has || opts.one("no-bind").is_some() {
+        return Ok((inner, false));
+    }
+    let timeout = match opts.one("timeout") {
+        Some(t) => t.parse::<f64>().map_err(|_| "--timeout inválido")?,
+        None => 5.0,
+    };
+    let env = |k: &str| std::env::var(k).ok();
+    Ok((Box::new(arx::bind::BoundHost::attach(m, inner, run, timeout, &env)?), true))
 }
 
 /// `athc grant`: a confirmação estruturada do principal vira concessões. Cada concessão é uma
@@ -1344,9 +1550,16 @@ fn recover(opts: &Opts, st: Style) -> Result<u8, String> {
         wal
     } else {
         // 3. os protocolos permitidos, contra o serviço real
-        let addr = opts.one("host").ok_or("informe --host (ou --inspect para só conferir)")?;
+        let has_binds = c.module.items.iter().any(|i| matches!(i, Item::Bind(_)));
+        let addr = match opts.one("host") {
+            Some(a) => a,
+            None if has_binds => NO_HOST,
+            None => return Err("informe --host (ou --inspect para só conferir)".into()),
+        };
         let host = remote_host(opts, addr, &run)?;
-        let mut arx = Arx::new(&c.module, Box::new(host), Box::new(Scripted::default()));
+        let (host, bound) = bind_host(opts, &c.module, Box::new(host), &run)?;
+        let mut arx = Arx::new(&c.module, host, Box::new(Scripted::default()));
+        arx.bound = bound;
         arx.run_id = run.clone();
         // as intenções que citam concessões só se decidem com o registro de consumo
         let cites = stw.open().iter().any(|(_, d)| d["grants"].as_array().is_some_and(|a| !a.is_empty()));
@@ -1391,9 +1604,12 @@ fn recover(opts: &Opts, st: Style) -> Result<u8, String> {
         let fuel = opts.one("fuel").map(|f| f.parse::<u32>().map_err(|_| "--fuel inválido")).transpose()?.unwrap_or(3);
         // RC4: primeiro o que a âncora sabe (integridade do WAL, desfechos, liberações); depois a
         // recuperação local, para o resto (as sagas e as operações sem concessão)
+        // RC5: os valores que os provedores devolverem à recuperação vão para a fita das entradas
+        arx.tape = Wal::open(PathBuf::from(format!("{wp}.tape"))).ok();
         if arx.temporal {
             arx.lc_recover(fuel).map_err(|e| format!("{e} (a recuperação parou antes de qualquer envio)"))?;
         }
+        arx.skip_sagas = opts.one("intents-only").is_some();
         arx.recover_with(fuel, opts.one("retry-escalated").is_some());
         actions = arx.wal.as_ref().map(|w| w.log.entries[before..].to_vec()).unwrap_or_default();
         for a in &actions {

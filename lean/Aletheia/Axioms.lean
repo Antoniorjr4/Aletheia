@@ -431,3 +431,61 @@ open Aletheia
 
 /-- info: 'Aletheia.Lifecycle.rc3_local_clock_counterexample' depends on axioms: [propext] -/
 #guard_msgs in #print axioms Lifecycle.rc3_local_clock_counterexample
+
+-- v1.0-RC5: a retomada verificada e a fronteira nativa
+
+/-- info: 'Aletheia.Resume.replay_append' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Resume.replay_append
+
+/-- info: 'Aletheia.Resume.replay_fidelity' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Resume.replay_fidelity
+
+/-- info: 'Aletheia.Resume.crash_is_identity' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Resume.crash_is_identity
+
+/-- info: 'Aletheia.Resume.crash_refines' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Resume.crash_refines
+
+/-- info: 'Aletheia.Resume.at_most_once' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Resume.at_most_once
+
+/-- info: 'Aletheia.Resume.tape_is_evidence' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Resume.tape_is_evidence
+
+/-- info: 'Aletheia.Resume.budget_survives' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Resume.budget_survives
+
+/-- info: 'Aletheia.Resume.model_not_asked_again' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Resume.model_not_asked_again
+
+/-- info: 'Aletheia.Resume.divergence_stops' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Resume.divergence_stops
+
+/-- info: 'Aletheia.Boundary.check_sound' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Boundary.check_sound
+
+/-- info: 'Aletheia.Boundary.check_complete' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Boundary.check_complete
+
+/-- info: 'Aletheia.Boundary.boundary_sound' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Boundary.boundary_sound
+
+/-- info: 'Aletheia.Boundary.boundary_transparent' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Boundary.boundary_transparent
+
+/-- info: 'Aletheia.Boundary.blame_is_earned' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Boundary.blame_is_earned
+
+/-- info: 'Aletheia.Boundary.secret_noninterference' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Boundary.secret_noninterference
+
+/-- info: 'Aletheia.Boundary.without_scrub_it_leaks' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Boundary.without_scrub_it_leaks
+
+-- v1.0-RC5.1: a re-execução conferida pelo monitor
+
+/-- info: 'Aletheia.Resume.replayC_checked' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Resume.replayC_checked
+
+/-- info: 'Aletheia.Resume.replayC_agrees' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Resume.replayC_agrees

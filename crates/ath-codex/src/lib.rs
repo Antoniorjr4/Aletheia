@@ -161,6 +161,8 @@ impl Deps<'_> {
             // a autoridade tipada depende das testemunhas que cita (o hash delas entra no dela)
             Item::Authority(d) => d.clock.iter().chain(&d.outcomes).for_each(|w| self.name(&w.name)),
             Item::Model(_) | Item::Witness(_) => {}
+            // a ligação depende das ferramentas que liga
+            Item::Bind(d) => d.routes.iter().for_each(|(t, _)| self.name(&t.name)),
             Item::Tool(d) => {
                 d.params.iter().for_each(|p| self.ty(&p.ty));
                 self.ty(&d.ret);
@@ -400,6 +402,20 @@ impl Canon<'_> {
             }
             Item::Witness(d) => {
                 let _ = write!(self.out, "(witness {:?} {:?})", d.key, d.tolerance);
+            }
+            // RC5: a ligação é identidade do programa (o endpoint, o nome do segredo e as rotas;
+            // nunca um valor do ambiente). As rotas em ordem de ferramenta: a ordem de escrita
+            // não muda o hash.
+            Item::Bind(d) => {
+                let _ = write!(self.out, "(bind {:?} (auth {:?}) (status {:?})", d.url, d.auth, d.status);
+                let mut routes: Vec<_> = d.routes.iter().collect();
+                routes.sort_by(|a, b| a.0.name.cmp(&b.0.name));
+                for (t, r) in routes {
+                    let _ = write!(self.out, " (route ");
+                    self.reference(&t.name);
+                    let _ = write!(self.out, " {:?} {:?} {:?})", r.method, r.path, r.field);
+                }
+                let _ = write!(self.out, ")");
             }
             Item::Authority(d) => {
                 let _ = write!(self.out, "(authority {:?}", d.key);

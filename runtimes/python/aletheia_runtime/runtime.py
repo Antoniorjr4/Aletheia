@@ -26,6 +26,8 @@ _MISSING = object()
 # Rótulo `Trusted` de um campo do prompt que vem da fotografia do host (idêntico ao ARX).
 TRUSTED_HEADER = "ESTADO CONFIÁVEL — fotografia do host; não vem do modelo nem dos logs"
 
+R0641 = "o programa liga ferramentas a provedores reais (`bind`); esta execução não tem a ligação"
+
 R0639 = ("o protocolo RC4 (autoridade temporal) exige o registro de ciclo de vida ancorado, o tempo "
          "autenticado e recibos assinados do provedor; esta execução não os tem")
 
@@ -175,6 +177,10 @@ class Runtime:
         fn, params = h
         if len(args) != len(params):
             raise RtErr("R0002", f"`{agent}.{event}` recebe {len(params)} argumento(s)")
+        # RC5: um programa com `bind` fala com provedores reais por HTTP, com segredos do
+        # ambiente. Este backend não tem a ligação: recusa, com o código e o texto do ARX sem ela.
+        if getattr(self.p, "binds", None):
+            raise RtErr("R0641", R0641)
         # RC4: um programa com autoridade temporal exige o registro de ciclo de vida ancorado, o
         # tempo autenticado e recibos assinados. Este backend não os tem: recusa, explicitamente,
         # com o código e o texto do ARX sem o protocolo (nunca simula a garantia).

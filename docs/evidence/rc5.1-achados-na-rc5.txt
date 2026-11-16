@@ -1,0 +1,16 @@
+# v1.0-RC5.1: os quatro achados da revisão da RC5, como testes que falham
+# commit base: c6778c2 (release/v1.0-rc5)
+$ cargo test -p athc --test rc5 -- an_ill_typed a_rewritten an_accepted ; cargo test -p arx only_the_own_host
+test a_provider_cannot_hand_the_program_an_ill_typed_value ... ok
+test an_accepted_request_is_not_a_completed_effect ... FAILED
+test an_ill_typed_value_does_not_enter_through_resume ... FAILED
+test a_rewritten_tape_is_refused_by_the_anchor ... FAILED
+thread 'an_accepted_request_is_not_a_completed_effect' (1318) panicked at crates/athc/tests/rc5.rs:779:5:
+thread 'an_ill_typed_value_does_not_enter_through_resume' (1328) panicked at crates/athc/tests/rc5.rs:724:5:
+o valor fora do tipo entrou pela retomada: ↻ retomada, fase 1: as obrigações em aberto
+thread 'a_rewritten_tape_is_refused_by_the_anchor' (1309) panicked at crates/athc/tests/rc5.rs:763:5:
+a fita reescrita foi aceita: ↻ retomada, fase 1: as obrigações em aberto
+test result: FAILED. 1 passed; 3 failed; 0 ignored; 0 measured; 8 filtered out; finished in 2.99s
+test bind::tests::only_the_own_host_is_loopback ... FAILED
+thread 'bind::tests::only_the_own_host_is_loopback' (1387) panicked at crates/arx/src/bind.rs:362:13:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.10s

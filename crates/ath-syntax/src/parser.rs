@@ -134,11 +134,12 @@ impl Parser {
             Tok::Model => self.model_decl().map(Item::Model),
             Tok::Authority => self.authority_decl().map(Item::Authority),
             Tok::Witness => self.witness_decl().map(Item::Witness),
+            Tok::Bind => self.bind_decl().map(Item::Bind),
             Tok::Tool => self.tool_decl().map(Item::Tool),
             Tok::Policy => self.policy_decl().map(Item::Policy),
             Tok::Agent => self.agent_decl().map(Item::Agent),
             other => Err(self.err(format!(
-                "esperado `type`, `model`, `authority`, `witness`, `tool`, `policy` ou `agent`, encontrado {}",
+                "esperado `type`, `model`, `authority`, `witness`, `bind`, `tool`, `policy` ou `agent`, encontrado {}",
                 other.describe()
             ))),
         }
@@ -314,6 +315,92 @@ impl Parser {
         self.expect(Tok::RBrace)?;
         if !has_key {
             return Err(self.err("uma testemunha declara `key`".to_string()));
+        }
+        Ok(d)
+    }
+
+    /// `bind nome { url = …, auth = secret("V"), status = "…", ferramenta = "MÉTODO /rota -> campo" }`
+    fn bind_decl(&mut self) -> PResult<BindDecl> {
+        self.expect(Tok::Bind)?;
+        let name = self.ident()?;
+        self.expect(Tok::LBrace)?;
+        let mut d = BindDecl {
+            name,
+            url: BindUrl::Lit(String::new()),
+            url_span: self.span(),
+            auth: None,
+            status: None,
+            routes: Vec::new(),
+        };
+        let mut has_url = false;
+        while *self.peek() != Tok::RBrace {
+            let field = self.ident()?;
+            self.expect(Tok::Assign)?;
+            let span = self.span();
+            // `env("V")` e `secret("V")`: uma referência ao ambiente do executor, nunca um valor
+            let reference = |me: &mut Self, word: &str| -> PResult<Option<String>> {
+                match me.peek().clone() {
+                    Tok::Ident(w) if w == word => {
+                        me.bump();
+                        me.expect(Tok::LParen)?;
+                        let Tok::Str(v) = me.peek().clone() else {
+                            return Err(me.err(format!("`{word}(\"NOME\")` nomeia uma variável de ambiente")));
+                        };
+                        me.bump();
+                        me.expect(Tok::RParen)?;
+                        if v.is_empty() || !v.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+                            return Err(me.err(format!("nome de variável de ambiente inválido em `{word}`")));
+                        }
+                        Ok(Some(v))
+                    }
+                    _ => Ok(None),
+                }
+            };
+            match field.name.as_str() {
+                "url" => {
+                    d.url = match reference(self, "env")? {
+                        Some(v) => BindUrl::Env(v),
+                        None => match self.peek().clone() {
+                            Tok::Str(u) => {
+                                self.bump();
+                                BindUrl::Lit(u)
+                            }
+                            _ => return Err(self.err("`url` é um texto ou `env(\"NOME\")`".to_string())),
+                        },
+                    };
+                    (d.url_span, has_url) = (span, true);
+                }
+                "auth" => match reference(self, "secret")? {
+                    Some(v) => d.auth = Some(v),
+                    None => {
+                        return Err(self.err(
+                            "`auth` é `secret(\"NOME\")`: o segredo é uma referência ao ambiente do executor, nunca um literal do programa"
+                                .to_string(),
+                        ))
+                    }
+                },
+                f => {
+                    let Tok::Str(r) = self.peek().clone() else {
+                        return Err(self.err(format!("a rota de `{f}` é um texto: \"MÉTODO /caminho -> campo\"")));
+                    };
+                    let Some(route) = Route::parse(&r) else {
+                        return Err(self.err(format!(
+                            "rota inválida para `{f}`: `{r}` (esperado \"GET|POST|PUT|PATCH /caminho\" e, opcional, \"-> campo\")"
+                        )));
+                    };
+                    self.bump();
+                    if f == "status" {
+                        d.status = Some(route);
+                    } else {
+                        d.routes.push((field, route));
+                    }
+                }
+            }
+            self.eat(&Tok::Comma);
+        }
+        self.expect(Tok::RBrace)?;
+        if !has_url {
+            return Err(self.err("um `bind` declara `url`".to_string()));
         }
         Ok(d)
     }
