@@ -181,8 +181,8 @@ pub fn summary(c: &Compiled, st: Style) -> String {
     }
     let _ = writeln!(
         o,
-        "{ok} {:<18} {} exigência(s) de integridade satisfeitas, inclusive sob pc",
-        "E3 integridade", f.integrity_checks
+        "{ok} {:<18} {} de integridade e {} de confidencialidade satisfeitas, inclusive sob pc",
+        "E3 fluxo", f.integrity_checks, f.confidentiality_checks
     );
     let _ = writeln!(
         o,

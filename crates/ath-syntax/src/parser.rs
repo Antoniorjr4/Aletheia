@@ -763,7 +763,7 @@ impl Parser {
             let span = start.to(inner.span());
             return Ok(TypeExpr::Own(Box::new(inner), span));
         }
-        let base = if self.is_contextual("Cap") && *self.peek_at(1) == Tok::LBrack {
+        let mut base = if self.is_contextual("Cap") && *self.peek_at(1) == Tok::LBrack {
             self.bump();
             self.bump();
             let mut effs = vec![self.effect_name()?];
@@ -788,22 +788,49 @@ impl Parser {
                 TypeExpr::Named(id)
             }
         };
-        if self.eat(&Tok::Caret) {
+        // v1.0-RC10: um ou dois rótulos `^ …`, integridade e/ou confidencialidade, em qualquer
+        // ordem; no máximo um de cada espécie.
+        let (mut seen_int, mut seen_conf) = (false, false);
+        while self.eat(&Tok::Caret) {
             let l = self.ident()?;
-            let label = match l.name.as_str() {
-                "Untrusted" => Label::Untrusted,
-                "Endorsed" => Label::Endorsed,
-                "Trusted" => Label::Trusted,
-                other => {
-                    return Err(ParseError {
-                        msg: format!(
-                            "rótulo de integridade desconhecido `{other}` (use Untrusted, Endorsed ou Trusted)"
-                        ),
-                        span: l.span,
-                    })
+            let span = start.to(l.span);
+            base = match l.name.as_str() {
+                "Untrusted" => Some(Label::Untrusted),
+                "Endorsed" => Some(Label::Endorsed),
+                "Trusted" => Some(Label::Trusted),
+                _ => None,
+            }
+            .map(|lab| {
+                if seen_int {
+                    return Err(ParseError { msg: "rótulo de integridade repetido".into(), span: l.span });
                 }
-            };
-            return Ok(TypeExpr::Labeled(Box::new(base), label, start.to(l.span)));
+                seen_int = true;
+                Ok(TypeExpr::Labeled(Box::new(base.clone()), lab, span))
+            })
+            .or_else(|| {
+                match l.name.as_str() {
+                    "Public" => Some(Conf::Public),
+                    "Internal" => Some(Conf::Internal),
+                    "Secret" => Some(Conf::Secret),
+                    _ => None,
+                }
+                .map(|c| {
+                    if seen_conf {
+                        return Err(ParseError { msg: "rótulo de confidencialidade repetido".into(), span: l.span });
+                    }
+                    seen_conf = true;
+                    Ok(TypeExpr::ConfLabeled(Box::new(base.clone()), c, span))
+                })
+            })
+            .unwrap_or_else(|| {
+                Err(ParseError {
+                    msg: format!(
+                        "rótulo desconhecido `{}` (integridade: Untrusted, Endorsed, Trusted; confidencialidade: Public, Internal, Secret)",
+                        l.name
+                    ),
+                    span: l.span,
+                })
+            })?;
         }
         Ok(base)
     }

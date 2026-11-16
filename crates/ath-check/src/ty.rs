@@ -1,4 +1,4 @@
-use ath_syntax::ast::Label;
+use ath_syntax::ast::{Conf, Label};
 use ath_syntax::Span;
 use std::collections::BTreeSet;
 
@@ -178,6 +178,8 @@ pub fn ty_tokens(ty: &Ty, refn: Option<Refn>) -> Option<u64> {
 pub struct LTy {
     pub ty: Ty,
     pub lab: Label,
+    /// v1.0-RC10: confidencialidade (dual da integridade). Por omissão `Public`.
+    pub conf: Conf,
     pub tok: Option<u64>,
     pub origin: Vec<String>,
     pub refn: Option<Refn>,
@@ -185,7 +187,7 @@ pub struct LTy {
 
 impl LTy {
     pub fn trusted(ty: Ty) -> Self {
-        LTy { ty, lab: Label::Trusted, tok: None, origin: Vec::new(), refn: None }
+        LTy { ty, lab: Label::Trusted, conf: Conf::Public, tok: None, origin: Vec::new(), refn: None }
     }
 
     /// Valor de um tipo declarado: o refinamento de texto também limita os tokens (4 caracteres por token).
@@ -194,7 +196,7 @@ impl LTy {
             Some(Refn::Text { max }) => Some((max as u64).div_ceil(4)),
             _ => None,
         };
-        LTy { ty, lab, tok, origin, refn }
+        LTy { ty, lab, conf: Conf::Public, tok, origin, refn }
     }
 
     pub fn never() -> Self {
@@ -207,6 +209,16 @@ impl LTy {
             self.lab = other.lab;
             self.origin = other.origin.clone();
         }
+    }
+
+    /// v1.0-RC10: a confidencialidade sobe para a do operando mais secreto.
+    pub fn join_conf_from(&mut self, other: &LTy) {
+        self.conf = self.conf.join(other.conf);
+    }
+
+    pub fn with_conf(mut self, c: Conf) -> Self {
+        self.conf = c;
+        self
     }
 
     pub fn with_step(mut self, step: impl Into<String>) -> Self {

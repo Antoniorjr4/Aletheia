@@ -11,6 +11,31 @@ pub enum Label {
     Trusted,
 }
 
+/// Rótulo de confidencialidade (v1.0-RC10), dual da integridade: o quanto um valor pode ser
+/// exposto. `Public ⊑ Internal ⊑ Secret`. A integridade diz de onde o dado veio (se pode
+/// escolher uma ação); a confidencialidade diz para onde ele pode ir (se pode sair num canal).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Conf {
+    Public,
+    Internal,
+    Secret,
+}
+
+impl Conf {
+    /// Junção: o dado derivado é tão secreto quanto o mais secreto dos operandos.
+    pub fn join(self, other: Conf) -> Conf {
+        self.max(other)
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Conf::Public => "Public",
+            Conf::Internal => "Internal",
+            Conf::Secret => "Secret",
+        }
+    }
+}
+
 impl Label {
     pub fn meet(self, other: Label) -> Label {
         if self <= other {
@@ -681,6 +706,8 @@ pub enum TypeExpr {
     },
     Cap(Vec<Ident>, Span),
     Labeled(Box<TypeExpr>, Label, Span),
+    /// v1.0-RC10: rótulo de confidencialidade.
+    ConfLabeled(Box<TypeExpr>, Conf, Span),
     /// Lista delimitada `List[T, a..b]`: de `a` a `b` elementos (inclusivo).
     List {
         elem: Box<TypeExpr>,
@@ -698,6 +725,7 @@ impl TypeExpr {
             | TypeExpr::List { span, .. }
             | TypeExpr::Cap(_, span)
             | TypeExpr::Labeled(_, _, span)
+            | TypeExpr::ConfLabeled(_, _, span)
             | TypeExpr::Own(_, span) => *span,
         }
     }
@@ -705,7 +733,9 @@ impl TypeExpr {
     /// Remove o rótulo de integridade e a marca `own`, se houver.
     pub fn unlabeled(&self) -> &TypeExpr {
         match self {
-            TypeExpr::Labeled(inner, ..) | TypeExpr::Own(inner, _) => inner.unlabeled(),
+            TypeExpr::Labeled(inner, ..) | TypeExpr::ConfLabeled(inner, ..) | TypeExpr::Own(inner, _) => {
+                inner.unlabeled()
+            }
             other => other,
         }
     }
@@ -714,7 +744,7 @@ impl TypeExpr {
     pub fn is_own(&self) -> bool {
         match self {
             TypeExpr::Own(..) => true,
-            TypeExpr::Labeled(inner, ..) => inner.is_own(),
+            TypeExpr::Labeled(inner, ..) | TypeExpr::ConfLabeled(inner, ..) => inner.is_own(),
             _ => false,
         }
     }
@@ -726,7 +756,7 @@ impl TypeExpr {
             TypeExpr::Refined { base, .. } => &base.name,
             TypeExpr::Cap(..) => "Cap",
             TypeExpr::List { .. } => "List",
-            TypeExpr::Labeled(..) | TypeExpr::Own(..) => unreachable!(),
+            TypeExpr::Labeled(..) | TypeExpr::ConfLabeled(..) | TypeExpr::Own(..) => unreachable!(),
         }
     }
 
@@ -742,6 +772,7 @@ impl TypeExpr {
                 format!("Cap[{}]", n.join(" + "))
             }
             TypeExpr::Labeled(inner, l, _) => format!("{} ^ {}", inner.sig(), l.name()),
+            TypeExpr::ConfLabeled(inner, c, _) => format!("{} ^ {}", inner.sig(), c.name()),
             TypeExpr::Own(inner, _) => format!("own {}", inner.sig()),
             TypeExpr::List { elem, lo, hi, .. } => format!("List[{}, {lo}..{hi}]", elem.sig()),
         }
