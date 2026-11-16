@@ -147,6 +147,26 @@ impl BoundHost {
         if local {
             cfg = cfg.proxy(None);
         }
+        // **As raízes de confiança do TLS** (v1.0-RC6). Por padrão, as raízes públicas embutidas.
+        // Se o ambiente do executor define `SSL_CERT_FILE` (a convenção de OpenSSL, curl, Python
+        // e Go), as raízes são as desse arquivo e só elas: é como um executor atrás de um proxy
+        // corporativo que re-termina o TLS, ou diante de uma API com CA própria, confia nela. É
+        // configuração do operador, como a url e o segredo: o programa não a escolhe.
+        if let Some(path) = env("SSL_CERT_FILE").filter(|p| !p.is_empty()) {
+            use ureq::tls::{parse_pem, PemItem, RootCerts, TlsConfig};
+            let pem = std::fs::read(&path)
+                .map_err(|e| format!("R0644: `SSL_CERT_FILE` ({path}) não pôde ser lido: {e}; nada foi executado"))?;
+            let certs: Vec<_> = parse_pem(&pem)
+                .filter_map(|i| match i {
+                    Ok(PemItem::Certificate(c)) => Some(c),
+                    _ => None,
+                })
+                .collect();
+            if certs.is_empty() {
+                return Err(format!("R0644: `SSL_CERT_FILE` ({path}) não tem certificado algum; nada foi executado"));
+            }
+            cfg = cfg.tls_config(TlsConfig::builder().root_certs(RootCerts::new_with_certs(&certs)).build());
+        }
         Ok(BoundHost {
             inner,
             tools,
@@ -241,7 +261,21 @@ impl BoundHost {
             Err(ureq::Error::Io(e)) if e.kind() == std::io::ErrorKind::ConnectionRefused => {
                 Err(HostError::Unreachable(format!("{} inacessível", self.scrub_text(&b.base))))
             }
+            // o TLS não foi estabelecido (certificado recusado, protocolo): a requisição, com o
+            // segredo, nunca foi escrita na conexão. Nada saiu, e o motivo é dito.
+            Err(e @ (ureq::Error::Tls(_) | ureq::Error::Rustls(_))) => {
+                Err(HostError::Unreachable(format!("TLS com {} recusado: {}", self.scrub_text(&b.base), self.scrub_text(&e.to_string()))))
+            }
             // qualquer outra falha depois de começar a enviar: resultado desconhecido
+            // o certificado do servidor foi recusado: isso acontece no aperto de mão, antes de
+            // qualquer dado da aplicação (a requisição, o segredo) ser escrito
+            Err(ureq::Error::Io(e)) if format!("{e:?}").contains("InvalidCertificate") => {
+                Err(HostError::Unreachable(format!(
+                    "o certificado de {} foi recusado ({}); nada foi enviado. As raízes de confiança são as públicas, ou as de `SSL_CERT_FILE`",
+                    self.scrub_text(&b.base),
+                    self.scrub_text(&e.to_string())
+                )))
+            }
             Err(_) => Err(HostError::Timeout { elapsed }),
         }
     }
