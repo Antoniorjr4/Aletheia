@@ -15,7 +15,7 @@ segredo; o mesmo programa continua, com `athc resume`, depois de um `SIGKILL`.
 
 ```sh
 scripts/rc5-smoke.sh              # a demonstração, num comando (exit 0 = todas as conferências)
-cargo test -p athc --test rc5     # treze testes com processos reais, HTTP e SIGKILL
+cargo test -p athc --test rc5     # quinze testes com processos reais, HTTP e SIGKILL
 cd lean && lake build --wfail     # Resume.lean, Boundary.lean e as 153 guardas de axiomas
 ```
 
@@ -85,7 +85,7 @@ O que depende dela, e o que não depende:
 |---|---|---|
 | autoridade: nenhum efeito sem concessão válida, nenhuma concessão usada duas vezes | não | o registro de consumo (relido sob trava) e a âncora; as concessões das operações já decididas só são vistas como livres pela conferência antecipada (`refine`) |
 | política e contratos sobre o plano | não | são reavaliados na re-execução, sobre o que a fita entregar |
-| o tipo dos valores que entram no programa | não (desde a RC5.1) | todo valor lido da fita ou gravado pela recuperação passa pelo monitor de tipo (`R0640`) |
+| o tipo dos valores que entram no programa | não (desde a RC5.1) | toda variante que a fita pode gravar é conferida: o valor de uma chamada contra o tipo da ferramenta, o desvio do tratador de `TimeoutUnknown` contra o tipo do tratador (`R0640`); uma variante que uma chamada não produz envenena a retomada (`R0650`); um tipo que a conferência não cobre não é aceito às cegas |
 | o segredo | não | nunca é gravado |
 | **o orçamento gasto** (tokens, dólares, tempo) | **sim** | o medidor é reposto a partir da fita |
 | **o caminho** que o programa retoma (valores, erros, desvios de tratador) | **sim** | a fita é a memória do que foi observado |
@@ -94,7 +94,9 @@ Para as duas últimas linhas, numa execução com autoridade temporal (em que a 
 do protocolo) a âncora guarda a **marca da fita**: antes de cada operação com chave sair, e ao
 fim da execução, ela registra (só avançando) o compromisso com o comprimento e a cabeça da
 fita. A retomada só aceita uma fita que passa por uma marca da sua execução; reescrita,
-truncada, apagada ou trocada, é recusada antes de qualquer coisa (`L0008`). O que foi observado
+truncada, apagada ou trocada, é recusada (`L0008`) **antes da fase de recuperação**, que é a
+primeira que pode enviar algo (ela reenvia operações idempotentes em aberto): zero chamadas ao
+provedor com a fita adulterada. O que foi observado
 depois da última marca (no máximo o trecho entre duas operações com chave) continua confiado ao
 disco, e numa execução sem âncora a fita inteira é: quem a reescreve pode subdeclarar o gasto e
 escolher o caminho, dentro do que a política, os contratos e as concessões permitem.
@@ -239,7 +241,7 @@ backend Python não implementa a fita nem `resume`.
 
 ## 6. Verificação
 
-* `cargo test --all`: 196 aprovados, 0 falhas (179 da RC4, 3 unitários de `arx`, 13 de
+* `cargo test --all`: 198 aprovados, 0 falhas (179 da RC4, 3 unitários de `arx`, 15 de
   `tests/rc5.rs`, 1 diferencial novo);
 * `lake build --wfail`: 153 guardas de axiomas, sem `sorry`;
 * runtime Python: 12 testes;
@@ -278,7 +280,9 @@ backend Python não implementa a fita nem `resume`.
   execução está encerrada (`R0653`). Uma execução no mundo simulado não é retomável.
 * **Não há catálogo único de códigos** (`athc explain`): os códigos estão nas tabelas de
   `docs/RC1.md` a `docs/RC5.md`.
-* **O monitor cobre escalares e listas deles**, em provedores reais.
+* **O monitor cobre escalares e listas deles**, em provedores reais. Na retomada, um valor de
+  ferramenta (ou de tratador) de outro tipo, como um tipo algébrico, não é aceito: a execução
+  que dependa dele não é retomável. `Unit` é sempre `Unit`, diga a fita o que disser.
 * **O modelo de `Resume.lean` é o do provedor que deduplica.** A chave nova, as concessões e o
   ciclo de vida ancorado na retomada estão nos testes, não no modelo.
 * Continuam valendo os limites da RC4: o provedor opaco depois de um envio possível
@@ -313,6 +317,15 @@ testes; os quatro falham nele.
 | **A fita reescrita aceita** | reescrita com o encadeamento refeito (o medidor zerado), a retomada seguia | a marca da fita na âncora (`L0008`); o medidor só é reposto para cima; o modelo de confiança da seção 2 | `a_rewritten_tape_is_refused_by_the_anchor` (reescrita, truncada, apagada) |
 | **"Próprio host" aceitava qualquer literal IPv6** | `http://[::ffff:198.51.100.10]` e `http://localhost:x@evil.example` passavam pela guarda do segredo em claro | o endereço é analisado (`loopback_url`), no verificador e no runtime; url com credenciais é recusada | `only_the_own_host_is_loopback`, `a_secret_never_leaves_in_clear_for_another_host` |
 | **`202 Accepted` como efeito concluído** | todo 2xx fechava a operação como `done` | só 200, 201 e 204; o resto é resultado desconhecido | `an_accepted_request_is_not_a_completed_effect` |
+
+**Segunda rodada.** A revisão da consolidação apontou, por inspeção, dois caminhos ainda
+abertos. Os dois se confirmaram em execução (`docs/evidence/rc5.1-segunda-rodada.txt`) e foram
+fechados:
+
+| Achado | Antes | Correção | Teste |
+|---|---|---|---|
+| **A recuperação enviava antes de a fita ser conferida** | com uma operação idempotente morta antes do envio e a fita ancorada reescrita, a fase 1 da retomada reenviava o pagamento e só então vinha o `L0008` | `athc resume` confere a fita contra a âncora antes da fase de recuperação (`tape_verify`) | `a_rewritten_tape_is_refused_before_recovery_sends_anything` (zero chamadas ao provedor) |
+| **Variantes de retorno sem conferência** | um registro `ok` trocado por um desvio de tratador com um inteiro fazia o programa devolver `7` onde o tipo é `Text`; `ret` e `resume` eram reconstruídos direto | o desvio do tratador é conferido contra o tipo declarado do tratador; `ret`, `resume` e qualquer outra variante não existem como retorno de chamada e envenenam a retomada; não são mais gravadas | `every_recorded_variant_is_checked_on_replay` (cinco variantes) |
 
 Um quinto caminho apareceu ao corrigir o primeiro: o valor obtido por `reconcile` (reenvio ou
 consulta, dentro do tratador de `TimeoutUnknown`) também entrava no programa sem o monitor, ao

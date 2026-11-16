@@ -25,6 +25,59 @@ fn tape_scope(id: &str, slot: u32) -> String {
     blake3::hash(format!("aletheia/v1/tape\n{id}\n{slot}").as_bytes()).to_hex().to_string()
 }
 
+/// O selo de uma fita na âncora: (escopo, marca, registros selados).
+pub type TapeSeal = (u32, anchor::Mark, u64);
+
+/// **A conferência da fita contra a âncora** (`L0008`). Devolve quantas fitas desta execução
+/// (programa, execução) a âncora já marcou e, para uma retomada (`resuming`), o escopo cuja
+/// marca se compromete com um prefixo de `entries`: `(escopo, marca, registros selados)`. Se
+/// há marcas e nenhuma passa por esta fita, ela foi reescrita, truncada, apagada ou trocada.
+/// É chamada **antes de qualquer envio**: `athc resume` a faz antes da fase de recuperação.
+pub fn tape_verify(
+    a: &mut dyn anchor::Anchor,
+    program: &str,
+    run: &str,
+    entries: &[serde_json::Value],
+    resuming: bool,
+) -> Result<(u32, Option<TapeSeal>), String> {
+    let id = format!("{program}\n{run}");
+    let mut marks = Vec::new();
+    loop {
+        let m = a
+            .read(&tape_scope(&id, marks.len() as u32))
+            .map_err(|e| format!("L0005: a âncora da fita não respondeu: {e:?}; nada foi executado"))?;
+        if m.seq == 0 {
+            break;
+        }
+        marks.push(m);
+    }
+    if !resuming || marks.is_empty() {
+        return Ok((marks.len() as u32, None));
+    }
+    let found = marks.iter().enumerate().find_map(|(slot, m)| {
+        entries.iter().enumerate().find_map(|(i, e)| {
+            let n = i as u64 + 1;
+            (tape_commit(n, e["hash"].as_str().unwrap_or_default()) == m.head).then_some((slot as u32, m.clone(), n))
+        })
+    });
+    match found {
+        Some(f) => Ok((marks.len() as u32, Some(f))),
+        None => Err(format!(
+            "L0008: a fita não passa por nenhuma marca da âncora ({} fita(s) marcada(s) nesta execução): foi reescrita, truncada ou trocada; nada foi executado",
+            marks.len()
+        )),
+    }
+}
+
+/// Um valor de tipo `Unit` lido da fita é `Unit`, diga a fita o que disser.
+fn as_unit(ty: &TypeExpr, v: Value) -> Value {
+    if ty.unlabeled().base_name() == "Unit" {
+        Value::Unit
+    } else {
+        v
+    }
+}
+
 /// O compromisso da âncora com a fita: o comprimento e o hash do último registro.
 fn tape_commit(len: u64, head: &str) -> String {
     blake3::hash(format!("aletheia/v1/tape-mark\n{len}\n{head}").as_bytes()).to_hex().to_string()
@@ -1536,33 +1589,12 @@ impl<'m> Arx<'m> {
     /// compromete com um prefixo **desta** fita, e recusa a fita se nenhum o faz (`L0008`).
     pub fn tape_attach(&mut self, mut a: Box<dyn anchor::Anchor>, program: &str, run: &str) -> Result<(), String> {
         self.tape_id = format!("{program}\n{run}");
-        let mut marks = Vec::new();
-        loop {
-            let m = a
-                .read(&tape_scope(&self.tape_id, marks.len() as u32))
-                .map_err(|e| format!("L0005: a âncora da fita não respondeu: {e:?}; nada foi executado"))?;
-            if m.seq == 0 {
-                break;
-            }
-            marks.push(m);
-        }
-        self.tape_slot = marks.len() as u32;
-        if self.resume.is_some() && !marks.is_empty() {
-            let entries = self.tape.as_ref().map(|t| t.log.entries.as_slice()).unwrap_or_default();
-            let found = marks.iter().enumerate().find_map(|(slot, m)| {
-                entries.iter().enumerate().find_map(|(i, e)| {
-                    let n = i as u64 + 1;
-                    (tape_commit(n, e["hash"].as_str().unwrap_or_default()) == m.head).then_some((slot, n))
-                })
-            });
-            let Some((slot, sealed)) = found else {
-                return Err(format!(
-                    "L0008: a fita não passa por nenhuma marca da âncora ({} fita(s) marcada(s) nesta execução): foi reescrita, truncada ou trocada; nada foi executado",
-                    marks.len()
-                ));
-            };
-            self.tape_slot = slot as u32;
-            self.tape_mark = marks[slot].clone();
+        let entries = self.tape.as_ref().map(|t| t.log.entries.as_slice()).unwrap_or_default();
+        let (slots, found) = tape_verify(a.as_mut(), program, run, entries, self.resume.is_some())?;
+        self.tape_slot = slots;
+        if let Some((slot, mark, sealed)) = found {
+            self.tape_slot = slot;
+            self.tape_mark = mark;
             self.tape_sealed = sealed;
         }
         self.tape_anchor = Some(a);
@@ -2059,7 +2091,7 @@ impl<'m> Arx<'m> {
                 let val = |k: &str| resume::dec(&r[k]).unwrap_or(Value::Unit);
                 let out: R<Value> = if !r["ok"].is_null() {
                     // RC5.1: o valor da fita passa pelo monitor de tipo como passou ao vivo
-                    let v = val("ok");
+                    let v = as_unit(&t.ret, val("ok"));
                     let _ = self.host.raw();
                     match self.monitor(t, &v, true) {
                         Some(why) => Err(self.blamed(&name, &key, t, &why, "na fita")),
@@ -2067,12 +2099,32 @@ impl<'m> Arx<'m> {
                     }
                 } else if let Some(e) = r["err"].as_array() {
                     Err(rt(e[0].as_str().unwrap_or("R0600"), e[1].as_str().unwrap_or_default()).into())
-                } else if !r["ret"].is_null() {
-                    Err(Unwind::Ret(val("ret")))
-                } else if !r["resume"].is_null() {
-                    Err(Unwind::Resume(val("resume")))
+                } else if !r["abort"].is_null() {
+                    // RC5.1: o desvio do tratador de `TimeoutUnknown`. Só existe para uma
+                    // operação com chave num agente que tem o tratador, e o valor é do tipo que
+                    // o tratador declara: é conferido contra ele, como seria ao vivo.
+                    let handler =
+                        self.agent.and_then(|a| a.handles.iter().find(|h| h.effect.name == "timeout_unknown"));
+                    match (handler, key_n, resume::dec(&r["abort"])) {
+                        (Some(h), Some(_), Some(v)) => match self.type_blame(&h.ret, &v.to_json(), true) {
+                            None => Err(Unwind::Abort(as_unit(&h.ret, v))),
+                            Some(why) => Err(rt(
+                                "R0640",
+                                format!(
+                                    "`{name}`: o desvio do tratador gravado na fita está fora do tipo declarado `{}` ({why}); o valor não entrou no programa",
+                                    h.ret.unlabeled().sig()
+                                ),
+                            )
+                            .into()),
+                        },
+                        _ => Err(self.diverge(format!(
+                            "{what}: a fita registra um desvio de tratador que esta chamada não pode produzir"
+                        ))),
+                    }
                 } else {
-                    Err(Unwind::Abort(val("abort")))
+                    // uma chamada só devolve valor, erro ou o desvio do tratador: qualquer outra
+                    // variante na fita não veio de uma execução deste programa
+                    Err(self.diverge(format!("{what}: a fita registra uma variante de retorno que não existe")))
                 };
                 let shown = match &out {
                     Ok(v) => v.show(),
@@ -2109,6 +2161,7 @@ impl<'m> Arx<'m> {
                                 "R0651 k{k}: o desfecho `done` não tem o valor na fita; a retomada não inventa resultados"
                             )));
                         };
+                        let v = as_unit(&t.ret, v);
                         self.meter.settle(0, t.usd, 0.0);
                         if t.class == EffClass::Compensable && in_saga {
                             self.push_op(t, &args, held);
@@ -2202,13 +2255,18 @@ impl<'m> Arx<'m> {
     /// que a recuperação gravou. Ao vivo (`strict = false`), só a resposta crua de um provedor
     /// real é conferida: o mundo simulado em memória não é um provedor.
     fn monitor(&mut self, t: &ToolDecl, out: &Value, strict: bool) -> Option<String> {
-        use ath_grammar::Shape;
         let raw = match (self.host.raw(), strict) {
             (Some(r), _) => r,
             (None, true) => out.to_json(),
             (None, false) => return None,
         };
-        let shape = ath_grammar::shape_of(self.m, &t.ret).ok()?;
+        self.type_blame(&t.ret, &raw, strict)
+    }
+
+    /// `Some(motivo)` se `raw` não habita `ty`. Em modo estrito (a retomada), um tipo que esta
+    /// conferência não cobre não é aceito às cegas: o valor não entra.
+    fn type_blame(&self, ty: &TypeExpr, raw: &serde_json::Value, strict: bool) -> Option<String> {
+        use ath_grammar::Shape;
         fn scalar(s: &Shape) -> bool {
             match s {
                 Shape::Int { .. } | Shape::Bool | Shape::Text { .. } => true,
@@ -2216,10 +2274,16 @@ impl<'m> Arx<'m> {
                 _ => false,
             }
         }
-        if !scalar(&shape) {
+        // (`Unit` não carrega valor: na retomada, o que a fita disser é descartado, `as_unit`)
+        if ty.unlabeled().base_name() == "Unit" {
             return None;
         }
-        ath_grammar::check(&shape, &json!({ "value": raw })).err().map(|m| m.replace("`value`", "o resultado"))
+        match ath_grammar::shape_of(self.m, ty) {
+            Ok(shape) if scalar(&shape) => {
+                ath_grammar::check(&shape, &json!({ "value": raw })).err().map(|m| m.replace("`value`", "o resultado"))
+            }
+            _ => strict.then(|| "tipo que a retomada não sabe conferir".to_string()),
+        }
     }
 
     /// A culpa do provedor (`R0640`), num caminho que não é a chamada ao vivo.
@@ -2250,9 +2314,9 @@ impl<'m> Arx<'m> {
         let body = match r {
             Ok(v) => resume::enc(v).map(|j| json!({ "ok": j })),
             Err(Unwind::Err(e)) => Some(json!({ "err": [e.code, e.msg] })),
-            Err(Unwind::Ret(v)) => resume::enc(v).map(|j| json!({ "ret": j })),
-            Err(Unwind::Resume(v)) => resume::enc(v).map(|j| json!({ "resume": j })),
             Err(Unwind::Abort(v)) => resume::enc(v).map(|j| json!({ "abort": j })),
+            // (uma chamada não devolve `Ret` nem `Resume`: `on_timeout` os converte)
+            Err(Unwind::Ret(_)) | Err(Unwind::Resume(_)) => None,
         };
         let Some(body) = body else { return };
         self.tlog(

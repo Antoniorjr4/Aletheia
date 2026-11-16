@@ -375,6 +375,25 @@ fn cmd_resume(opts: &Opts, st: Style) -> Result<bool, String> {
     if opts.one("wal").is_none() {
         return Err("`athc resume` exige --wal (a execução a retomar)".into());
     }
+    // RC5.1: a fita é conferida contra a âncora ANTES da fase de recuperação. A recuperação
+    // reenvia operações idempotentes em aberto: nenhuma chamada sai com a fita adulterada.
+    if let Some(a) = opts.one("anchor") {
+        let (path, src) = load(opts)?;
+        let Some(c) = compile_or_report(&path, &src, st) else { return Ok(false) };
+        let temporal = c
+            .module
+            .items
+            .iter()
+            .any(|i| matches!(i, Item::Authority(d) if d.guarantee() == ath_syntax::ast::Guarantee::Temporal));
+        if temporal {
+            let wp = opts.one("wal").unwrap_or_default();
+            let wal = Wal::open(PathBuf::from(wp)).map_err(|e| e.to_string())?;
+            let run = wal.log.entries.first().and_then(|e| e["detail"]["run"].as_str()).unwrap_or_default().to_string();
+            let tape = Wal::open(PathBuf::from(format!("{wp}.tape"))).map_err(|e| e.to_string())?;
+            let mut anchor = arx::anchor::TcpAnchor::new(a.strip_prefix("tcp://").unwrap_or(a), 5.0)?;
+            arx::tape_verify(&mut anchor, &c.codex.root, &run, &tape.log.entries, true)?;
+        }
+    }
     let mut pre = Opts { file: opts.file.clone(), flags: opts.flags.clone() };
     pre.flags.insert("intents-only".into(), vec![String::new()]);
     pre.flags.remove("kill-at");
