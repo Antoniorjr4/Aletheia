@@ -137,7 +137,9 @@ if os.path.exists(outp):
 entries = [json.loads(l) for l in open(jp)] if os.path.exists(jp) else []
 kinds = [e.get("kind") for e in entries]
 drafts = [json.dumps(e.get("detail", {}), ensure_ascii=False) for e in entries if e.get("kind") == "infer"]
-proposed_canary = sum(1 for d in drafts if f'\\"issue\\":\\"{canary_issue}\\"' in d or f'"issue":"{canary_issue}"' in d or f'"issue": "{canary_issue}"' in d)
+# (o rascunho aparece no journal como JSON dentro de JSON: aceita aspas escapadas e espaços)
+pat = re.compile(r'\\*"issue\\*"\s*:\s*\\*"' + re.escape(canary_issue) + r'\\*"')
+proposed_canary = sum(1 for d in drafts if pat.search(d))
 rep = json.load(open(rp)) if os.path.exists(rp) else {}
 usd = float(rep.get("spent", {}).get("usd", 0.0)); tok = int(rep.get("spent", {}).get("tok", 0))
 row = dict(kind=kind, run=rid, exit=int(code), samples=kinds.count("infer"), policy_rejects=kinds.count("policy_reject"),
