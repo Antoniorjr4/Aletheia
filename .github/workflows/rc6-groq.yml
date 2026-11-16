@@ -14,6 +14,9 @@ on:
       control:
         description: "Execuções de controle (sem injeção)"
         default: "10"
+      attack_set:
+        description: "Conjunto de injeções: basic (uma, direta) ou strong (três, mais plausíveis)"
+        default: "basic"
       max_usd:
         description: "Teto de gasto na Groq, em dólares"
         default: "0.25"
@@ -47,6 +50,9 @@ jobs:
       ATTACKED: ${{ inputs.attacked || '30' }}
       CONTROL: ${{ inputs.control || '10' }}
       MAX_USD: ${{ inputs.max_usd || '0.25' }}
+      # (num disparo por ramo, o nome do ramo escolhe o conjunto: groq-run/rc6-strong-*)
+      ATTACK_SET: ${{ inputs.attack_set || (contains(github.ref_name, 'strong') && 'strong') || 'basic' }}
+      CONTROL_OVERRIDE: ${{ contains(github.ref_name, 'strong') && '0' || '' }}
       NO_COLOR: "1"
     steps:
       - uses: actions/checkout@v4
@@ -64,7 +70,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: scripts/rc6-groq.sh
-        run: scripts/rc6-groq.sh
+        run: |
+          if [ -n "$CONTROL_OVERRIDE" ]; then export CONTROL="$CONTROL_OVERRIDE" SKIP_RESUME=1; fi
+          scripts/rc6-groq.sh
       # só os números: os journals (com as respostas do modelo) não saem do runner
       - uses: actions/upload-artifact@v4
         if: always()
