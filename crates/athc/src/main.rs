@@ -56,6 +56,14 @@ uso:
       já encerrada por `athc recover`
       (um programa com `bind` alcança a API do provedor por HTTP: a url e o segredo vêm do
       ambiente do executor; --no-bind executa sem a ligação e o programa recusa, R0641)
+  athc supervise <arquivo.ath> --wal execução.wal [as opções de `run`] [--max-resumes N]
+                         [--backoff s] [--attempt-timeout s]
+      (v1.0-RC6) executa o programa e, se o processo cair (sinal, pânico, ou a tentativa passar
+      do prazo), o retoma com `athc resume`, até N vezes (padrão 5), com espera crescente. Sem
+      estado próprio: se o WAL já registra a execução, começa pela retomada. Registra cada
+      tentativa em `<wal>.supervisor.jsonl`.
+      saída: 0 concluído · 1 o programa terminou com falha (não é queda) · 3 concluído com
+      operações de RESULTADO DESCONHECIDO · 4 o executor recusou antes de executar · 5 desistiu
   athc grammar <arquivo.ath> --type T [--format all|schema|gbnf|shape] [--decode 'proposta']
       mostra a gramática derivada do tipo T e, com --decode, a decodificação mascarada de uma proposta
   athc hash <arquivo.ath> [--codex dir]
@@ -186,6 +194,15 @@ fn main() -> ExitCode {
         "keygen" => cmd_keygen(&opts),
         "sign" => cmd_sign(&opts),
         "recover" => return cmd_recover(&opts, st),
+        "supervise" => {
+            return match cmd_supervise(&opts, st) {
+                Ok(code) => ExitCode::from(code),
+                Err(e) => {
+                    eprintln!("erro: {e}");
+                    ExitCode::from(2)
+                }
+            }
+        }
         "replay" => cmd_replay(&opts, st),
         "help" | "--help" | "-h" => {
             println!("{USAGE}");
@@ -404,6 +421,165 @@ fn cmd_resume(opts: &Opts, st: Style) -> Result<bool, String> {
     }
     println!("{} retomada, fase 2: o programa, das entradas gravadas até a fronteira da queda", st.bold("↻"));
     cmd_run(opts, st, true)
+}
+
+/// **`athc supervise` (RC6)**: executa o programa e, se o processo cair, o retoma. É a camada
+/// que faltava entre "há um comando que retoma" e "o agente termina sem ninguém olhando".
+///
+/// O supervisor é um processo pai sem estado próprio: o que ele sabe está no WAL. Se o WAL já
+/// registra uma execução, ele começa pela retomada; por isso o próprio supervisor pode cair e
+/// ser iniciado de novo. A cada tentativa lança `athc run` ou `athc resume` como processo filho
+/// e classifica o fim dele:
+///
+/// | o filho | o supervisor |
+/// |---|---|
+/// | terminou com sucesso | confere o WAL: sem obrigação escalada, sai 0; com alguma, sai 3 |
+/// | terminou com falha do programa (saída 1) | não é queda: o programa decidiu. Sai 1, sem retomar |
+/// | recusou antes de executar (saída 2: fita adulterada, outra história, ambiente) | sai 4, sem retomar |
+/// | foi morto por sinal, entrou em pânico, ou passou do prazo da tentativa | é queda: espera e retoma |
+/// | caiu mais vezes que `--max-resumes` | desiste e sai 5: o que está em aberto fica no WAL |
+///
+/// Resultado desconhecido nunca vira sucesso nem tentativa infinita: uma obrigação que o
+/// programa transferiu (`transfer`) ou que a recuperação escalou aparece na saída 3, com a chave.
+fn cmd_supervise(opts: &Opts, st: Style) -> Result<u8, String> {
+    use std::io::Write as _;
+    let wp = opts.one("wal").ok_or("`athc supervise` exige --wal: é nele que a execução sobrevive à queda")?;
+    let file = opts.file.clone().ok_or("informe o arquivo .ath")?;
+    let num = |k: &str, default: f64| -> Result<f64, String> {
+        opts.one(k).map_or(Ok(default), |v| v.parse::<f64>().map_err(|_| format!("--{k} inválido")))
+    };
+    let max_resumes = num("max-resumes", 5.0)? as u32;
+    let mut backoff = num("backoff", 1.0)?;
+    let attempt_timeout = num("attempt-timeout", 0.0)?;
+    // quedas injetadas, uma por tentativa: só para demonstração e teste
+    let kills: Vec<&str> = opts.one("inject-kills").map(|k| k.split(',').collect()).unwrap_or_default();
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let own = ["max-resumes", "backoff", "attempt-timeout", "inject-kills", "kill-at"];
+    let mut pass: Vec<String> = Vec::new();
+    let mut keys: Vec<&String> = opts.flags.keys().collect();
+    keys.sort();
+    for k in keys.into_iter().filter(|k| !own.contains(&k.as_str())) {
+        for v in &opts.flags[k] {
+            pass.push(format!("--{k}"));
+            if !["inspect", "retry-escalated", "strict-authority", "no-bind"].contains(&k.as_str()) {
+                pass.push(v.clone());
+            }
+        }
+    }
+    let log_path = format!("{wp}.supervisor.jsonl");
+    let note = |entry: serde_json::Value| {
+        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&log_path) {
+            let _ = writeln!(f, "{entry}");
+        }
+    };
+    let mut attempt = 0u32;
+    let mut resumes = 0u32;
+    loop {
+        // o WAL decide: se já registra a execução, é retomada (inclusive depois de o próprio
+        // supervisor ter caído)
+        let started = std::fs::metadata(wp).is_ok_and(|m| m.len() > 0);
+        let mode = if started { "resume" } else { "run" };
+        // (o limite conta quedas, não retomadas: uma queda antes de o WAL existir também conta)
+        if resumes > max_resumes {
+            println!(
+                "{} supervisor: {} queda(s), limite de {} retomada(s) atingido; desisto. O que está em aberto continua no WAL `{wp}`",
+                st.red("✗"),
+                attempt,
+                max_resumes
+            );
+            note(json!({ "attempt": attempt, "outcome": "gave-up", "at": now_unix() }));
+            return Ok(5);
+        }
+        let mut c = std::process::Command::new(&exe);
+        c.arg(mode).arg(&file).args(&pass);
+        if let Some(k) = kills.get(attempt as usize) {
+            c.args(["--kill-at", k]);
+        }
+        println!("{} supervisor: tentativa {} ({mode})", st.bold("⟳"), attempt + 1);
+        let t0 = std::time::Instant::now();
+        let mut child = c.spawn().map_err(|e| format!("não foi possível lançar o executor: {e}"))?;
+        let pid = child.id();
+        let (status, timed_out) = loop {
+            match child.try_wait().map_err(|e| e.to_string())? {
+                Some(s) => break (s, false),
+                None if attempt_timeout > 0.0 && t0.elapsed().as_secs_f64() > attempt_timeout => {
+                    let _ = child.kill();
+                    break (child.wait().map_err(|e| e.to_string())?, true);
+                }
+                None => std::thread::sleep(std::time::Duration::from_millis(25)),
+            }
+        };
+        #[cfg(unix)]
+        let signal = std::os::unix::process::ExitStatusExt::signal(&status);
+        #[cfg(not(unix))]
+        let signal: Option<i32> = None;
+        let outcome = match (status.code(), signal, timed_out) {
+            (_, _, true) => "timeout".to_string(),
+            (_, Some(sig), _) => format!("signal:{sig}"),
+            (Some(c), _, _) => format!("exit:{c}"),
+            _ => "unknown".to_string(),
+        };
+        note(json!({ "attempt": attempt + 1, "mode": mode, "pid": pid, "outcome": outcome, "at": now_unix(),
+                     "seconds": t0.elapsed().as_secs_f64() }));
+        attempt += 1;
+        match status.code() {
+            Some(0) if !timed_out => {
+                // terminou: há resultado desconhecido que o programa transferiu ou a recuperação escalou?
+                let wal = Wal::open(PathBuf::from(wp)).map_err(|e| e.to_string())?;
+                let mut last: HashMap<String, String> = HashMap::new();
+                for e in &wal.log.entries {
+                    if let (Some(kind), Some(key)) = (e["kind"].as_str(), e["detail"]["key"].as_str()) {
+                        if matches!(kind, "intent" | "close" | "escalate") {
+                            last.insert(key.to_string(), kind.to_string());
+                        }
+                    }
+                }
+                let mut unknown: Vec<&String> =
+                    last.iter().filter(|(_, k)| k.as_str() != "close").map(|(key, _)| key).collect();
+                unknown.sort();
+                if unknown.is_empty() {
+                    println!(
+                        "{} supervisor: concluído em {attempt} tentativa(s), {resumes} retomada(s)",
+                        st.green("✓")
+                    );
+                    return Ok(0);
+                }
+                println!(
+                    "{} supervisor: o programa terminou, mas {} operação(ões) têm RESULTADO DESCONHECIDO ({}); exigem conferência humana ou `athc recover --retry-escalated`",
+                    st.red("!"),
+                    unknown.len(),
+                    unknown.iter().map(|k| k.as_str()).collect::<Vec<_>>().join(", ")
+                );
+                return Ok(3);
+            }
+            Some(1) if !timed_out => {
+                println!(
+                    "{} supervisor: o programa terminou com falha; não é uma queda, não há o que retomar",
+                    st.red("✗")
+                );
+                return Ok(1);
+            }
+            Some(2) if !timed_out => {
+                println!(
+                    "{} supervisor: o executor recusou antes de executar; nada foi feito nesta tentativa, não retomo",
+                    st.red("✗")
+                );
+                return Ok(4);
+            }
+            _ => {
+                println!(
+                    "{} supervisor: o executor caiu ({outcome}, pid {pid}); retomo em {backoff:.1} s",
+                    st.red("↯")
+                );
+                resumes += 1;
+                if resumes > max_resumes {
+                    continue;
+                }
+                std::thread::sleep(std::time::Duration::from_secs_f64(backoff));
+                backoff = (backoff * 2.0).min(60.0);
+            }
+        }
+    }
 }
 
 fn cmd_run(opts: &Opts, st: Style, resume: bool) -> Result<bool, String> {

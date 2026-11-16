@@ -70,7 +70,7 @@ impl World {
         c.env("NO_COLOR", "1").env("NOTES_URL", format!("http://{}", self.api));
         c.arg(sub).arg(self.dir.join("notes.ath")).args(["--timeout", "5", "--arg", &format!("{topic:?}")]);
         c.arg("--wal").arg(self.dir.join("n.wal")).arg("--journal").arg(self.dir.join(format!("{sub}.jsonl")));
-        if sub == "run" {
+        if sub != "resume" {
             c.args(["--run-id", "n"]);
         }
         c
@@ -200,4 +200,118 @@ fn a_route_contract_is_checked_before_anything_runs() {
     let r = Route::parse("GET /repos/o/r/issues/{issue}/comments?per_page=100 -> [].id").unwrap();
     assert_eq!(r.path_params(), vec!["issue"]);
     let _: Json = serde_json::json!(null);
+}
+
+// ---------------------------------------------------------------- o supervisor
+
+impl World {
+    fn supervise(&self, topic: &str) -> Command {
+        let mut c = self.athc("supervise", topic);
+        c.args(["--backoff", "0.05"]);
+        c
+    }
+
+    fn attempts(&self) -> Vec<Json> {
+        std::fs::read_to_string(self.dir.join("n.wal.supervisor.jsonl"))
+            .unwrap_or_default()
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect()
+    }
+}
+
+/// **O agente termina sem ninguém olhando.** Um só comando: o executor é morto três vezes
+/// (depois de enviar, antes de enviar, depois de confirmar) e o supervisor o retoma a cada vez.
+/// Termina com exatamente duas notas, num provedor que não deduplica; cada tentativa está no
+/// registro do supervisor.
+#[cfg(unix)]
+#[test]
+fn a_supervised_agent_finishes_through_three_crashes() {
+    let w = World::start("sup");
+    let o = w.supervise("obra").args(["--inject-kills", "sent:1,intent:1,confirmed:1"]).output().unwrap();
+    assert_eq!(o.status.code(), Some(0), "{}", text(&o));
+    assert!(
+        text(&o).contains("duas notas") && text(&o).contains("concluído em 4 tentativa(s), 3 retomada(s)"),
+        "{}",
+        text(&o)
+    );
+    exactly_two(&w, "obra", "supervisionado");
+    let a = w.attempts();
+    let got: Vec<(&str, &str)> =
+        a.iter().map(|e| (e["mode"].as_str().unwrap(), e["outcome"].as_str().unwrap())).collect();
+    assert_eq!(got, [("run", "signal:9"), ("resume", "signal:9"), ("resume", "signal:9"), ("resume", "exit:0")]);
+}
+
+/// **O supervisor tem limite, e pode ele mesmo cair.** Com mais quedas que `--max-resumes`,
+/// desiste (saída 5) em vez de tentar para sempre, e o que está em aberto fica no WAL. Um
+/// supervisor novo, sobre o mesmo WAL, começa pela retomada e termina.
+#[cfg(unix)]
+#[test]
+fn the_supervisor_gives_up_at_its_limit_and_can_be_restarted() {
+    let w = World::start("sup-limit");
+    let o =
+        w.supervise("obra").args(["--inject-kills", "sent:1,sent:1,sent:1", "--max-resumes", "1"]).output().unwrap();
+    assert_eq!(o.status.code(), Some(5), "{}", text(&o));
+    assert_eq!(w.attempts().iter().filter(|e| e["mode"].is_string()).count(), 2, "{:?}", w.attempts());
+    let o = w.supervise("obra").output().unwrap();
+    assert_eq!(o.status.code(), Some(0), "{}", text(&o));
+    assert!(text(&o).contains("tentativa 1 (resume)"), "{}", text(&o));
+    exactly_two(&w, "obra", "supervisor reiniciado");
+}
+
+/// **Resultado desconhecido não vira sucesso.** A API aceita o pedido (`202`) e não diz se o
+/// efeito aconteceu; não há consulta por chave. O programa transfere a obrigação e termina; o
+/// supervisor sai com 3 e nomeia as chaves. Nenhuma retomada é tentada: não foi uma queda.
+#[test]
+fn an_unknown_result_is_reported_not_retried_and_not_called_success() {
+    let w = World::start("sup-unknown");
+    let lines = "  add_note      = \"POST /v1/notes/{topic} -> id\"\n  add_note.key  = \"text\"\n  add_note.find = \"GET /v1/notes/{topic} -> id\"\n";
+    assert!(NOTES.contains(lines));
+    std::fs::write(w.dir.join("notes.ath"), NOTES.replace(lines, "  add_note      = \"POST /v1/accepted -> id\"\n"))
+        .unwrap();
+    let o = w.supervise("obra").output().unwrap();
+    assert_eq!(o.status.code(), Some(3), "{}", text(&o));
+    assert!(text(&o).contains("RESULTADO DESCONHECIDO") && text(&o).contains("k1"), "{}", text(&o));
+    assert_eq!(w.attempts().len(), 1);
+}
+
+/// **Falha não é queda.** O provedor está fora do ar: o programa termina com erro (nada foi
+/// enviado). O supervisor não retoma o que o programa já decidiu (saída 1, uma tentativa).
+#[test]
+fn a_program_failure_is_not_a_crash() {
+    let w = World::start("sup-fail");
+    let o = w.supervise("obra").env("NOTES_URL", "http://127.0.0.1:9").output().unwrap();
+    assert_eq!(o.status.code(), Some(1), "{}", text(&o));
+    assert_eq!(w.attempts().len(), 1);
+    assert!(w.notes("obra").is_empty());
+}
+
+/// **Um executor travado é uma queda.** O provedor aceita a conexão e nunca responde. Cada
+/// tentativa passa do prazo, é morta e retomada; no limite, o supervisor desiste (saída 5), em
+/// tempo limitado, sem nota duplicada.
+#[cfg(unix)]
+#[test]
+fn a_hung_executor_is_killed_and_the_supervisor_stays_bounded() {
+    let w = World::start("sup-hang");
+    let hole = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = hole.local_addr().unwrap().to_string();
+    std::thread::spawn(move || {
+        let mut held = Vec::new();
+        for s in hole.incoming().flatten() {
+            held.push(s);
+        }
+    });
+    let t0 = std::time::Instant::now();
+    let o = w
+        .supervise("obra")
+        .env("NOTES_URL", format!("http://{addr}"))
+        .args(["--timeout", "60", "--attempt-timeout", "0.5", "--max-resumes", "2"])
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(5), "{}", text(&o));
+    assert!(t0.elapsed().as_secs_f64() < 15.0, "o supervisor não ficou limitado: {:?}", t0.elapsed());
+    let a = w.attempts();
+    let outcomes: Vec<&str> =
+        a.iter().filter_map(|e| e["mode"].as_str().map(|_| e["outcome"].as_str().unwrap())).collect();
+    assert_eq!(outcomes, ["timeout", "timeout", "timeout"], "{}", text(&o));
 }

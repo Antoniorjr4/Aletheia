@@ -5,10 +5,12 @@
 #
 # Sobre examples/rc6/triage.ath, contra a API REST do GitHub, por HTTPS:
 #   1. duas issues de teste são criadas no repositório de sandbox
-#   2. o agente é morto (SIGKILL) depois de ENVIAR o segundo comentário e antes de gravar a
-#      resposta; `athc resume` o termina: a consulta por chave acha o comentário pelo marcador e
-#      não o reenvia. Um comentário por issue, uma issue de resumo.
-#   3. outra execução é morta ANTES de enviar a issue de resumo; a retomada a cria, uma só
+#   2. uma execução de referência, sem queda: um comentário por issue, uma issue de resumo
+#   3. uma execução SOB SUPERVISÃO (`athc supervise`): o executor é morto (SIGKILL) depois de
+#      ENVIAR o segundo comentário e, na retomada, de novo ANTES de enviar a issue de resumo. O
+#      supervisor o retoma as duas vezes, sem intervenção. A consulta por chave acha o comentário
+#      já enviado pelo marcador e não o reenvia. No GitHub: um comentário por issue, uma issue de
+#      resumo. O custo (tokens, US$) é o da execução sem queda.
 #   4. retomar a execução terminada não chama o GitHub
 #   5. o token não está em arquivo algum; as issues de teste são fechadas
 #
@@ -76,30 +78,37 @@ state() { echo "$(comments "$1" "$A")/$(comments "$1" "$B")/$(summaries "$1")"; 
 # a listagem do GitHub pode demorar a refletir uma escrita: confere até 60 s
 settled() { local s; for _ in $(seq 1 20); do s="$(state "$1")"; [ "$s" = "$2" ] && break; sleep 3; done; echo "$s"; }
 
-step "2. SIGKILL depois de ENVIAR o segundo comentário; athc resume termina"
-R1="rc6-$STAMP-a"
-set +e; go run "$R1" --kill-at sent:2 > "$OUT/a.out" 2>&1; code=$?; set -e
-check "o processo foi morto (SIGKILL)" "$code" "137"
-check "no GitHub, antes da retomada (comentários em #$A / em #$B / resumos)" "$(state "$R1")" "1/1/0"
-go resume "$R1" > "$OUT/a.resume.out" 2>&1 || { cat "$OUT/a.resume.out"; die "a retomada falhou"; }
-grep -E "retomada:|resultado" "$OUT/a.resume.out" | sed 's/^/   /' | cut -c1-150
-check "no GitHub, depois da retomada" "$(settled "$R1" 1/1/1)" "1/1/1"
+spent() { python3 -c "
+import json,sys; r=json.load(open(sys.argv[1])); print(r['spent']['tok'], r['spent']['usd'])" "$1"; }
+
+step "2. a execução de referência, sem queda"
+R0="rc6-$STAMP-ref"
+go run "$R0" > "$OUT/ref.out" 2>&1 || { cat "$OUT/ref.out"; die "a execução falhou"; }
+grep -E "resultado" "$OUT/ref.out" | sed 's/^/   /' | cut -c1-150
+check "no GitHub (comentários em #$A / em #$B / resumos)" "$(settled "$R0" 1/1/1)" "1/1/1"
+for n in $(summary_numbers "$R0"); do CREATED+=("$n"); done
+
+step "3. sob supervisão: morto DEPOIS de enviar o 2º comentário, e de novo ANTES de enviar o resumo"
+R1="rc6-$STAMP-sup"
+set +e
+go supervise "$R1" --run-id "$R1" --inject-kills sent:2,intent:1 --backoff 1 --max-resumes 4 > "$OUT/sup.out" 2>&1; code=$?
+set -e
+grep -E "supervisor:|retomada:|resultado" "$OUT/sup.out" | sed 's/^/   /' | cut -c1-150
+check "o supervisor terminou (0 = concluído, sem resultado desconhecido)" "$code" "0"
+check "tentativas registradas (modo:desfecho)" \
+  "$(python3 -c "
+import json,sys
+print(' '.join(e['mode']+':'+e['outcome'] for e in map(json.loads, open(sys.argv[1])) if 'mode' in e))" "$OUT/$R1.wal.supervisor.jsonl")" \
+  "run:signal:9 resume:signal:9 resume:exit:0"
+check "no GitHub: um comentário por issue, uma issue de resumo" "$(settled "$R1" 1/1/1)" "1/1/1"
+check "custo (tokens, US\$) = o da execução sem queda" "$(spent "$OUT/$R1.supervise.report.json")" "$(spent "$OUT/$R0.run.report.json")"
 for n in $(summary_numbers "$R1"); do CREATED+=("$n"); done
 
-step "3. SIGKILL ANTES de enviar a issue de resumo; a retomada a cria, uma só"
-R2="rc6-$STAMP-b"
-set +e; go run "$R2" --kill-at intent:3 > "$OUT/b.out" 2>&1; code=$?; set -e
-check "o processo foi morto (SIGKILL)" "$code" "137"
-check "no GitHub, antes da retomada" "$(state "$R2")" "1/1/0"
-go resume "$R2" > "$OUT/b.resume.out" 2>&1 || { cat "$OUT/b.resume.out"; die "a retomada falhou"; }
-check "no GitHub, depois da retomada" "$(settled "$R2" 1/1/1)" "1/1/1"
-for n in $(summary_numbers "$R2"); do CREATED+=("$n"); done
-
 step "4. retomar a execução terminada não chama o GitHub"
-go resume "$R2" > "$OUT/b2.out" 2>&1 || { cat "$OUT/b2.out"; die "a retomada da execução terminada falhou"; }
-grep -q "0 chamada(s) ao vivo" "$OUT/b2.out" || { cat "$OUT/b2.out"; die "a retomada da execução terminada chamou o GitHub"; }
+go resume "$R1" > "$OUT/again.out" 2>&1 || { cat "$OUT/again.out"; die "a retomada da execução terminada falhou"; }
+grep -q "0 chamada(s) ao vivo" "$OUT/again.out" || { cat "$OUT/again.out"; die "a retomada da execução terminada chamou o GitHub"; }
 sleep 5
-check "no GitHub, sem mudança" "$(state "$R2")" "1/1/1"
+check "no GitHub, sem mudança" "$(state "$R1")" "1/1/1"
 
 step "5. o token não está em arquivo algum"
 if grep -rqa -- "$GH_TOKEN" "$OUT"; then die "o token está em disco"; else ok "nenhuma ocorrência do token em $OUT"; fi

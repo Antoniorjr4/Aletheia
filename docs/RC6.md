@@ -4,11 +4,12 @@ A RC5 ligou as ferramentas a uma API HTTP, mas a única API exercitada era o ser
 demonstração do próprio projeto, que fala a convenção do `bind`. A RC6 leva a mesma construção
 a uma API que não foi feita para ela: a API REST do GitHub, por HTTPS, com um token real. O
 agente de `examples/rc6/triage.ath` lê duas issues, pede a um modelo uma nota para cada uma,
-comenta em cada issue e abre uma issue de resumo; é morto por `SIGKILL` no meio e termina com
-`athc resume`, sem duplicar nada.
+comenta em cada issue e abre uma issue de resumo. Sob `athc supervise`, o executor é morto por
+`SIGKILL` duas vezes no meio e o agente termina sem intervenção, sem duplicar nada e com o custo
+da execução sem queda.
 
 ```sh
-cargo test -p athc --test rc6                               # quatro testes, sem rede
+cargo test -p athc --test rc6                               # nove testes, sem rede
 GH_TOKEN=… SANDBOX_REPO=dono/repo scripts/rc6-github.sh     # contra a API do GitHub
 ```
 
@@ -79,7 +80,30 @@ ferramenta (`E0435`); marcador num parâmetro que não é texto do corpo de uma 
 chave, `.find` sem `.key` ou que não é `GET`, `.settle` sem `.find` (`E0436`). Tudo isso entra no
 Codex da ligação.
 
-## 3. Medido
+## 3. O supervisor (`athc supervise`)
+
+```sh
+athc supervise programa.ath --wal execução.wal [as opções de run] [--max-resumes N] [--backoff s] [--attempt-timeout s]
+```
+
+Executa o programa e, se o processo cair, o retoma. É um processo pai **sem estado próprio**: o
+que ele sabe está no WAL. Se o WAL já registra a execução, começa pela retomada; por isso o
+próprio supervisor pode cair e ser iniciado de novo. Cada tentativa é um processo filho
+(`athc run` ou `athc resume`), registrada em `<wal>.supervisor.jsonl`.
+
+| O filho | O supervisor | Saída |
+|---|---|---|
+| terminou com sucesso, sem obrigação escalada no WAL | concluído | 0 |
+| terminou com sucesso, com obrigação escalada ou transferida | concluído com **resultado desconhecido**: nomeia as chaves | 3 |
+| terminou com falha do programa | não é queda: o programa decidiu; não retoma | 1 |
+| recusou antes de executar (fita adulterada, outra história, ambiente) | não retoma | 4 |
+| foi morto por sinal, entrou em pânico, ou passou de `--attempt-timeout` | é queda: espera (crescente) e retoma | — |
+| caiu mais vezes que `--max-resumes` (padrão 5) | desiste; o que está em aberto fica no WAL | 5 |
+
+Resultado desconhecido nunca vira sucesso nem tentativa infinita. Uma falha do programa não é
+retomada porque a retomada a reproduziria: o erro que o programa observou está na fita.
+
+## 4. Medido
 
 **Sem rede** (`tests/rc6.rs`, o recurso `notes` do `ath-world`, que cria uma nota a cada `POST`
 sem deduplicar):
@@ -87,19 +111,27 @@ sem deduplicar):
 * a matriz de quedas, 5 pontos × 2 operações: depois da retomada há exatamente duas notas, cada
   texto uma vez, em todos os 10 casos;
 * um tópico com `/` e `?` é um segmento do caminho;
-* a listagem atrasada: sem `.settle` duplica, com `.settle` não.
+* a listagem atrasada: sem `.settle` duplica, com `.settle` não;
+* o supervisor: três quedas seguidas (depois de enviar, antes de enviar, depois de confirmar) e
+  termina com duas notas; desiste no limite (saída 5) e um supervisor novo termina a mesma
+  execução; `202 Accepted` sem consulta por chave termina com saída 3 e a chave nomeada, numa
+  tentativa só; provedor fora do ar é falha, não queda (saída 1, uma tentativa); um executor
+  travado é morto no prazo e o supervisor desiste em tempo limitado.
 
 **Contra o GitHub** (`scripts/rc6-github.sh`, repositório de sandbox privado):
 
-* morto depois de **enviar** o segundo comentário: a retomada o acha pelo marcador e não o
-  reenvia; termina com um comentário por issue e uma issue de resumo;
-* morto **antes** de enviar a issue de resumo: a retomada a cria, uma só;
+* uma execução de referência, sem queda;
+* uma execução **sob supervisão**, morta depois de **enviar** o segundo comentário e, na
+  retomada, de novo **antes** de enviar a issue de resumo. O supervisor a retoma as duas vezes.
+  A consulta por chave acha o comentário já enviado e não o reenvia. No GitHub: um comentário
+  por issue, uma issue de resumo. O custo registrado (tokens e dólares) é igual ao da execução
+  de referência;
 * retomar a execução terminada não chama o GitHub;
 * o token não está em arquivo algum.
 
-`cargo test --all`: 202 aprovados, 0 falhas (198 da RC5.1 e 4 de `tests/rc6.rs`).
+`cargo test --all`: 207 aprovados, 0 falhas (198 da RC5.1 e 9 de `tests/rc6.rs`).
 
-## 4. Hipóteses e limites
+## 5. Hipóteses e limites
 
 * **`.find` supõe que a listagem acaba refletindo a escrita em até `.settle` segundos (G1).**
   É uma hipótese sobre o provedor, declarada pelo programa. Se a listagem demorar mais, a
@@ -115,7 +147,16 @@ sem deduplicar):
   a operação parecer não aplicada. O marcador identifica, não autentica.
 * **O parâmetro que carrega o marcador precisa de folga**: o texto no fio tem cerca de 40
   caracteres a mais que o do programa.
-* **Não há supervisor.** Quem dispara `athc resume` é o script. É o próximo componente.
+* **O supervisor é um processo local, não um serviço.** Ele sobrevive à queda do executor, não
+  à da máquina: depois de um reinício, alguém (systemd, cron, um orquestrador) precisa iniciá-lo
+  de novo, e aí ele continua do WAL. Não há supervisão distribuída: o que impede dois executores
+  no mesmo WAL é a trava de arquivo da RC2.
+* **O supervisor só retoma quedas.** Uma recusa transitória antes de executar (âncora ou
+  testemunha fora do ar) sai com 4 e não é tentada de novo.
+* **Travamento é detectado só pelo prazo da tentativa** (`--attempt-timeout`), não por falta de
+  progresso.
+* **O custo "igual ao da execução sem queda" é o custo registrado.** Continua valendo o limite
+  da RC5: uma amostra de modelo perdida entre a resposta e a fita seria paga duas vezes.
 * **O exemplo não usa concessões nem autoridade temporal** (sem âncora, a fita é confiada ao
   disco, como na RC5.1). A política sobre o plano, o cadastro confiável e os contratos valem.
 * **Sem modelo real**: o plano vem de um roteiro local. O título com uma injeção ("IGNORE AS
@@ -124,7 +165,7 @@ sem deduplicar):
   em `Resume.lean` (o desfecho da operação interrompida é decidido antes da re-execução).
 * **Só o GitHub** foi exercitado como API independente, e só três rotas dele.
 
-## 5. Códigos novos
+## 6. Códigos novos
 
 | Código | Significado |
 |---|---|
