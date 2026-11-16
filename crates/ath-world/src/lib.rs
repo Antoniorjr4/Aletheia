@@ -70,7 +70,7 @@ pub fn open(db: &Path) -> rusqlite::Result<Connection> {
          CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v INTEGER NOT NULL);
          CREATE TABLE IF NOT EXISTS log (seq INTEGER PRIMARY KEY AUTOINCREMENT, line TEXT NOT NULL);
          CREATE TABLE IF NOT EXISTS anchors (scope TEXT PRIMARY KEY, seq INTEGER NOT NULL, head TEXT NOT NULL);
-         CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY AUTOINCREMENT, topic TEXT NOT NULL, text TEXT NOT NULL);
+         CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY AUTOINCREMENT, topic TEXT NOT NULL, text TEXT NOT NULL, visible_at REAL NOT NULL DEFAULT 0);
          CREATE TABLE IF NOT EXISTS lc_scopes (scope TEXT PRIMARY KEY, meta TEXT NOT NULL);
          CREATE TABLE IF NOT EXISTS lc_entries (scope TEXT NOT NULL, seq INTEGER NOT NULL, entry TEXT NOT NULL,
                                                 PRIMARY KEY (scope, seq));
@@ -646,14 +646,22 @@ fn serve_http_one(svc: &Svc, token: Option<&str>, stream: TcpStream) {
     // **Um recurso que ignora `Idempotency-Key`** (v1.0-RC6), como a maioria das APIs reais:
     // `POST /v1/notes/{tópico}` `{text}` cria uma nota a cada requisição (201 `{"id": n}`), e
     // `GET /v1/notes/{tópico}` devolve a lista `[{"id", "text"}]`. É para testar a chave como
-    // marcador (`.key`) e a consulta por chave (`.find`), sem rede.
+    // marcador (`.key`) e a consulta por chave (`.find`), sem rede. Num tópico `lento-…` a
+    // nota só aparece na listagem 2 s depois de criada, como numa API de leitura atrasada.
     if let Some(topic) = path.strip_prefix("/v1/notes/") {
         let topic = pct_decode(topic);
         let db = svc.db.lock().unwrap();
         if method == "POST" {
             let doc: Json = serde_json::from_slice(&body).unwrap_or(Json::Null);
             let text = doc["text"].as_str().unwrap_or_default();
-            let _ = db.execute("INSERT INTO notes (topic, text) VALUES (?1, ?2)", params![topic, text]);
+            // um tópico `lento-…` imita uma listagem que demora a refletir a escrita (2 s)
+            let now =
+                std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0.0, |d| d.as_secs_f64());
+            let visible = if topic.starts_with("lento-") { now + 2.0 } else { 0.0 };
+            let _ = db.execute(
+                "INSERT INTO notes (topic, text, visible_at) VALUES (?1, ?2, ?3)",
+                params![topic, text, visible],
+            );
             let id = db.last_insert_rowid();
             let _ = db.execute(
                 "INSERT INTO log (line) VALUES (?1)",
@@ -662,9 +670,11 @@ fn serve_http_one(svc: &Svc, token: Option<&str>, stream: TcpStream) {
             return http_reply(&mut stream, 201, &json!({ "id": id }));
         }
         let rows: Vec<Json> = db
-            .prepare("SELECT id, text FROM notes WHERE topic = ?1 ORDER BY id")
+            .prepare("SELECT id, text FROM notes WHERE topic = ?1 AND visible_at <= ?2 ORDER BY id")
             .and_then(|mut st| {
-                st.query_map(params![topic], |r| {
+                let now =
+                    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0.0, |d| d.as_secs_f64());
+                st.query_map(params![topic, now], |r| {
                     Ok(json!({ "id": r.get::<_, i64>(0)?, "text": r.get::<_, String>(1)? }))
                 })
                 .map(|it| it.flatten().collect())

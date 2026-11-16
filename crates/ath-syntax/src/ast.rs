@@ -223,6 +223,10 @@ pub struct BindDecl {
     /// `ferramenta.find = "GET /rota -> campo"` (v1.0-RC6): a consulta por chave; a operação é o
     /// elemento da lista devolvida que carrega o marcador
     pub finds: Vec<(Ident, Route)>,
+    /// `ferramenta.settle = "N"` (v1.0-RC6): os segundos que a listagem do provedor pode levar
+    /// para refletir uma escrita. Uma consulta que não acha a operação só conclui "não
+    /// aplicada" depois de esperar esse tempo e consultar de novo.
+    pub settles: Vec<(Ident, u32)>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

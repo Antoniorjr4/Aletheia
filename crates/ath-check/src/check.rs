@@ -709,6 +709,15 @@ impl<'m> Ctx<'m> {
                         );
                     }
                 }
+                if finder.is_none() && b.settles.iter().any(|(k, _)| k.name == t.name) {
+                    self.push(Diag::new(
+                        E0,
+                        "E0436",
+                        format!("`{}.settle` exige `{}.find`", t.name, t.name),
+                        t.span,
+                        "espera sem consulta",
+                    ));
+                }
                 if let Some(f) = finder {
                     if marker.is_none() || f.method != "GET" {
                         self.push(

@@ -49,6 +49,8 @@ struct Bound {
     /// v1.0-RC6: o parâmetro de texto que carrega o marcador da chave, e a consulta que o acha
     marker: Option<String>,
     find: Option<Route>,
+    /// segundos que a listagem do provedor pode levar para refletir uma escrita
+    settle: u32,
 }
 
 /// O marcador da chave no texto que o provedor guarda: um comentário HTML com a identidade da
@@ -168,6 +170,7 @@ impl BoundHost {
                         status: b.status.clone(),
                         marker: b.keys.iter().find(|(k, _)| k.name == tool.name).map(|(_, p)| p.clone()),
                         find: b.finds.iter().find(|(k, _)| k.name == tool.name).map(|(_, r)| r.clone()),
+                        settle: b.settles.iter().find(|(k, _)| k.name == tool.name).map_or(0, |(_, n)| *n),
                     },
                 );
             }
@@ -440,27 +443,40 @@ impl Host for BoundHost {
         if fields.len() != wanted.len() {
             return (Status::Unknown, 0.0);
         }
-        match self.http(b, &find, &fields, None) {
-            Ok((200, body, lat, more)) => {
-                let doc: Json = self.scrub(&serde_json::from_str(&body).unwrap_or(Json::Null));
-                let Some(items) = doc.as_array() else { return (Status::Unknown, lat) };
-                let carries = |e: &Json| {
-                    e.as_object().is_some_and(|o| o.values().any(|v| v.as_str().is_some_and(|s| s.contains(&mark))))
-                };
-                match items.iter().find(|e| carries(e)) {
-                    Some(e) => {
-                        let field = find.field.as_ref().map(|f| f.strip_prefix("[].").unwrap_or(f).to_string());
-                        let v = extract(&field, e);
-                        self.last_raw = Some(v.clone());
-                        (Status::Done(BoundHost::value(&v)), lat)
+        // Uma listagem pode demorar a refletir uma escrita (a do GitHub demora). Não achar a
+        // operação só é "não aplicada" depois de esperar `.settle` segundos e consultar de novo:
+        // ausência logo depois de um envio possível não é prova de ausência.
+        let settle = b.settle;
+        let mut total = 0.0;
+        for attempt in 0..2 {
+            match self.http(b, &find, &fields, None) {
+                Ok((200, body, lat, more)) => {
+                    total += lat;
+                    let doc: Json = self.scrub(&serde_json::from_str(&body).unwrap_or(Json::Null));
+                    let Some(items) = doc.as_array() else { return (Status::Unknown, total) };
+                    let carries = |e: &Json| {
+                        e.as_object().is_some_and(|o| o.values().any(|v| v.as_str().is_some_and(|s| s.contains(&mark))))
+                    };
+                    match items.iter().find(|e| carries(e)) {
+                        Some(e) => {
+                            let field = find.field.as_ref().map(|f| f.strip_prefix("[].").unwrap_or(f).to_string());
+                            let v = extract(&field, e);
+                            self.last_raw = Some(v.clone());
+                            return (Status::Done(BoundHost::value(&v)), total);
+                        }
+                        None if more => return (Status::Unknown, total),
+                        None if attempt == 0 && settle > 0 => {
+                            std::thread::sleep(Duration::from_secs(settle as u64));
+                            total += settle as f64;
+                        }
+                        None => return (Status::NotApplied, total),
                     }
-                    None if more => (Status::Unknown, lat),
-                    None => (Status::NotApplied, lat),
                 }
+                Ok((_, _, lat, _)) => return (Status::Unknown, total + lat),
+                Err(_) => return (Status::Unknown, total),
             }
-            Ok((_, _, lat, _)) => (Status::Unknown, lat),
-            Err(_) => (Status::Unknown, 0.0),
         }
+        (Status::Unknown, total)
     }
 
     fn summary(&self) -> Vec<String> {

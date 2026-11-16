@@ -79,6 +79,7 @@ impl World {
     /// As notas de um tópico, como o provedor as guardou: (id, texto).
     fn notes(&self, topic: &str) -> Vec<(i64, String)> {
         let c = ath_world::open(&self.db).unwrap();
+        // (direto do banco: tudo o que foi criado, visível ou não na listagem)
         let mut st = c.prepare("SELECT id, text FROM notes WHERE topic = ?1 ORDER BY id").unwrap();
         st.query_map([topic], |r| Ok((r.get(0)?, r.get(1)?))).unwrap().map(|x| x.unwrap()).collect()
     }
@@ -140,6 +141,29 @@ fn a_killed_agent_resumes_without_duplicating_on_a_provider_that_ignores_keys() 
             exactly_two(&w, "obra", &tag);
         }
     }
+}
+
+/// **Ausência numa listagem atrasada não é prova de ausência.** Num tópico `lento-…` o provedor
+/// só lista a nota 2 s depois de criá-la (como a listagem de issues do GitHub, que foi onde
+/// isto apareceu). O agente é morto depois de enviar a primeira nota. Sem `.settle`, a consulta
+/// imediata não a acha, conclui "não aplicada" e a retomada a cria de novo: três notas. Com
+/// `.settle`, a consulta espera e consulta de novo antes de concluir: duas.
+#[cfg(unix)]
+#[test]
+fn absence_in_a_lagging_listing_is_not_taken_as_not_applied() {
+    let run = |tag: &str, settle: &str| {
+        let w = World::start(tag);
+        let find = "  add_note.find = \"GET /v1/notes/{topic} -> id\"\n";
+        std::fs::write(w.dir.join("notes.ath"), NOTES.replace(find, &format!("{find}{settle}"))).unwrap();
+        let o = w.athc("run", "lento-obra").args(["--kill-at", "sent:1"]).output().unwrap();
+        assert!(killed(&o), "{tag}: {}", text(&o));
+        let o = w.athc("resume", "lento-obra").output().unwrap();
+        assert!(o.status.success(), "{tag}: {}", text(&o));
+        std::thread::sleep(std::time::Duration::from_millis(2200));
+        w.notes("lento-obra").iter().filter(|(_, x)| x.starts_with("primeira")).count()
+    };
+    assert_eq!(run("lag-none", ""), 2, "sem `.settle` a listagem atrasada duplica (o defeito que `.settle` fecha)");
+    assert_eq!(run("lag-settle", "  add_note.settle = \"3\"\n"), 1, "com `.settle` a operação é achada");
 }
 
 /// **O contrato da rota é conferido antes de rodar.** Parâmetro de caminho que a ferramenta

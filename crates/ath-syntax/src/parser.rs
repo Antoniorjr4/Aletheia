@@ -333,6 +333,7 @@ impl Parser {
             routes: Vec::new(),
             keys: Vec::new(),
             finds: Vec::new(),
+            settles: Vec::new(),
         };
         let mut has_url = false;
         while *self.peek() != Tok::RBrace {
@@ -350,9 +351,13 @@ impl Parser {
                         Some(r) => d.finds.push((field, r)),
                         None => return Err(self.err(format!("rota inválida para `{}.find`: `{v}`", field.name))),
                     },
+                    "settle" => match v.parse::<u32>() {
+                        Ok(n) if n <= 300 => d.settles.push((field, n)),
+                        _ => return Err(self.err(format!("`{}.settle` são segundos, de \"0\" a \"300\"", field.name))),
+                    },
                     other => {
                         return Err(self.err(format!(
-                            "`{}.{other}`: esperado `.key` (o parâmetro que carrega a chave) ou `.find` (a consulta por chave)",
+                            "`{}.{other}`: esperado `.key` (o parâmetro que carrega a chave), `.find` (a consulta por chave) ou `.settle` (segundos até a listagem refletir uma escrita)",
                             field.name
                         )))
                     }

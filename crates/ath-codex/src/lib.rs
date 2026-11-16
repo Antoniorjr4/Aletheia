@@ -423,6 +423,13 @@ impl Canon<'_> {
                     self.reference(&t.name);
                     let _ = write!(self.out, " {p:?})");
                 }
+                let mut settles: Vec<_> = d.settles.iter().collect();
+                settles.sort_by(|a, b| a.0.name.cmp(&b.0.name));
+                for (t, n) in settles {
+                    let _ = write!(self.out, " (settle ");
+                    self.reference(&t.name);
+                    let _ = write!(self.out, " {n})");
+                }
                 let mut finds: Vec<_> = d.finds.iter().collect();
                 finds.sort_by(|a, b| a.0.name.cmp(&b.0.name));
                 for (t, r) in finds {
