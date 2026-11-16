@@ -2,7 +2,8 @@ name: RC6 · triagem com modelo real (Groq) contra o GitHub
 
 # GASTA na Groq. A triagem de examples/rc6/triage.ath com um modelo real, sob injeção de prompt,
 # contra o repositório de sandbox. Teto rígido de gasto no próprio script (MAX_USD).
-# Disparo: aba Actions → Run workflow, ou um push de tag `rc6-groq-*`. Nunca em push ou PR.
+# Disparo: aba Actions → Run workflow, um push de tag `rc6-groq-*` ou de um ramo
+# `groq-run/rc6-*`. Nunca em push comum nem em PR.
 
 on:
   workflow_dispatch:
@@ -18,6 +19,8 @@ on:
         default: "0.25"
   push:
     tags: ["rc6-groq-*"]
+    # (um ramo `groq-run/rc6-*` também dispara: é o gatilho de quem só pode empurrar ramos)
+    branches: ["groq-run/rc6-*"]
 
 # Um só grupo para todos os workflows que gastam na Groq (Rev10, regra 9).
 concurrency:
