@@ -37,6 +37,23 @@ $ athc check examples/rollout.ath
 ✓ Codex              12 objetos BLAKE3, raiz #9ecbfccad097
 ```
 
+## v1.0-RC10: confidencialidade — o fluxo tóxico barrado por tipo
+
+```sh
+scripts/rc10-smoke.sh            # sem rede: a triagem legítima, o leak recusado, o rótulo do servidor
+```
+
+O padrão do servidor MCP do GitHub noticiado em nov/2026 (Invariant Labs): um agente com acesso a
+um repositório privado e a um público é levado, por um issue público com injeção, a copiar o
+privado para o público — o "lethal trifecta" (dado privado + conteúdo não confiável + canal de
+saída), que "exige controle arquitetural". A RC10 acrescenta a dimensão de **confidencialidade**
+(`Public ⊑ Internal ⊑ Secret`), dual da integridade: uma fonte privada é `^ Secret`, um canal
+público declara `^ Public`, e o verificador recusa (`E0440`) qualquer caminho de um dado secreto
+a um canal mais público — por derivação ou por fluxo implícito, antes de qualquer efeito, qualquer
+que seja a decisão do modelo. Com a integridade (RC5+), as três pernas do trifecta caem por eixos
+independentes. Em Lean, `no_toxic_flow` prova a não-interferência; em runtime, o rótulo do
+servidor MCP só eleva (`R0648`). Detalhes em [`docs/RC10.md`](docs/RC10.md).
+
 ## v1.0-RC9: ferramentas de um servidor MCP, sob os tipos do programa
 
 ```sh
