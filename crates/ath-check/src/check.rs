@@ -168,12 +168,15 @@ pub const MODEL_PROPS: [&str; 6] = ["price_in", "price_out", "ctx", "max_out", "
 pub const MODEL_OPTIONAL: [&str; 2] = ["reasoning", "overhead"];
 /// Identidade versionada do contrato Δ.
 pub const MODEL_META: [&str; 3] = ["id", "provider", "version"];
-const BUILTINS: [&str; 3] = ["fit", "sample", "len"];
+const BUILTINS: [&str; 5] = ["fit", "sample", "len", "text", "join"];
 
 pub struct Ctx<'m> {
     pub m: &'m Module,
     pub types: HashMap<String, &'m TypeDecl>,
     pub variants: HashMap<String, (&'m TypeDecl, &'m Variant)>,
+    /// v1.0-RC8: o `refine` que inicializa o `let` em curso (só ele pode ter `keeping … as`)
+    let_init: Option<Span>,
+    keep_bind: Option<(Span, Ident, LTy)>,
     pub tools: HashMap<String, &'m ToolDecl>,
     pub models: HashMap<String, &'m ModelDecl>,
     pub policies: HashMap<String, &'m PolicyDecl>,
@@ -210,6 +213,8 @@ impl<'m> Ctx<'m> {
             m,
             types: HashMap::new(),
             variants: HashMap::new(),
+            let_init: None,
+            keep_bind: None,
             tools: HashMap::new(),
             models: HashMap::new(),
             policies: HashMap::new(),
@@ -1317,11 +1322,32 @@ impl<'m> Ctx<'m> {
         for s in &b.stmts {
             match s {
                 Stmt::Let { name, value, span } => {
+                    let saved = self.let_init.replace(value.span);
                     let t = self.expr(value);
+                    self.let_init = saved;
                     if matches!(t.ty, Ty::IdemKey) {
                         self.facts.linear_lets.insert(*span);
                     }
                     self.bind(&name.name, t);
+                    // v1.0-RC8: `keeping … as nome` liga também a lista do que foi deixado de fora
+                    // (só a do `refine` que é o valor desta ligação, não a de um `let` aninhado)
+                    if self.keep_bind.as_ref().is_some_and(|(s, ..)| *s == value.span) {
+                        let (_, n, lt) = self.keep_bind.take().unwrap();
+                        if n.name == name.name {
+                            self.push(
+                                Diag::new(
+                                    E0,
+                                    "E0438",
+                                    format!("`as {}` repete o nome da ligação", n.name),
+                                    n.span,
+                                    "o plano e o que foi deixado de fora teriam o mesmo nome",
+                                )
+                                .help("dê ao que foi deixado de fora um nome próprio, como `as recusados`"),
+                            );
+                        } else {
+                            self.bind(&n.name, lt);
+                        }
+                    }
                 }
                 Stmt::Expr(x) => {
                     let t = self.expr(x);
@@ -1344,7 +1370,12 @@ impl<'m> Ctx<'m> {
         match &e.kind {
             ExprKind::Int(_) => LTy::trusted(Ty::Int),
             ExprKind::Bool(_) => LTy::trusted(Ty::Bool),
-            ExprKind::Str(s) => LTy { tok: Some(est_tokens(s)), ..LTy::trusted(Ty::Text) },
+            // (v1.0-RC8: o literal carrega o seu comprimento, para a composição de texto provar limites)
+            ExprKind::Str(s) => LTy {
+                tok: Some(est_tokens(s)),
+                refn: Some(Refn::Text { max: s.chars().count() as u32 }),
+                ..LTy::trusted(Ty::Text)
+            },
             ExprKind::Var(n) => match self.lookup(n) {
                 Some(t) if matches!(t.ty, Ty::Pending) => {
                     self.push(
@@ -1692,6 +1723,47 @@ impl<'m> Ctx<'m> {
 
     fn field(&mut self, recv: &Expr, f: &Ident) -> LTy {
         let r = self.expr(recv);
+        // **v1.0-RC8: projeção.** `xs.campo` numa lista de registros é a lista do campo de cada
+        // um, com os mesmos limites e o mesmo rótulo.
+        if let Ty::List(elem, _, lo, hi) = &r.ty {
+            if let Ty::Adt(n) = &**elem {
+                let (lo, hi, n) = (*lo, *hi, n.clone());
+                let decl: &'m TypeDecl = self.types[&n];
+                let mut found: Option<(Ty, Option<Refn>)> = None;
+                let mut ok = true;
+                for v in &decl.variants {
+                    match v.fields.iter().find(|fd| fd.name.name == f.name) {
+                        Some(fd) => {
+                            let (t, _) = self.resolve(&fd.ty);
+                            let rf = self.refn_of(&fd.ty);
+                            match &found {
+                                None => found = Some((t, rf)),
+                                Some((prev, prf)) if crate::ty::same(prev, &t) && *prf == rf => {}
+                                _ => ok = false,
+                            }
+                        }
+                        None => ok = false,
+                    }
+                }
+                if let (true, Some((t, rf))) = (ok, found) {
+                    let mut out = LTy::trusted(Ty::List(Box::new(t), rf, lo, hi));
+                    out.lab = r.lab;
+                    out.origin = r.origin;
+                    return out;
+                }
+                self.push(
+                    Diag::new(
+                        E0,
+                        "E0005",
+                        format!("campo `{}` não existe, com o mesmo tipo, em todas as variantes de `{n}`", f.name),
+                        f.span,
+                        "projeção de lista",
+                    )
+                    .help("`lista.campo` exige o campo em toda variante do elemento"),
+                );
+                return LTy::never();
+            }
+        }
         let name = match &r.ty {
             Ty::Adt(n) => n.clone(),
             Ty::Never => return LTy::never(),
@@ -1950,6 +2022,84 @@ impl<'m> Ctx<'m> {
                     }
                 };
                 return LTy { ty: Ty::Text, lab: t.lab, tok: Some(n), origin: t.origin, refn: None };
+            }
+            // **v1.0-RC8: composição de texto.** `text(n)`: o inteiro em decimal, com o comprimento
+            // provado pelos limites de `n`. `join(xs, sep)`: os textos da lista, separados. O
+            // rótulo é o mais fraco dos argumentos (como em `++`): compor não endossa nada.
+            "text" => {
+                if args.len() != 1 {
+                    self.push(Diag::new(E0, "E0007", "`text(n)` recebe 1 argumento", e.span, "aridade"));
+                    return LTy::never();
+                }
+                let t = self.expr(&args[0]);
+                if !assignable(&t.ty, &Ty::Int) {
+                    self.mismatch(args[0].span, &Ty::Int, &t.ty);
+                    return LTy::never();
+                }
+                let digits = |n: i64| n.to_string().chars().count() as u32;
+                let refn = match t.refn {
+                    Some(Refn::Int { lo: Some(lo), hi: Some(hi) }) => {
+                        Some(Refn::Text { max: digits(lo).max(digits(hi)) })
+                    }
+                    _ => Some(Refn::Text { max: 20 }),
+                };
+                let mut out = LTy::declared(Ty::Text, t.lab, refn, t.origin.clone());
+                out.tok = refn.map(|r| match r {
+                    Refn::Text { max } => max as u64,
+                    _ => 20,
+                });
+                return out;
+            }
+            "join" => {
+                if args.len() != 2 {
+                    self.push(Diag::new(
+                        E0,
+                        "E0007",
+                        "`join(lista, separador)` recebe 2 argumentos",
+                        e.span,
+                        "aridade",
+                    ));
+                    return LTy::never();
+                }
+                let xs = self.expr(&args[0]);
+                let sep = self.expr(&args[1]);
+                if !assignable(&sep.ty, &Ty::Text) {
+                    self.mismatch(args[1].span, &Ty::Text, &sep.ty);
+                }
+                let Ty::List(elem, er, _lo, hi) = &xs.ty else {
+                    if !xs.ty.is_never() {
+                        self.push(Diag::new(
+                            E0,
+                            "E0008",
+                            "`join` exige uma lista de textos",
+                            args[0].span,
+                            format!("encontrado `{}`", xs.ty.show()),
+                        ));
+                    }
+                    return LTy::never();
+                };
+                if !assignable(elem, &Ty::Text) {
+                    self.push(Diag::new(
+                        E0,
+                        "E0008",
+                        "`join` exige uma lista de textos",
+                        args[0].span,
+                        format!("encontrado `{}`", xs.ty.show()),
+                    ));
+                    return LTy::never();
+                }
+                let hi = *hi;
+                let refn = match (er, sep.refn) {
+                    (Some(Refn::Text { max: a }), Some(Refn::Text { max: s })) => Some(Refn::Text {
+                        max: hi.saturating_mul(*a).saturating_add(hi.saturating_sub(1).saturating_mul(s)),
+                    }),
+                    _ => None,
+                };
+                let mut out = LTy::declared(Ty::Text, xs.lab.meet(sep.lab), refn, xs.origin.clone());
+                if refn.is_none() {
+                    out.tok = None;
+                }
+                return out;
             }
             "len" => {
                 if args.len() != 1 {
@@ -2315,6 +2465,13 @@ impl<'m> Ctx<'m> {
                 (Some(a), Some(b)) => Some(a + b),
                 _ => None,
             };
+            // v1.0-RC8: Text[..a] ++ Text[..b] é Text[..a+b]
+            out.refn = match (lt.refn, rt.refn) {
+                (Some(Refn::Text { max: a }), Some(Refn::Text { max: b })) => {
+                    Some(Refn::Text { max: a.saturating_add(b) })
+                }
+                _ => None,
+            };
         }
         out
     }
@@ -2649,7 +2806,23 @@ impl<'m> Ctx<'m> {
         }
         let d = self.expr(draft);
         if let Some(k) = keep {
-            self.keeping(&d.ty, k);
+            let dropped = self.keeping(&d.ty, k);
+            if let Some(b) = &k.bind {
+                if self.let_init != Some(e.span) {
+                    self.push(
+                        Diag::new(
+                            E0,
+                            "E0438",
+                            format!("`keeping … as {}` só liga o nome num `let`", b.name),
+                            b.span,
+                            "fora de `let x = refine …`",
+                        )
+                        .help("escreva `let plano = refine … keeping campo by Q as recusados else { … }`"),
+                    );
+                } else {
+                    self.keep_bind = Some((e.span, b.clone(), dropped.unwrap_or_else(LTy::never)));
+                }
+            }
         }
         let infer_span = match &d.ty {
             Ty::Draft(_, ispan) => Some(*ispan),
@@ -2802,22 +2975,26 @@ impl<'m> Ctx<'m> {
     /// **`keeping campo by Política` (v1.0-RC7).** O campo existe no tipo do rascunho e é uma
     /// lista; a política recebe um elemento dela (E0437, E0450); e o inventário que ela lê está
     /// no prompt (E0421, E0422).
-    fn keeping(&mut self, d: &Ty, k: &Keep) {
+    fn keeping(&mut self, d: &Ty, k: &Keep) -> Option<LTy> {
         let (adt, infer_span) = match d {
             Ty::Draft(inner, ispan) => match &**inner {
                 Ty::Adt(n) => (Some(n.clone()), Some(*ispan)),
                 _ => (None, Some(*ispan)),
             },
-            _ => return,
+            _ => return None,
         };
         let field = k.field.name.as_str();
         let mut elem: Option<TypeExpr> = None;
+        let mut hi = 0u32;
         let mut not_list = false;
         if let Some(decl) = adt.as_ref().and_then(|n| self.types.get(n.as_str()).copied()) {
             for v in &decl.variants {
                 for f in v.fields.iter().filter(|f| f.name.name == field) {
                     match f.ty.unlabeled() {
-                        TypeExpr::List { elem: e, .. } => elem = Some((**e).clone()),
+                        TypeExpr::List { elem: e, hi: h, .. } => {
+                            elem = Some((**e).clone());
+                            hi = hi.max(*h);
+                        }
                         _ => not_list = true,
                     }
                 }
@@ -2834,7 +3011,7 @@ impl<'m> Ctx<'m> {
                 )
                 .help("`keeping` deixa de fora elementos de uma lista do plano; nomeie um campo `List[…]` do tipo do `infer`"),
             );
-            return;
+            return None;
         };
         let Some(p) = self.policies.get(&k.policy.name).copied() else {
             self.push(Diag::new(
@@ -2844,7 +3021,7 @@ impl<'m> Ctx<'m> {
                 k.policy.span,
                 "não declarada",
             ));
-            return;
+            return None;
         };
         if let Some(ispan) = infer_span {
             self.anchor_check(p, &k.policy, ispan);
@@ -2857,7 +3034,7 @@ impl<'m> Ctx<'m> {
                 k.policy.span,
                 "aridade",
             ));
-            return;
+            return None;
         }
         let (et, _) = self.resolve(&elem);
         let (pt, _) = self.resolve(&p.params[0].ty);
@@ -2884,5 +3061,10 @@ impl<'m> Ctx<'m> {
                 ),
             ));
         }
+        // o que foi deixado de fora: dados do modelo que a política recusou
+        let erefn = self.refn_of(&elem);
+        let mut out = LTy::trusted(Ty::List(Box::new(et), erefn, 0, hi));
+        out.lab = Label::Untrusted;
+        Some(out)
     }
 }

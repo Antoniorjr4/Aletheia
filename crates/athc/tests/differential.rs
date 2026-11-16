@@ -3438,3 +3438,147 @@ fn keeping_is_the_same_in_both_runtimes() {
     first_diff("keeping/abaixo-do-minimo", "ARX × Python", &a, &p);
     assert_eq!((sends(&a), count(&a, "prune_underflow"), count(&a, "policy_reject")), (0, 3, 0), "{a}");
 }
+
+fn composed_src() -> String {
+    r#"module composed
+
+type Write =
+  | Send { to: Text[..8], amount: Text[..16] }
+
+type Plan =
+  | Plan { writes: List[Write, 0..4] }
+
+model planner {
+  id = "m"
+  provider = "groq"
+  version = "1"
+  price_in = 0.0
+  price_out = 0.0
+  ctx = 8192
+  max_out = 300
+  ttft = 1.0
+  per_tok = 0.0
+}
+
+policy SafeWrite(w: Write) -> Bool =
+  match w {
+    Send { to } => s.member("payees", to),
+  }
+
+policy SafePlan(p: Plan) -> Bool =
+  match p {
+    Plan { writes } => len(writes) >= 1,
+  }
+
+tool send(c: Cap[Bank.Transfer], to: Text[..8] ^ Endorsed, amount: Text[..16] ^ Endorsed) -> Text
+  ! { Bank.Transfer } irrevocable latency 1.0
+  requires s.member("payees", to)
+
+tool report(c: Cap[Bank.Transfer], body: Text[..200] ^ Endorsed) -> Text
+  ! { Bank.Transfer } irrevocable latency 1.0
+
+agent A(bank: Cap[Bank.Transfer]) budget [tok <= 100000, usd <= 1.0, wall <= 1000.0] {
+  on go(n: Int) -> Text ! { Infer, Bank.Transfer } {
+    let d = infer planner -> Plan { task = "pay", payees = s.inventory("payees") }
+    let plan = refine d by SafePlan keeping writes by SafeWrite as fora retry 3 else { return "nada" }
+    match plan {
+      Plan { writes } => {
+        for w in writes {
+          match w {
+            Send { to, amount } => commit send(bank, to, amount),
+          }
+        }
+        commit report(bank, "pagos: " ++ join(writes.to, ", ") ++ " (" ++ text(len(writes)) ++ ")")
+        "feito; fora: " ++ text(len(fora)) ++ " [" ++ join(fora.to, ",") ++ "]"
+      },
+    }
+  }
+}
+"#
+    .to_string()
+}
+
+/// **v1.0-RC8: o relatório composto é o mesmo nos dois runtimes.** `text`, `join`, a projeção
+/// de campo numa lista e o que `keeping … as fora` liga: com um pagamento deixado de fora, sem
+/// nenhum, e com uma primeira amostra recusada inteira (o que a amostra aceita deixou de fora é
+/// o que `fora` liga). ARX e Python produzem o mesmo journal, byte a byte.
+#[test]
+fn a_composed_report_is_the_same_in_both_runtimes() {
+    let world = json!({ "sinks": ["send", "report"], "inventories": { "payees": ["A", "B"] } });
+    let w = |to: &str, amount: &str| json!({ "kind": "Send", "to": to, "amount": amount });
+    let p = |ws: Vec<Json>| json!({ "kind": "Plan", "writes": ws });
+    let src = composed_src();
+    let end = |j: &str| {
+        j.lines()
+            .map(|l| serde_json::from_str::<Json>(l).unwrap())
+            .find(|e| e["kind"] == "end")
+            .map(|e| e["detail"]["result"].clone())
+            .unwrap()
+    };
+    let reported = |j: &str| {
+        j.lines()
+            .map(|l| serde_json::from_str::<Json>(l).unwrap())
+            .find(|e| e["kind"] == "tool" && e["detail"]["tool"] == "report")
+            .map(|e| e["detail"]["args"][1].clone())
+    };
+
+    let one = p(vec![w("A", "1.00"), w("Z", "9.00"), w("B", "2.00")]);
+    let (a, ae, py, pe) = run_both_full("composed/um-fora", &src, &world, &json!({ "planner": [one] }), None, None);
+    first_diff("composed/um-fora", "ARX × Python", &a, &py);
+    assert_eq!((ae, pe), (None, None));
+    assert_eq!(end(&a), json!("feito; fora: 1 [Z]"), "{a}");
+    assert_eq!(reported(&a), Some(json!("pagos: A, B (2)")), "{a}");
+
+    let none = p(vec![w("B", "2.00")]);
+    let (a, _, py, _) = run_both_full("composed/nada-fora", &src, &world, &json!({ "planner": [none] }), None, None);
+    first_diff("composed/nada-fora", "ARX × Python", &a, &py);
+    assert_eq!(end(&a), json!("feito; fora: 0 []"), "{a}");
+
+    let (bad, good) = (p(vec![w("Z", "9.00"), w("Y", "1.00")]), p(vec![w("A", "1.00")]));
+    let (a, _, py, _) =
+        run_both_full("composed/recusada", &src, &world, &json!({ "planner": [bad, good] }), None, None);
+    first_diff("composed/recusada", "ARX × Python", &a, &py);
+    assert_eq!(end(&a), json!("feito; fora: 0 []"), "{a}");
+    assert_eq!(reported(&a), Some(json!("pagos: A (1)")), "{a}");
+
+    let all = p(vec![w("Z", "9.00")]);
+    let (a, _, py, _) = run_both_full(
+        "composed/tudo-fora",
+        &src,
+        &world,
+        &json!({ "planner": [all.clone(), all.clone(), all] }),
+        None,
+        None,
+    );
+    first_diff("composed/tudo-fora", "ARX × Python", &a, &py);
+    assert_eq!((end(&a), reported(&a)), (json!("nada"), None), "{a}");
+}
+
+/// **`fora` é da amostra que o próprio `refine` aceitou.** Quando o `else` é tomado e o plano
+/// vem de outro `refine` dentro dele (que deixa um pagamento de fora), `fora` é vazia: o que o
+/// `refine` de dentro deixou de fora não vaza para a ligação de fora, que o verificador tipou
+/// pelo `keeping` de fora. Igual nos dois runtimes.
+#[test]
+fn what_an_inner_refine_left_out_does_not_leak_into_as() {
+    let src = composed_src().replace(
+        r#"let plan = refine d by SafePlan keeping writes by SafeWrite as fora retry 3 else { return "nada" }"#,
+        r#"let plan = refine d by SafePlan keeping writes by SafeWrite as fora retry 1 else {
+      refine d by SafePlan keeping writes by SafeWrite retry 1 else { return "nada" }
+    }"#,
+    );
+    assert!(src.contains("retry 1 else {\n"), "{src}");
+    let world = json!({ "sinks": ["send", "report"], "inventories": { "payees": ["A", "B"] } });
+    let w = |to: &str, amount: &str| json!({ "kind": "Send", "to": to, "amount": amount });
+    let p = |ws: Vec<Json>| json!({ "kind": "Plan", "writes": ws });
+    let models = json!({ "planner": [p(vec![w("Z", "9.00")]), p(vec![w("A", "1.00"), w("Y", "5.00")])] });
+    let (a, ae, py, pe) = run_both_full("composed/else-aninhado", &src, &world, &models, None, None);
+    first_diff("composed/else-aninhado", "ARX × Python", &a, &py);
+    assert_eq!((ae, pe), (None, None));
+    let end = a
+        .lines()
+        .map(|l| serde_json::from_str::<Json>(l).unwrap())
+        .find(|e| e["kind"] == "end")
+        .map(|e| e["detail"]["result"].clone())
+        .unwrap();
+    assert_eq!(end, json!("feito; fora: 0 []"), "{a}");
+}

@@ -270,6 +270,9 @@ pub fn loopback_url(url: &str) -> bool {
 pub struct Keep {
     pub field: Ident,
     pub policy: Ident,
+    /// `… as nome` (v1.0-RC8): liga, depois do `let`, a lista do que foi deixado de fora, com o
+    /// rótulo `Untrusted` (são dados do modelo que a política recusou)
+    pub bind: Option<Ident>,
 }
 
 /// `"MÉTODO /caminho -> campo"`: o campo da resposta que é o resultado (opcional).

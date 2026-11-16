@@ -269,6 +269,8 @@ pub struct Arx<'m> {
     pub diverged: Option<String>,
     /// na retomada, a recuperação fecha as intenções e deixa as sagas para a re-execução
     pub skip_sagas: bool,
+    /// v1.0-RC8: o que o último `refine` com `keeping` deixou de fora (para `as nome`)
+    last_dropped: Option<Vec<Value>>,
     /// o módulo declara `bind`, e o host desta execução é a ligação (`bind::BoundHost`)
     pub binds: bool,
     pub bound: bool,
@@ -430,6 +432,7 @@ impl<'m> Arx<'m> {
             resume: None,
             diverged: None,
             skip_sagas: false,
+            last_dropped: None,
             binds: false,
             bound: false,
             tape: None,
@@ -813,6 +816,11 @@ impl<'m> Arx<'m> {
                 Stmt::Let { name, value, .. } => {
                     let v = self.eval(value)?;
                     self.scopes.last_mut().unwrap().push((name.name.clone(), v));
+                    // v1.0-RC8: `keeping … as nome`: o que o `refine` deixou de fora
+                    if let ExprKind::Refine { keep: Some(Keep { bind: Some(b), .. }), .. } = &value.kind {
+                        let d = Value::List(self.last_dropped.take().unwrap_or_default());
+                        self.scopes.last_mut().unwrap().push((b.name.clone(), d));
+                    }
                 }
                 Stmt::Expr(e) => {
                     self.eval(e)?;
@@ -833,14 +841,23 @@ impl<'m> Arx<'m> {
             ExprKind::Var(n) => {
                 self.lookup(n).ok_or_else(|| rt("R0100", format!("variável `{n}` não vinculada")).into())
             }
-            ExprKind::Field(r, f) => match self.eval(r)? {
-                Value::Adt { fields, .. } => fields
-                    .into_iter()
-                    .find(|(k, _)| *k == f.name)
-                    .map(|(_, v)| v)
-                    .ok_or_else(|| rt("R0101", format!("campo `{}` ausente", f.name)).into()),
-                _ => Err(rt("R0101", "acesso a campo de valor sem campos").into()),
-            },
+            ExprKind::Field(r, f) => {
+                let field_of = |v: Value| -> R<Value> {
+                    match v {
+                        Value::Adt { fields, .. } => fields
+                            .into_iter()
+                            .find(|(k, _)| *k == f.name)
+                            .map(|(_, v)| v)
+                            .ok_or_else(|| rt("R0101", format!("campo `{}` ausente", f.name)).into()),
+                        _ => Err(rt("R0101", "acesso a campo de valor sem campos").into()),
+                    }
+                };
+                match self.eval(r)? {
+                    // v1.0-RC8: projeção numa lista de registros
+                    Value::List(items) => Ok(Value::List(items.into_iter().map(field_of).collect::<R<Vec<_>>>()?)),
+                    v => field_of(v),
+                }
+            }
             ExprKind::Call { callee, args } => {
                 let site = e.span;
                 self.call_with_site(callee, args, site)
@@ -1071,6 +1088,8 @@ impl<'m> Arx<'m> {
                     ),
                     None => None,
                 };
+                // v1.0-RC8: no `else`, nada foi deixado de fora de um plano que não existe
+                self.last_dropped = Some(Vec::new());
                 for attempt in 1..=*retry {
                     let (decoded, idx) = self.sample(&d, attempt)?;
                     match decoded {
@@ -1084,7 +1103,7 @@ impl<'m> Arx<'m> {
                             // (e registrados). O plano que resta é o que a política do plano, as
                             // obrigações levantadas e o endosso veem: tudo o que vale, vale para o
                             // que será executado.
-                            let (v, dropped) = match (keep, q) {
+                            let (v, dropped_vals) = match (keep, q) {
                                 (Some(k), Some(q)) => match self.prune(v, k, q, attempt)? {
                                     Some(x) => x,
                                     None => {
@@ -1098,8 +1117,9 @@ impl<'m> Arx<'m> {
                                         continue;
                                     }
                                 },
-                                _ => (v, 0),
+                                _ => (v, Vec::new()),
                             };
+                            let dropped = dropped_vals.len();
                             let pruned_note = match keep {
                                 Some(k) if dropped > 0 => {
                                     format!(" · {dropped} deixado(s) de fora por {}", k.policy.name)
@@ -1123,6 +1143,7 @@ impl<'m> Arx<'m> {
                             if accepted {
                                 self.events[idx].verdict =
                                     Some((true, format!("Endorsed({}){pruned_note}", policy.name)));
+                                self.last_dropped = Some(dropped_vals);
                                 self.journal.push(
                                     self.clock,
                                     "endorse",
@@ -1149,7 +1170,11 @@ impl<'m> Arx<'m> {
                     note: None,
                     verdict: None,
                 });
-                self.block(els)
+                let r = self.block(els);
+                // v1.0-RC8: o plano vem do `else`, não de uma amostra aceita: `as` liga uma lista
+                // vazia, e não o que um `refine` aninhado no `else` tenha deixado de fora
+                self.last_dropped = Some(Vec::new());
+                r
             }
             ExprKind::Quote(x) => self.eval(x),
             ExprKind::Commit(x) => {
@@ -2015,6 +2040,28 @@ impl<'m> Arx<'m> {
                 let Value::Text(s) = v else { return Err(rt("R0103", "`fit` sobre valor não textual").into()) };
                 return Ok(Value::Text(s.chars().take(n * 4).collect()));
             }
+            "text" => {
+                let Value::Int(n) = self.eval(&args[0])? else {
+                    return Err(rt("R0103", "`text` sobre valor que não é inteiro").into());
+                };
+                return Ok(Value::Text(n.to_string()));
+            }
+            "join" => {
+                let Value::List(items) = self.eval(&args[0])? else {
+                    return Err(rt("R0103", "`join` sobre valor que não é lista").into());
+                };
+                let Value::Text(sep) = self.eval(&args[1])? else {
+                    return Err(rt("R0103", "`join` com separador não textual").into());
+                };
+                let mut parts = Vec::with_capacity(items.len());
+                for x in items {
+                    match x {
+                        Value::Text(t) => parts.push(t),
+                        _ => return Err(rt("R0103", "`join` sobre lista que não é de textos").into()),
+                    }
+                }
+                return Ok(Value::Text(parts.join(&sep)));
+            }
             "len" => {
                 let Value::List(items) = self.eval(&args[0])? else {
                     return Err(rt("R0103", "`len` sobre valor que não é lista").into());
@@ -2325,11 +2372,11 @@ impl<'m> Arx<'m> {
     /// recusa. Devolve o plano que resta e quantos saíram, ou `None` se a lista ficaria abaixo do
     /// mínimo do tipo (a amostra é recusada: o valor não sai do tipo). Um plano cuja variante não
     /// tem o campo passa inteiro.
-    fn prune(&mut self, v: Value, k: &Keep, q: &'m PolicyDecl, attempt: u32) -> R<Option<(Value, usize)>> {
-        let Value::Adt { ty, variant, mut fields } = v else { return Ok(Some((v, 0))) };
+    fn prune(&mut self, v: Value, k: &Keep, q: &'m PolicyDecl, attempt: u32) -> R<Option<(Value, Vec<Value>)>> {
+        let Value::Adt { ty, variant, mut fields } = v else { return Ok(Some((v, Vec::new()))) };
         let field = k.field.name.as_str();
         let Some(pos) = fields.iter().position(|(n, x)| n == field && matches!(x, Value::List(_))) else {
-            return Ok(Some((Value::Adt { ty, variant, fields }, 0)));
+            return Ok(Some((Value::Adt { ty, variant, fields }, Vec::new())));
         };
         let Value::List(items) = std::mem::replace(&mut fields[pos].1, Value::Unit) else { unreachable!() };
         let (mut kept, mut dropped) = (Vec::new(), Vec::new());
@@ -2370,9 +2417,8 @@ impl<'m> Arx<'m> {
             );
             return Ok(None);
         }
-        let n = dropped.len();
         fields[pos].1 = Value::List(kept);
-        Ok(Some((Value::Adt { ty, variant, fields }, n)))
+        Ok(Some((Value::Adt { ty, variant, fields }, dropped)))
     }
 
     /// A culpa do provedor (`R0640`), num caminho que não é a chamada ao vivo.

@@ -23,7 +23,7 @@ on:
   push:
     tags: ["rc6-groq-*"]
     # (um ramo `groq-run/rc6-*` também dispara: é o gatilho de quem só pode empurrar ramos)
-    branches: ["groq-run/rc6-*", "groq-run/rc7-*"]
+    branches: ["groq-run/rc6-*", "groq-run/rc7-*", "groq-run/rc8-*"]
 
 # Um só grupo para todos os workflows que gastam na Groq (Rev10, regra 9).
 concurrency:
@@ -53,8 +53,9 @@ jobs:
       # (num disparo por ramo, o nome do ramo escolhe o conjunto: groq-run/rc6-strong-*)
       ATTACK_SET: ${{ inputs.attack_set || (contains(github.ref_name, 'eod') && 'eod') || (contains(github.ref_name, 'strong') && 'strong') || 'basic' }}
       CONTROL_OVERRIDE: ${{ (contains(github.ref_name, 'strong') || contains(github.ref_name, 'eod')) && '0' || '' }}
-      # v1.0-RC7: num ramo `groq-run/…rc7…`, o programa com `keeping`
-      TRIAGE: ${{ contains(github.ref_name, 'rc7') && 'examples/rc7/triage.ath' || 'examples/rc6/triage.ath' }}
+      # v1.0-RC7: num ramo `groq-run/…rc7…`, o programa com `keeping`;
+      # v1.0-RC8: num ramo `groq-run/…rc8…`, o programa que compõe o resumo
+      TRIAGE: ${{ (contains(github.ref_name, 'rc8') && 'examples/rc8/triage.ath') || (contains(github.ref_name, 'rc7') && 'examples/rc7/triage.ath') || 'examples/rc6/triage.ath' }}
       NO_COLOR: "1"
     steps:
       - uses: actions/checkout@v4
