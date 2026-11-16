@@ -10,7 +10,8 @@
 #   2. a conferência na ligação contra o servidor real: um programa que declara `Int` para o
 #      `id` do comentário (o servidor o anuncia como texto) é recusado antes de qualquer efeito
 #   3. o rótulo do servidor só rebaixa: um programa que declara confiável o título de uma issue
-#      de um repositório público é recusado na leitura (R0649); num privado, nada muda
+#      é recusado na leitura (R0649) num repositório público (o do próprio projeto, só lido), e
+#      no sandbox, se ele é privado, nada muda
 #   4. a triagem SOB SUPERVISÃO, morta (SIGKILL) depois de enviar o primeiro comentário: o
 #      supervisor a retoma, o servidor é reiniciado e reconferido, a consulta acha o comentário
 #      pelo marcador, e no GitHub fica um comentário em A, um em B, nenhum em C, e uma issue de
@@ -92,19 +93,26 @@ sleep 3
 check "nada saiu (comentários em #$A / #$B / canário #$C / resumos)" "$(state "$R0")" "0/0/0/0"
 
 step "3. o rótulo do servidor só rebaixa"
-PRIVATE="$(api "repos/$SANDBOX_REPO" --jq .private)"
-set +e
-"$ATHC" run examples/rc9/label-probe.ath --timeout 30 --run-id "rc9-$STAMP-probe" --wal "$OUT/probe.wal" \
-  --journal "$OUT/probe.jsonl" --arg "\"$A\"" > "$OUT/probe.out" 2>&1; code=$?
-set -e
-grep -E "R0649|resultado" "$OUT/probe.out" | sed 's/^/   /' | cut -c1-200
-if [ "$PRIVATE" = false ]; then
-  [ "$code" != 0 ] && grep -q "R0649" "$OUT/probe.out" || { cat "$OUT/probe.out"; die "repositório público: esperado R0649"; }
-  ok "repositório público: o servidor rotula o título como não confiável, e a declaração confiável é recusada"
-else
-  [ "$code" = 0 ] || { cat "$OUT/probe.out"; die "repositório privado: o rótulo do servidor é confiável e nada devia mudar"; }
-  ok "repositório privado: o servidor rotula o título como confiável, e nada muda"
-fi
+# probe <dono/repo> <issue> <rótulo>: só lê o título, declarado confiável
+probe() {
+  local repo="$1" n="$2" tag="$3" private code
+  private="$(api "repos/$repo" --jq .private)"
+  set +e
+  GITHUB_OWNER="${repo%%/*}" GITHUB_REPO="${repo#*/}" "$ATHC" run examples/rc9/label-probe.ath --timeout 30 \
+    --run-id "rc9-$STAMP-probe-$tag" --wal "$OUT/probe-$tag.wal" --journal "$OUT/probe-$tag.jsonl" \
+    --arg "\"$n\"" > "$OUT/probe-$tag.out" 2>&1; code=$?
+  set -e
+  grep -oE "R0649[^;]*|resultado: .*" "$OUT/probe-$tag.out" | head -1 | sed 's/^/   /' | cut -c1-200
+  if [ "$private" = false ]; then
+    [ "$code" != 0 ] && grep -q "R0649" "$OUT/probe-$tag.out" || { cat "$OUT/probe-$tag.out"; die "$repo é público: esperado R0649"; }
+    ok "$repo (público): o servidor rotula o título como não confiável, e a declaração confiável é recusada"
+  else
+    [ "$code" = 0 ] || { cat "$OUT/probe-$tag.out"; die "$repo é privado: o rótulo do servidor é confiável e nada devia mudar"; }
+    ok "$repo (privado): o servidor rotula o título como confiável, e nada muda"
+  fi
+}
+probe "$SANDBOX_REPO" "$A" sandbox
+probe "${PUBLIC_REPO:-${GITHUB_REPOSITORY:-Antoniorjr4/Aletheia}}" "${PUBLIC_ISSUE:-1}" public
 
 step "4. a triagem sob supervisão, morta depois de enviar o primeiro comentário"
 R1="rc9-$STAMP-sup"
@@ -123,6 +131,11 @@ t = ' '.join(re.sub(r'<!--.*?-->', ' ', (d.get('title') or '') + ' ' + (d.get('b
 print(','.join('#' + n for n in sorted(set(re.findall(r'#([0-9]+)', t)), key=int)))")" "#$A,#$B"
 
 step "5. o token não está em arquivo algum"
-if grep -rqa -- "$GH_TOKEN" "$OUT" --exclude-dir=bin; then die "o token está em disco"; else ok "nenhuma ocorrência do token em $OUT"; fi
+set +e; grep -rqa --exclude-dir=bin -- "$GH_TOKEN" "$OUT"; code=$?; set -e
+case "$code" in
+  1) ok "nenhuma ocorrência do token em $OUT" ;;
+  0) die "o token está em disco" ;;
+  *) die "a busca pelo token falhou (grep $code)" ;;
+esac
 
 printf '\n\033[1;32mv1.0-RC9 (servidor MCP do GitHub): todas as conferências passaram.\033[0m\n'
