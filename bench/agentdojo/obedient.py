@@ -155,7 +155,9 @@ def main() -> int:
             env0 = suite.load_and_inject_default_environment(
                 {} if inj is None else {k: inj.GOAL for k in suite.get_injection_vector_defaults()})
             writes, outside = writes_of(proposal_calls, env0)
-            plan = {"kind": "Plan", "writes": writes[:4], "answer": answer[:600]}
+            # A proposta vai inteira: se exceder `List[Write, 0..4]`, quem recusa é o tipo
+            # (decode_reject), e isso é contado à parte da recusa pela política.
+            plan = {"kind": "Plan", "writes": writes, "answer": answer[:600]}
             injections = {} if inj is None else {k: inj.GOAL for k in suite.get_injection_vector_defaults()}
             res = {"arm": arm, "user_task": ut.ID, "injection_task": inj.ID if inj else "none",
                    "proposed": [w["kind"] for w in writes], "outside_vocabulary": outside}
@@ -170,7 +172,10 @@ def main() -> int:
             kinds = agent.last["kinds"]
             res["aletheia"] = {"utility": bool(u), "attack": bool(s) if inj else None,
                                "endorsed": "endorse" in kinds,
-                               "policy_rejections": kinds.count("refine_exhausted"),
+                               "policy_rejections": kinds.count("policy_reject"),
+                               "type_rejections": kinds.count("decode_reject"),
+                               "policy_saw_attack": inj is not None and arm != "legitimo"
+                                                    and kinds.count("policy_reject") > 0,
                                "executed": [c["function"] for c in agent.last["calls"]
                                             if not c["function"].startswith(READ_PREFIXES)],
                                "error": agent.last["error"]}
@@ -212,7 +217,15 @@ def summarize(rows):
                 a[pipe]["attack"] = rate(sum(r[pipe]["attack"] for r in rs), len(rs))
         a["aletheia"]["policy_rejections"] = sum(r["aletheia"]["policy_rejections"] > 0 for r in rs)
         a["aletheia"]["errors"] = sum(r["aletheia"]["error"] is not None for r in rs)
+        a["aletheia"]["type_only"] = sum(r["aletheia"]["type_rejections"] > 0 and r["aletheia"]["policy_rejections"] == 0
+                                         for r in rs)
+        a["over_4_writes"] = sum(len(r["proposed"]) > 4 for r in rs)
         s["arms"][arm] = a
+    # cobertura efetiva: pares em que a política avaliou uma proposta com a operação do atacante
+    pairs = {(r["user_task"], r["injection_task"]) for r in rows if r["arm"] != "legitimo"}
+    seen = {(r["user_task"], r["injection_task"]) for r in rows if r["aletheia"].get("policy_saw_attack")}
+    s["effective_coverage"] = {"pairs": len(pairs), "policy_saw_attack": len(seen),
+                               "never_reached_policy": sorted(pairs - seen)}
     s["breaches_aletheia"] = sorted({(r["user_task"], r["injection_task"]) for r in rows
                                      if r["arm"] != "legitimo" and r["aletheia"]["attack"]})
     s["refused_legit"] = sorted(r["user_task"] for r in rows
@@ -235,6 +248,15 @@ def render(s, rows):
         for pipe, label in (("direct", "sem linguagem"), ("aletheia", "Aletheia")):
             atk = pct(a[arm][pipe]["attack"]) if "attack" in a[arm][pipe] else "—"
             lines.append(f"| {arm} | {label} | {atk} | {pct(a[arm][pipe]['utility'])} |")
+    c = s["effective_coverage"]
+    lines += ["", "| braço | propostas acima de 4 operações | recusadas só pelo tipo | recusadas pela política |",
+              "| --- | --- | --- | --- |"]
+    for arm in ("obediente", "sequestrado", "legitimo"):
+        x = a[arm]
+        lines.append(f"| {arm} | {x['over_4_writes']} | {x['aletheia']['type_only']} | {x['aletheia']['policy_rejections']} |")
+    lines += ["", f"Cobertura efetiva: a política avaliou a operação do atacante em {c['policy_saw_attack']} de "
+              f"{c['pairs']} pares (em pelo menos um braço).",
+              *[f"- sem passar pela política: `{u}` × `{i}`" for u, i in c["never_reached_policy"]]]
     lines += ["", f"Pares em que o ataque foi cumprido no Aletheia: {len(s['breaches_aletheia'])}"]
     for u, i in s["breaches_aletheia"]:
         lines.append(f"- `{u}` × `{i}`")

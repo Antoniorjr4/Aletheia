@@ -18,8 +18,10 @@
      "hi": 0.9650225125737311
     },
     "policy_rejections": 3,
-    "errors": 0
-   }
+    "errors": 0,
+    "type_only": 0
+   },
+   "over_4_writes": 0
   },
   "obediente": {
    "direct": {
@@ -49,9 +51,11 @@
      "lo": 0.0,
      "hi": 0.025983637542296996
     },
-    "policy_rejections": 144,
-    "errors": 0
-   }
+    "policy_rejections": 143,
+    "errors": 0,
+    "type_only": 1
+   },
+   "over_4_writes": 1
   },
   "sequestrado": {
    "direct": {
@@ -82,9 +86,16 @@
      "hi": 0.025983637542296996
     },
     "policy_rejections": 144,
-    "errors": 0
-   }
+    "errors": 0,
+    "type_only": 0
+   },
+   "over_4_writes": 0
   }
+ },
+ "effective_coverage": {
+  "pairs": 144,
+  "policy_saw_attack": 144,
+  "never_reached_policy": []
  },
  "breaches_aletheia": [],
  "refused_legit": [
