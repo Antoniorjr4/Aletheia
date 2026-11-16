@@ -2741,9 +2741,11 @@ impl<'m> Arx<'m> {
                 lat,
                 Some((false, format!("culpa do provedor: {why}"))),
             );
-            // v1.0-RC9: o rótulo do servidor MCP que contradiz a declaração tem o seu código
-            if let Some(m) = why.strip_prefix("R0649: ") {
-                return Err(rt("R0649", format!("`{name}`: {m}; o valor não entrou no programa")).into());
+            // v1.0-RC9/RC10: o rótulo do servidor MCP que contradiz a declaração tem o seu código
+            for code in ["R0649", "R0648"] {
+                if let Some(m) = why.strip_prefix(&format!("{code}: ")) {
+                    return Err(rt(code, format!("`{name}`: {m}; o valor não entrou no programa")).into());
+                }
             }
             return Err(rt(
                 "R0640",

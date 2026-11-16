@@ -33,7 +33,7 @@
 use crate::host::{Host, HostError, Status, TrustedSnapshot};
 use crate::mcp::{self, Conn, Fail, Seg};
 use crate::value::Value;
-use ath_syntax::ast::{BindDecl, BindUrl, EffClass, Item, Label, McpArg, McpCall, Module, Route, TypeExpr};
+use ath_syntax::ast::{BindDecl, BindUrl, Conf, EffClass, Item, Label, McpArg, McpCall, Module, Route, TypeExpr};
 use serde_json::{json, Map, Value as Json};
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::{Duration, Instant};
@@ -90,6 +90,36 @@ struct McpTool {
     ret: String,
     /// o programa declara o resultado confiável (`^ Trusted`/`^ Endorsed`, ou sem rótulo)
     trusted: bool,
+    /// a confidencialidade declarada do resultado (`^ Public`/`^ Internal`/`^ Secret`, ou Public)
+    conf: Conf,
+}
+
+/// v1.0-RC10: a integridade declarada num tipo, sob os invólucros `ConfLabeled`/`Own`.
+fn int_label(t: &TypeExpr) -> Label {
+    match t {
+        TypeExpr::Labeled(_, l, _) => *l,
+        TypeExpr::ConfLabeled(inner, ..) | TypeExpr::Own(inner, _) => int_label(inner),
+        _ => Label::Trusted,
+    }
+}
+
+/// v1.0-RC10: a confidencialidade declarada num tipo, sob os invólucros `Labeled`/`Own`.
+fn conf_label(t: &TypeExpr) -> Conf {
+    match t {
+        TypeExpr::ConfLabeled(_, c, _) => *c,
+        TypeExpr::Labeled(inner, ..) | TypeExpr::Own(inner, _) => conf_label(inner),
+        _ => Conf::Public,
+    }
+}
+
+/// v1.0-RC10: a confidencialidade que o servidor afirma em `_meta.ifc.confidentiality`.
+fn server_conf(v: &serde_json::Value) -> Option<Conf> {
+    match v["_meta"]["ifc"]["confidentiality"].as_str() {
+        Some("secret") => Some(Conf::Secret),
+        Some("internal") => Some(Conf::Internal),
+        Some("public") => Some(Conf::Public),
+        _ => None,
+    }
 }
 
 /// v1.0-RC9: um servidor MCP, o processo e o que foi conferido nele.
@@ -344,10 +374,7 @@ impl BoundHost {
                 .collect();
             let bases =
                 decl.params.iter().map(|p| (p.name.name.clone(), p.ty.unlabeled().base_name().to_string())).collect();
-            let label = match &decl.ret {
-                TypeExpr::Labeled(_, l, _) => *l,
-                _ => Label::Trusted,
-            };
+            let label = int_label(&decl.ret);
             mcp_tools.insert(
                 tool.name.clone(),
                 McpTool {
@@ -362,6 +389,7 @@ impl BoundHost {
                     reversible: decl.class == EffClass::Reversible,
                     ret: decl.ret.unlabeled().base_name().to_string(),
                     trusted: label >= Label::Endorsed,
+                    conf: conf_label(&decl.ret),
                 },
             );
         }
@@ -641,6 +669,7 @@ impl BoundHost {
         let name = t.call.tool.clone();
         let call = t.call.clone();
         let trusted = t.trusted;
+        let declared_conf = t.conf;
         let unknown =
             |lat: f64, why: String| if keyed { HostError::Timeout { elapsed: lat } } else { HostError::Failed(why) };
         let t0 = Instant::now();
@@ -676,6 +705,21 @@ impl BoundHost {
             self.blame = Some(format!(
                 "R0649: o servidor rotula o resultado de `{name}` como não confiável (`_meta.ifc`), e o programa o declara confiável"
             ));
+        }
+        // v1.0-RC10: a confidencialidade do servidor só pode ELEVAR: se o servidor diz que o
+        // resultado é mais secreto do que o programa declarou (um conteúdo de repositório privado
+        // onde o programa esperava algo publicável), a suposição estática do programa está errada,
+        // e o valor não entra — culpa do provedor (R0648).
+        if !unit {
+            if let Some(sc) = server_conf(&r) {
+                if sc > declared_conf {
+                    self.blame = Some(format!(
+                        "R0648: o servidor rotula o resultado de `{name}` como {} (`_meta.ifc.confidentiality`), mais secreto do que o programa declarou ({})",
+                        sc.name(),
+                        declared_conf.name()
+                    ));
+                }
+            }
         }
         let v = if unit {
             Json::Null

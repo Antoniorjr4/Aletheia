@@ -2313,7 +2313,7 @@ impl<'m> Ctx<'m> {
                     Ty::Draft(inner, ispan) => {
                         self.facts.draft_src.insert(e.span, ispan);
                         self.use_effect("Infer", e.span);
-                        LTy::declared(*inner, lab, refn, origin).with_step("sample(…)")
+                        LTy::declared(*inner, lab, refn, origin).with_conf(conf).with_step("sample(…)")
                     }
                     Ty::Never => LTy::never(),
                     other => {

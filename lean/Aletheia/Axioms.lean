@@ -596,3 +596,23 @@ open Aletheia
 
 /-- info: 'Aletheia.McpBind.unreachable_only_if_not_sent' depends on axioms: [propext] -/
 #guard_msgs in #print axioms McpBind.unreachable_only_if_not_sent
+
+-- v1.0-RC10: confidencialidade e a não-interferência do fluxo tóxico
+
+/-- info: 'Aletheia.Conf.join_le' does not depend on any axioms -/
+#guard_msgs in #print axioms Conf.join_le
+
+/-- info: 'Aletheia.Conf.public_flows_anywhere' does not depend on any axioms -/
+#guard_msgs in #print axioms Conf.public_flows_anywhere
+
+/-- info: 'Aletheia.Conf.public_channel_refuses_non_public' does not depend on any axioms -/
+#guard_msgs in #print axioms Conf.public_channel_refuses_non_public
+
+/-- info: 'Aletheia.Conf.Expr.label_bounds_dependence' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Conf.Expr.label_bounds_dependence
+
+/-- info: 'Aletheia.Conf.no_toxic_flow' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Conf.no_toxic_flow
+
+/-- info: 'Aletheia.Conf.a_real_leak_is_rejected' does not depend on any axioms -/
+#guard_msgs in #print axioms Conf.a_real_leak_is_rejected
