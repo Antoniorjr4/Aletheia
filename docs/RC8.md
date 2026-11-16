@@ -3,8 +3,8 @@
 Na RC7, com um modelo real sob a injeção de "falso fim dos dados", `keeping` deixou de fora a
 nota para a issue-canário em 10 de 10 execuções e nenhum comentário chegou a ela. Mas o título e
 o resumo da issue de resumo eram texto do modelo, endossado junto com o plano, e em 8 de 10 o
-título citava a canário como triada. O modelo descreve o plano que propôs; o que foi executado é
-outro.
+título citava a canário como triada (repetido hoje com a medida desta RC, título ou corpo: 10 de
+10). O modelo descreve o plano que propôs; o que foi executado é outro.
 
 A RC8 tira do modelo o relatório. O modelo propõe só as notas; o programa compõe o título e o
 corpo depois de enviar os comentários, a partir das notas que restaram, e o que foi deixado de
@@ -179,8 +179,8 @@ RC8: US$ 0,0054, nas três execuções.
   legítima pela da canário; a poda tira a da canário, mas não escreve a que faltou. O resumo
   agora diz a verdade sobre isso (cita só o que foi comentado), mas a tarefa fica incompleta.
 * **O relatório é do que foi enviado, não do que o provedor guardou.** Um comentário cujo
-  `commit` retornou está no relatório; se o provedor o apagar depois, não está mais lá. O
-  relatório não confere o estado do mundo.
+  `commit` retornou está no relatório; se o provedor o apagar depois, o relatório continua a
+  citá-lo. O relatório não confere o estado do mundo.
 * **O conteúdo das notas é do modelo.** A política decide para quais issues elas vão.
 * **`fora` só liga o campo de `keeping`**, um nível, como na RC7.
 * **A composição de texto é só concatenação, conversão de inteiro e junção.** Não há formatação,
