@@ -37,6 +37,24 @@ $ athc check examples/rollout.ath
 ✓ Codex              12 objetos BLAKE3, raiz #9ecbfccad097
 ```
 
+## v1.0-RC9: ferramentas de um servidor MCP, sob os tipos do programa
+
+```sh
+scripts/rc9-smoke.sh              # sem rede: a face MCP do ath-world, com modos hostis
+```
+
+Um `bind` liga as ferramentas do programa às de um servidor MCP (`mcp = env("…")`, stdio, nas
+eras `2026-07-28` e `initialize`). Antes de qualquer efeito, o que o servidor anuncia de cada
+ferramenta é conferido contra a declaração do programa (argumentos, obrigatórios, `enum`, tipo
+do caminho de saída), e o que o servidor diz de si só restringe: uma anotação que admite perigo
+numa leitura recusa, uma que promete segurança não muda nada, um rótulo `_meta.ifc` não
+confiável num resultado declarado confiável é culpa do provedor, descrições e `instructions` não
+chegam a prompt algum. Pedidos do servidor ao modelo ou ao usuário são recusados; o processo não
+herda o ambiente do executor; numa operação com chave, nenhuma resposta da chamada prova
+ausência. No CI, a triagem roda contra o servidor MCP oficial do GitHub (`v2.1.0`, binário
+publicado) e termina sob supervisão depois de um `SIGKILL`. Detalhes em
+[`docs/RC9.md`](docs/RC9.md).
+
 ## v1.0-RC8: o relatório é do que foi feito
 
 ```sh
