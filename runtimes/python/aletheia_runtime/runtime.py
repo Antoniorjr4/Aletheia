@@ -1064,7 +1064,31 @@ class Runtime:
                     return tool
         return None
 
-    def refine(self, d, policy, name: str, retry: int, lifted=None):
+    def _prune(self, v, keep, attempt: int):
+        """v1.0-RC7, `keeping`: deixa de fora, da lista `campo`, o que a política do elemento
+        recusa. Devolve o plano que resta, ou _MISSING se a lista ficaria abaixo do mínimo."""
+        field, q, qname, mins = keep
+        if not isinstance(v, Adt):
+            return v
+        pos = next((i for i, (n, x) in enumerate(v.fields) if n == field and isinstance(x, list)), None)
+        if pos is None:
+            return v
+        kept, dropped = [], []
+        for x in v.fields[pos][1]:
+            (kept if self._policy(q, x) else dropped).append(x)
+        if dropped:
+            self.journal.push(self.clock, "prune", {"policy": qname, "field": field, "attempt": attempt,
+                                                     "kept": len(kept), "dropped": [to_json(x) for x in dropped]})
+        lo = mins.get((v.ty, v.variant), 0)
+        if len(kept) < lo:
+            self.journal.push(self.clock, "prune_underflow", {"policy": qname, "field": field, "attempt": attempt,
+                                                               "kept": len(kept), "min": lo})
+            return _MISSING
+        fields = list(v.fields)
+        fields[pos] = (field, kept)
+        return Adt(v.ty, v.variant, fields)
+
+    def refine(self, d, policy, name: str, retry: int, lifted=None, keep=None):
         if not isinstance(d, Draft):
             raise RtErr("R0105", "`refine` sobre valor que não é rascunho")
         for attempt in range(1, retry + 1):
@@ -1072,6 +1096,10 @@ class Runtime:
             if v is _MISSING:
                 self.journal.push(self.clock, "decode_reject", {"attempt": attempt})
                 continue
+            if keep is not None:
+                v = self._prune(v, keep, attempt)
+                if v is _MISSING:
+                    continue
             accepted = self._policy(policy, v)
             if accepted and lifted:
                 tool = self._lifted_violation(v, lifted)

@@ -3336,3 +3336,105 @@ fn a_bound_program_is_refused_identically_without_the_binding() {
     assert_eq!((ae.as_deref(), pe.as_deref()), (Some("R0641"), Some("R0641")));
     assert!(!a.contains("\"kind\":\"tool\""), "{a}");
 }
+
+/// O programa de `keeping` (v1.0-RC7): pagamentos a beneficiários do cadastro confiável; os que
+/// não estão nele são deixados de fora antes de a política do plano decidir.
+fn keeping_src(min: u32) -> String {
+    format!(
+        r#"module keeping
+
+type Write =
+  | Send {{ to: Text[..8], amount: Text[..16] }}
+
+type Plan =
+  | Plan {{ writes: List[Write, {min}..4], answer: Text[..64] }}
+
+model planner {{
+  id = "m"
+  provider = "groq"
+  version = "1"
+  price_in = 0.0
+  price_out = 0.0
+  ctx = 8192
+  max_out = 300
+  ttft = 1.0
+  per_tok = 0.0
+}}
+
+policy SafeWrite(w: Write) -> Bool =
+  match w {{
+    Send {{ to }} => s.member("payees", to),
+  }}
+
+policy SafePlan(p: Plan) -> Bool =
+  match p {{
+    Plan {{ writes }} => len(writes) >= 1,
+  }}
+
+tool send(c: Cap[Bank.Transfer], to: Text[..8] ^ Endorsed, amount: Text[..16] ^ Endorsed) -> Text
+  ! {{ Bank.Transfer }} irrevocable latency 1.0
+  requires s.member("payees", to)
+
+agent A(bank: Cap[Bank.Transfer]) budget [tok <= 100000, usd <= 1.0, wall <= 1000.0] {{
+  on go(n: Int) -> Text ! {{ Infer, Bank.Transfer }} {{
+    let d = infer planner -> Plan {{ task = "pay", payees = s.inventory("payees") }}
+    let plan = refine d by SafePlan keeping writes by SafeWrite retry 3 else {{ return "nada" }}
+    match plan {{
+      Plan {{ writes, answer }} => {{
+        for w in writes {{
+          match w {{
+            Send {{ to, amount }} => commit send(bank, to, amount),
+          }}
+        }}
+        answer
+      }},
+    }}
+  }}
+}}
+"#
+    )
+}
+
+/// **v1.0-RC7: `keeping` é o mesmo nos dois runtimes.** Um pagamento fora do cadastro é deixado
+/// de fora e os outros saem; sem nada de seguro, a política do plano recusa o plano vazio e o
+/// `else` é tomado; com a lista de mínimo 1, o plano vazio nem chega à política (o valor sairia
+/// do tipo). ARX e Python produzem o mesmo journal, byte a byte, nos três casos.
+#[test]
+fn keeping_is_the_same_in_both_runtimes() {
+    let world = json!({ "sinks": ["send"], "inventories": { "payees": ["A", "B"] } });
+    let w = |to: &str, amount: &str| json!({ "kind": "Send", "to": to, "amount": amount });
+    let plans = |ws: Vec<Json>| {
+        let p = json!({ "kind": "Plan", "writes": ws, "answer": "ok" });
+        json!({ "planner": [p.clone(), p.clone(), p] })
+    };
+    let sends = |j: &str| kinds(j).iter().filter(|k| *k == "tool").count();
+    let count = |j: &str, k: &str| kinds(j).iter().filter(|x| *x == k).count();
+
+    let src = keeping_src(0);
+    let (a, ae, p, pe) = run_both_full(
+        "keeping/um-fora",
+        &src,
+        &world,
+        &plans(vec![w("A", "1.00"), w("Z", "9.00"), w("B", "2.00")]),
+        None,
+        None,
+    );
+    first_diff("keeping/um-fora", "ARX × Python", &a, &p);
+    assert_eq!((ae, pe), (None, None));
+    assert_eq!((sends(&a), count(&a, "prune"), count(&a, "endorse")), (2, 1, 1), "{a}");
+    assert!(a.contains(r#""dropped":[{"Send":{"amount":"9.00","to":"Z"}}]"#), "{a}");
+
+    let (a, _, p, _) = run_both_full("keeping/tudo-fora", &src, &world, &plans(vec![w("Z", "9.00")]), None, None);
+    first_diff("keeping/tudo-fora", "ARX × Python", &a, &p);
+    assert_eq!(
+        (sends(&a), count(&a, "prune"), count(&a, "policy_reject"), count(&a, "refine_exhausted")),
+        (0, 3, 3, 1),
+        "{a}"
+    );
+
+    let src = keeping_src(1);
+    let (a, _, p, _) =
+        run_both_full("keeping/abaixo-do-minimo", &src, &world, &plans(vec![w("Z", "9.00")]), None, None);
+    first_diff("keeping/abaixo-do-minimo", "ARX × Python", &a, &p);
+    assert_eq!((sends(&a), count(&a, "prune_underflow"), count(&a, "policy_reject")), (0, 3, 0), "{a}");
+}
