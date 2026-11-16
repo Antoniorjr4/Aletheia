@@ -832,3 +832,62 @@ fn an_accepted_request_is_not_a_completed_effect() {
     let wal = std::fs::read_to_string(p.dir.join("n.wal")).unwrap();
     assert!(!wal.contains("\"status\":\"done\"") && wal.contains("\"escalate\""), "{wal}");
 }
+
+// ---------------------------------------------------------------- RC5.1, segunda rodada
+//
+// Dois achados da segunda revisão, reproduzidos como testes que falham
+// (`docs/evidence/rc5.1-segunda-rodada.txt`).
+
+/// **A fita é conferida antes de qualquer envio, inclusive da recuperação.** Uma operação
+/// idempotente cai entre a autorização de envio e o envio; a fita ancorada é reescrita. A fase
+/// de recuperação da retomada reenviaria a operação: a recusa (`L0008`) tem de vir antes, com
+/// zero chamadas ao provedor.
+#[cfg(unix)]
+#[test]
+fn a_rewritten_tape_is_refused_before_recovery_sends_anything() {
+    let w = World::start("tape-first");
+    let r = Run::fresh(&w, "r");
+    let o = r.cmd("r").args(["--kill-at", "intent:1"]).output().unwrap();
+    assert!(killed(&o), "{}", text(&o));
+    assert_eq!(w.count("pays_posted"), 0, "a queda foi antes do envio");
+    let calls = w.requests_for("call ") + w.requests_for("status ");
+    rewrite_chain(&w.p("r.wal.tape"), |kind, d| {
+        if kind == "input" {
+            d["tok_in"] = serde_json::json!(1);
+        }
+    });
+    let o = r.resume("r").output().unwrap();
+    assert!(!o.status.success() && text(&o).contains("L0008"), "a fita reescrita foi aceita: {}", text(&o));
+    let after = w.requests_for("call ") + w.requests_for("status ");
+    assert_eq!(after, calls, "o provedor foi chamado antes da recusa da fita: {}", text(&o));
+    assert_eq!(w.count("pays_posted"), 0, "um pagamento saiu antes da recusa da fita");
+}
+
+/// **Toda variante gravada na fita é conferida.** O registro de uma chamada que devolveu um
+/// valor é trocado, numa fita sem âncora, por um desvio do tratador com um valor fora do tipo
+/// declarado do tratador (`-> Text`), e por variantes que uma chamada nunca produz. Nenhum
+/// entra no programa: `R0640` para o valor fora do tipo, `R0650` para a variante impossível.
+#[cfg(unix)]
+#[test]
+fn every_recorded_variant_is_checked_on_replay() {
+    for (tag, r, code) in [
+        ("abort-int", serde_json::json!({ "abort": { "i": 7 } }), "R0640"),
+        ("abort-list", serde_json::json!({ "abort": { "l": [{ "t": "x" }] } }), "R0640"),
+        ("ret", serde_json::json!({ "ret": { "t": "forjado" } }), "R0650"),
+        ("resume", serde_json::json!({ "resume": { "i": 7 } }), "R0650"),
+        ("unknown", serde_json::json!({ "outra": 1 }), "R0650"),
+    ] {
+        let p = Probe::new(&format!("variant-{tag}"), "");
+        let host = format!("tcp://{}", lying_provider(serde_json::json!("ok-1")));
+        let o = p.athc("run").args(["--host", &host]).output().unwrap();
+        assert!(o.status.success() && text(&o).contains("resultado: \"ok-1\""), "{tag}: {}", text(&o));
+        p.rewrite_tape(|kind, d| {
+            if kind == "ret" {
+                d["r"] = r.clone();
+            }
+        });
+        let o = p.athc("resume").args(["--host", &host]).output().unwrap();
+        assert!(!o.status.success() && text(&o).contains(code), "{tag}: a variante reescrita entrou: {}", text(&o));
+        assert!(!text(&o).contains("resultado: 7") && !text(&o).contains("forjado\""), "{tag}: {}", text(&o));
+    }
+}
