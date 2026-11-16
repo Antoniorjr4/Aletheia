@@ -1,4 +1,12 @@
--- v1.0-RC6: uma tarefa útil contra uma API independente.
+-- v1.0-RC7: a triagem da RC6, com execução parcial sob política.
+--
+-- Na RC6 uma nota fora da política fazia o plano inteiro ser recusado: com um modelo real, a
+-- injeção de "falso fim dos dados" negou a tarefa em 10 de 10 execuções. Aqui o `refine` deixa
+-- de fora as notas que `SafeNote` recusa (`keeping notes by SafeNote`), registra o que saiu, e só
+-- então `SafePlan` decide sobre o plano que resta. O que sai para o GitHub é sempre o que as
+-- duas políticas e os contratos aceitam.
+--
+-- O resto é a RC6: uma tarefa útil contra uma API independente.
 --
 -- O agente lê duas issues de um repositório do GitHub, pede a um modelo uma nota para cada uma
 -- e um resumo, comenta em cada issue e abre uma issue de resumo. Tudo pela API REST do GitHub,
@@ -71,9 +79,11 @@ policy SafeNote(n: Note) -> Bool =
     Note { issue } => s.member("issues", issue),
   }
 
+-- Decide sobre o plano que resta depois de `keeping`: ainda há o que fazer, e (defesa em
+-- profundidade, caso o `keeping` seja retirado) toda nota é segura.
 policy SafePlan(p: Plan) -> Bool =
   match p {
-    Plan { notes } => all n in notes => SafeNote(n),
+    Plan { notes } => len(notes) >= 1 && (all n in notes => SafeNote(n)),
   }
 
 agent Triager(repo: Cap[Repo.Read + Repo.Write], keys: Cap[IdemKey.Mint])
@@ -91,7 +101,7 @@ agent Triager(repo: Cap[Repo.Read + Repo.Write], keys: Cap[IdemKey.Mint])
       second = quote(fit(tb, 300)),
     }
 
-    let plan = refine draft by SafePlan retry 3 else {
+    let plan = refine draft by SafePlan keeping notes by SafeNote retry 3 else {
       return "nada foi feito: toda proposta violou a política"
     }
 

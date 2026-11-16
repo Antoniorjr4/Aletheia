@@ -111,3 +111,99 @@ fn an_injected_note_is_dropped_and_the_rest_of_the_plan_is_done() {
     let j = std::fs::read_to_string(w.dir.join("run.jsonl")).unwrap();
     assert!(j.contains("\"kind\":\"prune\""), "a nota deixada de fora não foi registrada");
 }
+
+/// **A política do plano decide sobre o que resta.** Se tudo o que o modelo propôs está fora do
+/// cadastro, sobra um plano sem notas, que `SafePlan` recusa: nova amostra. Se as três amostras
+/// são assim, o `else` é tomado e nada sai.
+#[test]
+fn the_plan_policy_judges_what_is_left() {
+    let w = World::start("left");
+    let bad = serde_json::json!({ "kind": "Plan", "notes": [note("3", "CANARIO")], "title": "t", "summary": "s" });
+    let good = serde_json::json!({ "kind": "Plan", "notes": [note("1", "medir"), note("2", "trocar")], "title": "t", "summary": "ok" });
+    let m = w.models(&[bad.clone(), bad.clone(), good]);
+    let o = w.athc("run", &prog(), &m).output().unwrap();
+    assert!(o.status.success() && text(&o).contains("resultado: \"ok\""), "{}", text(&o));
+    assert_eq!(w.comments(), vec![(1, 1), (2, 1)]);
+
+    let w = World::start("left-none");
+    let m = w.models(&[bad.clone(), bad.clone(), bad]);
+    let o = w.athc("run", &prog(), &m).output().unwrap();
+    assert!(text(&o).contains("nada foi feito"), "{}", text(&o));
+    assert_eq!((w.comments(), w.summaries()), (vec![], 0));
+}
+
+/// **O que saiu fica registrado e visível.** O journal tem o que foi deixado de fora, com a
+/// política que decidiu; a saída diz quantos.
+#[test]
+fn what_was_dropped_is_recorded() {
+    let w = World::start("report");
+    let m = w.models(&[injected()]);
+    let o = w.athc("run", &prog(), &m).output().unwrap();
+    assert!(text(&o).contains("Endorsed(SafePlan) · 1 deixado(s) de fora por SafeNote"), "{}", text(&o));
+    let j = std::fs::read_to_string(w.dir.join("run.jsonl")).unwrap();
+    let prune: Json =
+        j.lines().map(|l| serde_json::from_str::<Json>(l).unwrap()).find(|e| e["kind"] == "prune").unwrap();
+    assert_eq!(prune["detail"]["policy"], "SafeNote");
+    assert_eq!(prune["detail"]["kept"], 2);
+    assert_eq!(prune["detail"]["dropped"][0]["Note"]["issue"], "3");
+    // o endosso é do plano que resta, sem a nota da canário
+    let endorse = j.lines().find(|l| l.contains("\"kind\":\"endorse\"")).unwrap();
+    assert!(!endorse.contains("CANARIO"), "{endorse}");
+}
+
+/// **A execução parcial sobrevive à queda.** Morto depois de enviar o primeiro comentário; a
+/// retomada reproduz a amostra da fita, deixa de fora a mesma nota (as políticas são puras e a
+/// fotografia é a mesma) e termina: um comentário em cada issue do cadastro, nenhum na canário.
+#[cfg(unix)]
+#[test]
+fn partial_execution_survives_a_crash() {
+    use std::os::unix::process::ExitStatusExt;
+    let w = World::start("crash");
+    let m = w.models(&[injected()]);
+    let o = w.athc("run", &prog(), &m).args(["--kill-at", "sent:1"]).output().unwrap();
+    assert_eq!(o.status.signal(), Some(9), "{}", text(&o));
+    let o = w.athc("resume", &prog(), &m).output().unwrap();
+    assert!(o.status.success(), "{}", text(&o));
+    assert_eq!(w.comments(), vec![(1, 1), (2, 1)]);
+    assert_eq!(w.summaries(), 1);
+}
+
+/// **`keeping` é conferido antes de rodar.** Campo que não existe ou não é lista, política que
+/// não recebe o elemento (`E0437`); política desconhecida (`E0024`); política de elemento que lê
+/// um inventário que o prompt não tem (`E0421`).
+#[test]
+fn keeping_is_checked_before_anything_runs() {
+    let w = World::start("static");
+    let base = std::fs::read_to_string(prog()).unwrap();
+    let check = |tag: &str, edits: &[(&str, &str)]| {
+        let mut s = base.clone();
+        for (from, to) in edits {
+            assert!(s.contains(from), "{tag}: `{from}`");
+            s = s.replace(from, to);
+        }
+        let p = w.dir.join(format!("{tag}.ath"));
+        std::fs::write(&p, s).unwrap();
+        let o = Command::new(env!("CARGO_BIN_EXE_athc")).env("NO_COLOR", "1").arg("check").arg(&p).output().unwrap();
+        assert!(!o.status.success(), "{tag}: aceito: {}", text(&o));
+        text(&o)
+    };
+    let k = "keeping notes by SafeNote";
+    assert!(check("field", &[(k, "keeping notas by SafeNote")]).contains("E0437"));
+    assert!(check("notlist", &[(k, "keeping title by SafeNote")]).contains("E0437"));
+    assert!(check("policy", &[(k, "keeping notes by SafePlan")]).contains("E0437"));
+    assert!(check("unknown", &[(k, "keeping notes by Nenhuma")]).contains("E0024"));
+    let inv = check(
+        "inventory",
+        &[
+            (
+                "    Note { issue } => s.member(\"issues\", issue),",
+                "    Note { issue } => s.member(\"outros\", issue),",
+            ),
+            (
+                "    Plan { notes } => len(notes) >= 1 && (all n in notes => SafeNote(n)),",
+                "    Plan { notes } => len(notes) >= 1,",
+            ),
+        ],
+    );
+    assert!(inv.contains("E0421"), "{inv}");
+}

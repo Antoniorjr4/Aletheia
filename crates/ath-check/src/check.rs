@@ -1412,7 +1412,9 @@ impl<'m> Ctx<'m> {
                 LTy::never()
             }
             ExprKind::Infer { model, out, fields } => self.infer(e, model, out, fields),
-            ExprKind::Refine { draft, policy, retry, els } => self.refine(e, draft, policy, *retry, els),
+            ExprKind::Refine { draft, policy, retry, els, keep } => {
+                self.refine(e, draft, policy, *retry, els, keep.as_ref())
+            }
             ExprKind::Quote(x) => self.expr(x),
             ExprKind::Commit(x) => {
                 if let ExprKind::Call { callee, .. } = &x.kind {
@@ -2641,11 +2643,14 @@ impl<'m> Ctx<'m> {
             .with_step(format!("infer {}", model.name))
     }
 
-    fn refine(&mut self, e: &Expr, draft: &Expr, policy: &Ident, _retry: u32, els: &Block) -> LTy {
+    fn refine(&mut self, e: &Expr, draft: &Expr, policy: &Ident, _retry: u32, els: &Block, keep: Option<&Keep>) -> LTy {
         if self.in_policy {
             self.impure(e.span, "`refine`");
         }
         let d = self.expr(draft);
+        if let Some(k) = keep {
+            self.keeping(&d.ty, k);
+        }
         let infer_span = match &d.ty {
             Ty::Draft(_, ispan) => Some(*ispan),
             _ => None,
@@ -2678,49 +2683,7 @@ impl<'m> Ctx<'m> {
             Some(p) => {
                 // Inventário e política precisam vir da mesma fotografia confiável do host.
                 if let Some(ispan) = infer_span {
-                    let given = self.anchored.get(&ispan).cloned().unwrap_or_default();
-                    let anchored = !given.is_empty();
-                    let missing: Vec<String> = policy_inventories(&p.body).difference(&given).cloned().collect();
-                    if reads_snapshot(&p.body) && (!anchored || !missing.is_empty()) {
-                        let want = missing
-                            .iter()
-                            .map(|k| {
-                                if k == "managed" {
-                                    "s.managed()".to_string()
-                                } else {
-                                    format!("s.inventory(\"{k}\")")
-                                }
-                            })
-                            .collect::<Vec<_>>()
-                            .join(", ");
-                        let want = if want.is_empty() { "s.managed()".to_string() } else { want };
-                        self.push(
-                            Diag::new(
-                                E3,
-                                "E0421",
-                                "a política decide pela fotografia confiável, mas o prompt não recebe o inventário",
-                                ispan,
-                                format!("`{}` lê `s.…`; o `infer` não tem um campo `= {want}`", policy.name),
-                            )
-                            .note(format!("decidido por `refine … by {}`", policy.name))
-                            .help(format!("passe o inventário ao modelo como `campo = {want}`: nunca copiado de literal, log ou resposta de modelo")),
-                        );
-                    }
-                    if anchored && compares_text_literal(&p.body) {
-                        self.push(
-                            Diag::new(
-                                E3,
-                                "E0422",
-                                "descompasso entre o inventário confiável e a política",
-                                policy.span,
-                                format!(
-                                    "o prompt recebe `s.managed()`, mas `{}` compara com literais de texto",
-                                    policy.name
-                                ),
-                            )
-                            .help("decida pela mesma fotografia: `s.is_managed(x)` no lugar de `x == \"…\"`"),
-                        );
-                    }
+                    self.anchor_check(p, policy, ispan);
                 }
                 if p.params.len() != 1 {
                     self.push(Diag::new(
@@ -2794,5 +2757,132 @@ impl<'m> Ctx<'m> {
             out.meet_from(&eb);
         }
         out
+    }
+
+    /// O inventário que a política lê precisa estar no prompt do `infer` (E0421), e a política
+    /// decide pela fotografia, não por literais (E0422). Vale para a política do `refine` e para
+    /// a de `keeping`.
+    fn anchor_check(&mut self, p: &'m PolicyDecl, policy: &Ident, ispan: Span) {
+        let given = self.anchored.get(&ispan).cloned().unwrap_or_default();
+        let anchored = !given.is_empty();
+        let missing: Vec<String> = policy_inventories(&p.body).difference(&given).cloned().collect();
+        if reads_snapshot(&p.body) && (!anchored || !missing.is_empty()) {
+            let want = missing
+                .iter()
+                .map(|k| if k == "managed" { "s.managed()".to_string() } else { format!("s.inventory(\"{k}\")") })
+                .collect::<Vec<_>>()
+                .join(", ");
+            let want = if want.is_empty() { "s.managed()".to_string() } else { want };
+            self.push(
+                    Diag::new(
+                        E3,
+                        "E0421",
+                        "a política decide pela fotografia confiável, mas o prompt não recebe o inventário",
+                        ispan,
+                        format!("`{}` lê `s.…`; o `infer` não tem um campo `= {want}`", policy.name),
+                    )
+                    .note(format!("decidido por `refine … by {}`", policy.name))
+                    .help(format!("passe o inventário ao modelo como `campo = {want}`: nunca copiado de literal, log ou resposta de modelo")),
+                );
+        }
+        if anchored && compares_text_literal(&p.body) {
+            self.push(
+                Diag::new(
+                    E3,
+                    "E0422",
+                    "descompasso entre o inventário confiável e a política",
+                    policy.span,
+                    format!("o prompt recebe `s.managed()`, mas `{}` compara com literais de texto", policy.name),
+                )
+                .help("decida pela mesma fotografia: `s.is_managed(x)` no lugar de `x == \"…\"`"),
+            );
+        }
+    }
+
+    /// **`keeping campo by Política` (v1.0-RC7).** O campo existe no tipo do rascunho e é uma
+    /// lista; a política recebe um elemento dela (E0437, E0450); e o inventário que ela lê está
+    /// no prompt (E0421, E0422).
+    fn keeping(&mut self, d: &Ty, k: &Keep) {
+        let (adt, infer_span) = match d {
+            Ty::Draft(inner, ispan) => match &**inner {
+                Ty::Adt(n) => (Some(n.clone()), Some(*ispan)),
+                _ => (None, Some(*ispan)),
+            },
+            _ => return,
+        };
+        let field = k.field.name.as_str();
+        let mut elem: Option<TypeExpr> = None;
+        let mut not_list = false;
+        if let Some(decl) = adt.as_ref().and_then(|n| self.types.get(n.as_str()).copied()) {
+            for v in &decl.variants {
+                for f in v.fields.iter().filter(|f| f.name.name == field) {
+                    match f.ty.unlabeled() {
+                        TypeExpr::List { elem: e, .. } => elem = Some((**e).clone()),
+                        _ => not_list = true,
+                    }
+                }
+            }
+        }
+        let Some(elem) = elem.filter(|_| !not_list) else {
+            self.push(
+                Diag::new(
+                    E0,
+                    "E0437",
+                    format!("`keeping {field}`: o rascunho não tem um campo de lista `{field}`"),
+                    k.field.span,
+                    format!("o tipo é `{}`", adt.unwrap_or_else(|| "?".into())),
+                )
+                .help("`keeping` deixa de fora elementos de uma lista do plano; nomeie um campo `List[…]` do tipo do `infer`"),
+            );
+            return;
+        };
+        let Some(p) = self.policies.get(&k.policy.name).copied() else {
+            self.push(Diag::new(
+                E0,
+                "E0024",
+                format!("política desconhecida `{}`", k.policy.name),
+                k.policy.span,
+                "não declarada",
+            ));
+            return;
+        };
+        if let Some(ispan) = infer_span {
+            self.anchor_check(p, &k.policy, ispan);
+        }
+        if p.params.len() != 1 {
+            self.push(Diag::new(
+                E0,
+                "E0437",
+                "a política de `keeping` recebe exatamente um elemento",
+                k.policy.span,
+                "aridade",
+            ));
+            return;
+        }
+        let (et, _) = self.resolve(&elem);
+        let (pt, _) = self.resolve(&p.params[0].ty);
+        if !assignable(&et, &pt) {
+            self.push(Diag::new(
+                E0,
+                "E0437",
+                "política de `keeping` incompatível com o elemento",
+                k.policy.span,
+                format!("`{}` decide sobre `{}`, a lista `{field}` tem `{}`", k.policy.name, pt.show(), et.show()),
+            ));
+        } else if !self.ty_within(&et, &p.params[0].ty) {
+            self.facts.refinement_checks += 1;
+            self.push(Diag::new(
+                E5,
+                "E0450",
+                "refinamento não provado",
+                k.policy.span,
+                format!(
+                    "`{}` decide sobre `{}`, a lista `{field}` tem `{}`",
+                    k.policy.name,
+                    p.params[0].ty.unlabeled().sig(),
+                    et.show()
+                ),
+            ));
+        }
     }
 }

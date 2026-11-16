@@ -265,6 +265,13 @@ pub fn loopback_url(url: &str) -> bool {
     host == "localhost" || host.parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback())
 }
 
+/// `keeping campo by Política` num `refine` (v1.0-RC7).
+#[derive(Clone, Debug)]
+pub struct Keep {
+    pub field: Ident,
+    pub policy: Ident,
+}
+
 /// `"MÉTODO /caminho -> campo"`: o campo da resposta que é o resultado (opcional).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Route {
@@ -669,6 +676,9 @@ pub enum ExprKind {
         policy: Ident,
         retry: u32,
         els: Block,
+        /// `keeping campo by Política` (v1.0-RC7): antes de a política do plano decidir, os
+        /// elementos da lista `campo` que `Política` recusa são deixados de fora e registrados
+        keep: Option<Keep>,
     },
     Quote(Box<Expr>),
     Commit(Box<Expr>),

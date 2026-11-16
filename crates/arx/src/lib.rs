@@ -1060,11 +1060,17 @@ impl<'m> Arx<'m> {
                     site: e.span,
                 })))
             }
-            ExprKind::Refine { draft, policy, retry, els } => {
+            ExprKind::Refine { draft, policy, retry, els, keep } => {
                 let Value::Draft(d) = self.eval(draft)? else {
                     return Err(rt("R0105", "`refine` sobre valor que não é rascunho").into());
                 };
                 let p = *self.policies.get(policy.name.as_str()).ok_or_else(|| rt("R0106", "política ausente"))?;
+                let q = match keep {
+                    Some(k) => Some(
+                        *self.policies.get(k.policy.name.as_str()).ok_or_else(|| rt("R0106", "política ausente"))?,
+                    ),
+                    None => None,
+                };
                 for attempt in 1..=*retry {
                     let (decoded, idx) = self.sample(&d, attempt)?;
                     match decoded {
@@ -1073,6 +1079,33 @@ impl<'m> Arx<'m> {
                             self.journal.push(self.clock, "decode_reject", json!({ "attempt": attempt }));
                         }
                         Some(v) => {
+                            // **v1.0-RC7: `keeping`.** Antes de a política do plano decidir, os
+                            // elementos que a política do elemento recusa são deixados de fora
+                            // (e registrados). O plano que resta é o que a política do plano, as
+                            // obrigações levantadas e o endosso veem: tudo o que vale, vale para o
+                            // que será executado.
+                            let (v, dropped) = match (keep, q) {
+                                (Some(k), Some(q)) => match self.prune(v, k, q, attempt)? {
+                                    Some(x) => x,
+                                    None => {
+                                        self.events[idx].verdict = Some((
+                                            false,
+                                            format!(
+                                                "`{}` ficaria abaixo do mínimo sem o que `{}` recusa",
+                                                k.field.name, k.policy.name
+                                            ),
+                                        ));
+                                        continue;
+                                    }
+                                },
+                                _ => (v, 0),
+                            };
+                            let pruned_note = match keep {
+                                Some(k) if dropped > 0 => {
+                                    format!(" · {dropped} deixado(s) de fora por {}", k.policy.name)
+                                }
+                                _ => String::new(),
+                            };
                             let accepted = self.eval_policy(p, v.clone())?;
                             // M-I: as obrigações `requires` levantadas para este `refine`, sobre o
                             // valor proposto; uma violação é uma recusa, com retentativa e `else`
@@ -1088,7 +1121,8 @@ impl<'m> Arx<'m> {
                                 }
                             }
                             if accepted {
-                                self.events[idx].verdict = Some((true, format!("Endorsed({})", policy.name)));
+                                self.events[idx].verdict =
+                                    Some((true, format!("Endorsed({}){pruned_note}", policy.name)));
                                 self.journal.push(
                                     self.clock,
                                     "endorse",
@@ -1096,7 +1130,8 @@ impl<'m> Arx<'m> {
                                 );
                                 return Ok(v);
                             }
-                            self.events[idx].verdict = Some((false, format!("rejeitada por {}", policy.name)));
+                            self.events[idx].verdict =
+                                Some((false, format!("rejeitada por {}{pruned_note}", policy.name)));
                             self.journal.push(
                                 self.clock,
                                 "policy_reject",
@@ -2284,6 +2319,60 @@ impl<'m> Arx<'m> {
             }
             _ => strict.then(|| "tipo que a retomada não sabe conferir".to_string()),
         }
+    }
+
+    /// **`keeping` (v1.0-RC7).** Deixa de fora, da lista `campo` do plano, os elementos que `q`
+    /// recusa. Devolve o plano que resta e quantos saíram, ou `None` se a lista ficaria abaixo do
+    /// mínimo do tipo (a amostra é recusada: o valor não sai do tipo). Um plano cuja variante não
+    /// tem o campo passa inteiro.
+    fn prune(&mut self, v: Value, k: &Keep, q: &'m PolicyDecl, attempt: u32) -> R<Option<(Value, usize)>> {
+        let Value::Adt { ty, variant, mut fields } = v else { return Ok(Some((v, 0))) };
+        let field = k.field.name.as_str();
+        let Some(pos) = fields.iter().position(|(n, x)| n == field && matches!(x, Value::List(_))) else {
+            return Ok(Some((Value::Adt { ty, variant, fields }, 0)));
+        };
+        let Value::List(items) = std::mem::replace(&mut fields[pos].1, Value::Unit) else { unreachable!() };
+        let (mut kept, mut dropped) = (Vec::new(), Vec::new());
+        for x in items {
+            if self.eval_policy(q, x.clone())? {
+                kept.push(x);
+            } else {
+                dropped.push(x);
+            }
+        }
+        let min = self
+            .m
+            .items
+            .iter()
+            .find_map(|i| match i {
+                Item::Type(t) if t.name.name == ty => t.variants.iter().find(|w| w.name.name == variant),
+                _ => None,
+            })
+            .and_then(|w| w.fields.iter().find(|f| f.name.name == field))
+            .and_then(|f| match f.ty.unlabeled() {
+                TypeExpr::List { lo, .. } => Some(*lo as usize),
+                _ => None,
+            })
+            .unwrap_or(0);
+        if !dropped.is_empty() {
+            self.journal.push(
+                self.clock,
+                "prune",
+                json!({ "policy": k.policy.name, "field": field, "attempt": attempt, "kept": kept.len(),
+                        "dropped": dropped.iter().map(Value::to_json).collect::<Vec<_>>() }),
+            );
+        }
+        if kept.len() < min {
+            self.journal.push(
+                self.clock,
+                "prune_underflow",
+                json!({ "policy": k.policy.name, "field": field, "attempt": attempt, "kept": kept.len(), "min": min }),
+            );
+            return Ok(None);
+        }
+        let n = dropped.len();
+        fields[pos].1 = Value::List(kept);
+        Ok(Some((Value::Adt { ty, variant, fields }, n)))
     }
 
     /// A culpa do provedor (`R0640`), num caminho que não é a chamada ao vivo.

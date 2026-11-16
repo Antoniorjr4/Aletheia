@@ -1094,6 +1094,16 @@ impl Parser {
                 let draft = self.postfix()?;
                 self.expect(Tok::By)?;
                 let policy = self.ident()?;
+                // v1.0-RC7: `keeping campo by Política` (palavra contextual: depois da política
+                // do `refine` só podem vir `keeping`, `retry` ou `else`)
+                let mut keep = None;
+                if matches!(self.peek(), Tok::Ident(w) if w == "keeping") {
+                    self.bump();
+                    let field = self.ident()?;
+                    self.expect(Tok::By)?;
+                    let policy = self.ident()?;
+                    keep = Some(Keep { field, policy });
+                }
                 let mut retry = 1;
                 if self.eat(&Tok::Retry) {
                     match self.peek().clone() {
@@ -1107,7 +1117,7 @@ impl Parser {
                 self.expect(Tok::Else)?;
                 let els = self.block()?;
                 let span = start.to(els.span);
-                Ok(Expr { kind: ExprKind::Refine { draft: Box::new(draft), policy, retry, els }, span })
+                Ok(Expr { kind: ExprKind::Refine { draft: Box::new(draft), policy, retry, els, keep }, span })
             }
             Tok::Quote => {
                 self.bump();

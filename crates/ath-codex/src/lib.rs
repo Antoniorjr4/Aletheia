@@ -247,9 +247,12 @@ impl Deps<'_> {
                 self.ty(out);
                 fields.iter().for_each(|(_, x)| self.expr(x));
             }
-            ExprKind::Refine { draft, policy, els, .. } => {
+            ExprKind::Refine { draft, policy, els, keep, .. } => {
                 self.expr(draft);
                 self.name(&policy.name);
+                if let Some(k) = keep {
+                    self.name(&k.policy.name);
+                }
                 self.block(els);
             }
             ExprKind::Atomic { recover, body, on_failure, on_cf } => {
@@ -691,11 +694,17 @@ impl Canon<'_> {
                 }
                 self.w(")");
             }
-            ExprKind::Refine { draft, policy, retry, els } => {
+            ExprKind::Refine { draft, policy, retry, els, keep } => {
                 self.w("(refine ");
                 self.expr(draft);
                 self.w(" ");
                 self.reference(&policy.name);
+                // v1.0-RC7: só aparece quando declarado (as raízes anteriores não mudam)
+                if let Some(k) = keep {
+                    let _ = write!(self.out, " (keep {:?} ", k.field.name);
+                    self.reference(&k.policy.name);
+                    self.w(")");
+                }
                 let _ = write!(self.out, " (retry {retry}) ");
                 self.block(els);
                 self.w(")");

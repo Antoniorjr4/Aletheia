@@ -515,3 +515,23 @@ open Aletheia
 
 /-- info: 'Aletheia.Find.in_flight_request_duplicates' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms Find.in_flight_request_duplicates
+
+-- v1.0-RC7: execução parcial sob política (keeping)
+
+/-- info: 'Aletheia.Prune.keeping_sound' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Prune.keeping_sound
+
+/-- info: 'Aletheia.Prune.keeping_keeps_every_accepted' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Prune.keeping_keeps_every_accepted
+
+/-- info: 'Aletheia.Prune.keeping_extends_strict' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Prune.keeping_extends_strict
+
+/-- info: 'Aletheia.Prune.keeping_live' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Prune.keeping_live
+
+/-- info: 'Aletheia.Prune.strict_denies' does not depend on any axioms -/
+#guard_msgs in #print axioms Prune.strict_denies
+
+/-- info: 'Aletheia.Prune.checking_before_pruning_is_unsound' does not depend on any axioms -/
+#guard_msgs in #print axioms Prune.checking_before_pruning_is_unsound

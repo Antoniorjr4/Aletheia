@@ -631,10 +631,42 @@ impl<'m> Gen<'m> {
                     ),
                 )
             }
-            ExprKind::Refine { draft, policy, retry, els } => {
+            ExprKind::Refine { draft, policy, retry, els, keep } => {
                 if !self.policies.contains(&policy.name) {
                     return Err(format!("política `{}` ausente", policy.name));
                 }
+                // v1.0-RC7: `keeping campo by Q`, com o mínimo da lista em cada variante
+                let keep_arg = match keep {
+                    None => String::new(),
+                    Some(k) => {
+                        if !self.policies.contains(&k.policy.name) {
+                            return Err(format!("política `{}` ausente", k.policy.name));
+                        }
+                        let mut mins: Vec<String> = Vec::new();
+                        for i in &self.m.items {
+                            if let Item::Type(t) = i {
+                                for v in &t.variants {
+                                    for f in v.fields.iter().filter(|f| f.name.name == k.field.name) {
+                                        if let TypeExpr::List { lo, .. } = f.ty.unlabeled() {
+                                            mins.push(format!(
+                                                "({}, {}): {lo}",
+                                                py_str(&t.name.name),
+                                                py_str(&v.name.name)
+                                            ));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        format!(
+                            ", keep=({}, policy_{}, {}, {{{}}})",
+                            py_str(&k.field.name),
+                            ident(&k.policy.name),
+                            py_str(&k.policy.name),
+                            mins.join(", ")
+                        )
+                    }
+                };
                 let d = self.expr(draft)?;
                 let ok = self.fresh("ok");
                 let v = self.fresh("v");
@@ -682,7 +714,7 @@ impl<'m> Gen<'m> {
                     format!(", lifted=[{}]", specs.join(", "))
                 };
                 self.line(format!(
-                    "{ok}, {v} = R.refine({d}, policy_{}, {}, {retry}{extra})",
+                    "{ok}, {v} = R.refine({d}, policy_{}, {}, {retry}{extra}{keep_arg})",
                     ident(&policy.name),
                     py_str(&policy.name)
                 ));
