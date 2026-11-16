@@ -150,7 +150,7 @@ impl Deps<'_> {
         match t {
             TypeExpr::Named(id) => self.name(&id.name),
             TypeExpr::Refined { .. } | TypeExpr::Cap(..) => {}
-            TypeExpr::Labeled(inner, ..) | TypeExpr::Own(inner, _) => self.ty(inner),
+            TypeExpr::Labeled(inner, ..) | TypeExpr::ConfLabeled(inner, ..) | TypeExpr::Own(inner, _) => self.ty(inner),
             TypeExpr::List { elem, .. } => self.ty(elem),
         }
     }
@@ -334,6 +334,11 @@ impl Canon<'_> {
             }
             TypeExpr::Labeled(inner, l, _) => {
                 let _ = write!(self.out, "(lab {} ", l.name());
+                self.ty(inner);
+                self.w(")");
+            }
+            TypeExpr::ConfLabeled(inner, c, _) => {
+                let _ = write!(self.out, "(conf {} ", c.name());
                 self.ty(inner);
                 self.w(")");
             }

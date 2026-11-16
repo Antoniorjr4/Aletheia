@@ -114,6 +114,9 @@ jobs:
       # servidor do GitHub e modos hostis), sem rede
       - name: scripts/rc9-smoke.sh
         run: NO_COLOR=1 scripts/rc9-smoke.sh
+      # v1.0-RC10: confidencialidade — o fluxo tóxico barrado por tipo, sem rede
+      - name: scripts/rc10-smoke.sh
+        run: NO_COLOR=1 scripts/rc10-smoke.sh
 
   github-sandbox:
     # v1.0-RC6: uma tarefa útil contra uma API independente. examples/rc6/triage.ath lê issues,

@@ -21,6 +21,7 @@
 //! | `crash-after-apply` | o primeiro `add_issue_comment` é aplicado e o processo morre sem responder |
 //! | `error-after-apply` | o primeiro `add_issue_comment` é aplicado e a resposta é `isError` |
 //! | `untrusted-label` | rotula todo resultado com `_meta.ifc` não confiável (como o do GitHub, com `--features=ifc_labels`, num repositório público) |
+//! | `secret-label` | rotula todo resultado como `confidentiality: secret` (como o conteúdo de um repositório privado) |
 //! | `env-dump` | `issue_read` devolve no título os nomes das variáveis do próprio ambiente |
 //! | `slow` | o primeiro `add_issue_comment` é aplicado e respondido depois de 3 s |
 //! | `no-structured` | não manda `structuredContent` onde a saída tem esquema |
@@ -341,6 +342,9 @@ impl Mcp {
                     };
                     if self.mode("untrusted-label") {
                         r["_meta"]["ifc"] = json!({ "integrity": "untrusted", "confidentiality": "public" });
+                    }
+                    if self.mode("secret-label") {
+                        r["_meta"]["ifc"]["confidentiality"] = json!("secret");
                     }
                     let reply_id =
                         if comment && self.mode("wrong-id") { json!(format!("{id}-outro")) } else { id.clone() };

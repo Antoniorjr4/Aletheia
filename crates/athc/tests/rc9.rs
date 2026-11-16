@@ -167,6 +167,18 @@ fn prompt_hashes(w: &World, sub: &str) -> Vec<Json> {
     journal(w, sub).into_iter().filter(|e| e["kind"] == "infer").map(|e| e["detail"]["prompt_hash"].clone()).collect()
 }
 
+/// Como `variant`, mas sobre um arquivo de programa qualquer.
+fn variant_of(w: &World, base: &PathBuf, tag: &str, edits: &[(&str, &str)]) -> PathBuf {
+    let mut s = std::fs::read_to_string(base).unwrap();
+    for (from, to) in edits {
+        assert!(s.contains(from), "{tag}: `{from}`");
+        s = s.replacen(from, to, 1);
+    }
+    let p = w.dir.join(format!("{tag}.ath"));
+    std::fs::write(&p, s).unwrap();
+    p
+}
+
 /// Uma variação do programa, executada contra o servidor (a conferência é na ligação).
 fn variant(w: &World, tag: &str, edits: &[(&str, &str)]) -> PathBuf {
     let mut s = std::fs::read_to_string(prog()).unwrap();
@@ -392,6 +404,48 @@ fn an_untrusted_label_on_a_trusted_result_is_blamed() {
     assert!(text(&o).contains("R0649"), "{}", text(&o));
     assert_eq!(w.comments(), vec![(1, 1)]);
     assert_eq!(w.summaries().len(), 0);
+}
+
+/// **v1.0-RC10: a confidencialidade do servidor só eleva.** Com `--features=ifc_labels` num
+/// repositório privado, o servidor do GitHub marca o conteúdo como confidencial. Se o programa o
+/// declarou publicável (`issue_title -> Text[..300]`, sem rótulo = Public) e o servidor diz
+/// `confidentiality: secret`, a suposição estática do programa está errada: o valor não entra —
+/// culpa do provedor (`R0648`). Declarado `^ Secret`, não há contradição e a leitura segue.
+#[test]
+fn a_secret_label_from_the_server_only_raises() {
+    // `label-probe.ath` tem um evento de 1 argumento; montamos o comando sem os `--arg` padrão.
+    let run = |w: &World, prog: &PathBuf, modes: &str| -> Output {
+        let mut c = Command::new(env!("CARGO_BIN_EXE_athc"));
+        c.env("NO_COLOR", "1")
+            .env("GITHUB_MCP_SERVER", w.server(modes))
+            .env("GH_TOKEN", "tok-segredo-123")
+            .env("GITHUB_OWNER", "dono")
+            .env("GITHUB_REPO", "repo");
+        c.arg("run").arg(prog).args(["--provider", "scripted", "--models"]).arg(w.models(&[]));
+        c.arg("--trusted").arg(w.dir.join("trusted.json")).args(["--timeout", "5", "--arg", "\"1\"", "--run-id", "p"]);
+        c.arg("--wal").arg(w.dir.join("p.wal")).arg("--journal").arg(w.dir.join("p.jsonl"));
+        c.output().unwrap()
+    };
+    let probe = root().join("examples/rc9/label-probe.ath");
+    // o programa declara o título publicável; o servidor o rotula secreto → R0648
+    let w = World::start("conf-blame");
+    let o = run(&w, &probe, "secret-label");
+    assert!(!o.status.success(), "{}", text(&o));
+    assert!(text(&o).contains("R0648"), "{}", text(&o));
+    // declarado `^ Secret`, o mesmo rótulo do servidor não contradiz nada
+    let w = World::start("conf-ok");
+    let p = variant_of(
+        &w,
+        &probe,
+        "conf-secret",
+        &[("issue: Text[..8]) -> Text[..300]", "issue: Text[..8]) -> Text[..300] ^ Secret")],
+    );
+    let o = run(&w, &p, "secret-label");
+    assert!(o.status.success(), "{}", text(&o));
+    // sem o modo, nada a elevar: o título publicável entra
+    let w = World::start("conf-clean");
+    let o = run(&w, &probe, "");
+    assert!(o.status.success(), "{}", text(&o));
 }
 
 /// **Sem resposta no prazo.** O primeiro comentário é aplicado e respondido depois do prazo:

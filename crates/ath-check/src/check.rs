@@ -121,6 +121,8 @@ pub struct Facts {
     /// Ponto de consumo (`sample`, `refine`) → nó `infer` de origem.
     pub draft_src: HashMap<Span, Span>,
     pub integrity_checks: usize,
+    /// v1.0-RC10: verificações de fluxo de confidencialidade (argumento → sink).
+    pub confidentiality_checks: usize,
     pub refinement_checks: usize,
     pub tool_calls: usize,
     /// Blocos `atomic` e, para cada ferramenta compensável usada neles, o compensador.
@@ -184,7 +186,10 @@ pub struct Ctx<'m> {
     pub facts: Facts,
     scopes: Vec<Vec<(String, LTy)>>,
     pc: Label,
+    /// v1.0-RC10: confidencialidade do contexto de controle (ramo decidido por dado secreto).
+    pc_conf: Conf,
     pc_span: Option<Span>,
+    pc_conf_span: Option<Span>,
     used: BTreeMap<String, Span>,
     ret: Option<Ty>,
     ret_refn: Option<Refn>,
@@ -222,7 +227,9 @@ impl<'m> Ctx<'m> {
             facts: Facts::default(),
             scopes: Vec::new(),
             pc: Label::Trusted,
+            pc_conf: Conf::Public,
             pc_span: None,
+            pc_conf_span: None,
             used: BTreeMap::new(),
             ret: None,
             ret_refn: None,
@@ -268,6 +275,15 @@ impl<'m> Ctx<'m> {
                 "Text" => hi.map(|h| Refn::Text { max: h as u32 }),
                 _ => None,
             },
+            _ => None,
+        }
+    }
+
+    /// v1.0-RC10: a confidencialidade declarada num tipo (`^ Secret`), se houver.
+    pub fn conf_of(&self, te: &TypeExpr) -> Option<Conf> {
+        match te {
+            TypeExpr::ConfLabeled(_, c, _) => Some(*c),
+            TypeExpr::Labeled(inner, ..) | TypeExpr::Own(inner, _) => self.conf_of(inner),
             _ => None,
         }
     }
@@ -386,6 +402,7 @@ impl<'m> Ctx<'m> {
                 let (t, _) = self.resolve(inner);
                 (t, Some(*l))
             }
+            TypeExpr::ConfLabeled(inner, _, _) => self.resolve(inner),
             TypeExpr::Own(inner, _) => self.resolve(inner),
             TypeExpr::List { elem, lo, hi, .. } => {
                 let (et, el) = self.resolve(elem);
@@ -1400,7 +1417,8 @@ impl<'m> Ctx<'m> {
                     origin.push(format!("evento `{}({})` ^ {}", h.event.name, p.name.name, lab.name()));
                 }
                 let refn = self.refn_of(&p.ty);
-                self.bind(&p.name.name, LTy::declared(t, lab, refn, origin));
+                let conf = self.conf_of(&p.ty).unwrap_or(Conf::Public);
+                self.bind(&p.name.name, LTy::declared(t, lab, refn, origin).with_conf(conf));
             }
             let (rt, _) = self.resolve(&h.ret);
             self.ret = Some(rt.clone());
@@ -1513,6 +1531,7 @@ impl<'m> Ctx<'m> {
             ExprKind::Bool(_) => LTy::trusted(Ty::Bool),
             // (v1.0-RC8: o literal carrega o seu comprimento, para a composição de texto provar limites)
             ExprKind::Str(s) => LTy {
+                conf: Conf::Public,
                 tok: Some(est_tokens(s)),
                 refn: Some(Refn::Text { max: s.chars().count() as u32 }),
                 ..LTy::trusted(Ty::Text)
@@ -1726,7 +1745,14 @@ impl<'m> Ctx<'m> {
             out.meet_from(&t);
         }
         let n = items.len() as u32;
-        LTy { ty: Ty::List(Box::new(elem), refn.flatten(), n, n), lab: out.lab, tok, origin: out.origin, refn: None }
+        LTy {
+            ty: Ty::List(Box::new(elem), refn.flatten(), n, n),
+            lab: out.lab,
+            conf: out.conf,
+            tok,
+            origin: out.origin,
+            refn: None,
+        }
     }
 
     /// Operando de `for`/`all`/`any`: precisa ser uma lista delimitada. Registra os limites
@@ -1864,6 +1890,7 @@ impl<'m> Ctx<'m> {
 
     fn field(&mut self, recv: &Expr, f: &Ident) -> LTy {
         let r = self.expr(recv);
+        let recv_conf = r.conf;
         // **v1.0-RC8: projeção.** `xs.campo` numa lista de registros é a lista do campo de cada
         // um, com os mesmos limites e o mesmo rótulo.
         if let Ty::List(elem, _, lo, hi) = &r.ty {
@@ -1889,6 +1916,7 @@ impl<'m> Ctx<'m> {
                 if let (true, Some((t, rf))) = (ok, found) {
                     let mut out = LTy::trusted(Ty::List(Box::new(t), rf, lo, hi));
                     out.lab = r.lab;
+                    out.conf = recv_conf;
                     out.origin = r.origin;
                     return out;
                 }
@@ -1943,7 +1971,7 @@ impl<'m> Ctx<'m> {
             _ => None,
         };
         match (ok, found) {
-            (true, Some(t)) => LTy::declared(t, r.lab, refn, r.origin),
+            (true, Some(t)) => LTy::declared(t, r.lab, refn, r.origin).with_conf(recv_conf),
             _ => {
                 self.push(
                     Diag::new(
@@ -2162,7 +2190,7 @@ impl<'m> Ctx<'m> {
                         0
                     }
                 };
-                return LTy { ty: Ty::Text, lab: t.lab, tok: Some(n), origin: t.origin, refn: None };
+                return LTy { ty: Ty::Text, lab: t.lab, conf: t.conf, tok: Some(n), origin: t.origin, refn: None };
             }
             // **v1.0-RC8: composição de texto.** `text(n)`: o inteiro em decimal, com o comprimento
             // provado pelos limites de `n`. `join(xs, sep)`: os textos da lista, separados. O
@@ -2236,7 +2264,8 @@ impl<'m> Ctx<'m> {
                     }),
                     _ => None,
                 };
-                let mut out = LTy::declared(Ty::Text, xs.lab.meet(sep.lab), refn, xs.origin.clone());
+                let mut out = LTy::declared(Ty::Text, xs.lab.meet(sep.lab), refn, xs.origin.clone())
+                    .with_conf(xs.conf.join(sep.conf));
                 if refn.is_none() {
                     out.tok = None;
                 }
@@ -2251,6 +2280,7 @@ impl<'m> Ctx<'m> {
                 return match &t.ty {
                     // O tamanho herda os limites do tipo: `len(xs)` é um `Int[a..b]` provado.
                     Ty::List(_, _, lo, hi) => LTy {
+                        conf: t.conf,
                         ty: Ty::Int,
                         lab: t.lab,
                         tok: None,
@@ -2278,12 +2308,12 @@ impl<'m> Ctx<'m> {
                 if self.in_policy {
                     self.impure(e.span, "`sample`");
                 }
-                let LTy { ty, lab, origin, refn, .. } = self.expr(&args[0]);
+                let LTy { ty, lab, conf, origin, refn, .. } = self.expr(&args[0]);
                 return match ty {
                     Ty::Draft(inner, ispan) => {
                         self.facts.draft_src.insert(e.span, ispan);
                         self.use_effect("Infer", e.span);
-                        LTy::declared(*inner, lab, refn, origin).with_step("sample(…)")
+                        LTy::declared(*inner, lab, refn, origin).with_conf(conf).with_step("sample(…)")
                     }
                     Ty::Never => LTy::never(),
                     other => {
@@ -2430,6 +2460,7 @@ impl<'m> Ctx<'m> {
             let at = self.expr(a);
             if !matches!(at.ty, Ty::Cap(_) | Ty::IdemKey) {
                 taint.meet_from(&at);
+                taint.join_conf_from(&at);
             }
             let (pt, req) = self.resolve(&p.ty);
             if !assignable(&at.ty, &pt) {
@@ -2486,6 +2517,42 @@ impl<'m> Ctx<'m> {
                     self.push(d);
                 }
             }
+            // v1.0-RC10: a confidencialidade do argumento não pode passar do que o parâmetro
+            // tolera (um sink público declara `^ Public`). `pc_conf` conta como um canal: um
+            // efeito num ramo decidido por dado secreto também expõe.
+            let declared_conf = self.conf_of(&p.ty);
+            let allow = declared_conf.unwrap_or(Conf::Secret);
+            if declared_conf.is_some() {
+                self.facts.confidentiality_checks += 1;
+            }
+            let eff_conf = at.conf.join(self.pc_conf);
+            if eff_conf > allow {
+                let implicit = at.conf <= allow;
+                let mut d = Diag::new(
+                    E3,
+                    "E0440",
+                    "fluxo de confidencialidade violado",
+                    a.span,
+                    format!("confidencialidade {}", eff_conf.name()),
+                );
+                if implicit {
+                    d = d.note(format!(
+                        "o valor é {}, mas a chamada ocorre num ramo decidido por dado {}",
+                        at.conf.name(),
+                        self.pc_conf.name()
+                    ));
+                    if let Some(ps) = self.pc_conf_span {
+                        d = d.secondary(ps, format!("ramo decidido por dado {}", self.pc_conf.name()));
+                    }
+                } else if !at.origin.is_empty() {
+                    d = d.note(format!("origem: {}", at.origin.join(" → ")));
+                }
+                d = d.note(format!("exigido: {}({}: {} ^ {})", callee.name, p.name.name, pt.show(), allow.name()));
+                d = d.help(
+                    "um canal que aceita só `^ Public` não recebe dado `Secret` ou `Internal`: nenhum dado confidencial sai por um sink público, qualquer que seja a decisão do modelo",
+                );
+                self.push(d);
+            }
         }
         for eff in &tool.effects {
             self.use_effect(&eff.name, e.span);
@@ -2497,7 +2564,7 @@ impl<'m> Ctx<'m> {
             origin.push(format!("{}(…) devolve ^ {}", callee.name, lab.name()));
         }
         let refn = self.refn_of(&tool.ret);
-        let mut out = LTy::declared(rt, lab, refn, origin);
+        let mut out = LTy::declared(rt, lab, refn, origin).with_conf(self.conf_of(&tool.ret).unwrap_or(Conf::Public));
         if self.taint_calls {
             // Numa condição de controle, o que a ferramenta observa é escolhido pelos argumentos.
             if taint.lab < out.lab {
@@ -2505,6 +2572,7 @@ impl<'m> Ctx<'m> {
                 out.origin = taint.origin;
                 out.origin.push(format!("{}(…)", callee.name));
             }
+            out.conf = out.conf.join(taint.conf);
         }
         out
     }
@@ -2535,6 +2603,7 @@ impl<'m> Ctx<'m> {
                         self.expect_param(fe, &at, &fd.ty, &format!("o campo `{}.{}`", name.name, fname.name));
                     }
                     out.meet_from(&at);
+                    out.join_conf_from(&at);
                 }
                 None => self.push(Diag::new(
                     E0,
@@ -2601,6 +2670,8 @@ impl<'m> Ctx<'m> {
         let mut out = LTy::trusted(result);
         out.meet_from(&lt);
         out.meet_from(&rt);
+        out.join_conf_from(&lt);
+        out.join_conf_from(&rt);
         if op == BinOp::Concat {
             out.tok = match (lt.tok, rt.tok) {
                 (Some(a), Some(b)) => Some(a + b),
@@ -2622,10 +2693,14 @@ impl<'m> Ctx<'m> {
         if !assignable(&c.ty, &Ty::Bool) {
             self.mismatch(cond.span, &Ty::Bool, &c.ty);
         }
-        let saved = (self.pc, self.pc_span);
+        let saved = (self.pc, self.pc_span, self.pc_conf, self.pc_conf_span);
         if c.lab < self.pc {
             self.pc = c.lab;
             self.pc_span = Some(cond.span);
+        }
+        if c.conf > self.pc_conf {
+            self.pc_conf = c.conf;
+            self.pc_conf_span = Some(cond.span);
         }
         let t = self.block(then);
         let mut out = match els {
@@ -2652,8 +2727,9 @@ impl<'m> Ctx<'m> {
             }
             None => LTy::trusted(Ty::Unit),
         };
-        (self.pc, self.pc_span) = saved;
+        (self.pc, self.pc_span, self.pc_conf, self.pc_conf_span) = saved;
         out.meet_from(&c);
+        out.join_conf_from(&c);
         out
     }
 
@@ -2674,10 +2750,14 @@ impl<'m> Ctx<'m> {
             }
         };
         let decl: &'m TypeDecl = self.types[&tname];
-        let saved = (self.pc, self.pc_span);
+        let saved = (self.pc, self.pc_span, self.pc_conf, self.pc_conf_span);
         if arms.len() > 1 && s.lab < self.pc {
             self.pc = s.lab;
             self.pc_span = Some(scrut.span);
+        }
+        if arms.len() > 1 && s.conf > self.pc_conf {
+            self.pc_conf = s.conf;
+            self.pc_conf_span = Some(scrut.span);
         }
         let mut result: Option<LTy> = None;
         let mut seen: HashSet<String> = HashSet::new();
@@ -2701,7 +2781,7 @@ impl<'m> Ctx<'m> {
                     Some(fd) => {
                         let (ft, _) = self.resolve(&fd.ty);
                         let refn = self.refn_of(&fd.ty);
-                        self.bind(&b.name, LTy::declared(ft, s.lab, refn, s.origin.clone()));
+                        self.bind(&b.name, LTy::declared(ft, s.lab, refn, s.origin.clone()).with_conf(s.conf));
                     }
                     None => {
                         self.push(Diag::new(
@@ -2739,7 +2819,7 @@ impl<'m> Ctx<'m> {
                 },
             });
         }
-        (self.pc, self.pc_span) = saved;
+        (self.pc, self.pc_span, self.pc_conf, self.pc_conf_span) = saved;
         let missing: Vec<String> =
             decl.variants.iter().filter(|v| !seen.contains(&v.name.name)).map(|v| v.name.name.clone()).collect();
         if !missing.is_empty() {
@@ -2753,6 +2833,7 @@ impl<'m> Ctx<'m> {
         }
         let mut out = result.unwrap_or_else(LTy::never);
         out.meet_from(&s);
+        out.join_conf_from(&s);
         out
     }
 
@@ -2790,7 +2871,7 @@ impl<'m> Ctx<'m> {
                 format!("encontrado `{}`", oty.show()),
             ));
         }
-        let mut acc = LTy { ty: Ty::Unit, lab: self.pc, tok: None, origin: Vec::new(), refn: None };
+        let mut acc = LTy { ty: Ty::Unit, lab: self.pc, conf: self.pc_conf, tok: None, origin: Vec::new(), refn: None };
         if self.pc < Label::Trusted {
             acc.origin.push("contexto de controle (pc)".into());
         }
@@ -2937,7 +3018,7 @@ impl<'m> Ctx<'m> {
             },
         );
         let refn = self.refn_of(out);
-        LTy { ty: Ty::Draft(Box::new(oty), e.span), lab: acc.lab, tok: None, origin: acc.origin, refn }
+        LTy { ty: Ty::Draft(Box::new(oty), e.span), lab: acc.lab, conf: acc.conf, tok: None, origin: acc.origin, refn }
             .with_step(format!("infer {}", model.name))
     }
 
