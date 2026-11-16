@@ -638,7 +638,7 @@ impl<'m> Ctx<'m> {
                     );
                 }
             }
-            if let BindUrl::Lit(u) = &b.url {
+            if let (BindUrl::Lit(u), None) = (&b.url, &b.mcp) {
                 if ath_syntax::ast::url_authority(u).is_none() {
                     self.push(Diag::new(
                         E0,
@@ -750,6 +750,147 @@ impl<'m> Ctx<'m> {
                     );
                 }
             }
+            // v1.0-RC9: as chamadas de um `bind` MCP
+            for (t, call) in &b.calls {
+                let Some(decl) = self.tools.get(t.name.as_str()).copied() else {
+                    self.push(
+                        Diag::new(
+                            E0,
+                            "E0431",
+                            format!("`bind {}` liga `{}`, que não é uma ferramenta do módulo", b.name.name, t.name),
+                            t.span,
+                            "ferramenta não declarada",
+                        )
+                        .help("cada chamada de um `bind` tem o nome de uma `tool` (fora `mcp`, `auth` e `arg.…`)"),
+                    );
+                    continue;
+                };
+                if seen.iter().any(|s| s.name == t.name) {
+                    self.push(Diag::new(
+                        E0,
+                        "E0432",
+                        format!("a ferramenta `{}` é ligada mais de uma vez", t.name),
+                        t.span,
+                        "segunda ligação",
+                    ));
+                }
+                seen.push(t);
+                self.check_mcp_call(b, t, decl, call, false);
+                let finder = b.call_finds.iter().find(|(f, _)| f.name == t.name).map(|(_, c)| c);
+                if let Some(f) = finder {
+                    self.check_mcp_call(b, t, decl, f, true);
+                }
+                let keyed = decl.params.iter().any(|p| p.ty.unlabeled().base_name() == "IdemKey");
+                let marker = b.keys.iter().find(|(k, _)| k.name == t.name).map(|(_, p)| p.as_str());
+                let text =
+                    |n: &str| decl.params.iter().any(|p| p.name.name == n && p.ty.unlabeled().base_name() == "Text");
+                if let Some(p) = marker {
+                    let sent_as_text = call.args.iter().any(|(_, a)| a == &McpArg::Param(p.to_string()));
+                    if !keyed || !text(p) || !sent_as_text {
+                        self.push(
+                            Diag::new(
+                                E0,
+                                "E0436",
+                                format!("`{}.key = \"{p}\"`: a chave viaja num parâmetro `Text` que a chamada envia, numa ferramenta com `own IdemKey`", t.name),
+                                t.span,
+                                "marcador de chave sem lugar",
+                            )
+                            .help("declare a chave na ferramenta e escolha um parâmetro de texto que o servidor guarda e devolve"),
+                        );
+                    }
+                }
+                if finder.is_none() && b.settles.iter().any(|(k, _)| k.name == t.name) {
+                    self.push(Diag::new(
+                        E0,
+                        "E0436",
+                        format!("`{}.settle` exige `{}.find`", t.name, t.name),
+                        t.span,
+                        "espera sem consulta",
+                    ));
+                }
+                if let Some(f) = finder {
+                    if marker.is_none() || f.list.is_none() {
+                        self.push(
+                            Diag::new(
+                                E0,
+                                "E0436",
+                                format!("`{}.find` lê uma lista (`-> lista[]…`) e exige `{}.key`", t.name, t.name),
+                                t.span,
+                                "consulta por chave sem marcador",
+                            )
+                            .help("a consulta acha a operação pelo marcador que `.key` põe no parâmetro"),
+                        );
+                    }
+                }
+            }
+            for (t, _) in &b.call_finds {
+                if !b.calls.iter().any(|(c, _)| c.name == t.name) {
+                    self.push(Diag::new(
+                        E0,
+                        "E0436",
+                        format!("`{}.find` sem a chamada de `{}`", t.name, t.name),
+                        t.span,
+                        "consulta de uma ferramenta não ligada",
+                    ));
+                }
+            }
+        }
+    }
+
+    /// v1.0-RC9: uma chamada MCP. Cada valor é um parâmetro de dados da ferramenta, `int(p)` de
+    /// um parâmetro `Text` ou `Int`, um `@arg` do `bind`, ou um literal (`E0435`). A chamada
+    /// principal envia todos os parâmetros de dados (nada que o programa passa fica para trás) e
+    /// lê um caminho do resultado se a ferramenta devolve um valor (`E0439`). O que o servidor
+    /// anuncia é conferido contra isto na ligação, antes de qualquer efeito (`R0646`).
+    fn check_mcp_call(&mut self, b: &BindDecl, t: &Ident, decl: &ToolDecl, call: &McpCall, find: bool) {
+        let data = |n: &str| {
+            decl.params.iter().find(|p| p.name.name == n && matches!(p.ty.unlabeled().base_name(), "Text" | "Int"))
+        };
+        for (k, a) in &call.args {
+            let bad = match a {
+                McpArg::Param(p) | McpArg::IntOf(p) => data(p)
+                    .is_none()
+                    .then(|| format!("`{k}: {p}` usa `{p}`, que não é um parâmetro `Text` ou `Int` da ferramenta")),
+                McpArg::Arg(x) => (!b.args.iter().any(|(n, _)| &n.name == x))
+                    .then(|| format!("`{k}: @{x}` usa `@{x}`, que não é um `arg.{x}` do `bind`")),
+                _ => None,
+            };
+            if let Some(msg) = bad {
+                self.push(
+                    Diag::new(E0, "E0435", format!("a chamada de `{}`: {msg}", t.name), t.span, "argumento sem origem")
+                        .help("uma chamada só envia dados que o programa passa à ferramenta, configuração do executor (`@arg`) e literais"),
+                );
+            }
+        }
+        if find {
+            return;
+        }
+        let sent = call.params();
+        for p in &decl.params {
+            if matches!(p.ty.unlabeled().base_name(), "Text" | "Int") && !sent.contains(&p.name.name.as_str()) {
+                self.push(
+                    Diag::new(
+                        E0,
+                        "E0439",
+                        format!("a chamada de `{}` não envia `{}`", t.name, p.name.name),
+                        t.span,
+                        "parâmetro que não chega ao servidor",
+                    )
+                    .help("todo dado que o programa passa à ferramenta vai na chamada: nomeie-o num argumento"),
+                );
+            }
+        }
+        if decl.ret.unlabeled().base_name() != "Unit" && !call.projected {
+            self.push(
+                Diag::new(
+                    E0,
+                    "E0439",
+                    format!("`{}` devolve `{}`, e a chamada não diz o que ler do resultado", t.name, decl.ret.unlabeled().sig()),
+                    t.span,
+                    "resultado sem caminho",
+                )
+                .help("termine a chamada com `-> campo` (ou `-> a.b`); o tipo do campo é conferido contra o esquema de saída do servidor"),
+            );
         }
     }
 

@@ -251,15 +251,17 @@ fn cmd_check(opts: &Opts, st: Style) -> Result<bool, String> {
     // **As ligações** (RC5): o que o programa alcança no mundo, e com que segredo (só o nome).
     for i in &c.module.items {
         if let ath_syntax::ast::Item::Bind(b) = i {
-            let url = match &b.url {
-                ath_syntax::ast::BindUrl::Lit(u) => u.clone(),
-                ath_syntax::ast::BindUrl::Env(v) => format!("env({v})"),
+            let url = match (&b.mcp, &b.url) {
+                (Some(ath_syntax::ast::BindUrl::Env(v)), _) => format!("servidor MCP de env({v})"),
+                (Some(ath_syntax::ast::BindUrl::Lit(c)), _) => format!("servidor MCP `{c}`"),
+                (None, ath_syntax::ast::BindUrl::Lit(u)) => u.clone(),
+                (None, ath_syntax::ast::BindUrl::Env(v)) => format!("env({v})"),
             };
             println!(
                 "{} ligação `{}`: {} ferramenta(s) → {url}{}{}",
                 st.green("✓"),
                 b.name.name,
-                b.routes.len(),
+                b.routes.len() + b.calls.len(),
                 b.auth.as_ref().map(|s| format!(" · segredo `{s}` (por referência)")).unwrap_or_default(),
                 if b.status.is_some() { " · consulta por chave" } else { "" }
             );

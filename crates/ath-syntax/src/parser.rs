@@ -334,6 +334,11 @@ impl Parser {
             keys: Vec::new(),
             finds: Vec::new(),
             settles: Vec::new(),
+            mcp: None,
+            secret_as: None,
+            args: Vec::new(),
+            calls: Vec::new(),
+            call_finds: Vec::new(),
         };
         let mut has_url = false;
         while *self.peek() != Tok::RBrace {
@@ -342,14 +347,44 @@ impl Parser {
             if self.eat(&Tok::Dot) {
                 let what = self.ident()?;
                 self.expect(Tok::Assign)?;
+                // v1.0-RC9: `arg.nome = env("V") | "texto"`, configuração do executor
+                if field.name == "arg" {
+                    let v = match self.peek().clone() {
+                        Tok::Ident(w) if w == "env" => {
+                            self.bump();
+                            self.expect(Tok::LParen)?;
+                            let Tok::Str(v) = self.peek().clone() else {
+                                return Err(self.err("`env(\"NOME\")` nomeia uma variável de ambiente".to_string()));
+                            };
+                            self.bump();
+                            self.expect(Tok::RParen)?;
+                            if v.is_empty() || !v.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+                                return Err(self.err("nome de variável de ambiente inválido em `env`".to_string()));
+                            }
+                            BindUrl::Env(v)
+                        }
+                        Tok::Str(v) => {
+                            self.bump();
+                            BindUrl::Lit(v)
+                        }
+                        _ => return Err(self.err(format!("`arg.{}` é um texto ou `env(\"NOME\")`", what.name))),
+                    };
+                    if d.args.iter().any(|(a, _)| a.name == what.name) {
+                        return Err(self.err(format!("`arg.{}` declarado duas vezes", what.name)));
+                    }
+                    d.args.push((what, v));
+                    self.eat(&Tok::Comma);
+                    continue;
+                }
                 let Tok::Str(v) = self.peek().clone() else {
                     return Err(self.err(format!("`{}.{}` é um texto", field.name, what.name)));
                 };
                 match what.name.as_str() {
                     "key" => d.keys.push((field, v)),
-                    "find" => match Route::parse(&v) {
-                        Some(r) => d.finds.push((field, r)),
-                        None => return Err(self.err(format!("rota inválida para `{}.find`: `{v}`", field.name))),
+                    "find" => match (Route::parse(&v), McpCall::parse(&v)) {
+                        (Some(r), _) => d.finds.push((field, r)),
+                        (None, Some(c)) => d.call_finds.push((field, c)),
+                        _ => return Err(self.err(format!("rota inválida para `{}.find`: `{v}`", field.name))),
                     },
                     "settle" => match v.parse::<u32>() {
                         Ok(n) if n <= 300 => d.settles.push((field, n)),
@@ -401,8 +436,35 @@ impl Parser {
                     };
                     (d.url_span, has_url) = (span, true);
                 }
+                "mcp" => {
+                    d.mcp = Some(match reference(self, "env")? {
+                        Some(v) => BindUrl::Env(v),
+                        None => match self.peek().clone() {
+                            Tok::Str(u) if !u.trim().is_empty() => {
+                                self.bump();
+                                BindUrl::Lit(u)
+                            }
+                            _ => return Err(self.err("`mcp` é o comando do servidor, um texto ou `env(\"NOME\")`".to_string())),
+                        },
+                    });
+                    d.url_span = span;
+                }
                 "auth" => match reference(self, "secret")? {
-                    Some(v) => d.auth = Some(v),
+                    Some(v) => {
+                        d.auth = Some(v);
+                        // v1.0-RC9: `as "NOME"`, a variável do ambiente do servidor MCP
+                        if matches!(self.peek(), Tok::Ident(w) if w == "as") {
+                            self.bump();
+                            let Tok::Str(n) = self.peek().clone() else {
+                                return Err(self.err("`as` nomeia a variável do ambiente do servidor: `as \"NOME\"`".to_string()));
+                            };
+                            if n.is_empty() || !n.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+                                return Err(self.err(format!("nome de variável inválido em `as \"{n}\"`")));
+                            }
+                            self.bump();
+                            d.secret_as = Some(n);
+                        }
+                    }
                     None => {
                         return Err(self.err(
                             "`auth` é `secret(\"NOME\")`: o segredo é uma referência ao ambiente do executor, nunca um literal do programa"
@@ -414,9 +476,19 @@ impl Parser {
                     let Tok::Str(r) = self.peek().clone() else {
                         return Err(self.err(format!("a rota de `{f}` é um texto: \"MÉTODO /caminho -> campo\"")));
                     };
+                    // v1.0-RC9: uma chamada MCP, `nome(k: v, …) -> caminho`
+                    if let (None, Some(c)) = (Route::parse(&r), McpCall::parse(&r)) {
+                        if f == "status" {
+                            return Err(self.err("`status` é uma rota HTTP; num `bind` MCP a consulta é `.find`".to_string()));
+                        }
+                        self.bump();
+                        d.calls.push((field, c));
+                        self.eat(&Tok::Comma);
+                        continue;
+                    }
                     let Some(route) = Route::parse(&r) else {
                         return Err(self.err(format!(
-                            "rota inválida para `{f}`: `{r}` (esperado \"GET|POST|PUT|PATCH /caminho\", com `{{parâmetro}}` e `?query` opcionais, e \"-> campo\" ou \"-> [].campo\")"
+                            "rota inválida para `{f}`: `{r}` (esperado \"GET|POST|PUT|PATCH /caminho\", com `{{parâmetro}}` e `?query` opcionais, e \"-> campo\" ou \"-> [].campo\"; ou, num `bind` MCP, \"ferramenta(k: v, …) -> caminho\")"
                         )));
                     };
                     self.bump();
@@ -430,8 +502,33 @@ impl Parser {
             self.eat(&Tok::Comma);
         }
         self.expect(Tok::RBrace)?;
-        if !has_url {
-            return Err(self.err("um `bind` declara `url`".to_string()));
+        match (has_url, d.mcp.is_some()) {
+            (false, false) => {
+                return Err(
+                    self.err("um `bind` declara `url` (HTTP) ou `mcp` (o comando de um servidor MCP)".to_string())
+                )
+            }
+            (true, true) => return Err(self.err("um `bind` é HTTP (`url`) ou MCP (`mcp`), não os dois".to_string())),
+            (true, false)
+                if !d.calls.is_empty() || !d.call_finds.is_empty() || !d.args.is_empty() || d.secret_as.is_some() =>
+            {
+                return Err(
+                    self.err("chamadas MCP, `arg.…` e `auth … as` só valem num `bind` MCP (`mcp = …`)".to_string())
+                )
+            }
+            (false, true) if !d.routes.is_empty() || !d.finds.is_empty() || d.status.is_some() => {
+                return Err(self.err(
+                    "um `bind` MCP liga ferramentas a chamadas \"ferramenta(k: v) -> caminho\", não a rotas HTTP"
+                        .to_string(),
+                ))
+            }
+            (false, true) if d.auth.is_some() && d.secret_as.is_none() => {
+                return Err(self.err(
+                    "num `bind` MCP, o segredo vai para o ambiente do servidor: `auth = secret(\"V\") as \"NOME\"`"
+                        .to_string(),
+                ))
+            }
+            _ => {}
         }
         Ok(d)
     }

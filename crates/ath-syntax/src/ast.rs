@@ -227,6 +227,171 @@ pub struct BindDecl {
     /// para refletir uma escrita. Uma consulta que não acha a operação só conclui "não
     /// aplicada" depois de esperar esse tempo e consultar de novo.
     pub settles: Vec<(Ident, u32)>,
+    /// `mcp = env("V") | "comando args…"` (v1.0-RC9): as ferramentas são as de um servidor MCP,
+    /// iniciado pelo executor com este comando (stdio). Exclui `url`.
+    pub mcp: Option<BindUrl>,
+    /// `auth = secret("V") as "NOME"` (v1.0-RC9): num `bind` MCP, a variável do ambiente do
+    /// processo do servidor que recebe o segredo
+    pub secret_as: Option<String>,
+    /// `arg.nome = env("V") | "texto"` (v1.0-RC9): um argumento de configuração do executor,
+    /// usado nas chamadas como `@nome`
+    pub args: Vec<(Ident, BindUrl)>,
+    /// as chamadas MCP: `ferramenta = "nome_mcp(k: v, …) -> caminho"`
+    pub calls: Vec<(Ident, McpCall)>,
+    /// `ferramenta.find = "nome_mcp(k: v, …) -> lista[].caminho"`
+    pub call_finds: Vec<(Ident, McpCall)>,
+}
+
+/// v1.0-RC9: o valor de um argumento numa chamada MCP.
+#[derive(Clone, Debug, PartialEq)]
+pub enum McpArg {
+    /// um parâmetro de dados da ferramenta
+    Param(String),
+    /// `int(p)`: o texto do parâmetro, enviado como inteiro (se não for um, nada é enviado)
+    IntOf(String),
+    /// `@nome`: um `arg.nome` do `bind`
+    Arg(String),
+    /// `'texto'`
+    Str(String),
+    /// um inteiro literal
+    Num(i64),
+}
+
+/// v1.0-RC9: uma chamada a uma ferramenta de um servidor MCP, e o que se lê do resultado.
+#[derive(Clone, Debug, PartialEq)]
+pub struct McpCall {
+    pub tool: String,
+    pub args: Vec<(String, McpArg)>,
+    /// `-> a[].b`: o caminho até uma lista (a consulta por chave procura o elemento que carrega o
+    /// marcador)
+    pub list: Option<Vec<String>>,
+    /// `-> a.b` (ou, depois de `[]`, o caminho dentro do elemento); vazio: o resultado inteiro
+    /// (ou o elemento), e sem `->` a ferramenta não devolve valor que o programa leia
+    pub path: Vec<String>,
+    pub projected: bool,
+}
+
+impl McpCall {
+    /// `nome(k: v, …) [-> caminho]`, com `v` um parâmetro, `int(p)`, `@arg`, `'texto'` ou um
+    /// inteiro; o caminho é `a.b`, `a[]`, `a[].b`.
+    pub fn parse(s: &str) -> Option<McpCall> {
+        let word = |f: &str| !f.is_empty() && f.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+        let (call, proj) = match s.split_once("->") {
+            Some((c, p)) => (c.trim(), Some(p.trim())),
+            None => (s.trim(), None),
+        };
+        let (tool, rest) = call.split_once('(')?;
+        let tool = tool.trim();
+        if tool.is_empty() || !tool.chars().all(|c| c.is_ascii_alphanumeric() || "_-.".contains(c)) {
+            return None;
+        }
+        let inner = rest.trim_end().strip_suffix(')')?;
+        let mut args = Vec::new();
+        // separa por vírgulas fora de aspas simples
+        let (mut parts, mut cur, mut quoted) = (Vec::new(), String::new(), false);
+        for ch in inner.chars() {
+            match ch {
+                '\'' => {
+                    quoted = !quoted;
+                    cur.push(ch);
+                }
+                ',' if !quoted => parts.push(std::mem::take(&mut cur)),
+                c => cur.push(c),
+            }
+        }
+        if quoted {
+            return None;
+        }
+        if !cur.trim().is_empty() || !parts.is_empty() {
+            parts.push(cur);
+        }
+        for part in parts {
+            let (k, v) = part.split_once(':')?;
+            let (k, v) = (k.trim(), v.trim());
+            if !word(k) || args.iter().any(|(n, _): &(String, McpArg)| n == k) {
+                return None;
+            }
+            let val = if let Some(t) = v.strip_prefix('\'').and_then(|x| x.strip_suffix('\'')) {
+                if t.contains('\'') {
+                    return None;
+                }
+                McpArg::Str(t.to_string())
+            } else if let Some(a) = v.strip_prefix('@') {
+                if !word(a) {
+                    return None;
+                }
+                McpArg::Arg(a.to_string())
+            } else if let Some(p) = v.strip_prefix("int(").and_then(|x| x.strip_suffix(')')) {
+                if !word(p.trim()) {
+                    return None;
+                }
+                McpArg::IntOf(p.trim().to_string())
+            } else if let Ok(n) = v.parse::<i64>() {
+                McpArg::Num(n)
+            } else if word(v) && !v.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+                McpArg::Param(v.to_string())
+            } else {
+                return None;
+            };
+            args.push((k.to_string(), val));
+        }
+        let (mut list, mut path) = (None, Vec::new());
+        if let Some(p) = proj {
+            let (before, after) = match p.split_once("[]") {
+                Some((b, a)) => (b, Some(a)),
+                None => (p, None),
+            };
+            let segs = |x: &str| -> Option<Vec<String>> {
+                if x.is_empty() {
+                    return Some(Vec::new());
+                }
+                let v: Vec<String> = x.split('.').map(String::from).collect();
+                v.iter().all(|s| word(s)).then_some(v)
+            };
+            match after {
+                Some(a) => {
+                    let b = segs(before)?;
+                    if b.is_empty() || a.contains("[]") {
+                        return None;
+                    }
+                    let a = match a.strip_prefix('.') {
+                        Some(x) => segs(x)?,
+                        None if a.is_empty() => Vec::new(),
+                        None => return None,
+                    };
+                    list = Some(b);
+                    path = a;
+                }
+                None => {
+                    path = segs(before)?;
+                    if path.is_empty() {
+                        return None;
+                    }
+                }
+            }
+        }
+        Some(McpCall { tool: tool.to_string(), args, list, path, projected: proj.is_some() })
+    }
+
+    /// Os parâmetros da ferramenta que a chamada usa (`p` e `int(p)`), na ordem.
+    pub fn params(&self) -> Vec<&str> {
+        self.args
+            .iter()
+            .filter_map(|(_, a)| match a {
+                McpArg::Param(p) | McpArg::IntOf(p) => Some(p.as_str()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// O caminho como texto: `a.b`, `a[].b`.
+    pub fn shown_path(&self) -> String {
+        match &self.list {
+            Some(l) if self.path.is_empty() => format!("{}[]", l.join(".")),
+            Some(l) => format!("{}[].{}", l.join("."), self.path.join(".")),
+            None => self.path.join("."),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -771,4 +936,56 @@ impl BinOp {
 pub enum UnOp {
     Not,
     Neg,
+}
+
+#[cfg(test)]
+mod mcp_call_tests {
+    use super::*;
+
+    #[test]
+    fn parses_the_calls_of_the_triage() {
+        let c = McpCall::parse(
+            "add_issue_comment(owner: @owner, repo: @repo, issue_number: int(issue), body: body) -> html_url",
+        )
+        .unwrap();
+        assert_eq!(c.tool, "add_issue_comment");
+        assert_eq!(c.args[2], ("issue_number".into(), McpArg::IntOf("issue".into())));
+        assert_eq!(
+            (c.list.clone(), c.path.clone(), c.params()),
+            (None, vec!["html_url".to_string()], vec!["issue", "body"])
+        );
+        let f = McpCall::parse(
+            "issue_read(method: 'get_comments', perPage: 100, issue_number: int(issue)) -> comments[].html_url",
+        )
+        .unwrap();
+        assert_eq!((f.list.unwrap(), f.path), (vec!["comments".to_string()], vec!["html_url".to_string()]));
+        assert_eq!(f.args[0].1, McpArg::Str("get_comments".into()));
+        assert_eq!(f.args[1].1, McpArg::Num(100));
+        let l = McpCall::parse("list_issues(state: 'OPEN') -> issues[]").unwrap();
+        assert!(l.list.is_some() && l.path.is_empty() && l.projected);
+        let u = McpCall::parse("issue_write(method: 'create', title: title)").unwrap();
+        assert!(!u.projected && u.path.is_empty());
+        assert_eq!(McpCall::parse("x(texto: 'a, b')").unwrap().args[0].1, McpArg::Str("a, b".into()));
+    }
+
+    #[test]
+    fn refuses_what_is_not_a_call() {
+        for s in [
+            "GET /issues",
+            "x(a: b",
+            "x(a b)",
+            "x(a: 'b)",
+            "x(a: b, a: c)",
+            "x(a: @)",
+            "x(a: int())",
+            "x() -> a[].b[]",
+            "x() -> []",
+            "x() -> a..b",
+            "x y(a: b)",
+            "(a: b)",
+            "x(a: 1b)",
+        ] {
+            assert!(McpCall::parse(s).is_none(), "aceitou {s:?}");
+        }
+    }
 }

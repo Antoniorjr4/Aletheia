@@ -1,0 +1,14 @@
+# v1.0-RC9: ferramentas de um servidor MCP — como teste que falha
+# commit base: c1a88e2 (release/v1.0-rc8)
+# O servidor é `ath-world mcp`, que anuncia as ferramentas de issues com as definições exatas do
+# servidor MCP oficial do GitHub (crates/ath-world/fixtures/github-mcp, commit 67d4dc4).
+$ cargo test -p athc --test rc9
+test the_triage_runs_against_an_mcp_server ... FAILED
+error[P0001]: a rota de `mcp` é um texto: "MÉTODO /caminho -> campo"
+rejeitado: 1 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+# Na RC8 um `bind` só liga ferramentas a uma API HTTP (`url`, rotas "MÉTODO /caminho"). Um
+# servidor MCP fala JSON-RPC por stdio, anuncia as próprias ferramentas (com esquemas, descrições
+# e anotações) e não conhece chaves de idempotência: não há como ligá-lo sem código de cola fora
+# da linguagem, e o que esse código fizesse com o que o servidor anuncia ficaria fora dos tipos.

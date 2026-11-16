@@ -162,7 +162,10 @@ impl Deps<'_> {
             Item::Authority(d) => d.clock.iter().chain(&d.outcomes).for_each(|w| self.name(&w.name)),
             Item::Model(_) | Item::Witness(_) => {}
             // a ligação depende das ferramentas que liga
-            Item::Bind(d) => d.routes.iter().for_each(|(t, _)| self.name(&t.name)),
+            Item::Bind(d) => {
+                d.routes.iter().for_each(|(t, _)| self.name(&t.name));
+                d.calls.iter().for_each(|(t, _)| self.name(&t.name));
+            }
             Item::Tool(d) => {
                 d.params.iter().for_each(|p| self.ty(&p.ty));
                 self.ty(&d.ret);
@@ -439,6 +442,31 @@ impl Canon<'_> {
                     let _ = write!(self.out, " (find ");
                     self.reference(&t.name);
                     let _ = write!(self.out, " {:?} {:?} {:?})", r.method, r.path, r.field);
+                }
+                // v1.0-RC9: a ligação MCP (o comando do servidor é configuração: entra só a
+                // referência, como a url; o nome do segredo e a variável que o recebe; os
+                // argumentos de configuração por nome; as chamadas)
+                if let Some(m) = &d.mcp {
+                    let _ = write!(self.out, " (mcp {m:?} (as {:?})", d.secret_as);
+                    let mut args: Vec<_> = d.args.iter().collect();
+                    args.sort_by(|a, b| a.0.name.cmp(&b.0.name));
+                    for (n, v) in args {
+                        let _ = write!(self.out, " (arg {:?} {v:?})", n.name);
+                    }
+                    let mut calls: Vec<_> = d
+                        .calls
+                        .iter()
+                        .map(|(t, c)| ("call", t, c))
+                        .chain(d.call_finds.iter().map(|(t, c)| ("find", t, c)))
+                        .collect();
+                    calls.sort_by(|a, b| (a.1.name.as_str(), a.0).cmp(&(b.1.name.as_str(), b.0)));
+                    for (kind, t, c) in calls {
+                        let _ = write!(self.out, " ({kind} ");
+                        self.reference(&t.name);
+                        let _ =
+                            write!(self.out, " {:?} {:?} {:?} {:?} {})", c.tool, c.args, c.list, c.path, c.projected);
+                    }
+                    let _ = write!(self.out, ")");
                 }
                 let _ = write!(self.out, ")");
             }

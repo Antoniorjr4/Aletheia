@@ -564,3 +564,35 @@ open Aletheia
 
 /-- info: 'Aletheia.Report.composed_with_dropped_is_not_low' does not depend on any axioms -/
 #guard_msgs in #print axioms Report.composed_with_dropped_is_not_low
+
+-- v1.0-RC9: a ligação a um servidor MCP (o que o servidor diz de si só restringe)
+
+/-- info: 'Aletheia.McpBind.description_is_inert' does not depend on any axioms -/
+#guard_msgs in #print axioms McpBind.description_is_inert
+
+/-- info: 'Aletheia.McpBind.promises_are_inert' depends on axioms: [propext] -/
+#guard_msgs in #print axioms McpBind.promises_are_inert
+
+/-- info: 'Aletheia.McpBind.hints_only_restrict' depends on axioms: [propext] -/
+#guard_msgs in #print axioms McpBind.hints_only_restrict
+
+/-- info: 'Aletheia.McpBind.writes_ignore_hints' depends on axioms: [propext] -/
+#guard_msgs in #print axioms McpBind.writes_ignore_hints
+
+/-- info: 'Aletheia.McpBind.refused_means_nothing' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms McpBind.refused_means_nothing
+
+/-- info: 'Aletheia.McpBind.server_label_never_raises' depends on axioms: [propext] -/
+#guard_msgs in #print axioms McpBind.server_label_never_raises
+
+/-- info: 'Aletheia.McpBind.untrusted_declared_always_enters' depends on axioms: [propext] -/
+#guard_msgs in #print axioms McpBind.untrusted_declared_always_enters
+
+/-- info: 'Aletheia.McpBind.refused_only_on_contradiction' depends on axioms: [propext] -/
+#guard_msgs in #print axioms McpBind.refused_only_on_contradiction
+
+/-- info: 'Aletheia.McpBind.server_reply_never_proves_absence' does not depend on any axioms -/
+#guard_msgs in #print axioms McpBind.server_reply_never_proves_absence
+
+/-- info: 'Aletheia.McpBind.unreachable_only_if_not_sent' depends on axioms: [propext] -/
+#guard_msgs in #print axioms McpBind.unreachable_only_if_not_sent
