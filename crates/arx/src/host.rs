@@ -177,6 +177,11 @@ pub trait Host {
     fn raw(&mut self) -> Option<serde_json::Value> {
         None
     }
+    /// A culpa do provedor pela última chamada, se o host a atribuiu (v1.0-RC9: um rótulo do
+    /// servidor MCP que rebaixa um resultado declarado confiável), consumida ao ser lida.
+    fn provider_blame(&mut self) -> Option<String> {
+        None
+    }
 }
 
 /// Falha injetada: na `nth`-ésima chamada a `tool` (ou em todas, sem `nth`).

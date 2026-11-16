@@ -16,6 +16,7 @@ pub mod host;
 pub mod journal;
 pub mod lifecycle;
 pub mod lock;
+pub mod mcp;
 pub mod model;
 pub mod remote;
 pub mod resume;
@@ -2337,6 +2338,10 @@ impl<'m> Arx<'m> {
     /// que a recuperação gravou. Ao vivo (`strict = false`), só a resposta crua de um provedor
     /// real é conferida: o mundo simulado em memória não é um provedor.
     fn monitor(&mut self, t: &ToolDecl, out: &Value, strict: bool) -> Option<String> {
+        if let Some(b) = self.host.provider_blame() {
+            let _ = self.host.raw();
+            return Some(b);
+        }
         let raw = match (self.host.raw(), strict) {
             (Some(r), _) => r,
             (None, true) => out.to_json(),

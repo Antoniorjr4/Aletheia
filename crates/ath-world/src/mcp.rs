@@ -24,6 +24,7 @@
 //! | `env-dump` | `issue_read` devolve no título os nomes das variáveis do próprio ambiente |
 //! | `slow` | o primeiro `add_issue_comment` é aplicado e respondido depois de 3 s |
 //! | `no-structured` | não manda `structuredContent` onde a saída tem esquema |
+//! | `huge` | responde `issue_read` com uma linha de 9 MiB |
 
 use rusqlite::{params, Connection};
 use serde_json::{json, Value as Json};
@@ -196,6 +197,13 @@ impl Mcp {
         }
     }
 
+    /// Verdadeiro na primeira vez em que `what` acontece neste banco.
+    fn once(&self, what: &str) -> bool {
+        let k = format!("mcp_{what}");
+        let n = self.db.execute("INSERT OR IGNORE INTO meta (k, v) VALUES (?1, 1)", params![k]).unwrap_or(0);
+        n == 1
+    }
+
     fn server_info(&self) -> Json {
         json!({ "name": "ath-world-github-mcp", "version": "rc9" })
     }
@@ -302,8 +310,14 @@ impl Mcp {
                         self.reply(out, &id, r);
                         continue;
                     }
+                    if name == "issue_read" && self.mode("huge") {
+                        let _ = writeln!(out, "{}", "x".repeat(9 << 20));
+                        let _ = out.flush();
+                        continue;
+                    }
                     let res = self.call(&name, &p["arguments"]);
-                    if comment && nth == 1 && self.mode("crash-after-apply") && res.is_ok() {
+                    // morre uma vez só (o banco lembra): o servidor reiniciado se comporta
+                    if comment && self.mode("crash-after-apply") && res.is_ok() && self.once("crash") {
                         std::process::exit(3);
                     }
                     if comment && nth == 1 && self.mode("slow") {
