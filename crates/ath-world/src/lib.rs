@@ -70,6 +70,8 @@ pub fn open(db: &Path) -> rusqlite::Result<Connection> {
          CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v INTEGER NOT NULL);
          CREATE TABLE IF NOT EXISTS log (seq INTEGER PRIMARY KEY AUTOINCREMENT, line TEXT NOT NULL);
          CREATE TABLE IF NOT EXISTS anchors (scope TEXT PRIMARY KEY, seq INTEGER NOT NULL, head TEXT NOT NULL);
+         CREATE TABLE IF NOT EXISTS gh_issues (number INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, body TEXT NOT NULL);
+         CREATE TABLE IF NOT EXISTS gh_comments (id INTEGER PRIMARY KEY AUTOINCREMENT, issue INTEGER NOT NULL, body TEXT NOT NULL);
          CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY AUTOINCREMENT, topic TEXT NOT NULL, text TEXT NOT NULL, visible_at REAL NOT NULL DEFAULT 0);
          CREATE TABLE IF NOT EXISTS lc_scopes (scope TEXT PRIMARY KEY, meta TEXT NOT NULL);
          CREATE TABLE IF NOT EXISTS lc_entries (scope TEXT NOT NULL, seq INTEGER NOT NULL, entry TEXT NOT NULL,
@@ -681,6 +683,82 @@ fn serve_http_one(svc: &Svc, token: Option<&str>, stream: TcpStream) {
             })
             .unwrap_or_default();
         return http_reply(&mut stream, 200, &Json::Array(rows));
+    }
+    // **Um recurso com o formato da API de issues do GitHub** (v1.0-RC7), para testar sem rede
+    // os programas que se ligam a ela: `POST /gh/issues` `{title, body}` → 201 `{"number"}`;
+    // `GET /gh/issues` → `[{number, title, body}]`; `GET /gh/issues/{n}` → `{number, title, body}`;
+    // `POST /gh/issues/{n}/comments` `{body}` → 201 `{"id"}`; `GET /gh/issues/{n}/comments` →
+    // `[{id, body}]`. Como no GitHub, nada deduplica e `Idempotency-Key` é ignorado.
+    if let Some(rest) = path.strip_prefix("/gh/issues") {
+        let db = svc.db.lock().unwrap();
+        let doc: Json = serde_json::from_slice(&body).unwrap_or(Json::Null);
+        let text = |k: &str| doc[k].as_str().unwrap_or_default().to_string();
+        let segs: Vec<&str> = rest.split('/').filter(|x| !x.is_empty()).collect();
+        let issue_exists = |n: i64| {
+            db.query_row("SELECT COUNT(*) FROM gh_issues WHERE number = ?1", params![n], |r| r.get::<_, i64>(0))
+                .unwrap_or(0)
+                > 0
+        };
+        let log = |line: String| {
+            let _ = db.execute("INSERT INTO log (line) VALUES (?1)", params![line]);
+        };
+        match (method, segs.as_slice()) {
+            ("POST", []) => {
+                let _ = db.execute(
+                    "INSERT INTO gh_issues (title, body) VALUES (?1, ?2)",
+                    params![text("title"), text("body")],
+                );
+                let n = db.last_insert_rowid();
+                log(format!("call gh_issue {n}"));
+                return http_reply(&mut stream, 201, &json!({ "number": n }));
+            }
+            ("GET", []) => {
+                let rows: Vec<Json> = db
+                    .prepare("SELECT number, title, body FROM gh_issues ORDER BY number DESC")
+                    .and_then(|mut st| {
+                        st.query_map([], |r| {
+                            Ok(json!({ "number": r.get::<_, i64>(0)?, "title": r.get::<_, String>(1)?, "body": r.get::<_, String>(2)? }))
+                        })
+                        .map(|it| it.flatten().collect())
+                    })
+                    .unwrap_or_default();
+                return http_reply(&mut stream, 200, &Json::Array(rows));
+            }
+            ("GET", [n]) => {
+                let n: i64 = n.parse().unwrap_or(-1);
+                let row = db.query_row("SELECT title, body FROM gh_issues WHERE number = ?1", params![n], |r| {
+                    Ok(json!({ "number": n, "title": r.get::<_, String>(0)?, "body": r.get::<_, String>(1)? }))
+                });
+                return match row {
+                    Ok(j) => http_reply(&mut stream, 200, &j),
+                    Err(_) => http_reply(&mut stream, 404, &json!({ "message": "Not Found" })),
+                };
+            }
+            ("POST", [n, "comments"]) => {
+                let n: i64 = n.parse().unwrap_or(-1);
+                if !issue_exists(n) {
+                    return http_reply(&mut stream, 404, &json!({ "message": "Not Found" }));
+                }
+                let _ = db.execute("INSERT INTO gh_comments (issue, body) VALUES (?1, ?2)", params![n, text("body")]);
+                let id = db.last_insert_rowid();
+                log(format!("call gh_comment {n} {id}"));
+                return http_reply(&mut stream, 201, &json!({ "id": id }));
+            }
+            ("GET", [n, "comments"]) => {
+                let n: i64 = n.parse().unwrap_or(-1);
+                let rows: Vec<Json> = db
+                    .prepare("SELECT id, body FROM gh_comments WHERE issue = ?1 ORDER BY id")
+                    .and_then(|mut st| {
+                        st.query_map(params![n], |r| {
+                            Ok(json!({ "id": r.get::<_, i64>(0)?, "body": r.get::<_, String>(1)? }))
+                        })
+                        .map(|it| it.flatten().collect())
+                    })
+                    .unwrap_or_default();
+                return http_reply(&mut stream, 200, &Json::Array(rows));
+            }
+            _ => return http_reply(&mut stream, 404, &json!({ "message": "Not Found" })),
+        }
     }
     if (method, path) == ("GET", "/v1/whoami") {
         return http_reply(&mut stream, 200, &json!({ "id": auth.unwrap_or_default() }));

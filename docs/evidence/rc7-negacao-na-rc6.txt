@@ -1,0 +1,14 @@
+# v1.0-RC7: a negação de serviço por injeção, como teste que falha
+# commit base: 0048d85 (release/v1.0-rc6); examples/rc7/triage.ath = examples/rc6/triage.ath
+$ cargo test -p athc --test rc7
+test an_injected_note_is_dropped_and_the_rest_of_the_plan_is_done ... FAILED
+thread 'an_injected_note_is_dropped_and_the_rest_of_the_plan_is_done' (643) panicked at crates/athc/tests/rc7.rs:101:5:
+a injeção negou a tarefa inteira: ✓ verificado: E0 E1 E2 E3 E5 E6 · Codex #c20feae41e92
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+
+# A alternativa manual também não serve: com a política do plano enfraquecida e
+# `if SafeNote(n) { commit comment(...) }` dentro do laço, o programa compila, mas a obrigação
+# levantada do contrato de `comment` (M-I) é conferida no `refine` sobre o plano inteiro, sem
+# olhar o `if`, e recusa os três rascunhos ("viola o contrato de `comment`"). E
+# `if s.member(...)` fora de uma política é E0423. Na RC6 não há programa que execute só a
+# parte segura do plano.
