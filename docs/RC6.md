@@ -202,11 +202,37 @@ medição, não uma garantia.
   e ela só foi exercitada ao vivo em 10 execuções. Nos testes sem rede o modelo é um roteiro.
 * **Uma injeção pode negar o serviço.** Quando todo rascunho viola a política, o agente não faz
   nada. Não há, na linguagem, um caminho degradado ("faça o que for seguro e relate o resto").
-* **Lean**: nada novo. `.find` e `.settle` não estão modelados; a hipótese G1 faz o papel de R2
-  em `Resume.lean` (o desfecho da operação interrompida é decidido antes da re-execução).
+* **O modelo em Lean da consulta por chave** (seção 7) tem três hipóteses que o executável não
+  verifica: G1 (a listagem reflete a escrita em até `.settle` segundos), G2 (o marcador não é
+  removido) e G3 (nenhuma requisição da operação interrompida ainda vai chegar ao provedor).
+  G3 não é automática: uma requisição já escrita no socket pode ser entregue depois da morte do
+  processo, e o provedor pode criar o item depois de começar a responder. A espera do supervisor
+  antes de retomar torna essa janela pequena, não nula.
+* **O modelo e o código divergem num ponto, a favor do código**: no modelo, "há mais páginas" só
+  é olhado na primeira consulta; no executável, nas duas. O executável conclui "não aplicada" em
+  menos casos que o modelo, então o que o modelo prova vale para ele.
 * **Só o GitHub** foi exercitado como API independente, e só três rotas dele.
 
-## 7. Códigos novos
+## 7. Em Lean: `Find.lean`
+
+O modelo de `BoundHost::status_with`. O provedor cria um item a cada requisição, sem deduplicar;
+cada item carrega o marcador da chave que o criou e só aparece na listagem algum tempo depois.
+Oito teoremas, 161 guardas `#print axioms` no total (eram 153), sem `sorry`.
+
+| Teorema | Formulação | Hipóteses |
+|---|---|---|
+| `done_has_evidence` | se a consulta responde "aplicada", existe no provedor um item com o marcador da chave | — (G2 para dizer que é a operação) |
+| `not_applied_is_sound` | se a consulta responde "não aplicada", não existe item algum com a chave | G1, G3 |
+| `more_pages_never_not_applied` | com mais páginas, a consulta nunca conclui "não aplicada" | — |
+| `resend_creates_exactly_one` | depois de "não aplicada", refazer com uma chave nova deixa exatamente um item da operação | G1, G3 |
+| `without_settle_it_duplicates` | sem espera, há um provedor que satisfaz G1 e G3 em que a consulta conclui "não aplicada" sobre um item que existe | (contraexemplo) |
+| `lag_beyond_settle_duplicates` | idem, com a listagem atrasando mais que `.settle` (sem G1) | (contraexemplo) |
+| `in_flight_request_duplicates` | idem, com a requisição chegando depois da consulta (sem G3) | (contraexemplo) |
+
+Os três contraexemplos mostram que nenhuma das hipóteses de tempo é dispensável. O primeiro é o
+defeito que a listagem de issues do GitHub revelou na primeira execução ponta a ponta.
+
+## 8. Códigos novos
 
 | Código | Significado |
 |---|---|

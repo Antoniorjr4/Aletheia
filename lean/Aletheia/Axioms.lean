@@ -489,3 +489,29 @@ open Aletheia
 
 /-- info: 'Aletheia.Resume.replayC_agrees' depends on axioms: [propext] -/
 #guard_msgs in #print axioms Resume.replayC_agrees
+
+-- v1.0-RC6: a consulta por chave (.find, .settle)
+
+/-- info: 'Aletheia.Find.found_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Find.found_iff
+
+/-- info: 'Aletheia.Find.done_has_evidence' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Find.done_has_evidence
+
+/-- info: 'Aletheia.Find.not_applied_is_sound' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Find.not_applied_is_sound
+
+/-- info: 'Aletheia.Find.more_pages_never_not_applied' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Find.more_pages_never_not_applied
+
+/-- info: 'Aletheia.Find.resend_creates_exactly_one' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Find.resend_creates_exactly_one
+
+/-- info: 'Aletheia.Find.without_settle_it_duplicates' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Find.without_settle_it_duplicates
+
+/-- info: 'Aletheia.Find.lag_beyond_settle_duplicates' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Find.lag_beyond_settle_duplicates
+
+/-- info: 'Aletheia.Find.in_flight_request_duplicates' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Find.in_flight_request_duplicates
