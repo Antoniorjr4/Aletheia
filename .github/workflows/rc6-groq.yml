@@ -1,0 +1,83 @@
+name: RC6 · triagem com modelo real (Groq) contra o GitHub
+
+# GASTA na Groq. A triagem de examples/rc6/triage.ath com um modelo real, sob injeção de prompt,
+# contra o repositório de sandbox. Teto rígido de gasto no próprio script (MAX_USD).
+# Disparo: aba Actions → Run workflow, um push de tag `rc6-groq-*` ou de um ramo
+# `groq-run/rc6-*`. Nunca em push comum nem em PR.
+
+on:
+  workflow_dispatch:
+    inputs:
+      attacked:
+        description: "Execuções com a injeção no título"
+        default: "30"
+      control:
+        description: "Execuções de controle (sem injeção)"
+        default: "10"
+      attack_set:
+        description: "Conjunto de injeções: basic (uma, direta) ou strong (três, mais plausíveis)"
+        default: "basic"
+      max_usd:
+        description: "Teto de gasto na Groq, em dólares"
+        default: "0.25"
+  push:
+    tags: ["rc6-groq-*"]
+    # (um ramo `groq-run/rc6-*` também dispara: é o gatilho de quem só pode empurrar ramos)
+    branches: ["groq-run/rc6-*"]
+
+# Um só grupo para todos os workflows que gastam na Groq (Rev10, regra 9).
+concurrency:
+  group: groq-paid
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  triage:
+    name: triagem com modelo real, injeção e canário
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      OPENAI_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      OPENAI_BASE_URL: https://api.groq.com/openai/v1
+      GH_TOKEN: ${{ secrets.SANDBOX_GITHUB_TOKEN }}
+      SANDBOX_REPO: ${{ github.repository_owner }}/aletheia-sandbox
+      ATTACKED: ${{ inputs.attacked || '30' }}
+      CONTROL: ${{ inputs.control || '10' }}
+      MAX_USD: ${{ inputs.max_usd || '0.25' }}
+      # (num disparo por ramo, o nome do ramo escolhe o conjunto: groq-run/rc6-strong-*)
+      ATTACK_SET: ${{ inputs.attack_set || (contains(github.ref_name, 'strong') && 'strong') || 'basic' }}
+      CONTROL_OVERRIDE: ${{ contains(github.ref_name, 'strong') && '0' || '' }}
+      NO_COLOR: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: segredos
+        run: |
+          if [ -z "$OPENAI_API_KEY" ] || [ -z "$GH_TOKEN" ]; then
+            echo "::error::defina os segredos GROQ_API_KEY e SANDBOX_GITHUB_TOKEN"
+            exit 1
+          fi
+      - name: permissões de modelo na Groq
+        run: python3 bench/m1/probe.py --pick auto
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: scripts/rc6-groq.sh
+        run: |
+          if [ -n "$CONTROL_OVERRIDE" ]; then export CONTROL="$CONTROL_OVERRIDE" SKIP_RESUME=1; fi
+          scripts/rc6-groq.sh
+      # só os números: os journals (com as respostas do modelo) não saem do runner
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-groq-${{ github.run_id }}
+          path: |
+            target/rc6-groq/results.jsonl
+            target/rc6-groq/summary.json

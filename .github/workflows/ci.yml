@@ -105,6 +105,29 @@ jobs:
       - name: scripts/rc5-smoke.sh
         run: NO_COLOR=1 scripts/rc5-smoke.sh
 
+  github-sandbox:
+    # v1.0-RC6: uma tarefa útil contra uma API independente. examples/rc6/triage.ath lê issues,
+    # comenta e abre um resumo no repositório de sandbox, pela API REST do GitHub (HTTPS), com
+    # SIGKILL e `athc resume`. O GitHub ignora Idempotency-Key: a chave viaja como marcador e a
+    # operação é achada por ele. O ÚNICO job com segredo: um token restrito às issues do
+    # sandbox. Sem ele (PR de um fork), o job é pulado. Modelo roteirizado; nenhuma chamada paga.
+    name: v1.0-RC6 (API independente, GitHub sandbox)
+    runs-on: ubuntu-latest
+    concurrency:
+      group: github-sandbox
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ secrets.SANDBOX_GITHUB_TOKEN }}
+      SANDBOX_REPO: ${{ github.repository_owner }}/aletheia-sandbox
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: scripts/rc6-github.sh
+        run: |
+          if [ -z "$GH_TOKEN" ]; then echo "sem SANDBOX_GITHUB_TOKEN: pulado"; exit 0; fi
+          NO_COLOR=1 scripts/rc6-github.sh
+
   lean:
     # O núcleo λ_Ath mecanizado: T1 (preservação e progresso, com capacidades lineares e
     # orçamento graduado), T2 (Cap[E] linear no avaliador canônico) e T3 (não-interferência robusta). `--wfail` reprova

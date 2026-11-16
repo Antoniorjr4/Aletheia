@@ -37,6 +37,22 @@ $ athc check examples/rollout.ath
 ✓ Codex              12 objetos BLAKE3, raiz #9ecbfccad097
 ```
 
+## v1.0-RC6: uma API independente
+
+```sh
+cargo test -p athc --test rc6                                  # sem rede
+GH_TOKEN=… SANDBOX_REPO=dono/repo scripts/rc6-github.sh        # contra a API do GitHub
+```
+
+A RC6 leva o `bind` a uma API que não foi feita para ele. `examples/rc6/triage.ath` lê issues,
+comenta em cada uma e abre um resumo num repositório do GitHub, por HTTPS; sob supervisão, é
+morto por `SIGKILL` duas vezes no meio e termina sozinho, sem duplicar nada. O GitHub ignora `Idempotency-Key`: o
+`bind` declara, por ferramenta, que a chave viaja como marcador num parâmetro de texto (`.key`),
+como achar a operação por ele (`.find`) e quanto a listagem pode demorar a refletir uma escrita
+(`.settle`). `athc supervise` fecha o ciclo: executa o programa e o retoma a cada queda, com
+limite de tentativas, e sai com um código próprio quando sobra resultado desconhecido. Detalhes e limites
+em [`docs/RC6.md`](docs/RC6.md).
+
 ## v1.0-RC5: o agente inteiro na linguagem
 
 ```sh

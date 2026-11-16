@@ -331,10 +331,41 @@ impl Parser {
             auth: None,
             status: None,
             routes: Vec::new(),
+            keys: Vec::new(),
+            finds: Vec::new(),
+            settles: Vec::new(),
         };
         let mut has_url = false;
         while *self.peek() != Tok::RBrace {
             let field = self.ident()?;
+            // v1.0-RC6: `ferramenta.key = "parâmetro"` e `ferramenta.find = "GET /rota -> campo"`
+            if self.eat(&Tok::Dot) {
+                let what = self.ident()?;
+                self.expect(Tok::Assign)?;
+                let Tok::Str(v) = self.peek().clone() else {
+                    return Err(self.err(format!("`{}.{}` é um texto", field.name, what.name)));
+                };
+                match what.name.as_str() {
+                    "key" => d.keys.push((field, v)),
+                    "find" => match Route::parse(&v) {
+                        Some(r) => d.finds.push((field, r)),
+                        None => return Err(self.err(format!("rota inválida para `{}.find`: `{v}`", field.name))),
+                    },
+                    "settle" => match v.parse::<u32>() {
+                        Ok(n) if n <= 300 => d.settles.push((field, n)),
+                        _ => return Err(self.err(format!("`{}.settle` são segundos, de \"0\" a \"300\"", field.name))),
+                    },
+                    other => {
+                        return Err(self.err(format!(
+                            "`{}.{other}`: esperado `.key` (o parâmetro que carrega a chave), `.find` (a consulta por chave) ou `.settle` (segundos até a listagem refletir uma escrita)",
+                            field.name
+                        )))
+                    }
+                }
+                self.bump();
+                self.eat(&Tok::Comma);
+                continue;
+            }
             self.expect(Tok::Assign)?;
             let span = self.span();
             // `env("V")` e `secret("V")`: uma referência ao ambiente do executor, nunca um valor
@@ -385,7 +416,7 @@ impl Parser {
                     };
                     let Some(route) = Route::parse(&r) else {
                         return Err(self.err(format!(
-                            "rota inválida para `{f}`: `{r}` (esperado \"GET|POST|PUT|PATCH /caminho\" e, opcional, \"-> campo\")"
+                            "rota inválida para `{f}`: `{r}` (esperado \"GET|POST|PUT|PATCH /caminho\", com `{{parâmetro}}` e `?query` opcionais, e \"-> campo\" ou \"-> [].campo\")"
                         )));
                     };
                     self.bump();
