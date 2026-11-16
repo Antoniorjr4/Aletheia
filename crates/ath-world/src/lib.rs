@@ -23,6 +23,8 @@
 //!
 //! Protocolo: uma requisição JSON por conexão, uma linha; a resposta é uma linha JSON.
 
+pub mod mcp;
+
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value as Json};
 use std::io::{BufRead, BufReader, Write};

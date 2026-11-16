@@ -17,7 +17,10 @@ uso:
       imprime o registro de chamadas do serviço
   ath-world fault --db banco.sqlite --tool T --kind refuse|lost|drop_reply|hang|status_unknown
                   [--nth N] [--ms M]
-      injeta uma falha na N-ésima chamada a T (ou na próxima, sem --nth)";
+      injeta uma falha na N-ésima chamada a T (ou na próxima, sem --nth)
+  ath-world mcp   --db banco.sqlite [--mode m1,m2,…]
+      servidor MCP por stdio com as ferramentas de issues do servidor oficial do GitHub
+      (v1.0-RC9); os modos hostis estão em `ath_world::mcp`";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -64,6 +67,15 @@ fn main() -> ExitCode {
                     return Ok(());
                 }
                 ath_world::serve_with(l, c, key);
+                Ok(())
+            }
+            "mcp" => {
+                let c = ath_world::open(&db).map_err(e)?;
+                let modes = flag("--mode").map(|m| m.split(',').map(String::from).collect()).unwrap_or_default();
+                let stdin = std::io::stdin();
+                let mut input = stdin.lock();
+                let mut out = std::io::stdout().lock();
+                ath_world::mcp::Mcp::new(c, modes).serve(&mut input, &mut out);
                 Ok(())
             }
             "state" => {
