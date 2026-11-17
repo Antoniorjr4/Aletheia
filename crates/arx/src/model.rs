@@ -544,7 +544,16 @@ impl ModelProvider for OpenAiCompat {
 
 #[cfg(test)]
 mod tests {
-    use super::retry_wait;
+    use super::{retry_wait, SYSTEM};
+
+    /// Ciclo 1, D12: a mensagem de sistema fixa do runtime cita "um programa Aletheia" e está em
+    /// português, e confundiu a comparação com o P1 (bench/agentdojo/PROVA-ENGENHARIA.md). Afirma o
+    /// comportamento correto; enquanto o defeito existir, falha com "D12" e o teste passa.
+    #[test]
+    #[should_panic(expected = "D12")]
+    fn d12_a_mensagem_de_sistema_deveria_ser_neutra() {
+        assert!(!SYSTEM.contains("Aletheia"), "D12: a mensagem de sistema cita a linguagem: {SYSTEM}");
+    }
 
     #[test]
     fn retry_wait_reads_header_body_or_backs_off() {
