@@ -94,6 +94,66 @@ O que já dá para dizer, e o que não:
   dados no prompt. É um **confundidor de prompt**, não uma propriedade da linguagem. Fica
   registrado como D12 e não é corrigido no meio da campanha.
 
+### M4 — defeitos semeados (17/11/2026, sem custo)
+
+[defects/catalog.py](defects/catalog.py) com 21 defeitos. O catálogo foi versionado **antes** da execução
+(commit `b707cf6`). O detector é [defects/run_m4.py](defects/run_m4.py), e os resultados brutos estão em
+[runs/m4/](runs/m4/m4.md). Cada defeito é o mesmo erro escrito no `banking_v2_keeping.ath` e no P1
+(keeping). Os estágios são: **estático** (`athc check`, ou `ruff` + `mypy --strict` contando só os
+diagnósticos novos), **testes** (a suíte congelada de cada um, sem teste novo) e **não detectado**.
+
+**Auditoria das causas.** Depois da primeira execução, conferi o motivo de cada detecção. Quatro
+mutações estavam mal escritas e foram "detectadas" pelo motivo errado. Duas eram da Aletheia
+(`sample draft` em vez de `sample(draft)`, erro de sintaxe). Três eram do P1 (o `mypy` reclamou do
+artefato da mutação, não do defeito). As versões corrigidas, com o mesmo defeito, rodaram em
+seguida e estão marcadas como pós-auditoria ([runs/m4/m4-posthoc.md](runs/m4/m4-posthoc.md)). A tabela
+abaixo usa as corrigidas. A original fica registrada como inválida.
+
+| | Aletheia: estático | Aletheia: testes | Aletheia: não detectado | P1: estático | P1: testes | P1: não detectado |
+| --- | --- | --- | --- | --- | --- | --- |
+| garantias (17) | **16** | 1 | 0 | 0 | 9 | **8** |
+| semânticos (3), controle | 0 | 2 | 1 | 0 | 2 | 1 |
+| assimétrico (1): orçamento de pior caso | 1 | 0 | 0 | 0 | 0 | 1 |
+
+O P1 deixou passar estes defeitos de garantia: dado de ferramenta como argumento de efeito (M02);
+inventário ausente do prompt (M05); política por literal (M06); operação nova sem regra, ou sem
+executor (M07, M08); limite do plano divergente do contrato (M12); efeito condicionado a dado não
+confiável (M13); caminho de arquivo escolhido por dado não confiável (M15). Os testes de P1, com
+182 linhas, pegaram 9 de 17. Nenhuma ferramenta estática padrão de Python pegou algum.
+
+Os defeitos semânticos (enfraquecer a política, esquecer uma checagem, esquecer um efeito de
+depuração) empatam: nenhuma das duas os pega estaticamente, e os testes pegam os mesmos. A
+linguagem não substitui o teste da política. Ela pega a classe de erro "a garantia foi quebrada
+pela estrutura do programa".
+
+**Limites desta medição. Leia antes de citar o número:**
+
+- **Viés do autor.** Escrevi o catálogo conhecendo o que o `athc` verifica. A lista segue as
+  classes de erro previstas no protocolo (seção 4, M4), mas um catálogo cego, escrito por quem
+  não conhece o verificador, é o próximo passo para a medição valer fora deste repositório.
+- **O P1 usa rótulos em tempo de execução.** Um Python com análise estática de contaminação
+  (por exemplo, o Pysa, do Pyre, configurado com fontes = ferramentas e sumidouros = efeitos)
+  poderia pegar M02, M13 e M15 estaticamente. Esse "P1+" é o concorrente justo para este
+  eixo e ainda não foi medido.
+- **Efeito latente.** Com o modelo obediente, os defeitos não detectados do P1 não mudaram os
+  números da suíte. Os defeitos de prompt (M03 a M05, M18) não podem mudar, porque o modelo
+  roteirizado ignora o prompt. Isso mede **detecção**, não dano observado.
+
+### M2 — tamanho do código (preliminar)
+
+Linhas não comentadas, sem docstrings:
+
+| | Aletheia | P1 |
+| --- | --- | --- |
+| agente (tipos, políticas, fluxo, efeitos) | 139 (`banking_v2_keeping.ath`) | 345 (`banking_hardened.py`) |
+| ligação ao AgentDojo | 222 (`aletheia_pipeline.py`, inclui a suíte `slack`) | 84 (`agentdojo_adapter.py`) |
+| testes que sustentam as garantias | 30 (expectativas do modelo obediente) | 182 (`test_hardened.py`) e ainda 8 de 17 não detectados |
+
+O runtime Aletheia e as bibliotecas Python ficam fora das duas contagens. Quanto ao critério
+pré-registrado: M4 favorece a Aletheia com folga, e M2 não mostra custo maior de código. **M3
+(esforço de mudança) ainda não foi medido**, e por isso o eixo II continua "inconclusivo" pela
+regra fixada na seção 4.
+
 ## 2. Diagnóstico das limitações (antes de propor mudança no Core)
 
 Categorias da diretiva: **P** política inadequada · **F** falta de dados confiáveis ·
