@@ -64,6 +64,19 @@ BINDINGS = {
         "update_password": ("update_password", ["password"]),
         "update_user_info": ("update_user_info", ["street", "city"]),
     },
+    "slack": {
+        "get_channels": ("get_channels", []),
+        "read_channel_messages": ("read_channel_messages", ["channel"]),
+        "get_users_in_channel": ("get_users_in_channel", ["channel"]),
+        "read_inbox": ("read_inbox", ["user"]),
+        "get_webpage": ("get_webpage", ["url"]),
+        "send_direct_message": ("send_direct_message", ["recipient", "body"]),
+        "send_channel_message": ("send_channel_message", ["channel", "body"]),
+        "add_user_to_channel": ("add_user_to_channel", ["user", "channel"]),
+        "invite_user_to_slack": ("invite_user_to_slack", ["user", "user_email"]),
+        "remove_user_from_slack": ("remove_user_from_slack", ["user"]),
+        "post_webpage": ("post_webpage", ["url", "content"]),
+    },
 }
 
 # Argumentos monetários: o tipo Aletheia é texto decimal; a função oficial recebe `float`.
@@ -98,7 +111,51 @@ def banking_inventories(request: str, env) -> dict:
     }
 
 
-INVENTORIES = {"banking": banking_inventories}
+# `slack`: nomes de canal só entram como identificadores; o nome de um canal é um vetor de
+# injeção da suíte (`prompt_injection_channel`), e um nome que não é identificador não é
+# endereçável.
+CHANNEL = re.compile(r"[A-Za-z0-9_-]{1,40}")
+URL = re.compile(r"\b(?:https?://)?www\.[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:/[a-z0-9_\-/]*)?")
+# Um nome próprio no meio de uma frase ("invite Dora to Slack"): maiúscula que não abre frase.
+MIDNAME = re.compile(r"(?<=[a-z,;:'\"()] )([A-Z][a-z]{1,19})\b")
+
+
+def _urls(text: str) -> set:
+    return {u.rstrip(".").split("://")[-1] for u in URL.findall(text)}
+
+
+def slack_inventories(request: str, env) -> dict:
+    """Os inventários da suíte `slack`.
+
+    Suposição de confiança A1 (o modelo de ameaça do AgentDojo `slack`): o atacante controla
+    páginas web e o nome de um canal; as mensagens do workspace são escritas pelos membros.
+
+    * `channels`: os canais do workspace cujo nome é um identificador;
+    * `people`: os membros do workspace, mais os nomes próprios do pedido e das mensagens
+      do workspace (A1);
+    * `invitable` / `named`: nomes próprios das mensagens e do pedido / só do pedido;
+    * `urls` (visitar): URLs do pedido e das mensagens do workspace (A1);
+    * `sites` (publicar): só URLs que o usuário escreveu no pedido.
+
+    O texto de páginas web nunca entra num inventário.
+    """
+    ws = env.slack
+    bodies = [m.body for msgs in ws.channel_inbox.values() for m in msgs]
+    bodies += [m.body for msgs in ws.user_inbox.values() for m in msgs]
+    named = set(MIDNAME.findall(request))
+    mentioned = set().union(*(MIDNAME.findall(b) for b in bodies)) if bodies else set()
+    members = set(ws.users)
+    return {
+        "channels": sorted(c for c in ws.channels if CHANNEL.fullmatch(c)),
+        "people": sorted(members | named | mentioned),
+        "invitable": sorted((named | mentioned) - members),
+        "named": sorted(named),
+        "urls": sorted(_urls(request).union(*(_urls(b) for b in bodies))),
+        "sites": sorted(_urls(request)),
+    }
+
+
+INVENTORIES = {"banking": banking_inventories, "slack": slack_inventories}
 
 
 class AgentDojoHost:

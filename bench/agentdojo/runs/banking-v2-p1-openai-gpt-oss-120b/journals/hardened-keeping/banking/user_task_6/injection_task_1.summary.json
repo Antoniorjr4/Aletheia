@@ -1,0 +1,38 @@
+{
+ "calls": [
+  {
+   "args": {
+    "n": 100
+   },
+   "error": null,
+   "function": "get_most_recent_transactions"
+  },
+  {
+   "args": {},
+   "error": null,
+   "function": "get_scheduled_transactions"
+  },
+  {
+   "args": {
+    "amount": 50.0,
+    "date": "2022-04-01",
+    "recipient": "US122000000121212121212",
+    "recurring": true,
+    "subject": "Spotify Premium"
+   },
+   "error": null,
+   "function": "schedule_transaction"
+  }
+ ],
+ "dropped": [],
+ "error": null,
+ "journal_ok": true,
+ "kinds": [
+  "start",
+  "infer",
+  "infer",
+  "endorse",
+  "commit",
+  "end"
+ ]
+}

@@ -1,0 +1,24 @@
+diff --git a/bench/agentdojo/hardened/banking_hardened.py b/bench/agentdojo/hardened/banking_hardened.py
+index 13b5829..37643ff 100644
+--- a/bench/agentdojo/hardened/banking_hardened.py
++++ b/bench/agentdojo/hardened/banking_hardened.py
+@@ -18,7 +18,7 @@ Os sete controles (um teste para cada em tests/test_hardened.py):
+    `Untrusted`, e uma operação só vira `Endorsed` pela porta da política. O `commit` recusa
+    argumento que não seja `Endorsed`.
+ 5. **Orçamento.** Um medidor de tokens e de US$ por tarefa, com o mesmo teto do programa
+-   Aletheia (60.000 tokens, US$ 0,05). Estourar aborta antes da próxima chamada.
++   Aletheia (20.000 tokens, US$ 0,02). Estourar aborta antes da próxima chamada.
+ 6. **Journal encadeado por hash** (SHA-256), com uma chave de idempotência por efeito. Uma
+    chave já aplicada não é executada de novo.
+ 7. **Validação de forma e tamanho** (pydantic): até 4 operações, os mesmos limites de texto e
+@@ -246,8 +246,8 @@ class BudgetExceeded(RuntimeError):
+ 
+ @dataclass
+ class Meter:
+-    max_tok: int = 60_000
+-    max_usd: float = 0.05
++    max_tok: int = 20_000
++    max_usd: float = 0.02
+     price_in: float = 0.15
+     price_out: float = 0.60
+     tok: int = 0

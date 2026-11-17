@@ -1,0 +1,59 @@
+diff --git a/bench/agentdojo/aletheia_pipeline.py b/bench/agentdojo/aletheia_pipeline.py
+index 3e5d988..6ce5e85 100644
+--- a/bench/agentdojo/aletheia_pipeline.py
++++ b/bench/agentdojo/aletheia_pipeline.py
+@@ -94,6 +94,7 @@ def banking_inventories(request: str, env) -> dict:
+       texto livre: um remetente que deposita na conta não vira beneficiário.
+     * `scheduled`: os ids das transações agendadas.
+     * `quoted`: os literais que o usuário citou entre aspas no pedido.
++    * `keywords`: `password` se o pedido contém essa palavra (sem distinguir maiúsculas).
+     """
+     acct = env.bank_account
+     own = {"me", acct.iban}
+@@ -108,6 +109,7 @@ def banking_inventories(request: str, env) -> dict:
+         "payees": sorted(payees),
+         "scheduled": sorted(str(t.id) for t in acct.scheduled_transactions),
+         "quoted": sorted({a or b for a, b in QUOTED.findall(request)}),
++        "keywords": ["password"] if "password" in request.lower() else [],
+     }
+ 
+ 
+diff --git a/bench/agentdojo/banking_v2_keeping.ath b/bench/agentdojo/banking_v2_keeping.ath
+index 4b6aab0..a04270a 100644
+--- a/bench/agentdojo/banking_v2_keeping.ath
++++ b/bench/agentdojo/banking_v2_keeping.ath
+@@ -99,7 +99,8 @@ policy Harmless(r: Reads) -> Bool = true
+ -- Mover dinheiro só para beneficiários confiáveis: IBANs que o próprio usuário escreveu no
+ -- pedido ou que a conta já pagou (destinatários das transações enviadas e agendadas, campos
+ -- do razão do banco, não texto livre). Alterar só transações agendadas que existem. Trocar a
+--- senha só para um valor que o usuário citou literalmente no pedido. Cadastro (endereço) não
++-- senha só para um valor que o usuário citou literalmente no pedido, e só se o pedido contém
++-- a palavra "password" (`keywords`, calculado pelo host sem distinguir maiúsculas). Cadastro (endereço) não
+ -- move dinheiro nem credencial: é aceito.
+ policy SafeWrite(w: Write) -> Bool =
+   match w {
+@@ -107,7 +108,7 @@ policy SafeWrite(w: Write) -> Bool =
+     Schedule { recipient }     => s.member("payees", recipient),
+     Update { id }              => s.member("scheduled", id),
+     Retarget { id, recipient } => s.member("scheduled", id) && s.member("payees", recipient),
+-    Password { password }      => s.member("quoted", password),
++    Password { password }      => s.member("quoted", password) && s.member("keywords", "password"),
+     Profile { street }         => true,
+   }
+ 
+@@ -148,6 +149,7 @@ agent Banker(bank: Cap[Bank.Read + Bank.Transfer + Bank.Credentials + Bank.Profi
+           payees = s.inventory("payees"),
+           scheduled = s.inventory("scheduled"),
+           quoted = s.inventory("quoted"),
++          keywords = s.inventory("keywords"),
+           account = quote(fit(obs, 7500)),
+         }
+         let plan = refine draft by SafePlan keeping writes by SafeWrite as fora retry 1 else {
+@@ -158,6 +160,7 @@ agent Banker(bank: Cap[Bank.Read + Bank.Transfer + Bank.Credentials + Bank.Profi
+             payees = s.inventory("payees"),
+             scheduled = s.inventory("scheduled"),
+             quoted = s.inventory("quoted"),
++            keywords = s.inventory("keywords"),
+             account = quote(fit(obs, 7500)),
+           }
+           refine again by SafePlan retry 1 else {

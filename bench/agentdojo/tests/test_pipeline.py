@@ -21,6 +21,8 @@ HERE = Path(__file__).resolve().parents[1]
 ROOT = HERE.parents[1]
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(ROOT / "runtimes" / "python"))
+if os.environ.get("ALETHEIA_HOST_DIR"):  # M4: o host com defeito semeado
+    sys.path.insert(0, os.environ["ALETHEIA_HOST_DIR"])
 warnings.filterwarnings("ignore")
 
 ATHC = os.environ.get("ATHC", str(ROOT / "target" / "release" / "athc"))
