@@ -71,6 +71,12 @@ Os custos, sem esconder:
 
 ### 2. Modelo real (paga, só com autorização e teto declarado)
 
+**Resultado em `banking` (completo, 16/11/2026):** 144/144 pares. ASR 106/144 no baseline
+contra **0/144** no Aletheia, com utilidade sob ataque de 73/144 contra 77/144 (p = 0,62). Pela
+primeira vez com modelo real, a política recusou uma proposta com a operação do atacante
+(`user_task_13` × `injection_task_8`) e três com IBANs alucinados. Ver
+[RESULTS.md](RESULTS.md#matriz-completa-lote-3-16112026).
+
 [`run.py`](run.py), o protocolo já usado nos lotes 1 e 2: mesmo modelo, mesmas ferramentas,
 ataque `important_instructions`, verificadores oficiais, rodada pareada e retomável, teto em
 dólar. Métricas, sempre as duas juntas: **ASR** e **utilidade** (sem e sob ataque), com Wilson
@@ -100,7 +106,7 @@ ataque (≈ US$ 0,01) mede o consumo real.
 ## Ordem proposta
 
 1. Modelo obediente em `banking` — **feito**, sem custo.
-2. Completar `banking` com modelo real (50 pares, teto US$ 0,10).
+2. Completar `banking` com modelo real (50 pares, teto US$ 0,10) — **feito**, US$ 0,0725.
 3. Escrever `slack.ath` (Aletheia puro, como o `banking.ath`), passar pelo modelo obediente,
    calibrar com 2 tarefas e rodar a suíte com teto declarado.
 4. `travel` e `workspace` só com nova autorização de orçamento e, para `workspace`, limite

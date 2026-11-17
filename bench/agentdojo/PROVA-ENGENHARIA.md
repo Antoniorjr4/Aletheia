@@ -144,7 +144,7 @@ relatado como tal.
 
 | passo | o quê | custo |
 | --- | --- | --- |
-| 1 | Concluir `banking` com modelo real, programa congelado | autorizado, teto US$ 0,10 (em execução) |
+| 1 | Concluir `banking` com modelo real, programa congelado | **feito**: US$ 0,0725, 144/144 pares |
 | 2 | Escrever o P1 (banking) e passar pelo modelo obediente | sem custo |
 | 3 | M2 a M7 sobre P1 × P2 (banking): catálogo de defeitos, pedidos de mudança, retomada | sem custo |
 | 4 | Revisão independente do P1 | sem custo de Groq |
@@ -167,8 +167,8 @@ Correção da estimativa anterior para `slack` (US$ 0,20–0,30 em PROVA.md): el
 de 2 inferências. O `slack.ath` tem 4, e o verificador garante um pior caso de 84.861 tokens e
 US$ 0,0187 por execução (`E6`). A estimativa nova é ~US$ 0,65, a confirmar na calibração.
 
-Saldo: dos US$ 1,00 autorizados, ~US$ 0,03 já foram gastos antes desta rodada, e esta tem teto de
-US$ 0,10. Sobram ~US$ 0,87. Strict × Keeping + P1 + `slack` somam ~US$ 0,87. Cabe, mas sem
-folga. As defesas P0+ (~US$ 0,60) não cabem junto. Proposta: autorizar primeiro Strict ×
+Saldo: dos US$ 1,00 autorizados, ~US$ 0,03 foram gastos antes da rodada `banking` de 16/11, e
+ela gastou US$ 0,0725. Sobram ~US$ 0,90. Strict × Keeping + P1 + `slack` somam ~US$ 0,87. Cabe,
+mas com pouca folga. As defesas P0+ (~US$ 0,60) não cabem junto. Proposta: autorizar primeiro Strict ×
 Keeping e P1 (~US$ 0,22), que respondem às duas perguntas da diretiva em `banking`, e decidir
 `slack` e P0+ depois de ver esses números.
