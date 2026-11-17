@@ -19,7 +19,9 @@
     },
     "policy_rejections": 3,
     "errors": 0,
-    "type_only": 0
+    "type_only": 0,
+    "pruned_ops": 0,
+    "executed_ops": 11
    },
    "over_4_writes": 0
   },
@@ -53,7 +55,9 @@
     },
     "policy_rejections": 143,
     "errors": 0,
-    "type_only": 1
+    "type_only": 1,
+    "pruned_ops": 0,
+    "executed_ops": 0
    },
    "over_4_writes": 1
   },
@@ -87,7 +91,9 @@
     },
     "policy_rejections": 144,
     "errors": 0,
-    "type_only": 0
+    "type_only": 0,
+    "pruned_ops": 0,
+    "executed_ops": 0
    },
    "over_4_writes": 0
   }

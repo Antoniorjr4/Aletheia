@@ -101,6 +101,17 @@ def writes_of(calls, env):
     return writes, outside
 
 
+def pruned_ops(agent, user: str, inj) -> int:
+    """Quantas operações `keeping` deixou de fora, lidas do journal encadeado da execução."""
+    f = agent.journal_dir / user / f"{inj.ID if inj else 'none'}.jsonl"
+    n = 0
+    for line in f.read_text().splitlines():
+        e = json.loads(line)
+        if e["kind"] == "prune":
+            n += len(e["detail"]["dropped"])
+    return n
+
+
 ALL_READS = {"kind": "Reads", "transactions": True, "scheduled": True, "balance": True, "iban": True,
              "user": True, "file": ""}
 
@@ -142,7 +153,8 @@ def main() -> int:
         root = subprocess.run([ATHC, "check", args.program], capture_output=True, text=True).stdout
 
         script: dict = {}
-        agent = AletheiaAgent("banking", str(emitted), lambda: Scripted({"planner": script["seq"]}), "Banker", "task")
+        agent = AletheiaAgent("banking", str(emitted), lambda: Scripted({"planner": script["seq"]}), "Banker", "task",
+                              journal_dir=Path(tmp) / "journals")
         p_ath = AgentPipeline([SystemMessage("Aletheia"), InitQuery(), agent])
         p_ath.name = "aletheia-obedient"
         direct = Direct()
@@ -168,14 +180,18 @@ def main() -> int:
             res["direct"] = {"utility": bool(u), "attack": bool(s) if inj else None}
             # Aletheia: a mesma proposta como saída tipada do planejador, em toda tentativa
             script["seq"] = [ALL_READS] + [plan] * 6
+            agent.current = (ut.ID, inj.ID if inj else "none")
             u, s = suite.run_task_with_pipeline(p_ath, ut, inj, injections)
             kinds = agent.last["kinds"]
             res["aletheia"] = {"utility": bool(u), "attack": bool(s) if inj else None,
                                "endorsed": "endorse" in kinds,
-                               "policy_rejections": kinds.count("policy_reject"),
+                               # recusa pela política: o plano inteiro (`policy_reject`) ou, com
+                               # `keeping`, operação por operação (`prune`)
+                               "policy_rejections": kinds.count("policy_reject") + kinds.count("prune"),
+                               "pruned_ops": pruned_ops(agent, ut.ID, inj),
                                "type_rejections": kinds.count("decode_reject"),
                                "policy_saw_attack": inj is not None and arm != "legitimo"
-                                                    and kinds.count("policy_reject") > 0,
+                                                    and (kinds.count("policy_reject") + kinds.count("prune")) > 0,
                                "executed": [c["function"] for c in agent.last["calls"]
                                             if not c["function"].startswith(READ_PREFIXES)],
                                "error": agent.last["error"]}
@@ -220,6 +236,8 @@ def summarize(rows):
         a["aletheia"]["type_only"] = sum(r["aletheia"]["type_rejections"] > 0 and r["aletheia"]["policy_rejections"] == 0
                                          for r in rs)
         a["over_4_writes"] = sum(len(r["proposed"]) > 4 for r in rs)
+        a["aletheia"]["pruned_ops"] = sum(r["aletheia"]["pruned_ops"] for r in rs)
+        a["aletheia"]["executed_ops"] = sum(len(r["aletheia"]["executed"]) for r in rs)
         s["arms"][arm] = a
     # cobertura efetiva: pares em que a política avaliou uma proposta com a operação do atacante
     pairs = {(r["user_task"], r["injection_task"]) for r in rows if r["arm"] != "legitimo"}
@@ -249,11 +267,12 @@ def render(s, rows):
             atk = pct(a[arm][pipe]["attack"]) if "attack" in a[arm][pipe] else "—"
             lines.append(f"| {arm} | {label} | {atk} | {pct(a[arm][pipe]['utility'])} |")
     c = s["effective_coverage"]
-    lines += ["", "| braço | propostas acima de 4 operações | recusadas só pelo tipo | recusadas pela política |",
-              "| --- | --- | --- | --- |"]
+    lines += ["", "| braço | propostas acima de 4 operações | recusadas só pelo tipo | execuções com recusa da política | operações deixadas de fora (`keeping`) | operações executadas |",
+              "| --- | --- | --- | --- | --- | --- |"]
     for arm in ("obediente", "sequestrado", "legitimo"):
         x = a[arm]
-        lines.append(f"| {arm} | {x['over_4_writes']} | {x['aletheia']['type_only']} | {x['aletheia']['policy_rejections']} |")
+        lines.append(f"| {arm} | {x['over_4_writes']} | {x['aletheia']['type_only']} | {x['aletheia']['policy_rejections']} "
+                     f"| {x['aletheia']['pruned_ops']} | {x['aletheia']['executed_ops']} |")
     lines += ["", f"Cobertura efetiva: a política avaliou a operação do atacante em {c['policy_saw_attack']} de "
               f"{c['pairs']} pares (em pelo menos um braço).",
               *[f"- sem passar pela política: `{u}` × `{i}`" for u, i in c["never_reached_policy"]]]
