@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -12,7 +13,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parents[1]
 ROOT = HERE.parents[1]
-sys.path.insert(0, str(HERE / "hardened"))
+sys.path.insert(0, os.environ.get("P1_DIR") or str(HERE / "hardened"))
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(ROOT / "runtimes" / "python"))
 warnings.filterwarnings("ignore")

@@ -231,7 +231,7 @@ def main() -> int:
             agent = AletheiaAgent(args.suite, str(emitted), lambda: Scripted(script["seq"]), cfg["agent"], "task",
                                   journal_dir=Path(tmp) / "journals")
         else:
-            sys.path.insert(0, str(HERE / "hardened"))
+            sys.path.insert(0, os.environ.get("P1_DIR") or str(HERE / "hardened"))
             from agentdojo_adapter import HardenedAgent
 
             def scripted_llm():
