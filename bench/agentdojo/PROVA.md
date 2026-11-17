@@ -1,5 +1,8 @@
 # "O modelo propõe, a linguagem decide": o protocolo da prova
 
+Eixo I da tese. O eixo II (vantagem de engenharia, Python endurecido, Strict × Keeping,
+diagnóstico das limitações) está em [PROVA-ENGENHARIA.md](PROVA-ENGENHARIA.md).
+
 Este documento fixa **antes de qualquer rodada paga** o que vai ser medido, como, quanto custa
 e o que conta como resultado. As regras não mudam depois de ver os números.
 
@@ -81,9 +84,12 @@ Limite do projeto Groq medido no lote 2d: **400 mil tokens por dia**.
 | suíte | pares + sem ataque | agente Aletheia | tokens estimados (2 pipelines) | US$ estimado | dias no limite atual |
 | --- | --- | --- | --- | --- | --- |
 | `banking` (o que falta) | 50 pares | pronto | ~325 mil (medido) | ~0,07 | 1 |
-| `slack` | 105 + 21 | a escrever | ~0,9–1,2 milhão | ~0,20–0,30 | 3 |
+| `slack` | 105 + 21 | pronto (`slack.ath`) | ~3 milhões | ~0,65 (revisto¹) | 8 |
 | `travel` | 140 + 20 | a escrever | ~3 milhões | ~0,65 | 8 |
 | `workspace` | 560 + 40 | a escrever | ~10–11 milhões | ~2,30 | 27 |
+
+¹ A primeira estimativa (US$ 0,20–0,30) supunha 2 inferências; o `slack.ath` tem 4. Ver
+[PROVA-ENGENHARIA.md](PROVA-ENGENHARIA.md), seção 6.
 
 Método: `banking` usa o consumo medido (4.570 tokens por execução no baseline, 1.923 no
 Aletheia). As outras suítes escalam pelo tamanho medido dos esquemas de ferramentas e dos
