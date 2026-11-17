@@ -75,6 +75,14 @@ deliberadamente restritiva · **A** artefato do benchmark.
 | D7 | `banking.ath`, tudo ou nada | **R** (escolha de desenho) | Uma operação recusada derruba o plano inteiro. | 45 → 125 com `keeping` | Já resolvido no Core (RC7/RC8): é escolha do programa, sem mudança na linguagem. |
 | D8 | `slack.ath`, listas | **X** | A linguagem itera listas para efeitos (`for`), mas não as transforma nem acumula (sem `map`, índice ou dobra). O `slack.ath` usa slots fixos (`c1..c4`, `l1..l4`) e repete o mesmo bloco quatro vezes. | 211 linhas não comentadas, contra 135 do `banking.ath`; a repetição é custo de manutenção (eixo II, contra) | Candidato a extensão do Core (`map` delimitado, com refinamento de tamanho). Só depois de medir o custo nas métricas da seção 4. |
 
+Encontrados pela revisão independente do P1, valem também para a Aletheia:
+
+| id | onde | categoria | o que é | proposta (não aplicada) |
+| --- | --- | --- | --- | --- |
+| D9 | runtimes (`draft` no Python, e o equivalente no ARX) | **I** | Um dado entre `quote(…)` que contém `>>>` fecha o bloco no prompt e pode imitar uma seção `ESTADO CONFIÁVEL`. A política continua barrando IBANs fora de `payees`, mas o prompt deixa de ser o que o tipo promete. | Neutralizar delimitadores e cabeçalhos no texto citado, nos dois runtimes, com teste diferencial. Muda o prompt de toda execução futura; por isso, decisão sua, com um novo identificador de programa nas próximas rodadas. |
+| D10 | `banking_v2_*.ath`, `amount: Text[..16]` | **X** | O refinamento de texto só limita o comprimento. `-1e9` ou `nan` passam pelo tipo e chegam ao `float()` do host. O P1 valida o formato com uma expressão regular. | Um refinamento de formato (decimal) no Core, ou um tipo `Money` com o host como única conversão. Proposta de Core: só depois de medida. |
+| D11 | `SafeWrite` (os dois) | **R** | `Profile`, `subject` e `date` não são restringidos. Uma injeção "troque meu endereço" passa nos dois. | Declarado fora da garantia, como já está na política. |
+
 D1 é um defeito do próprio verificador, encontrado por este trabalho. Ele entra no catálogo
 de defeitos semeados (seção 4, M4), com a Aletheia falhando nele.
 

@@ -205,7 +205,11 @@ def main() -> int:
     ap.add_argument("--suite", default="banking", choices=sorted(SUITES))
     ap.add_argument("--out", default=None)
     ap.add_argument("--program", default=None)
+    ap.add_argument("--impl", default="aletheia", choices=["aletheia", "hardened-strict", "hardened-keeping"],
+                    help="implementação sob teste: o programa Aletheia ou o P1 Python endurecido (banking)")
     args = ap.parse_args()
+    if args.impl != "aletheia" and args.suite != "banking":
+        raise SystemExit("o P1 Python endurecido existe só para `banking`")
     cfg = SUITES[args.suite]
     args.out = args.out or str(HERE / "runs" / f"obedient-{args.suite}")
     args.program = args.program or str(HERE / cfg["program"])
@@ -223,8 +227,26 @@ def main() -> int:
         root = subprocess.run([ATHC, "check", args.program], capture_output=True, text=True).stdout
 
         script: dict = {}
-        agent = AletheiaAgent(args.suite, str(emitted), lambda: Scripted(script["seq"]), cfg["agent"], "task",
-                              journal_dir=Path(tmp) / "journals")
+        if args.impl == "aletheia":
+            agent = AletheiaAgent(args.suite, str(emitted), lambda: Scripted(script["seq"]), cfg["agent"], "task",
+                                  journal_dir=Path(tmp) / "journals")
+        else:
+            sys.path.insert(0, str(HERE / "hardened"))
+            from agentdojo_adapter import HardenedAgent
+
+            def scripted_llm():
+                seq = list(script["seq"]["planner"])
+                state = {"i": 0}
+
+                def llm(prompt, schema, max_tokens):
+                    r = seq[min(state["i"], len(seq) - 1)]
+                    state["i"] += 1
+                    return json.dumps({"value": r}), 0, 0
+
+                return llm
+
+            agent = HardenedAgent(scripted_llm, args.impl.split("-")[1], journal_dir=Path(tmp) / "journals")
+            root = f"P1 Python endurecido, modo {args.impl.split('-')[1]} (bench/agentdojo/hardened/)"
         p_ath = AgentPipeline([SystemMessage("Aletheia"), InitQuery(), agent])
         p_ath.name = "aletheia-obedient"
         direct = Direct()
@@ -281,6 +303,7 @@ def main() -> int:
     (out / "rows.jsonl").write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows))
     summary = summarize(rows)
     summary["program_check"] = root.strip().splitlines()[-1] if root.strip() else ""
+    summary["impl"] = args.impl
     (out / "matrix.json").write_text(json.dumps(summary, ensure_ascii=False, indent=1))
     (out / "matrix.md").write_text(render(summary, rows))
     print(render(summary, rows))
@@ -333,7 +356,8 @@ def render(s, rows):
              "| braço | pipeline | ataque cumprido (verificador oficial) | utilidade |",
              "| --- | --- | --- | --- |"]
     for arm in ("obediente", "sequestrado", "legitimo"):
-        for pipe, label in (("direct", "sem linguagem"), ("aletheia", "Aletheia")):
+        impl = "Aletheia" if s.get("impl", "aletheia") == "aletheia" else f"P1 Python ({s['impl'].split('-')[1]})"
+        for pipe, label in (("direct", "sem linguagem"), ("aletheia", impl)):
             atk = pct(a[arm][pipe]["attack"]) if "attack" in a[arm][pipe] else "—"
             lines.append(f"| {arm} | {label} | {atk} | {pct(a[arm][pipe]['utility'])} |")
     c = s["effective_coverage"]
@@ -346,10 +370,11 @@ def render(s, rows):
     lines += ["", f"Cobertura efetiva: a política recusou a operação do atacante em {c['policy_saw_attack']} de "
               f"{c['pairs']} pares (em pelo menos um braço).",
               *[f"- sem recusa da política: `{u}` × `{i}`" for u, i in c["never_reached_policy"]]]
-    lines += ["", f"Pares em que o ataque foi cumprido no Aletheia: {len(s['breaches_aletheia'])}"]
+    impl = "Aletheia" if s.get("impl", "aletheia") == "aletheia" else "P1"
+    lines += ["", f"Pares em que o ataque foi cumprido ({impl}): {len(s['breaches_aletheia'])}"]
     for u, i in s["breaches_aletheia"]:
         lines.append(f"- `{u}` × `{i}`")
-    lines += ["", f"Tarefas legítimas que o Aletheia não cumpriu: {', '.join(s['refused_legit']) or 'nenhuma'}",
+    lines += ["", f"Tarefas legítimas que a implementação sob teste ({impl}) não cumpriu: {', '.join(s['refused_legit']) or 'nenhuma'}",
               f"Tarefas legítimas que a execução direta não cumpriu: {', '.join(s['legit_direct_fail']) or 'nenhuma'}",
               "", f"Programa: `{s.get('program_check', '')}`", ""]
     return "\n".join(lines)

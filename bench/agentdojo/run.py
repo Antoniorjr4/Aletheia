@@ -45,14 +45,16 @@ def short_name(model: str) -> str:
     return model.split("/")[-1]
 
 
-def emit_program(athc: str, suite: str, model: str, out_dir: Path) -> Path:
-    """Fixa o modelo no contrato Δ, verifica e emite o agente da suíte."""
-    src = (HERE / f"{suite}.ath").read_text(encoding="utf-8")
+def emit_program(athc: str, suite: str, model: str, out_dir: Path, program: str | None = None) -> Path:
+    """Fixa o modelo no contrato Δ, verifica e emite o agente da suíte (ou `program`, um
+    `.ath` deste diretório, para as variantes experimentais)."""
+    stem = program or suite
+    src = (HERE / f"{stem}.ath").read_text(encoding="utf-8")
     src = re.sub(r'(\n\s*id\s*=\s*)"[^"]*"', lambda m: f'{m.group(1)}"{model}"', src, count=1)
     out_dir.mkdir(parents=True, exist_ok=True)
-    ath = out_dir / f"{suite}.ath"
+    ath = out_dir / f"{stem}.ath"
     ath.write_text(src, encoding="utf-8")
-    py = out_dir / f"{suite}_agent.py"
+    py = out_dir / f"{stem}_agent.py"
     subprocess.run([athc, "check", str(ath)], check=True)
     subprocess.run([athc, "emit", str(ath), "--target", "py", "--out", str(py)], check=True)
     return py
@@ -276,7 +278,7 @@ def baseline_pipeline(model: str, usage: Usage):
     return p
 
 
-def aletheia_pipeline(suite: str, model: str, program: Path, journal_dir: Path, usage: Usage):
+def aletheia_pipeline(suite: str, model: str, program: Path, journal_dir: Path, usage: Usage, tag: str = ""):
     from agentdojo.agent_pipeline import AgentPipeline, InitQuery, SystemMessage
 
     from aletheia_pipeline import AletheiaAgent
@@ -313,7 +315,8 @@ def aletheia_pipeline(suite: str, model: str, program: Path, journal_dir: Path, 
         p.transport = Counting()
         return p
 
-    agent = AletheiaAgent(suite, str(program), provider, "Banker", "task", journal_dir=journal_dir)
+    agent = AletheiaAgent(suite, str(program), provider, {"banking": "Banker", "slack": "Slacker"}[suite], "task",
+                          journal_dir=journal_dir)
     p = AgentPipeline(
         [
             SystemMessage(f"Aletheia agent `agentdojo.{suite}` (bench/agentdojo/{suite}.ath), checked by athc."),
@@ -321,13 +324,45 @@ def aletheia_pipeline(suite: str, model: str, program: Path, journal_dir: Path, 
             agent,
         ]
     )
-    p.name = f"aletheia-{short_name(model)}"
+    p.name = f"aletheia-{tag + '-' if tag else ''}{short_name(model)}"
+    return p, agent
+
+
+def hardened_pipeline(model: str, mode: str, journal_dir: Path, usage: Usage):
+    """P1, o Python endurecido (bench/agentdojo/hardened/), com o mesmo modelo e o mesmo
+    livro-razão de gasto."""
+    import openai
+    from agentdojo.agent_pipeline import AgentPipeline, InitQuery, SystemMessage
+
+    sys.path.insert(0, str(HERE / "hardened"))
+    from agentdojo_adapter import HardenedAgent, openai_llm
+
+    client = openai.OpenAI(max_retries=6)
+
+    def on_usage(tin, tout):
+        usage.add(tin, tout)
+
+    def factory():
+        usage.guard()
+        llm = openai_llm(client, model, on_usage,
+                         on_invalid=lambda prompt: usage.add(None, None, est_tokens(prompt), 0))
+
+        def guarded(prompt, schema, max_tokens):
+            usage.guard()
+            return llm(prompt, schema, max_tokens)
+
+        return guarded
+
+    agent = HardenedAgent(factory, mode, journal_dir=journal_dir)
+    p = AgentPipeline([SystemMessage(f"P1 hardened Python agent ({mode}), bench/agentdojo/hardened/."),
+                       InitQuery(), agent])
+    p.name = f"hardened-{mode}-{short_name(model)}"
     return p, agent
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--suite", default="banking", choices=["banking"])
+    ap.add_argument("--suite", default="banking", choices=["banking", "slack"])
     ap.add_argument("--model", default="openai/gpt-oss-120b")
     ap.add_argument("--pipelines", default="baseline,aletheia")
     ap.add_argument("--attack", default="important_instructions")
@@ -374,14 +409,29 @@ def main() -> int:
     spend = Spend(logdir / "spend.jsonl", args.price_in, args.price_out, args.max_usd, args.max_usd_total)
     usage = Usage(spend)
     pipelines = {}
-    agent = None
+    agents: dict = {}
     for name in args.pipelines.split(","):
         if name == "baseline":
             pipelines[name] = baseline_pipeline(args.model, usage)
         elif name == "aletheia":
             program = emit_program(args.athc, args.suite, args.model, logdir / "program")
-            pipelines[name], agent = aletheia_pipeline(
+            pipelines[name], agents[name] = aletheia_pipeline(
                 args.suite, args.model, program, logdir / "aletheia-journals" / args.suite, usage
+            )
+        elif name.startswith("aletheia@"):
+            # variante experimental: `aletheia@banking_v2_keeping` → bench/agentdojo/banking_v2_keeping.ath
+            stem = name.split("@", 1)[1]
+            tag = stem.removeprefix(f"{args.suite}_").replace("_", "-")
+            program = emit_program(args.athc, args.suite, args.model, logdir / "program", stem)
+            pipelines[name], agents[name] = aletheia_pipeline(
+                args.suite, args.model, program, logdir / "journals" / f"aletheia-{tag}" / args.suite, usage, tag
+            )
+        elif name in ("hardened:strict", "hardened:keeping"):
+            if args.suite != "banking":
+                raise SystemExit("o P1 Python endurecido existe só para `banking`")
+            mode = name.split(":")[1]
+            pipelines[name], agents[name] = hardened_pipeline(
+                args.model, mode, logdir / "journals" / f"hardened-{mode}" / args.suite, usage
             )
         else:
             raise SystemExit(f"pipeline desconhecido: {name}")
@@ -438,8 +488,8 @@ def main() -> int:
                     return
                 spend.context = {"pipeline": pipelines[pname].name, "user_task": ut_id,
                                  "injection_task": inj_id or "none"}
-                if pname == "aletheia" and agent is not None:
-                    agent.current = (ut_id, inj_id or "none")
+                if pname in agents:
+                    agents[pname].current = (ut_id, inj_id or "none")
                 usage.reset()
                 t0 = time.monotonic()
                 ut = suite.get_user_task_by_id(ut_id)
