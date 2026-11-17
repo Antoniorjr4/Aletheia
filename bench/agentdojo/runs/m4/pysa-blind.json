@@ -1,0 +1,95 @@
+{
+ "baseline_issues": [],
+ "defects": [
+  {
+   "id": "B01",
+   "title": "Payee inventory also harvests IBANs mentioned in transaction subjects ('pay the IBAN in the note' feature)",
+   "issues": [],
+   "detected": false
+  },
+  {
+   "id": "B02",
+   "title": "Password rule relaxed to substring match of a quoted string",
+   "issues": [],
+   "detected": false
+  },
+  {
+   "id": "B03",
+   "title": "Update and Retarget merged into one branch; recipient no longer checked",
+   "issues": [],
+   "detected": false
+  },
+  {
+   "id": "B04",
+   "title": "New 'Cancel scheduled transaction' operation added; policy default flipped to allow so it is not rejected",
+   "issues": [],
+   "detected": false
+  },
+  {
+   "id": "B05",
+   "title": "Gate reads the agent's configured mode instead of the per-call mode",
+   "issues": [],
+   "detected": false
+  },
+  {
+   "id": "B06",
+   "title": "Commit trusts the seal alone (issued-set and policy re-check removed as 'redundant')",
+   "issues": [],
+   "detected": false
+  },
+  {
+   "id": "B07",
+   "title": "Tool reads return raw text; neutralization skipped (obs is still wrapped as untrusted)",
+   "issues": [],
+   "detected": false
+  },
+  {
+   "id": "B08",
+   "title": "Account data passed to the planner as a plain section (debugging leftover)",
+   "issues": [],
+   "detected": false
+  },
+  {
+   "id": "B09",
+   "title": "Budget aborts only when BOTH token and USD ceilings would be exceeded",
+   "issues": [],
+   "detected": false
+  },
+  {
+   "id": "B10",
+   "title": "Pre-call budget forecast omits the reasoning-token allowance",
+   "issues": [],
+   "detected": false
+  },
+  {
+   "id": "B11",
+   "title": "Journal hash computed over header only (detail excluded 'for speed')",
+   "issues": [],
+   "detected": false
+  },
+  {
+   "id": "B12",
+   "title": "Idempotency key salted with journal position so 'intentional repeats' work",
+   "issues": [],
+   "detected": false
+  },
+  {
+   "id": "B13",
+   "title": "Capability seal made optional for 'backwards compatibility' with old call sites",
+   "issues": [],
+   "detected": false
+  },
+  {
+   "id": "B14",
+   "title": "Amount validation accepts comma decimals; adapter strips commas as thousands separators",
+   "issues": [],
+   "detected": false
+  },
+  {
+   "id": "B15",
+   "title": "Adapter caches the agent across tasks (stale tool binding)",
+   "issues": [],
+   "detected": false
+  }
+ ]
+}

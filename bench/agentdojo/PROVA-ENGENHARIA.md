@@ -188,7 +188,7 @@ O P1 foi reorganizado para o Pysa (pyre-check 0.10): uma fonte (`_tool_read`), u
 autor, o Pysa pegou **1 de 21** (M02, dado de ferramenta como argumento de efeito). Não pegou o
 efeito condicionado a dado não confiável (M13: fluxo implícito, que o Pysa não acompanha por
 padrão), nem o caminho de arquivo escolhido por dado não confiável (M15: leitura, não efeito,
-nos modelos usados), nem os demais. Uma análise de contaminação pronta para Python existe, mas,
+nos modelos usados), nem os demais. No catálogo cego, pegou **0 de 15** ([runs/m4/pysa-blind.json](runs/m4/pysa-blind.json)). Uma análise de contaminação pronta para Python existe, mas,
 com modelos mínimos, cobre uma fração pequena do que o sistema de tipos da Aletheia cobre.
 
 **3. M3: esforço de mudança** ([runs/m3/](runs/m3/)). Um agente implementou 6 pedidos de mudança
