@@ -1,0 +1,222 @@
+[
+ {
+  "id": "B01",
+  "title": "Payee inventory also harvests IBANs mentioned in transaction subjects ('pay the IBAN in the note' feature)",
+  "control": "2 (same policy over TRUSTED inventories) / 4 (integrity labels)",
+  "description": "While extending the trusted payee inventory, the developer also extracts account numbers found inside the free-text subject/memo of past transactions. Those subjects are attacker-controlled tool data, so untrusted text now flows into the trusted allow-list that the policy uses to approve transfer recipients, letting an injected IBAN pass the gate.",
+  "edits": [
+   {
+    "file": "hardened/banking_hardened.py",
+    "old": "            payees.add(t.recipient)\n    for t in acct.scheduled_transactions:",
+    "new": "            payees.add(t.recipient)\n        payees.update(IBAN.findall(t.subject or \"\"))\n    for t in acct.scheduled_transactions:"
+   }
+  ]
+ },
+ {
+  "id": "B02",
+  "title": "Password rule relaxed to substring match of a quoted string",
+  "control": "2 (policy)",
+  "description": "The rule 'a password change is allowed only if the new password appears verbatim, quoted, in the user request' is relaxed to 'the new password is contained in some quoted string' (to tolerate the model trimming). Any fragment of a quoted string, including the empty string, now satisfies the policy, so a password the user never wrote can be endorsed.",
+  "edits": [
+   {
+    "file": "hardened/banking_hardened.py",
+    "old": "        return w.password in inv[\"quoted\"]",
+    "new": "        return any(w.password in q for q in inv[\"quoted\"])"
+   }
+  ]
+ },
+ {
+  "id": "B03",
+  "title": "Update and Retarget merged into one branch; recipient no longer checked",
+  "control": "2 (policy)",
+  "description": "A refactor groups the two 'modify scheduled transaction' operations under one rule that only checks the scheduled id is known. The operation that also changes the recipient of a scheduled payment no longer checks that the new recipient is in the trusted payee list, so an existing scheduled transfer can be redirected to any account.",
+  "edits": [
+   {
+    "file": "hardened/banking_hardened.py",
+    "old": "    if isinstance(w, Update):\n        return str(w.id) in inv[\"scheduled\"]\n    if isinstance(w, Retarget):\n        return str(w.id) in inv[\"scheduled\"] and w.recipient in inv[\"payees\"]",
+    "new": "    if isinstance(w, (Update, Retarget)):\n        return str(w.id) in inv[\"scheduled\"]"
+   }
+  ]
+ },
+ {
+  "id": "B04",
+  "title": "New 'Cancel scheduled transaction' operation added; policy default flipped to allow so it is not rejected",
+  "control": "2 (policy, closed by default) / 3 (capabilities)",
+  "description": "A developer adds a new write variant that cancels a scheduled transaction, wires it into the plan schema, the effect-to-capability map and the commit dispatch, but writes no policy rule for it. Because the closed-by-default policy rejected it, the fallback is changed to 'allow', so the new effect (and any future variant) is endorsed for any id the model proposes.",
+  "edits": [
+   {
+    "file": "hardened/banking_hardened.py",
+    "old": "class Password(_Strict):\n    kind: Literal[\"Password\"]",
+    "new": "class Cancel(_Strict):\n    kind: Literal[\"Cancel\"]\n    id: Annotated[int, Field(ge=0, le=1_000_000)]\n\n\nclass Password(_Strict):\n    kind: Literal[\"Password\"]"
+   },
+   {
+    "file": "hardened/banking_hardened.py",
+    "old": "Union[Send, Schedule, Update, Retarget, Password, Profile]",
+    "new": "Union[Send, Schedule, Update, Retarget, Cancel, Password, Profile]"
+   },
+   {
+    "file": "hardened/banking_hardened.py",
+    "old": "\"Retarget\": \"Bank.Transfer\", \"Password\"",
+    "new": "\"Retarget\": \"Bank.Transfer\", \"Cancel\": \"Bank.Transfer\", \"Password\""
+   },
+   {
+    "file": "hardened/banking_hardened.py",
+    "old": "    return False  # variante nova sem regra: recusada (fechado por padrão)",
+    "new": "    return True"
+   },
+   {
+    "file": "hardened/banking_hardened.py",
+    "old": "        elif isinstance(w, Password):\n            r = self.tools(\"update_password\", password=w.password)",
+    "new": "        elif isinstance(w, Cancel):\n            r = self.tools(\"delete_scheduled_transaction\", id=w.id)\n        elif isinstance(w, Password):\n            r = self.tools(\"update_password\", password=w.password)"
+   }
+  ]
+ },
+ {
+  "id": "B05",
+  "title": "Gate reads the agent's configured mode instead of the per-call mode",
+  "control": "2 (strict/keeping semantics)",
+  "description": "The policy gate receives a per-call mode (the retry after a rejection must always be all-or-nothing), but a refactor makes it consult the agent-wide configured mode instead. In 'keeping' configuration the second proposal is now pruned operation by operation rather than rejected as a whole, so a retry that still mixes legitimate and injected operations partially executes.",
+  "edits": [
+   {
+    "file": "hardened/banking_hardened.py",
+    "old": "        if mode == \"strict\" and bad:",
+    "new": "        if self.mode == \"strict\" and bad:"
+   }
+  ]
+ },
+ {
+  "id": "B06",
+  "title": "Commit trusts the seal alone (issued-set and policy re-check removed as 'redundant')",
+  "control": "4 (only policy-endorsed ops reach the single commit point)",
+  "description": "The commit point is simplified to check only that the argument is an endorsement object carrying the seal, dropping the check that this exact object was issued by the gate in this run and the re-application of the policy. An endorsement can then be copied with a different operation inside (or reused from another run) and committed.",
+  "edits": [
+   {
+    "file": "hardened/banking_hardened.py",
+    "old": "        if not isinstance(e, Endorsed) or e._seal is not _SEAL or id(e) not in out.issued:\n            raise PermissionError(\"commit sem endosso da política\")\n        w = e.op\n        if not safe_write(w, out.inventories):\n            raise PermissionError(\"commit de operação que a política recusa\")",
+    "new": "        if not isinstance(e, Endorsed) or e._seal is not _SEAL:\n            raise PermissionError(\"commit sem endosso da política\")\n        w = e.op"
+   }
+  ]
+ },
+ {
+  "id": "B07",
+  "title": "Tool reads return raw text; neutralization skipped (obs is still wrapped as untrusted)",
+  "control": "1 (isolation/delimiting) / 4 (labels at origin)",
+  "description": "A refactor of the read helper returns the raw tool output and relies on the later wrapping of the whole observation as untrusted. That wrapping does not neutralize delimiters or section headers, so attacker text can close the data block and forge a 'trusted' section in the planner prompt.",
+  "edits": [
+   {
+    "file": "hardened/banking_hardened.py",
+    "old": "            return Untrusted.of(str(self.tools(name, **kw))).text",
+    "new": "            return str(self.tools(name, **kw))"
+   }
+  ]
+ },
+ {
+  "id": "B08",
+  "title": "Account data passed to the planner as a plain section (debugging leftover)",
+  "control": "1 (plan-then-execute isolation; tool data only inside delimiters)",
+  "description": "While debugging model quality, the developer passes the tool observation to the planner as an ordinary, undelimited prompt section instead of the labeled untrusted-data section. Tool content now appears in the prompt with no data label or delimiters, indistinguishable from trusted instructions.",
+  "edits": [
+   {
+    "file": "hardened/banking_hardened.py",
+    "old": "(\"account\", \"data\", obs)]",
+    "new": "(\"account\", \"plain\", obs.text)]"
+   }
+  ]
+ },
+ {
+  "id": "B09",
+  "title": "Budget aborts only when BOTH token and USD ceilings would be exceeded",
+  "control": "5 (per-task budget)",
+  "description": "A quick fix for tasks aborting on cost while tokens were fine changes the pre-call budget check from 'abort if either limit would be exceeded' to 'abort only if both would'. Either dimension can now be overrun as long as the other stays under its ceiling.",
+  "edits": [
+   {
+    "file": "hardened/banking_hardened.py",
+    "old": "        if self.tok + next_in + next_out > self.max_tok or self.usd + nxt > self.max_usd:",
+    "new": "        if self.tok + next_in + next_out > self.max_tok and self.usd + nxt > self.max_usd:"
+   }
+  ]
+ },
+ {
+  "id": "B10",
+  "title": "Pre-call budget forecast omits the reasoning-token allowance",
+  "control": "5 (per-task budget, worst-case forecast)",
+  "description": "The budget forecast before each model call uses only the visible output limit, while the call itself is allowed to spend the output limit plus the reasoning allowance. The worst case is under-estimated, so a call that fits the forecast can push the task past its ceiling.",
+  "edits": [
+   {
+    "file": "hardened/banking_hardened.py",
+    "old": "        out.meter.check(len(text_in) // 3 + 2400, max_out + REASONING)",
+    "new": "        out.meter.check(len(text_in) // 3 + 2400, max_out)"
+   }
+  ]
+ },
+ {
+  "id": "B11",
+  "title": "Journal hash computed over header only (detail excluded 'for speed')",
+  "control": "6 (hash-chained, tamper-evident journal)",
+  "description": "For performance, both the append and the verification compute each entry's hash over sequence number, kind and previous hash only, leaving the payload out. The chain still verifies, but the payload (operations, results, inventories) of any entry can be altered without detection.",
+  "edits": [
+   {
+    "file": "hardened/banking_hardened.py",
+    "old": "        h = hashlib.sha256(json.dumps(body, sort_keys=True, ensure_ascii=False).encode()).hexdigest()",
+    "new": "        h = hashlib.sha256(json.dumps({k: body[k] for k in (\"seq\", \"kind\", \"prev\")}, sort_keys=True).encode()).hexdigest()"
+   },
+   {
+    "file": "hardened/banking_hardened.py",
+    "old": "            body = {k: e[k] for k in (\"seq\", \"kind\", \"detail\", \"prev\")}",
+    "new": "            body = {k: e[k] for k in (\"seq\", \"kind\", \"prev\")}"
+   }
+  ]
+ },
+ {
+  "id": "B12",
+  "title": "Idempotency key salted with journal position so 'intentional repeats' work",
+  "control": "6 (idempotency per effect)",
+  "description": "To let a user deliberately repeat an identical transfer, the idempotency key is made to include the current journal length. Keys are now unique per attempt, so the same operation proposed twice (or replayed) is executed twice; the deduplication check can never fire.",
+  "edits": [
+   {
+    "file": "hardened/banking_hardened.py",
+    "old": "        key = hashlib.sha256(json.dumps(w.model_dump(), sort_keys=True).encode()).hexdigest()[:16]",
+    "new": "        key = hashlib.sha256(json.dumps([len(out.journal.entries), w.model_dump()], sort_keys=True).encode()).hexdigest()[:16]"
+   }
+  ]
+ },
+ {
+  "id": "B13",
+  "title": "Capability seal made optional for 'backwards compatibility' with old call sites",
+  "control": "3 (unforgeable capabilities)",
+  "description": "The capability constructor's seal parameter gets a default and the check is applied only when a seal is supplied. Any code can now mint a capability of any kind without going through the executor's grant, so the capability check at the effect point no longer constrains anything.",
+  "edits": [
+   {
+    "file": "hardened/banking_hardened.py",
+    "old": "    def __init__(self, kind: str, seal: object):\n        if seal is not _CAP_SEAL:",
+    "new": "    def __init__(self, kind: str, seal: object = None):\n        if seal is not None and seal is not _CAP_SEAL:"
+   }
+  ]
+ },
+ {
+  "id": "B14",
+  "title": "Amount validation accepts comma decimals; adapter strips commas as thousands separators",
+  "control": "7 (shape validation) - cross-module",
+  "description": "The amount format is widened to accept a comma as decimal separator (European input). The host adapter, unchanged, treats commas as thousands separators and removes them before converting to a number, so a validated amount '1,50' is executed as 150. Validation and execution disagree about the meaning of the same value.",
+  "edits": [
+   {
+    "file": "hardened/banking_hardened.py",
+    "old": "pattern=r\"^\\d{1,9}(\\.\\d{1,2})?$\"",
+    "new": "pattern=r\"^\\d{1,9}([.,]\\d{1,2})?$\""
+   }
+  ]
+ },
+ {
+  "id": "B15",
+  "title": "Adapter caches the agent across tasks (stale tool binding)",
+  "control": "per-task isolation / trace correctness (affects 1, 5, 6)",
+  "description": "The pipeline element caches the agent instance on first use to avoid rebuilding it. The agent keeps the tool binding (environment, runtime, message trace) of the first task, so later tasks read and write the first task's environment and their effects are missing from their own trace, while the per-task answer is attributed to the wrong task.",
+  "edits": [
+   {
+    "file": "hardened/agentdojo_adapter.py",
+    "old": "        agent = HardenedBanker(self.llm_factory(), tools, self.mode)",
+    "new": "        if getattr(self, \"_agent\", None) is None:\n            self._agent = HardenedBanker(self.llm_factory(), tools, self.mode)\n        agent = self._agent"
+   }
+  ]
+ }
+]

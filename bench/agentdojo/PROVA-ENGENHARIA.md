@@ -154,6 +154,84 @@ pré-registrado: M4 favorece a Aletheia com folga, e M2 não mostra custo maior 
 (esforço de mudança) ainda não foi medido**, e por isso o eixo II continua "inconclusivo" pela
 regra fixada na seção 4.
 
+### Validação (17/11/2026): catálogo cego, Python com Pysa e esforço de mudança
+
+Os três testes que o M4 acima pedia, todos sem custo de API.
+
+**1. Catálogo cego** ([defects/blind/](defects/blind/), resultados em [runs/m4/blind.json](runs/m4/blind.json)).
+Um agente que viu **só o P1** escreveu 15 defeitos realistas de manutenção. Um segundo agente,
+que não viu nenhum resultado, traduziu cada um para a Aletheia como `program` (o erro cabe no
+`.ath`), `host` (cabe no código Python do host, que o usuário da Aletheia também escreve) ou
+`none` (o mecanismo mora no compilador ou no runtime, e o autor do agente não consegue
+escrevê-lo).
+
+| grupo | n | Aletheia | P1 |
+| --- | --- | --- | --- |
+| exprimíveis nos dois (`program` + `host`) | 7 | estático 1 (B08) · testes 3 · não detectado 3 | estático 0 · testes 4 · não detectado 3 |
+| na maquinaria de segurança (`none`) | 7 | não exprimível no programa | testes 5 · **não detectado 2** (B10 orçamento, B13 selo da capacidade) |
+| base já defeituosa | 1 (B14, vírgula decimal) | a Aletheia já se comporta assim (D10) | não detectado |
+
+Leitura honesta: **o autor cego escreveu sobretudo erros de lógica de política e erros na
+maquinaria de segurança, e não os erros de fluxo que o `athc` verifica.** Nos 7 defeitos
+exprimíveis nos dois, a Aletheia só pegou 1 a mais na compilação. Os outros 6 tiveram o mesmo
+desfecho nas duas. A diferença real aparece no outro grupo: 7 dos 15 defeitos estão em código
+que o desenvolvedor do P1 precisa escrever e manter (selo de endosso, hash do journal, chave de
+idempotência, medidor de orçamento, capacidades), e 2 deles passaram sem detecção. Na Aletheia,
+esse código é da linguagem. Por isso o autor do agente não o escreve, mas o mesmo tipo de bug
+pode existir no runtime, como o D9 mostrou. O catálogo do autor (16/17 na compilação) mede a
+classe de erro que a linguagem foi desenhada para pegar. O catálogo cego mostra que essa classe
+**não é a mais frequente** quando alguém de fora imagina erros de manutenção.
+
+**2. P1+ com Pysa** ([defects/run_pysa.py](defects/run_pysa.py), modelos em [defects/pysa/](defects/pysa/)).
+O P1 foi reorganizado para o Pysa (pyre-check 0.10): uma fonte (`_tool_read`), um sumidouro
+(`_tool_effect`) e a porta da política como sanitizador. A base tem 0 alertas. No catálogo do
+autor, o Pysa pegou **1 de 21** (M02, dado de ferramenta como argumento de efeito). Não pegou o
+efeito condicionado a dado não confiável (M13: fluxo implícito, que o Pysa não acompanha por
+padrão), nem o caminho de arquivo escolhido por dado não confiável (M15: leitura, não efeito,
+nos modelos usados), nem os demais. Uma análise de contaminação pronta para Python existe, mas,
+com modelos mínimos, cobre uma fração pequena do que o sistema de tipos da Aletheia cobre.
+
+**3. M3: esforço de mudança** ([runs/m3/](runs/m3/)). Um agente implementou 6 pedidos de mudança
+nas duas, com os testes passando, e uma versão incompleta de cada, com a mesma omissão dos dois lados.
+(Desvio declarado do pré-registro: a C3 "nova ferramenta via MCP" virou "novo inventário
+`blocked`", porque a suíte `banking` não tem servidor MCP.)
+
+| mudança | Aletheia (+/−) | P1 (+/−) | versão incompleta: Aletheia | versão incompleta: P1 |
+| --- | --- | --- | --- | --- |
+| C1 operação `Refund` com teto | 18/3 | 27/7 | **estático** (E0012) | não detectado (recusa silenciosa) |
+| C2 beneficiários só do pedido | 3/11 | 1/6 | testes | testes |
+| C3 inventário `blocked` | 14/6 | 10/4 | não detectado | não detectado |
+| C4 orçamento 20k tok / US$ 0,02 | 4/14 | 3/3 | **estático** (B0201) | não se aplica (o medidor aborta em execução) |
+| C5 keeping → strict | 3/5 | 2/2 | **estático** (E0001) | não se aplica (o P1 já tinha o modo como parâmetro) |
+| C6 "password" no pedido | 7/2 | 2/1 | não detectado | não detectado |
+| **total de linhas alteradas** | **90** | **68** | 3 estático, 1 testes, 2 não detectados | 0 estático, 1 testes, 3 não detectados |
+
+A Aletheia exigiu **32% mais linhas** por mudança. Parte disso é a garantia trabalhando: na C4,
+o verificador recusou um teto abaixo do pior caso, e foi preciso reduzir tentativas. Outra parte
+é limite da linguagem: a política não compara um valor decimal com um teto nem procura uma
+palavra num texto, e por isso a C1 e a C6 precisaram de inventários calculados no host (X,
+como o D10).
+
+### Veredito pelo critério pré-registrado (seção 4)
+
+- M1: sem diferença de segurança nem de utilidade entre Aletheia e P1. Não é o diferencial.
+- M4: a Aletheia detecta antes da execução uma fração maior. No catálogo do autor, com folga
+  (16/17 contra 0/17, ou 1/21 com o Pysa). No catálogo cego, por pouco (1 contra 0 em 7), com a
+  maior parte da diferença deslocada para "o autor do agente não escreve a maquinaria".
+- M2: a Aletheia usa menos código (139 contra 345 linhas no agente).
+- M3: a Aletheia usa **32% mais** linhas por mudança, acima da margem de 25%.
+
+Pela regra fixada antes da medição ("refutado se o custo em M2/M3 supera essa margem"), **o eixo II,
+como enunciado, é refutado nesta suíte**. A regra não é reescrita depois do resultado. O que os
+dados sustentam é uma afirmação mais estreita: a Aletheia transforma erros de **estrutura de
+fluxo e de disciplina de efeitos** em erros de compilação e tira a maquinaria de segurança do
+código da aplicação. Isso tem custo de expressividade (números e texto em políticas) e um custo
+por mudança um pouco maior. Ela não protege contra o erro mais comum do catálogo cego, a lógica
+errada da política, que só teste pega.
+
+Limites: uma suíte, 6 mudanças, um implementador (agente) por estudo, os mesmos modelos de
+linguagem nos dois lados.
+
 ## 2. Diagnóstico das limitações (antes de propor mudança no Core)
 
 Categorias da diretiva: **P** política inadequada · **F** falta de dados confiáveis ·
