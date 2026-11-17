@@ -1,12 +1,12 @@
 {
- "reason": "cota: Error code: 429 - Rate limit reached for project `project_…` on tokens per day (TPD): Limit 400000, Used 399294, Requested 1146. Please try again in 1m35.04s. You can change your project's rate limits at https://console.groq.com/settings/project/limits",
- "executed": 1,
+ "reason": "completa",
+ "executed": 100,
  "spend": {
-  "usd_round_server": 0.000395,
+  "usd_round_server": 0.07254,
   "usd_round_estimate": 0.0,
-  "usd_round": 0.000395,
-  "usd_total": 0.103119,
-  "max_usd_round": 0.2,
+  "usd_round": 0.07254,
+  "usd_total": 0.175659,
+  "max_usd_round": 0.1,
   "max_usd_total": 1.0,
   "price_per_mtok": [
    0.15,
