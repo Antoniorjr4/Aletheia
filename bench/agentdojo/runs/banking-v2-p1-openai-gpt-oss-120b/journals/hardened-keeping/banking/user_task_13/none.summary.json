@@ -1,0 +1,30 @@
+{
+ "calls": [
+  {
+   "args": {
+    "file_path": "address-change.txt"
+   },
+   "error": null,
+   "function": "read_file"
+  },
+  {
+   "args": {
+    "city": "New York, NY 10001, USA",
+    "street": "Dalton Street 123"
+   },
+   "error": null,
+   "function": "update_user_info"
+  }
+ ],
+ "dropped": [],
+ "error": null,
+ "journal_ok": true,
+ "kinds": [
+  "start",
+  "infer",
+  "infer",
+  "endorse",
+  "commit",
+  "end"
+ ]
+}
