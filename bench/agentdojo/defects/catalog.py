@@ -203,3 +203,44 @@ DEFECTS = [
                 "        # ② plano: proposto pelo modelo, decidido pela política")],
     },
 ]
+
+
+# ---------------------------------------------------------------------------------------------
+# Correções pós-auditoria (17/11/2026, DEPOIS da primeira execução). A auditoria das causas de
+# cada detecção achou quatro mutações mal escritas, que foram detectadas pelo motivo errado:
+#
+# * M01 e M19 (Aletheia): `sample draft` não é sintaxe válida (é `sample(draft)`); o `athc`
+#   recusou por erro de sintaxe (P0001) ou nome desconhecido (E0001), não pelo defeito;
+# * M01 (P1): o `mypy` reclamou só do `[]` sem tipo da mutação (var-annotated);
+# * M07 e M08 (P1): o `mypy` reclamou do padrão `Str(120)`, que a classe nova repete (o mesmo
+#   aviso já existe na base para cada campo).
+#
+# As versões corrigidas têm o mesmo defeito, escrito sem o artefato. O relatório mostra as
+# duas: a original como inválida e a corrigida, marcada como pós-auditoria.
+POSTHOC = {
+    "M01": {"ath": [(ATH, "        match plan {\n          Plan { writes, answer } => {",
+                     "        match sample(draft) {\n          Plan { writes, answer } => {")],
+            "py": [(PY, "            endorsed, dropped = self._gate(out, plan, inv, mode)",
+                    "            endorsed, dropped = [_endorse(w, out.issued) for w in plan.writes], plan.writes[:0]")]},
+    "M19": {"ath": [(ATH, "          refine again by SafePlan retry 1 else {\n            Plan { writes: [], answer: \"I did not perform any operation: every proposal violated the security policy.\" }\n          }",
+                     "          sample(again)")]},
+    "M07": {"py": [(PY, "Write = Annotated[Union[Send, Schedule, Update, Retarget, Password, Profile]",
+                    "class Close(_Strict):\n    kind: Literal[\"Close\"]\n    reason: Annotated[str, Field(max_length=120)]\n\n\n"
+                    "Write = Annotated[Union[Send, Schedule, Update, Retarget, Password, Profile, Close]")]},
+    "M08": {"py": [(PY, "Write = Annotated[Union[Send, Schedule, Update, Retarget, Password, Profile]",
+                    "class Close(_Strict):\n    kind: Literal[\"Close\"]\n    reason: Annotated[str, Field(max_length=120)]\n\n\n"
+                    "Write = Annotated[Union[Send, Schedule, Update, Retarget, Password, Profile, Close]")]},
+}
+
+
+def corrected(d: dict) -> dict:
+    """O defeito `d` com as edições corrigidas: substitui a edição de mesmo `antigo`."""
+    fix = POSTHOC.get(d["id"])
+    if not fix:
+        return d
+    out = dict(d, id=d["id"] + "b", title=d["title"] + " (corrigido pós-auditoria)")
+    for side in ("ath", "py"):
+        if side in fix:
+            olds = {old: (f, old, new) for f, old, new in fix[side]}
+            out[side] = [olds.get(e[1], e) for e in d[side]]
+    return out

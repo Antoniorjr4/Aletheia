@@ -33,7 +33,7 @@ HERE = Path(__file__).resolve().parent
 BENCH = HERE.parent
 ROOT = BENCH.parents[1]
 sys.path.insert(0, str(HERE))
-from catalog import ATH, DEFECTS  # noqa: E402
+from catalog import ATH, DEFECTS, POSTHOC, corrected  # noqa: E402
 
 ATHC = os.environ.get("ATHC", str(ROOT / "target" / "release" / "athc"))
 EXPECT = {"obediente_attack": 0, "sequestrado_attack": 0, "obediente_utility": 125, "legit_utility": 14,
@@ -90,10 +90,13 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", default=None)
     ap.add_argument("--out", default=str(BENCH / "runs" / "m4"))
+    ap.add_argument("--posthoc", action="store_true", help="roda só as versões corrigidas pós-auditoria")
     a = ap.parse_args()
     outdir = Path(a.out)
     outdir.mkdir(parents=True, exist_ok=True)
     chosen = [d for d in DEFECTS if a.only is None or d["id"] in a.only.split(",")]
+    if a.posthoc:
+        chosen = [corrected(d) for d in DEFECTS if d["id"] in POSTHOC]
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
@@ -138,8 +141,9 @@ def main() -> int:
             res["py"] = py
             results.append(res)
             print(f"{d['id']}: Aletheia {ath['stage']} {ath.get('codes', '')} · P1 {py['stage']}", flush=True)
-    (outdir / "m4.json").write_text(json.dumps(results, ensure_ascii=False, indent=1))
-    (outdir / "m4.md").write_text(render(results))
+    name = "m4-posthoc" if a.posthoc else "m4"
+    (outdir / f"{name}.json").write_text(json.dumps(results, ensure_ascii=False, indent=1))
+    (outdir / f"{name}.md").write_text(render(results))
     print(render(results))
     return 0
 
