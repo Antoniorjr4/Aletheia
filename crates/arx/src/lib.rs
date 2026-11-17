@@ -3017,17 +3017,19 @@ impl<'m> Arx<'m> {
     }
 }
 
-/// **Ciclo 1, D9.** O texto citado (`quote(…)`) entra no prompt entre `<<<` e `>>>`. Os
-/// delimitadores dentro do dado e um `#` no início de linha (o marcador de seção) são trocados por
-/// sósias visuais (`‹‹‹`, `›››`, `＃`). Assim o dado não fecha o bloco nem abre uma seção que
-/// imite o estado confiável. Idêntico a `_neutralize_quoted` do runtime Python (teste diferencial).
+/// **Ciclo 1, D9.** O texto citado (`quote(…)`) entra no prompt entre `<<<` e `>>>`. Os marcadores
+/// estruturais do próprio runtime são trocados por sósias visuais dentro do dado: `<<<` → `‹‹‹`,
+/// `>>>` → `›››` e, no início de linha, `###` (o marcador de seção do prompt) → `＃##`. Assim o dado
+/// não fecha o bloco nem abre uma seção que imite o estado confiável. Cabeçalhos que o próprio
+/// programa escreve dentro do texto citado (`## …`) não são tocados. Só a representação no prompt
+/// muda; o valor usado pelo programa é o original. Idêntico a `_neutralize_quoted` (Python).
 pub fn neutralize_quoted(val: &str) -> String {
     let val = val.replace("<<<", "‹‹‹").replace(">>>", "›››");
     val.split('\n')
         .map(|line| {
             let rest = line.trim_start_matches([' ', '\t']);
-            match rest.strip_prefix('#') {
-                Some(after) => format!("{}＃{}", &line[..line.len() - rest.len()], after),
+            match rest.strip_prefix("###") {
+                Some(after) => format!("{}＃##{}", &line[..line.len() - rest.len()], after),
                 None => line.to_string(),
             }
         })

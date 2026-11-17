@@ -368,6 +368,9 @@ def main() -> int:
     ap.add_argument("--attack", default="important_instructions")
     ap.add_argument("--logdir", required=True)
     ap.add_argument("--athc", default=str(ROOT / "target/release/athc"))
+    ap.add_argument("--athc-hist", default=os.environ.get("ATHC_HIST", ""),
+                    help="compilador histórico (scripts/historico.sh) para o pipeline `aletheia`: banking.ath foi "
+                         "medido antes das correções do ciclo 1 e o compilador atual o recusa (D1)")
     ap.add_argument("--max-minutes", type=float, default=330.0)
     ap.add_argument("--user-tasks", default=None, help="subconjunto (vírgulas), para ensaios")
     ap.add_argument("--injection-tasks", default=None, help="subconjunto (vírgulas), para ensaios")
@@ -414,7 +417,13 @@ def main() -> int:
         if name == "baseline":
             pipelines[name] = baseline_pipeline(args.model, usage)
         elif name == "aletheia":
-            program = emit_program(args.athc, args.suite, args.model, logdir / "program")
+            if args.suite == "banking":
+                if not args.athc_hist:
+                    raise SystemExit("o pipeline `aletheia` é o banking.ath histórico: passe --athc-hist "
+                                     "(scripts/historico.sh) ou use aletheia@<programa> para os programas atuais")
+                program = emit_program(args.athc_hist, args.suite, args.model, logdir / "program")
+            else:
+                program = emit_program(args.athc, args.suite, args.model, logdir / "program")
             pipelines[name], agents[name] = aletheia_pipeline(
                 args.suite, args.model, program, logdir / "aletheia-journals" / args.suite, usage
             )

@@ -79,7 +79,8 @@ struct Spy {
 
 impl ModelProvider for Spy {
     fn name(&self) -> String {
-        "spy".into()
+        // o mesmo nome do provedor roteirizado, para o journal ser comparável com o do Python
+        self.inner.name()
     }
     fn complete(&mut self, req: &Request) -> Result<Completion, String> {
         self.seen.borrow_mut().push(req.prompt.to_string());
@@ -129,4 +130,67 @@ fn d9_o_dado_citado_nao_fecha_o_bloco_nem_imita_secao_confiavel() {
         opens == 1 && closes == 1 && forged == 1,
         "D9: o dado citado fecha o bloco e forja uma seção: <<< {opens}, >>> {closes}, `### payees` {forged}\n{p}"
     );
+}
+
+// ------------------------------------------------------------------ D9: preservação do dado
+
+/// O mesmo dado citado no prompt e devolvido pelo handler.
+const D9_KEEP: &str = r#"module d9b
+type Pay = | Pay { to: Text[..34] }
+model m { price_in = 0.0  price_out = 0.0  ctx = 8192  max_out = 64  reasoning = 0  ttft = 1.0  per_tok = 0.01 }
+policy Known(p: Pay) -> Bool = match p { Pay { to } => s.member("payees", to) }
+agent A() budget [tok <= 10000, usd <= 1.0, wall <= 100.0] {
+  on go(req: Text[..200] ^ Trusted, note: Text[..300] ^ Untrusted) -> Text ! { Infer } {
+    let d = infer m -> Pay { request = req, payees = s.inventory("payees"), note = quote(note) }
+    let p = refine d by Known else { return "recusado" }
+    note
+  }
+}
+"#;
+
+#[test]
+fn d9_a_neutralizacao_muda_so_o_prompt_e_preserva_o_valor_nos_dois_runtimes() {
+    let c = compile(D9_KEEP).unwrap_or_else(|d| panic!("{:?}", d.iter().map(|x| &x.code).collect::<Vec<_>>()));
+    let models = json!({ "m": [{ "kind": "Pay", "to": "CH9300762011623852957" }] });
+    let world = json!({ "inventories": { "payees": ["CH9300762011623852957"] } });
+    // ARX: o prompt é neutralizado, o valor devolvido é o original, byte a byte
+    let seen = Rc::new(RefCell::new(Vec::new()));
+    let spy = Spy { inner: Scripted::from_json(&models).unwrap(), seen: seen.clone() };
+    let mut arx = Arx::new(&c.module, Box::new(SimWorld::from_json(&world).unwrap()), Box::new(spy));
+    arx.contracts = athc::contract_hashes(&c);
+    let out = arx.run("A", "go", vec![Value::Text("pay my rent".into()), Value::Text(FORGED.into())]).unwrap();
+    assert_eq!(out.to_json(), json!(FORGED), "o handler devolve o dado original");
+    assert!(seen.borrow()[0].contains("‹‹‹") && !seen.borrow()[0].contains(FORGED), "o prompt é neutralizado");
+    // Python emitido: o mesmo resultado e o mesmo journal (que traz o hash do prompt)
+    let dir = std::env::temp_dir().join(format!("ciclo1-d9-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let py = ath_emit::python(&c.module, &c.check, &c.codex, "d9b.ath").expect("emissão");
+    let (prog, w, m, j, r) =
+        (dir.join("d9b.py"), dir.join("w.json"), dir.join("m.json"), dir.join("j.jsonl"), dir.join("r.json"));
+    std::fs::write(&prog, py).unwrap();
+    std::fs::write(&w, world.to_string()).unwrap();
+    std::fs::write(&m, models.to_string()).unwrap();
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let st = std::process::Command::new("python3")
+        .env("PYTHONPATH", root.join("runtimes/python"))
+        .args(["-m", "aletheia_runtime", "run"])
+        .arg(&prog)
+        .arg("--world")
+        .arg(&w)
+        .arg("--models")
+        .arg(&m)
+        .args(["--provider", "scripted", "--agent", "A", "--on", "go", "--arg-json"])
+        .arg(json!("pay my rent").to_string())
+        .arg("--arg-json")
+        .arg(json!(FORGED).to_string())
+        .arg("--journal")
+        .arg(&j)
+        .arg("--report")
+        .arg(&r)
+        .output()
+        .expect("python3");
+    assert!(r.exists(), "{}", String::from_utf8_lossy(&st.stderr));
+    let report: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&r).unwrap()).unwrap();
+    assert_eq!(report["result"], json!(FORGED), "Python devolve o dado original: {report}");
+    assert_eq!(std::fs::read_to_string(&j).unwrap(), arx.journal.to_jsonl(), "mesmo journal, mesmo hash de prompt");
 }

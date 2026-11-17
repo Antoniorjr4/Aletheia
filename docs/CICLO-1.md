@@ -17,7 +17,7 @@ mensurável (M10, abaixo).
 | | item | estado |
 | --- | --- | --- |
 | P1 | Corretude do Core: D1 (E0421 transitiva), D9 (delimitadores no prompt, nos dois runtimes), D12 (mensagem de sistema neutra) | **corrigidos** (ver abaixo) |
-| P2 | Expressividade de políticas: D10 (valor monetário: positivo, limite, formato) e D2 (conteúdo de mensagem: links autorizados) | a desenhar |
+| P2 | Expressividade de políticas: D10 (valor monetário: positivo, limite, formato) e D2 (conteúdo de mensagem: links autorizados) | **desenho pronto** ([P2-DESENHO.md](P2-DESENHO.md)); implementação aguarda autorização |
 | P3 | Ergonomia e esforço de mudança: origem das 90 linhas do M3; D8 (operações de lista) | a investigar |
 | P4 | Invariantes de política declarados no programa e testados contra a matriz do modelo obediente, sem construção nova no Core | a desenhar |
 
@@ -82,3 +82,21 @@ autorização no momento. Nenhum merge sem autorização.
 - **Pendente, fora do P1:** o workflow pago `agentdojo.yml` ainda verifica o pipeline histórico
   `aletheia` com o compilador atual. Antes de qualquer rodada paga nova, ele precisa usar o
   compilador histórico para esse pipeline, ou só os programas novos.
+
+**17/11 — P2: diagnóstico e desenho (orientação da mesma data; sem construção no Core).**
+
+- [P2-DESENHO.md](P2-DESENHO.md):
+  - D10: a alternativa A (centavos como `Int[1..N]`) não exige construção nova e foi medida com o
+    runtime atual (`docs/p2/centavos.ath`);
+  - D10b: o `decimal()` da linguagem aceita vírgula ambígua (defeito; a correção aguarda
+    autorização);
+  - D2: só propriedades sintáticas contra uma gramática fixa são verificáveis; a alternativa
+    recomendada (`s.links_within`) é uma construção e aguarda autorização.
+- D9: teste de preservação (o valor original chega intacto ao programa nos dois runtimes, com o
+  mesmo `prompt_hash`). A neutralização foi estreitada aos marcadores do runtime, depois de a
+  reconstrução do D12 mostrar que ela trocava cabeçalhos do próprio programa.
+- D12: `test_d12.py`. Nos 11 pares, os dados estavam no prompt: a causa é comportamento do modelo.
+  A rodada real de verificação (~US$ 0,01) não foi disparada.
+- M10: pré-registro em [bench/m10/PROTOCOLO.md](../bench/m10/PROTOCOLO.md). A escolha do modelo
+  autor fica antes da etapa 1.
+- Workflow pago: o pipeline histórico usa o compilador histórico; sem ele, `run.py` recusa.

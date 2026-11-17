@@ -64,6 +64,8 @@ jobs:
       TERM: dumb
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # ciclo 1: o compilador histórico é construído de um commit anterior
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -78,6 +80,9 @@ jobs:
         run: |
           cargo build --release --bin athc
           python3 -m pip install --quiet "agentdojo==0.1.35"
+          # ciclo 1: o pipeline `aletheia` é o banking.ath histórico, verificado e emitido com o
+          # compilador com que foi medido; os programas atuais usam aletheia@<programa>
+          echo "ATHC_HIST=$(scripts/historico.sh)" >> "$GITHUB_ENV"
           if [ -n "${{ inputs.logdir }}" ]; then
             echo "LOGDIR=bench/agentdojo/runs/${{ inputs.logdir }}" >> "$GITHUB_ENV"
           else

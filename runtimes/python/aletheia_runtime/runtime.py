@@ -129,13 +129,14 @@ class Program:
 
 
 def _neutralize_quoted(val: str) -> str:
-    """Ciclo 1, D9: o dado citado não fecha o bloco `<<< … >>>` nem abre uma seção `###`.
-    Idêntico a `neutralize_quoted` do ARX (crates/arx/src/lib.rs)."""
+    """Ciclo 1, D9: o dado citado não fecha o bloco `<<< … >>>` nem abre uma seção `###` (o
+    marcador de seção do prompt). Cabeçalhos do programa (`## …`) não são tocados. Só a
+    representação no prompt muda. Idêntico a `neutralize_quoted` do ARX (crates/arx/src/lib.rs)."""
     val = val.replace("<<<", "‹‹‹").replace(">>>", "›››")
     out = []
     for line in val.split("\n"):
         rest = line.lstrip(" \t")
-        out.append(line[: len(line) - len(rest)] + "＃" + rest[1:] if rest.startswith("#") else line)
+        out.append(line[: len(line) - len(rest)] + "＃##" + rest[3:] if rest.startswith("###") else line)
     return "\n".join(out)
 
 class Runtime:
