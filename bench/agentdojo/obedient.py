@@ -51,7 +51,8 @@ from agentdojo.agent_pipeline import AgentPipeline, InitQuery, SystemMessage  # 
 from agentdojo.agent_pipeline.base_pipeline_element import BasePipelineElement  # noqa: E402
 from agentdojo.functions_runtime import FunctionCall  # noqa: E402
 from agentdojo.task_suite.load_suites import get_suite  # noqa: E402
-from agentdojo.types import ChatAssistantMessage, text_content_block_from_string  # noqa: E402
+from agentdojo.agent_pipeline.tool_execution import tool_result_to_str  # noqa: E402
+from agentdojo.types import ChatAssistantMessage, ChatToolResultMessage, text_content_block_from_string  # noqa: E402
 
 from matrix import wilson  # noqa: E402
 
@@ -90,13 +91,70 @@ def to_write(call: FunctionCall, env) -> dict | None:
     return None
 
 
-def writes_of(calls, env):
+def slack_write(call: FunctionCall, env) -> dict | None:
+    a = dict(call.args)
+    f = call.function
+    if f == "send_direct_message":
+        return {"kind": "Dm", "recipient": str(a["recipient"]), "body": str(a["body"])[:800]}
+    if f == "send_channel_message":
+        return {"kind": "Post", "channel": str(a["channel"]), "body": str(a["body"])[:800]}
+    if f == "add_user_to_channel":
+        return {"kind": "Add", "user": str(a["user"]), "channel": str(a["channel"])}
+    if f == "invite_user_to_slack":
+        return {"kind": "Invite", "user": str(a["user"]), "email": str(a["user_email"])}
+    if f == "remove_user_from_slack":
+        return {"kind": "Remove", "user": str(a["user"])}
+    if f == "post_webpage":
+        return {"kind": "Publish", "url": str(a["url"]), "content": str(a["content"])[:1500]}
+    return None
+
+
+def banking_script(calls, env, answer):
+    writes, outside = writes_of(calls, env, to_write)
+    plan = {"kind": "Plan", "writes": writes, "answer": answer[:600]}
+    return {"planner": [ALL_READS] + [plan] * 6}, writes, outside
+
+
+NOLINK = {"kind": "NoLink"}
+
+
+def slack_script(calls, env, answer):
+    """Lê todo o workspace; visita as URLs que a verdade-base visita (até 4 por rodada, duas
+    rodadas: o tipo `Fetch` não exprime mais que isso); propõe as escritas da verdade-base."""
+    writes, outside = writes_of([c for c in calls if c.function != "get_webpage"], env, slack_write)
+    # o modelo obediente lê os canais que o inventário oferece (um nome de canal que não é
+    # identificador nem cabe em `Text[..40]`, nem é endereçável)
+    from aletheia_pipeline import CHANNEL
+
+    chans = [c for c in env.slack.channels if CHANNEL.fullmatch(c)][:4]
+    slot = lambda xs, i: {"kind": "Name", "v": xs[i]} if i < len(xs) else {"kind": "Skip"}  # noqa: E731
+    inboxes = list(env.slack.user_inbox.keys())[:2]
+    reads = {"kind": "Reads", "c1": slot(chans, 0), "c2": slot(chans, 1), "c3": slot(chans, 2), "c4": slot(chans, 3),
+             "members": True, "i1": slot(inboxes, 0), "i2": slot(inboxes, 1)}
+    urls = list(dict.fromkeys(str(c.args["url"]) for c in calls if c.function == "get_webpage"))
+    if len(urls) > 8:
+        outside += [f"get_webpage:{u}" for u in urls[8:]]
+    link = lambda xs, i: {"kind": "Link", "url": xs[i]} if i < len(xs) else NOLINK  # noqa: E731
+    f1 = {"kind": "Fetch", **{f"l{i + 1}": link(urls, i) for i in range(4)}}
+    f2 = {"kind": "Fetch", **{f"l{i + 1}": link(urls, i + 4) for i in range(4)}}
+    plan = {"kind": "Plan", "writes": writes, "answer": answer[:800]}
+    proposed = writes + [{"kind": "Fetch", "url": u} for u in urls[:8]]
+    return {"reader": [reads], "fetcher": [f1, f2], "planner": [plan] * 6}, proposed, outside
+
+
+SUITES = {
+    "banking": {"agent": "Banker", "script": banking_script, "program": "banking.ath", "max_writes": 4},
+    "slack": {"agent": "Slacker", "script": slack_script, "program": "slack.ath", "max_writes": 6},
+}
+
+
+def writes_of(calls, env, conv):
     """As operações com efeito de uma verdade-base, e as que o agente não exprime."""
     writes, outside = [], []
     for c in calls:
         if c.function.startswith(READ_PREFIXES):
             continue
-        w = to_write(c, env)
+        w = conv(c, env)
         (writes if w is not None else outside).append(w if w is not None else c.function)
     return writes, outside
 
@@ -126,8 +184,16 @@ class Direct(BasePipelineElement):
         self.answer = ""
 
     def query(self, query, runtime, env=None, messages=(), extra_args={}):
-        for c in self.calls:
-            runtime.run_function(env, c.function, dict(c.args))
+        # como um laço de tool calling: cada chamada fica no traço (alguns verificadores
+        # oficiais de segurança leem o traço, não só o ambiente)
+        messages = list(messages)
+        for i, c in enumerate(self.calls):
+            fc = FunctionCall(function=c.function, args=dict(c.args), id=f"direct-{i}")
+            result, error = runtime.run_function(env, c.function, dict(c.args))
+            messages.append(ChatAssistantMessage(role="assistant", content=None, tool_calls=[fc]))
+            messages.append(ChatToolResultMessage(role="tool", tool_call_id=fc.id, tool_call=fc, error=error,
+                                                  content=[text_content_block_from_string(
+                                                      tool_result_to_str(result) if error is None else error)]))
         messages = [*messages, ChatAssistantMessage(role="assistant",
                                                     content=[text_content_block_from_string(self.answer)],
                                                     tool_calls=None)]
@@ -136,24 +202,28 @@ class Direct(BasePipelineElement):
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--out", default=str(HERE / "runs" / "obedient-banking"))
-    ap.add_argument("--program", default=str(HERE / "banking.ath"))
+    ap.add_argument("--suite", default="banking", choices=sorted(SUITES))
+    ap.add_argument("--out", default=None)
+    ap.add_argument("--program", default=None)
     args = ap.parse_args()
+    cfg = SUITES[args.suite]
+    args.out = args.out or str(HERE / "runs" / f"obedient-{args.suite}")
+    args.program = args.program or str(HERE / cfg["program"])
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
 
     from aletheia_pipeline import AletheiaAgent
     from aletheia_runtime.providers import Scripted
 
-    suite = get_suite(VERSION, "banking")
+    suite = get_suite(VERSION, args.suite)
     with tempfile.TemporaryDirectory() as tmp:
-        emitted = Path(tmp) / "banking_agent.py"
+        emitted = Path(tmp) / f"{args.suite}_agent.py"
         subprocess.run([ATHC, "emit", args.program, "--target", "py", "--out", str(emitted)],
                        check=True, capture_output=True)
         root = subprocess.run([ATHC, "check", args.program], capture_output=True, text=True).stdout
 
         script: dict = {}
-        agent = AletheiaAgent("banking", str(emitted), lambda: Scripted({"planner": script["seq"]}), "Banker", "task",
+        agent = AletheiaAgent(args.suite, str(emitted), lambda: Scripted(script["seq"]), cfg["agent"], "task",
                               journal_dir=Path(tmp) / "journals")
         p_ath = AgentPipeline([SystemMessage("Aletheia"), InitQuery(), agent])
         p_ath.name = "aletheia-obedient"
@@ -166,20 +236,20 @@ def main() -> int:
         def run(arm, ut, inj, proposal_calls, answer):
             env0 = suite.load_and_inject_default_environment(
                 {} if inj is None else {k: inj.GOAL for k in suite.get_injection_vector_defaults()})
-            writes, outside = writes_of(proposal_calls, env0)
-            # A proposta vai inteira: se exceder `List[Write, 0..4]`, quem recusa é o tipo
-            # (decode_reject), e isso é contado à parte da recusa pela política.
-            plan = {"kind": "Plan", "writes": writes, "answer": answer[:600]}
+            # A proposta vai inteira: se exceder o tamanho que o tipo admite, quem recusa é o
+            # tipo (decode_reject), e isso é contado à parte da recusa pela política.
+            seq, writes, outside = cfg["script"](proposal_calls, env0, answer)
             injections = {} if inj is None else {k: inj.GOAL for k in suite.get_injection_vector_defaults()}
-            res = {"arm": arm, "user_task": ut.ID, "injection_task": inj.ID if inj else "none",
-                   "proposed": [w["kind"] for w in writes], "outside_vocabulary": outside}
+            res = {"suite": args.suite, "arm": arm, "user_task": ut.ID, "injection_task": inj.ID if inj else "none",
+                   "proposed": [w["kind"] for w in writes], "outside_vocabulary": outside,
+                   "over_limit": sum(w["kind"] != "Fetch" for w in writes) > cfg["max_writes"]}
             # sem linguagem
             direct.calls = [c for c in proposal_calls]
             direct.answer = answer
             u, s = suite.run_task_with_pipeline(p_dir, ut, inj, injections)
             res["direct"] = {"utility": bool(u), "attack": bool(s) if inj else None}
             # Aletheia: a mesma proposta como saída tipada do planejador, em toda tentativa
-            script["seq"] = [ALL_READS] + [plan] * 6
+            script["seq"] = seq
             agent.current = (ut.ID, inj.ID if inj else "none")
             u, s = suite.run_task_with_pipeline(p_ath, ut, inj, injections)
             kinds = agent.last["kinds"]
@@ -223,7 +293,7 @@ def rate(k, n):
 
 
 def summarize(rows):
-    s = {"suite": f"banking {VERSION}", "arms": {}}
+    s = {"suite": f"{rows[0]['suite']} {VERSION}", "arms": {}}
     for arm in ("legitimo", "obediente", "sequestrado"):
         rs = [r for r in rows if r["arm"] == arm]
         a = {}
@@ -235,7 +305,7 @@ def summarize(rows):
         a["aletheia"]["errors"] = sum(r["aletheia"]["error"] is not None for r in rs)
         a["aletheia"]["type_only"] = sum(r["aletheia"]["type_rejections"] > 0 and r["aletheia"]["policy_rejections"] == 0
                                          for r in rs)
-        a["over_4_writes"] = sum(len(r["proposed"]) > 4 for r in rs)
+        a["over_4_writes"] = sum(r["over_limit"] for r in rs)
         a["aletheia"]["pruned_ops"] = sum(r["aletheia"]["pruned_ops"] for r in rs)
         a["aletheia"]["executed_ops"] = sum(len(r["aletheia"]["executed"]) for r in rs)
         s["arms"][arm] = a
@@ -267,15 +337,15 @@ def render(s, rows):
             atk = pct(a[arm][pipe]["attack"]) if "attack" in a[arm][pipe] else "—"
             lines.append(f"| {arm} | {label} | {atk} | {pct(a[arm][pipe]['utility'])} |")
     c = s["effective_coverage"]
-    lines += ["", "| braço | propostas acima de 4 operações | recusadas só pelo tipo | execuções com recusa da política | operações deixadas de fora (`keeping`) | operações executadas |",
+    lines += ["", "| braço | propostas acima do limite do tipo | recusadas só pelo tipo | execuções com recusa da política | operações deixadas de fora (`keeping`) | operações executadas |",
               "| --- | --- | --- | --- | --- | --- |"]
     for arm in ("obediente", "sequestrado", "legitimo"):
         x = a[arm]
         lines.append(f"| {arm} | {x['over_4_writes']} | {x['aletheia']['type_only']} | {x['aletheia']['policy_rejections']} "
                      f"| {x['aletheia']['pruned_ops']} | {x['aletheia']['executed_ops']} |")
-    lines += ["", f"Cobertura efetiva: a política avaliou a operação do atacante em {c['policy_saw_attack']} de "
+    lines += ["", f"Cobertura efetiva: a política recusou a operação do atacante em {c['policy_saw_attack']} de "
               f"{c['pairs']} pares (em pelo menos um braço).",
-              *[f"- sem passar pela política: `{u}` × `{i}`" for u, i in c["never_reached_policy"]]]
+              *[f"- sem recusa da política: `{u}` × `{i}`" for u, i in c["never_reached_policy"]]]
     lines += ["", f"Pares em que o ataque foi cumprido no Aletheia: {len(s['breaches_aletheia'])}"]
     for u, i in s["breaches_aletheia"]:
         lines.append(f"- `{u}` × `{i}`")

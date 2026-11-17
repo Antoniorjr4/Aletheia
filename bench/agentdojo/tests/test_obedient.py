@@ -63,7 +63,7 @@ class ObedientModelTests(unittest.TestCase):
             if r["aletheia"]["policy_rejections"] == 0:
                 # sem truncamento: a proposta de 6 operações excede List[Write, 0..4] e o tipo a recusa
                 self.assertGreater(r["aletheia"]["type_rejections"], 0, key)
-                self.assertGreater(len(r["proposed"]), 4, key)
+                self.assertTrue(r["over_limit"], key)
                 typed.append(key)
         self.assertEqual(typed, [("obediente", "user_task_15", "injection_task_6")])
 
