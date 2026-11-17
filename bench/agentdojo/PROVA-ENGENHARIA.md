@@ -58,6 +58,42 @@ sempre que o modelo a obedece: é uma mensagem direta com um link de phishing pa
 é membro do workspace. O destinatário é legítimo e o perigo está no conteúdo, que a política
 não inspeciona (D2). Esse resultado entra no relatório como está.
 
+### Modelo real: Strict × Keeping × P1 (parcial, 1ª janela de 16–17/11)
+
+Rodada [43996008273](https://github.com/Antoniorjr4/Aletheia/actions/runs/43996008273), autorizada
+com teto acumulado de US$ 0,22 no logdir
+[`banking-v2-p1-openai-gpt-oss-120b`](runs/banking-v2-p1-openai-gpt-oss-120b/compare.md). Parou
+no limite de 400 mil tokens/dia da Groq, com **16/16 tarefas sem ataque e 72/144 pares**
+(tarefas 0 a 7) nos três pipelines. Gasto: US$ 0,107. A retomada está agendada para a próxima
+janela, com o mesmo teto.
+
+| pipeline | utilidade | utilidade sob ataque | ASR | tokens/execução |
+| --- | --- | --- | --- | --- |
+| P0 baseline (histórico, mesmos pares) | 11/16 | 39/72 | 57/72 | — |
+| Aletheia v2 strict | 9/16 | 35/72 | **0/72** | 1.848 |
+| Aletheia v2 keeping | 11/16 | 33/72 | **0/72** | 1.817 |
+| P1 Python endurecido (keeping) | 9/16 | 42/72 | **0/72** | 1.819 |
+
+O que já dá para dizer, e o que não:
+
+- **Eixo I não separa a Aletheia de um Python bem feito.** Com o modelo obediente e com o
+  modelo real, o P1 bloqueia o mesmo que a Aletheia, ao mesmo custo de tokens. Isso era
+  esperado, porque os controles são equivalentes. A vantagem da Aletheia, se existir, está em
+  **como** a garantia é obtida e mantida (eixo II, M2 a M7), não no resultado da execução.
+- **Strict × Keeping com modelo real:** sem diferença mensurável até aqui (utilidade 0 × 2,
+  p = 0,5; sob ataque 3 × 1, p = 0,63). Com o modelo real, quase não houve proposta mista para
+  podar: o `keeping` não recusou nenhuma operação nos 72 pares. O ganho de 45 → 125 do modelo
+  obediente só aparece quando o modelo propõe operações do atacante, e o modelo real quase não
+  propôs.
+- **P1 × Aletheia keeping, utilidade sob ataque 42 × 33 (p = 0,02, sem correção para
+  comparações múltiplas):** a diferença está em duas tarefas (11 pares nas tarefas 1 e 7).
+  Conferi os prompts de plano dos dois na `user_task_1`: eles são idênticos, exceto pela
+  palavra "Aletheia" na primeira linha. A mensagem de sistema difere: a do runtime Aletheia
+  está em português e diz "componente de um programa Aletheia"; a do P1 está em inglês.
+  Nesses pares, o Aletheia respondeu "não tenho acesso aos dados", às vezes em português, com os
+  dados no prompt. É um **confundidor de prompt**, não uma propriedade da linguagem. Fica
+  registrado como D12 e não é corrigido no meio da campanha.
+
 ## 2. Diagnóstico das limitações (antes de propor mudança no Core)
 
 Categorias da diretiva: **P** política inadequada · **F** falta de dados confiáveis ·
@@ -81,6 +117,7 @@ Encontrados pela revisão independente do P1, valem também para a Aletheia:
 | --- | --- | --- | --- | --- |
 | D9 | runtimes (`draft` no Python, e o equivalente no ARX) | **I** | Um dado entre `quote(…)` que contém `>>>` fecha o bloco no prompt e pode imitar uma seção `ESTADO CONFIÁVEL`. A política continua barrando IBANs fora de `payees`, mas o prompt deixa de ser o que o tipo promete. | Neutralizar delimitadores e cabeçalhos no texto citado, nos dois runtimes, com teste diferencial. Muda o prompt de toda execução futura; por isso, decisão sua, com um novo identificador de programa nas próximas rodadas. |
 | D10 | `banking_v2_*.ath`, `amount: Text[..16]` | **X** | O refinamento de texto só limita o comprimento. `-1e9` ou `nan` passam pelo tipo e chegam ao `float()` do host. O P1 valida o formato com uma expressão regular. | Um refinamento de formato (decimal) no Core, ou um tipo `Money` com o host como única conversão. Proposta de Core: só depois de medida. |
+| D12 | runtimes, mensagem de sistema | **I** (confundidor) | A mensagem de sistema fixa do runtime está em português e cita "um programa Aletheia". Com tarefas em inglês, o modelo às vezes responde em português ou diz não ter os dados. | Mensagem de sistema neutra e configurável por programa, medida numa rodada nova com outro identificador. |
 | D11 | `SafeWrite` (os dois) | **R** | `Profile`, `subject` e `date` não são restringidos. Uma injeção "troque meu endereço" passa nos dois. | Declarado fora da garantia, como já está na política. |
 
 D1 é um defeito do próprio verificador, encontrado por este trabalho. Ele entra no catálogo
