@@ -1,10 +1,7 @@
-//! **Ciclo de consolidação 1 — reprodução dos defeitos do Core antes de corrigi-los.**
+//! **Ciclo de consolidação 1 — D1 e D9, reproduzidos e depois corrigidos.**
 //!
-//! Cada teste afirma o comportamento CORRETO e está marcado `#[should_panic(expected = "Dn")]`:
-//! enquanto o defeito existir, a afirmação falha (com a etiqueta do defeito) e o teste passa. No
-//! dia em que a correção entrar, a afirmação passa, o `should_panic` falha, e o teste precisa ser
-//! promovido a teste positivo. É o equivalente ao `unittest.expectedFailure` do Python: o defeito
-//! fica registrado no CI e a correção não passa despercebida.
+//! Os testes entraram primeiro como `#[should_panic(expected = "Dn")]` (commit ceeda2a): passavam
+//! enquanto o defeito existia. Com a correção, foram promovidos a testes positivos.
 //!
 //! D1 (verificador) e D9 (runtime ARX) estão em bench/agentdojo/PROVA-ENGENHARIA.md, seção 2.
 //! D12 (mensagem de sistema) é teste de unidade em crates/arx/src/model.rs.
@@ -65,8 +62,7 @@ fn d1_controle_positivo_a_politica_direta_ja_e_ancorada() {
 }
 
 #[test]
-#[should_panic(expected = "D1")]
-fn d1_a_ancora_deveria_seguir_a_chamada_entre_politicas() {
+fn d1_a_ancora_segue_a_chamada_entre_politicas() {
     // `refine d by SafePlan`: SafePlan → SafeWrite → s.member("quoted", …). O prompt não recebe
     // `quoted`, e a E0421 deveria disparar do mesmo jeito.
     let c = codes(&d1_prog(r#"refine d by SafePlan else { return "x" }"#));
@@ -122,12 +118,13 @@ fn d9_prompt() -> String {
 }
 
 #[test]
-#[should_panic(expected = "D9")]
-fn d9_o_dado_citado_nao_deveria_fechar_o_bloco_nem_imitar_secao_confiavel() {
+fn d9_o_dado_citado_nao_fecha_o_bloco_nem_imita_secao_confiavel() {
     let p = d9_prompt();
     let opens = p.matches("<<<").count();
     let closes = p.matches(">>>").count();
     let forged = p.matches("### payees").count();
+    // a seção legítima `### payees` continua (o inventário confiável); a forjada não aparece
+    assert!(p.contains("‹‹‹") && p.contains("›››") && p.contains("＃## payees"), "neutralizado:\n{p}");
     assert!(
         opens == 1 && closes == 1 && forged == 1,
         "D9: o dado citado fecha o bloco e forja uma seção: <<< {opens}, >>> {closes}, `### payees` {forged}\n{p}"

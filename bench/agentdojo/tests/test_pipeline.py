@@ -26,6 +26,10 @@ if os.environ.get("ALETHEIA_HOST_DIR"):  # M4: o host com defeito semeado
 warnings.filterwarnings("ignore")
 
 ATHC = os.environ.get("ATHC", str(ROOT / "target" / "release" / "athc"))
+# `banking.ath` é o programa medido nas campanhas de 10 e 16/11. O compilador corrigido no ciclo 1
+# (D1) o recusa, então ele é verificado e emitido com o compilador com que foi medido
+# (scripts/historico.sh). Sem `ATHC_HIST`, estes testes não rodam.
+ATHC_HIST = os.environ.get("ATHC_HIST", "")
 
 try:
     from agentdojo.agent_pipeline import AgentPipeline, InitQuery, SystemMessage
@@ -54,12 +58,13 @@ def plan(*writes, answer="done"):
 
 
 @unittest.skipUnless(HAVE, "requer o pacote agentdojo e o athc compilado")
+@unittest.skipUnless(ATHC_HIST, "programa histórico: precisa de ATHC_HIST (scripts/historico.sh)")
 class AletheiaPipelineTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.tmp = tempfile.TemporaryDirectory()
         cls.program = Path(cls.tmp.name) / "banking_agent.py"
-        subprocess.run([ATHC, "emit", str(HERE / "banking.ath"), "--target", "py", "--out", str(cls.program)],
+        subprocess.run([ATHC_HIST, "emit", str(HERE / "banking.ath"), "--target", "py", "--out", str(cls.program)],
                        check=True, capture_output=True)
         cls.suite = get_suite("v1.2.2", "banking")
 
@@ -169,6 +174,7 @@ class Limited(BaseHTTPRequestHandler):
 
 
 @unittest.skipUnless(HAVE, "requer o pacote agentdojo e o athc compilado")
+@unittest.skipUnless(ATHC_HIST, "programa histórico: precisa de ATHC_HIST (scripts/historico.sh)")
 class RunnerTests(unittest.TestCase):
     def test_paired_round_resumes_and_writes_the_matrix(self):
         srv = HTTPServer(("127.0.0.1", 0), FakeGroq)
@@ -176,7 +182,7 @@ class RunnerTests(unittest.TestCase):
         env = dict(os.environ, OPENAI_API_KEY="local", OPENAI_BASE_URL=f"http://127.0.0.1:{srv.server_port}/v1",
                    ALETHEIA_REASONING_EFFORT="none", NO_PROXY="127.0.0.1", no_proxy="127.0.0.1")
         with tempfile.TemporaryDirectory() as d:
-            cmd = [sys.executable, str(HERE / "run.py"), "--logdir", d, "--athc", ATHC, "--model", "openai/gpt-oss-120b",
+            cmd = [sys.executable, str(HERE / "run.py"), "--logdir", d, "--athc", ATHC_HIST, "--model", "openai/gpt-oss-120b",
                    "--user-tasks", "user_task_4,user_task_7", "--injection-tasks", "injection_task_0"]
             first = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=600)
             self.assertEqual(first.returncode, 0, first.stderr[-2000:])
@@ -203,7 +209,7 @@ class RunnerTests(unittest.TestCase):
     def _cmd(self, d, *extra):
         # preço fictício de US$ 100 por milhão: cada chamada do servidor local (100 + 10 tokens)
         # custa US$ 0,011
-        return [sys.executable, str(HERE / "run.py"), "--logdir", d, "--athc", ATHC, "--model", "openai/gpt-oss-120b",
+        return [sys.executable, str(HERE / "run.py"), "--logdir", d, "--athc", ATHC_HIST, "--model", "openai/gpt-oss-120b",
                 "--user-tasks", "user_task_4,user_task_7", "--injection-tasks", "injection_task_0",
                 "--price-in", "100", "--price-out", "100", *extra]
 
@@ -288,7 +294,7 @@ class RunnerTests(unittest.TestCase):
 
     def test_unknown_model_needs_an_explicit_price(self):
         with tempfile.TemporaryDirectory() as d:
-            r = subprocess.run([sys.executable, str(HERE / "run.py"), "--logdir", d, "--athc", ATHC,
+            r = subprocess.run([sys.executable, str(HERE / "run.py"), "--logdir", d, "--athc", ATHC_HIST,
                                 "--model", "acme/unpriced"], capture_output=True, text=True, timeout=600)
             self.assertNotEqual(r.returncode, 0)
             self.assertIn("sem preço de lista", r.stderr)

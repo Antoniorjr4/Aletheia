@@ -576,6 +576,7 @@ fn replay_variants_force_every_contract_and_http_path_identically() {
 /// Cassetes gravados contra a Groq pelo workflow de fogo real (`bench/replay/`): os dois
 /// backends reproduzem exatamente o journal da execução real.
 #[test]
+#[ignore = "evidência histórica: os cassetes foram gravados com o runtime anterior às correções D9/D12 do ciclo 1; roda no código histórico via `scripts/historico.sh replay` (job `historico` do CI)"]
 fn replay_of_real_groq_traffic_reproduces_the_recorded_journal() {
     // Cassetes gravados na Groq pelo workflow `replay.yml` e versionados em bench/replay/.
     // Para cada um: journal BLAKE3 idêntico, byte a byte, entre a execução real, o replay no

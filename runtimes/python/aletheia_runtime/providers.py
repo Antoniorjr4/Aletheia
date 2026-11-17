@@ -93,8 +93,8 @@ class Masked:
 
 # ------------------------------------------------------------------ HTTP compatível com OpenAI
 
-SYSTEM = ("Você é um componente de um programa Aletheia. Responda somente com o documento JSON pedido, "
-          "no formato {\"value\": …}, sem texto adicional.")
+# Ciclo 1, D12: neutra (não cita a linguagem) e igual nos dois runtimes.
+SYSTEM = "You are a component of an assistant. Reply only with the requested JSON document, in the form {\"value\": …}, with no extra text."
 MAX_WAIT = 60.0
 USER_AGENT = "aletheia-runtime/0.5 (+https://github.com/Antoniorjr4/Aletheia)"
 

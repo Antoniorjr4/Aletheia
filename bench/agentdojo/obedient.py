@@ -224,9 +224,11 @@ def main() -> int:
     suite = get_suite(VERSION, args.suite)
     with tempfile.TemporaryDirectory() as tmp:
         emitted = Path(tmp) / f"{args.suite}_agent.py"
-        subprocess.run([ATHC, "emit", args.program, "--target", "py", "--out", str(emitted)],
-                       check=True, capture_output=True)
-        root = subprocess.run([ATHC, "check", args.program], capture_output=True, text=True).stdout
+        root = ""
+        if args.impl == "aletheia":
+            subprocess.run([ATHC, "emit", args.program, "--target", "py", "--out", str(emitted)],
+                           check=True, capture_output=True)
+            root = subprocess.run([ATHC, "check", args.program], capture_output=True, text=True).stdout
 
         script: dict = {}
         if args.impl == "aletheia":

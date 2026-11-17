@@ -3160,8 +3160,14 @@ impl<'m> Ctx<'m> {
     fn anchor_check(&mut self, p: &'m PolicyDecl, policy: &Ident, ispan: Span) {
         let given = self.anchored.get(&ispan).cloned().unwrap_or_default();
         let anchored = !given.is_empty();
-        let missing: Vec<String> = policy_inventories(&p.body).difference(&given).cloned().collect();
-        if reads_snapshot(&p.body) && (!anchored || !missing.is_empty()) {
+        // Ciclo 1, D1: a âncora segue as chamadas entre políticas. `SafePlan` que delega a
+        // `SafeWrite` decide pelos inventários que `SafeWrite` lê, e pelos literais que ela compara.
+        let bodies = self.policy_closure(p);
+        let read: BTreeSet<String> = bodies.iter().flat_map(|b| policy_inventories(b)).collect();
+        let reads = bodies.iter().any(|b| reads_snapshot(b));
+        let literal = bodies.iter().any(|b| compares_text_literal(b));
+        let missing: Vec<String> = read.difference(&given).cloned().collect();
+        if reads && (!anchored || !missing.is_empty()) {
             let want = missing
                 .iter()
                 .map(|k| if k == "managed" { "s.managed()".to_string() } else { format!("s.inventory(\"{k}\")") })
@@ -3180,7 +3186,7 @@ impl<'m> Ctx<'m> {
                     .help(format!("passe o inventário ao modelo como `campo = {want}`: nunca copiado de literal, log ou resposta de modelo")),
                 );
         }
-        if anchored && compares_text_literal(&p.body) {
+        if anchored && literal {
             self.push(
                 Diag::new(
                     E3,
@@ -3192,6 +3198,33 @@ impl<'m> Ctx<'m> {
                 .help("decida pela mesma fotografia: `s.is_managed(x)` no lugar de `x == \"…\"`"),
             );
         }
+    }
+
+    /// O corpo da política e os de todas as políticas que ela chama, transitivamente (sem
+    /// repetição: uma recursão entre políticas não trava a análise).
+    fn policy_closure(&self, p: &'m PolicyDecl) -> Vec<&'m Expr> {
+        let mut seen: HashSet<&str> = HashSet::new();
+        let mut todo = vec![p];
+        let mut out = Vec::new();
+        while let Some(q) = todo.pop() {
+            if !seen.insert(q.name.name.as_str()) {
+                continue;
+            }
+            out.push(&q.body);
+            let called = std::cell::RefCell::new(Vec::new());
+            expr_any(&q.body, &|x| {
+                if let ExprKind::Call { callee, .. } = &x.kind {
+                    called.borrow_mut().push(callee.name.clone());
+                }
+                false
+            });
+            for name in called.into_inner() {
+                if let Some(r) = self.policies.get(&name).copied() {
+                    todo.push(r);
+                }
+            }
+        }
+        out
     }
 
     /// **`keeping campo by Política` (v1.0-RC7).** O campo existe no tipo do rascunho e é uma

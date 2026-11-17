@@ -45,6 +45,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # o compilador histórico (scripts/historico.sh) é construído de um commit anterior
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-python@v5
@@ -53,23 +55,36 @@ jobs:
       - name: athc e o pacote oficial
         run: |
           cargo build --release --bin athc
-          ./target/release/athc check bench/agentdojo/banking.ath
+          ./target/release/athc check bench/agentdojo/banking_v2_strict.ath
+          ./target/release/athc check bench/agentdojo/banking_v2_keeping.ath
+          ./target/release/athc check bench/agentdojo/slack.ath
           python3 -m pip install --quiet "agentdojo==0.1.35"
+      # Ciclo 1: os programas medidos antes das correções (D1) são verificados com o compilador
+      # com que foram medidos; o corrigido os recusa (E0421 transitiva), e isso também é conferido.
+      - name: compilador histórico (evidências anteriores ao ciclo 1)
+        run: |
+          ATHC_HIST=$(scripts/historico.sh replay)
+          echo "ATHC_HIST=$ATHC_HIST" >> "$GITHUB_ENV"
+          "$ATHC_HIST" check bench/agentdojo/banking.ath
+          if ./target/release/athc check bench/agentdojo/banking.ath > /tmp/d1.txt 2>&1; then
+            echo "o compilador corrigido deveria recusar banking.ath (D1)"; exit 1
+          fi
+          grep -q "E0421" /tmp/d1.txt
       - name: testes da ponte (suíte banking v1.2.2)
         run: python3 -m unittest discover -s bench/agentdojo/tests -v
       # Eixo II (Rev11): o oráculo comprometido, separado do benchmark oficial. Falha se uma
       # ação proibida produzir efeito, se um controle legítimo for recusado ou se um resíduo
       # documentado mudar de comportamento.
       - name: matriz adversarial (oráculo comprometido, offline)
-        run: python3 bench/adversarial/harness.py --athc target/release/athc --out /tmp/adversarial
+        run: python3 bench/adversarial/harness.py --athc "$ATHC_HIST" --out /tmp/adversarial
       # Rev12 (M4): os contratos `requires` contra o mesmo oráculo, com a política oficial e com
       # a que aceita tudo (RS1). Falha se um efeito proibido acontecer ou um controle for recusado.
       - name: contratos de autorização (oráculo comprometido, offline)
-        run: python3 bench/adversarial/harness.py --contracts --athc target/release/athc --out /tmp/adversarial
+        run: python3 bench/adversarial/harness.py --contracts --athc "$ATHC_HIST" --out /tmp/adversarial
       # v1.0-RC1: autorização por concessão. Sugestão ≠ concessão (sem produto cartesiano),
       # delegação ≠ endosso, uma concessão vale um efeito. Sem chamada paga.
       - name: concessões (oráculo comprometido, offline)
-        run: python3 bench/adversarial/harness.py --grants --athc target/release/athc --out /tmp/adversarial
+        run: python3 bench/adversarial/harness.py --grants --athc "$ATHC_HIST" --out /tmp/adversarial
 
   rc-smoke:
     # v1.0-RC1 ponta a ponta: o programa examples/rc1/treasury.ath contra o serviço local
