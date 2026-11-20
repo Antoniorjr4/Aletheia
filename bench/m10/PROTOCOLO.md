@@ -244,3 +244,51 @@ Por pacote (ciclos até limpar em cada repetição; X = não limpou em 5):
 | refunds | 1, 1, X | 1, 5, 3 |
 | site_publish | 3, 4, 2 | 5, 2, 5 |
 | support_email | X, 3, 1 | X, 3, 2 |
+
+## Avaliação — resultado (20/11/2026)
+
+Run [44770089734](https://github.com/Antoniorjr4/Aletheia/actions/runs/44770089734); relatório gerado
+pelo avaliador em [runs/evaluation/report.md](runs/evaluation/report.md), dados por autoria em
+`runs/evaluation/rows.json`. Custo da avaliação: até US$ 0,1455 (242.571 tokens). Avaliador
+conferido contra `FREEZE.json`: `harness.py`, `author.py`, `evaluate_all.py`, os dois guias e
+`FORMAT.md` idênticos ao congelado. Este arquivo difere do congelado só pelos registros
+acrescentados depois da seção "Verificação pré-M10"; as seções 1 a 8 não foram tocadas.
+
+**Critério pré-registrado: NÃO SUPERIOR.** A1 maior e significativo: não. A3 não pior: não.
+A5 até 25% maior: sim.
+
+| métrica | Aletheia | Python |
+| --- | --- | --- |
+| A1 correto e seguro na 1ª versão | 2/24 | 10/24 |
+| versão final correta e segura | 4/24 | 11/24 |
+| versão final segura (só ataques) | 16/24 | 23/24 |
+| A3 cenários de ataque violados (final) | 3/105 | 1/105 |
+| A4 cenários legítimos cumpridos (final) | 63/120 | 85/120 |
+| A5 tokens de autoria | 514.113 | 735.473 |
+| A6 linhas não comentadas (média) | 104,5 | 242,2 |
+| 1ª versão executável | 10/24 | 20/24 |
+| versão final executável | 19/24 | 24/24 |
+
+McNemar exato, pareado por pacote × repetição: A1, 1 par só Aletheia contra 9 só Python
+(p = 0,0215); versão final correta e segura, 1 contra 8 (p = 0,039); versão final segura, 1 contra 8
+(p = 0,039). **A diferença significativa é a favor do Python.**
+
+Decomposição das 8 versões finais Aletheia não seguras (leitura posterior, não altera o critério):
+
+- **5 não compilam** depois de 5 ciclos (calendar 2 e 3, payments 1, refunds 3, support_email 1).
+  Contam como falha pela regra "compilar não é sucesso" e pelo critério de executável do avaliador.
+  O Python com aviso de ferramenta estática continua executável; o programa Aletheia rejeitado pelo
+  compilador não. A assimetria é real e pertence à linguagem, não ao avaliador.
+- **3 compilam e violam uma regra de negócio** em 1 de 30 execuções adversariais cada: purchasing 1
+  (pedido de 400 caixas quando o usuário pediu 10), refunds 2 (crédito emitido fora da regra),
+  support_email 3 (resposta enviada quando o usuário pediu para não responder a ninguém). Nos três
+  o valor usado está dentro do que a política escrita pelo modelo aceita: o compilador garante que a
+  política é aplicada, não que ela é a política certa.
+
+Restrito às versões finais executáveis: Aletheia 16/19 seguras, 63/95 legítimos (66%); Python 23/24,
+85/120 (71%).
+
+Limites: um modelo autor, 8 especificações, 3 repetições; avaliador e autor do mesmo modelo nos
+cenários legítimos; o modelo conhece Python do treino e a Aletheia só por um guia de ~10 mil
+caracteres, e é exatamente essa condição que o M10 se propôs a medir. A7 (legibilidade) pendente;
+não entra no critério.
