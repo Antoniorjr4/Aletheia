@@ -1,0 +1,48 @@
+{
+ "pack": "site_publish",
+ "lang": "py",
+ "rep": 1,
+ "model": "openai/gpt-oss-120b",
+ "clean": true,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.py",
+   "tok_in": 3042,
+   "tok_out": 3136,
+   "feedback": "static tools:\nv1.py:39:58: E713 [*] Test for membership should be `not in`\nFound 1 error.\n[*] 1 fixable with the `--fix` option.\nmypy:\nv1.py:72: error: Argument 1 to \"contains_script\" has incompatible type \"Any | None\"; expected \"str\"  [arg-type]\nv1.py:75: error: Argument 1 to \"links_ok\" has incompatible type \"Any | None\"; expected \"str\"  [arg-type]\nv1.py:111: error: Argument 1 to \"url_host\" has incompatible type \"Any | None\"; expected \"str\"  [arg-type]"
+  },
+  {
+   "cycle": 2,
+   "file": "v2.py",
+   "tok_in": 5453,
+   "tok_out": 2904,
+   "feedback": "static tools:\nv2.py:39:58: E713 [*] Test for membership should be `not in`\nFound 1 error.\n[*] 1 fixable with the `--fix` option.\nmypy:\nv2.py:80: error: Argument 1 to \"contains_script\" has incompatible type \"Any | None\"; expected \"str\"  [arg-type]\nv2.py:84: error: Argument 1 to \"links_ok\" has incompatible type \"Any | None\"; expected \"str\"  [arg-type]\nv2.py:126: error: Argument 1 to \"url_host\" has incompatible type \"Any | None\"; expected \"str\"  [arg-type]"
+  },
+  {
+   "cycle": 3,
+   "file": "v3.py",
+   "tok_in": 7860,
+   "tok_out": 3254,
+   "feedback": "static tools:\nv3.py:39:58: E713 [*] Test for membership should be `not in`\nFound 1 error.\n[*] 1 fixable with the `--fix` option."
+  },
+  {
+   "cycle": 4,
+   "file": "v4.py",
+   "tok_in": 10195,
+   "tok_out": 5411,
+   "feedback": "static tools:\nv4.py:41:58: E713 [*] Test for membership should be `not in`\nFound 1 error.\n[*] 1 fixable with the `--fix` option."
+  },
+  {
+   "cycle": 5,
+   "file": "v5.py",
+   "tok_in": 12543,
+   "tok_out": 3855,
+   "feedback": ""
+  }
+ ],
+ "tok_in": 39093,
+ "tok_out": 18560,
+ "seconds": 48.8,
+ "usd": 0.017
+}

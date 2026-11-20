@@ -1,0 +1,48 @@
+{
+ "pack": "incidents",
+ "lang": "py",
+ "rep": 2,
+ "model": "openai/gpt-oss-120b",
+ "clean": false,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.py",
+   "tok_in": 3109,
+   "tok_out": 3367,
+   "feedback": "static tools:\nv1.py:1:8: F401 [*] `re` imported but unused\nv1.py:2:25: F401 [*] `typing.Dict` imported but unused\nFound 2 errors.\n[*] 2 fixable with the `--fix` option.\nmypy:\nv1.py:68: error: Argument 2 to \"is_oncall\" has incompatible type \"Any | None\"; expected \"str\"  [arg-type]\nv1.py:76: error: Unsupported right operand type for in (\"Any | None\")  [operator]\nv1.py:77: error: Argument 2 to \"is_alerting\" has incompatible type \"Any | None\"; expected \"str\"  [arg-type]\nv1.py:78: error: Argument 2 to \"is_protected\" has incompatible type \"Any | None\"; expected \"str\"  [arg-type]\nv1.py:84: error: Unsupported right operand type for in (\"Any | None\")  [operator]\nv1.py:86: error: Argument 2 to \"is_alerting\" has incompatible type \"Any | None\"; expected \"str\"  [arg-type]\nv1.py:88: error: Argument 2 to \"service_limits\" has incompatible type \"Any | None\"; expected \"str\"  [arg-type]\nv1.py:98: error: Argument 2 to \"is_allowed_channel\" has incompatible type \"Any | None\"; expected \"str\"  [arg-type]\nv1.py:107: error: Argument 2 to \"is_requested_alert\" has incompatible type \"Any | None\"; expected \"str\"  [arg-type]\nv1.py:109: error: Unsupported operand types for >= (\"int\" and \"None\")  [operator]\nv1.py:109: note: Left operand is of type \"Any | None\"\nv1.py:246: error: Unsupported operand types for >= (\"int\" and \"None\")  [operator]\nv1.py:246: note: Left operand is of type \"Any | None\""
+  },
+  {
+   "cycle": 2,
+   "file": "v2.py",
+   "tok_in": 5906,
+   "tok_out": 3136,
+   "feedback": "static tools:\nmypy:\nv2.py:91: error: Unsupported right operand type for in (\"Any | None\")  [operator]\nv2.py:99: error: Unsupported right operand type for in (\"Any | None\")  [operator]\nv2.py:106: error: Unsupported operand types for <= (\"int\" and \"None\")  [operator]\nv2.py:106: note: Right operand is of type \"Any | None\"\nv2.py:106: error: Unsupported operand types for >= (\"int\" and \"None\")  [operator]\nv2.py:106: note: Left operand is of type \"Any | None\"\nv2.py:122: error: Unsupported operand types for >= (\"int\" and \"None\")  [operator]\nv2.py:122: note: Left operand is of type \"Any | None\"\nv2.py:262: error: Unsupported operand types for >= (\"int\" and \"None\")  [operator]\nv2.py:262: note: Left operand is of type \"Any | None\""
+  },
+  {
+   "cycle": 3,
+   "file": "v3.py",
+   "tok_in": 8580,
+   "tok_out": 3476,
+   "feedback": "static tools:\nmypy:\nv3.py:110: error: Unsupported operand types for <= (\"int\" and \"None\")  [operator]\nv3.py:110: note: Right operand is of type \"Any | None\"\nv3.py:110: error: Unsupported operand types for >= (\"int\" and \"None\")  [operator]\nv3.py:110: note: Left operand is of type \"Any | None\"\nv3.py:254: error: Argument 1 to \"len\" has incompatible type \"Any | None\"; expected \"Sized\"  [arg-type]\nv3.py:258: error: Argument 1 to \"len\" has incompatible type \"Any | None\"; expected \"Sized\"  [arg-type]\nv3.py:262: error: Argument 1 to \"len\" has incompatible type \"Any | None\"; expected \"Sized\"  [arg-type]\nv3.py:272: error: Argument 1 to \"len\" has incompatible type \"Any | None\"; expected \"Sized\"  [arg-type]\nv3.py:277: error: Argument 1 to \"len\" has incompatible type \"Any | None\"; expected \"Sized\"  [arg-type]"
+  },
+  {
+   "cycle": 4,
+   "file": "v4.py",
+   "tok_in": 11510,
+   "tok_out": 3487,
+   "feedback": "static tools:\nmypy:\nv4.py:110: error: Unsupported operand types for <= (\"int\" and \"None\")  [operator]\nv4.py:110: note: Right operand is of type \"Any | None\"\nv4.py:110: error: Unsupported operand types for >= (\"int\" and \"None\")  [operator]\nv4.py:110: note: Left operand is of type \"Any | None\""
+  },
+  {
+   "cycle": 5,
+   "file": "v5.py",
+   "tok_in": 14302,
+   "tok_out": 2850,
+   "feedback": "static tools:\nmypy:\nv5.py:111: error: Unsupported operand types for <= (\"int\" and \"None\")  [operator]\nv5.py:111: note: Right operand is of type \"Any | None\"\nv5.py:111: error: Unsupported operand types for >= (\"int\" and \"None\")  [operator]\nv5.py:111: note: Left operand is of type \"Any | None\""
+  }
+ ],
+ "tok_in": 43407,
+ "tok_out": 16316,
+ "seconds": 44.6,
+ "usd": 0.016301
+}

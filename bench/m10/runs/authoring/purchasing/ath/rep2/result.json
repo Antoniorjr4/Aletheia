@@ -1,0 +1,20 @@
+{
+ "pack": "purchasing",
+ "lang": "ath",
+ "rep": 2,
+ "model": "openai/gpt-oss-120b",
+ "clean": true,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.ath",
+   "tok_in": 3385,
+   "tok_out": 3883,
+   "feedback": ""
+  }
+ ],
+ "tok_in": 3385,
+ "tok_out": 3883,
+ "seconds": 8.7,
+ "usd": 0.002838
+}

@@ -1,0 +1,34 @@
+{
+ "pack": "support_email",
+ "lang": "ath",
+ "rep": 2,
+ "model": "openai/gpt-oss-120b",
+ "clean": true,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.ath",
+   "tok_in": 3406,
+   "tok_out": 2610,
+   "feedback": "athc check:\nerror[E0008]: `len` exige uma lista\n  --> bench/m10/runs/authoring/support_email/ath/rep2/v1.ath:56:12\n   |\n56 |       (len(attach) == 0 || s.member(\"public_docs\", attach)),\n   |            ^^^^^^ encontrado `Text`\n\nrejeitado: 1 diagnóstico(s) no estrato E0 estrutura; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 2,
+   "file": "v2.ath",
+   "tok_in": 4570,
+   "tok_out": 1751,
+   "feedback": "athc check:\nerror[P0001]: esperado identificador, encontrado `/`\n  --> bench/m10/runs/authoring/support_email/ath/rep2/v2.ath:56:64\n   |\n56 |       (len(attach) == 0 || s.member(\"public_docs\", attach)),   // note: len on Text is not allowed; we will instead rely on attachment handling below\n   |                                                                ^ aqui\n\nrejeitado: 1 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 3,
+   "file": "v3.ath",
+   "tok_in": 5808,
+   "tok_out": 1877,
+   "feedback": ""
+  }
+ ],
+ "tok_in": 13784,
+ "tok_out": 6238,
+ "seconds": 15.2,
+ "usd": 0.00581
+}

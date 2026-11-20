@@ -1,0 +1,48 @@
+{
+ "pack": "calendar",
+ "lang": "py",
+ "rep": 2,
+ "model": "openai/gpt-oss-120b",
+ "clean": false,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.py",
+   "tok_in": 3149,
+   "tok_out": 4122,
+   "feedback": "static tools:\nmypy:\nv1.py:128: error: Incompatible types in assignment (expression has type \"str | None\", variable has type \"str\")  [assignment]"
+  },
+  {
+   "cycle": 2,
+   "file": "v2.py",
+   "tok_in": 5804,
+   "tok_out": 2790,
+   "feedback": "static tools:\nmypy:\nv2.py:126: error: Incompatible types in assignment (expression has type \"str | None\", variable has type \"str\")  [assignment]"
+  },
+  {
+   "cycle": 3,
+   "file": "v3.py",
+   "tok_in": 8337,
+   "tok_out": 3096,
+   "feedback": "static tools:\nmypy:\nv3.py:126: error: Incompatible types in assignment (expression has type \"str | None\", variable has type \"str\")  [assignment]"
+  },
+  {
+   "cycle": 4,
+   "file": "v4.py",
+   "tok_in": 10902,
+   "tok_out": 2804,
+   "feedback": "static tools:\nmypy:\nv4.py:126: error: Incompatible types in assignment (expression has type \"str | None\", variable has type \"str\")  [assignment]"
+  },
+  {
+   "cycle": 5,
+   "file": "v5.py",
+   "tok_in": 13469,
+   "tok_out": 3822,
+   "feedback": "static tools:\nmypy:\nv5.py:126: error: Incompatible types in assignment (expression has type \"str | None\", variable has type \"str\")  [assignment]"
+  }
+ ],
+ "tok_in": 41661,
+ "tok_out": 16634,
+ "seconds": 47.7,
+ "usd": 0.01623
+}

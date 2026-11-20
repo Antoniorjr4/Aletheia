@@ -1,0 +1,20 @@
+{
+ "pack": "refunds",
+ "lang": "ath",
+ "rep": 2,
+ "model": "openai/gpt-oss-120b",
+ "clean": true,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.ath",
+   "tok_in": 3454,
+   "tok_out": 4488,
+   "feedback": ""
+  }
+ ],
+ "tok_in": 3454,
+ "tok_out": 4488,
+ "seconds": 10.0,
+ "usd": 0.003211
+}

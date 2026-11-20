@@ -1,0 +1,20 @@
+{
+ "pack": "code_repo",
+ "lang": "py",
+ "rep": 1,
+ "model": "openai/gpt-oss-120b",
+ "clean": true,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.py",
+   "tok_in": 3046,
+   "tok_out": 3888,
+   "feedback": ""
+  }
+ ],
+ "tok_in": 3046,
+ "tok_out": 3888,
+ "seconds": 9.6,
+ "usd": 0.00279
+}

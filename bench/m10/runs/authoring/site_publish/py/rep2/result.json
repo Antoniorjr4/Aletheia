@@ -1,0 +1,27 @@
+{
+ "pack": "site_publish",
+ "lang": "py",
+ "rep": 2,
+ "model": "openai/gpt-oss-120b",
+ "clean": true,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.py",
+   "tok_in": 3042,
+   "tok_out": 3429,
+   "feedback": "static tools:\nmypy:\nv1.py:159: error: Argument 1 to \"path_allowed\" has incompatible type \"Any | None\"; expected \"str\"  [arg-type]\nv1.py:161: error: Argument 1 to \"body_ok\" has incompatible type \"Any | None\"; expected \"str\"  [arg-type]\nv1.py:168: error: Argument 1 to \"path_allowed\" has incompatible type \"Any | None\"; expected \"str\"  [arg-type]\nv1.py:178: error: Argument 1 to \"path_allowed\" has incompatible type \"Any | None\"; expected \"str\"  [arg-type]\nv1.py:183: error: Argument 1 to \"redirect_target_ok\" has incompatible type \"Any | None\"; expected \"str\"  [arg-type]\nv1.py:296: error: Incompatible types in assignment (expression has type \"tuple[str, Any, Any]\", variable has type \"tuple[str, Any]\")  [assignment]"
+  },
+  {
+   "cycle": 2,
+   "file": "v2.py",
+   "tok_in": 5726,
+   "tok_out": 2858,
+   "feedback": ""
+  }
+ ],
+ "tok_in": 8768,
+ "tok_out": 6287,
+ "seconds": 16.5,
+ "usd": 0.005087
+}

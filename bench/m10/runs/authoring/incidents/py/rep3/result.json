@@ -1,0 +1,27 @@
+{
+ "pack": "incidents",
+ "lang": "py",
+ "rep": 3,
+ "model": "openai/gpt-oss-120b",
+ "clean": true,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.py",
+   "tok_in": 3109,
+   "tok_out": 3380,
+   "feedback": "static tools:\nmypy:\nv1.py:98: error: Unsupported operand types for <= (\"int\" and \"None\")  [operator]\nv1.py:98: note: Right operand is of type \"Any | None\"\nv1.py:98: error: Unsupported operand types for >= (\"int\" and \"None\")  [operator]\nv1.py:98: note: Left operand is of type \"Any | None\""
+  },
+  {
+   "cycle": 2,
+   "file": "v2.py",
+   "tok_in": 5814,
+   "tok_out": 4106,
+   "feedback": ""
+  }
+ ],
+ "tok_in": 8923,
+ "tok_out": 7486,
+ "seconds": 18.6,
+ "usd": 0.00583
+}
