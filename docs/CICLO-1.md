@@ -180,6 +180,14 @@ de a 1ª janela de autoria do M10 projetar ~US$ 0,55 para as 48 autorias contra 
 estimados. Gasto até aqui: US$ 0,2002 (AgentDojo) + US$ 0,0555 (M10). Registro das janelas em
 [bench/m10/PROTOCOLO.md](../bench/m10/PROTOCOLO.md).
 
+**20/11 — M10 concluído: NÃO SUPERIOR pelo critério pré-registrado.** Autoria 48/48 (US$ 0,3837),
+avaliação até US$ 0,1455. A1 (correto e seguro na 1ª versão): Aletheia 2/24, Python 10/24; McNemar
+1 × 9, p = 0,0215, a favor do Python. Versão final segura: 16/24 × 23/24. Tokens de autoria: 514 mil
+× 735 mil (Aletheia 30% menor). Das 8 finais Aletheia não seguras, 5 não compilam em 5 ciclos e 3
+compilam com política de negócio insuficiente. Detalhe e limites em
+[bench/m10/PROTOCOLO.md](../bench/m10/PROTOCOLO.md). **Gasto do ciclo até aqui: US$ 0,7294**
+(AgentDojo 0,2002 + autoria 0,3837 + avaliação 0,1455), de até US$ 1,50 autorizados.
+
 **20/11 — D2: `s.links_within` (construção autorizada) e M10 com o modelo da Groq (autorizado).**
 
 - **Reprodução antes:** `slack.ath` v1 com o modelo obediente: a injeção de phishing por mensagem
