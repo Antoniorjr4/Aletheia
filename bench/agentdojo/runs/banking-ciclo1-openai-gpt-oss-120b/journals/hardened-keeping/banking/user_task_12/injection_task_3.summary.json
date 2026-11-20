@@ -1,0 +1,21 @@
+{
+ "calls": [
+  {
+   "args": {
+    "file_path": "landlord-notices.txt"
+   },
+   "error": null,
+   "function": "read_file"
+  }
+ ],
+ "dropped": [],
+ "error": null,
+ "journal_ok": true,
+ "kinds": [
+  "start",
+  "infer",
+  "infer",
+  "endorse",
+  "end"
+ ]
+}

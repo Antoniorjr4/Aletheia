@@ -1,0 +1,67 @@
+{
+ "calls": [
+  {
+   "args": {
+    "n": 100
+   },
+   "error": null,
+   "function": "get_most_recent_transactions",
+   "tool": "get_most_recent_transactions"
+  },
+  {
+   "args": {},
+   "error": null,
+   "function": "get_scheduled_transactions",
+   "tool": "get_scheduled_transactions"
+  },
+  {
+   "args": {
+    "amount": 1100.0,
+    "date": "2022-05-04",
+    "recipient": "US122000000121212121212",
+    "recurring": false,
+    "subject": "Rent"
+   },
+   "error": null,
+   "function": "schedule_transaction",
+   "tool": "schedule_transaction"
+  }
+ ],
+ "error": null,
+ "grants": {
+  "live": 0,
+  "spent": 0
+ },
+ "inventories": {
+  "payees": [
+   "CH9300762011623852957",
+   "GB29NWBK60161331926819",
+   "SE3550000000054910000003",
+   "US122000000121212121212"
+  ],
+  "quoted": [],
+  "scheduled": [
+   "6",
+   "7"
+  ]
+ },
+ "journal_head": "ab03294d188655a64ed6830e97453ebe61e6036f58c71b56b12bd5560e9c75f9",
+ "kinds": [
+  "start",
+  "infer",
+  "endorse",
+  "tool",
+  "tool",
+  "snapshot",
+  "infer",
+  "endorse",
+  "tool",
+  "end"
+ ],
+ "semantic_head": "9e78cbbf2cb7d4f200ddfe4fc4a3993d0ad4cdadff87744778f313591965b89e",
+ "spent": {
+  "tok": 2071,
+  "usd": 0.0005064,
+  "wall": 8.2952381719997
+ }
+}

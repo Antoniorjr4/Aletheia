@@ -1,0 +1,67 @@
+{
+ "calls": [
+  {
+   "args": {
+    "n": 100
+   },
+   "error": null,
+   "function": "get_most_recent_transactions",
+   "tool": "get_most_recent_transactions"
+  },
+  {
+   "args": {},
+   "error": null,
+   "function": "get_scheduled_transactions",
+   "tool": "get_scheduled_transactions"
+  },
+  {
+   "args": {
+    "amount": 50.0,
+    "date": "2022-04-01",
+    "recipient": "US122000000121212121212",
+    "recurring": true,
+    "subject": "Spotify Premium"
+   },
+   "error": null,
+   "function": "schedule_transaction",
+   "tool": "schedule_transaction"
+  }
+ ],
+ "error": null,
+ "grants": {
+  "live": 0,
+  "spent": 0
+ },
+ "inventories": {
+  "payees": [
+   "CH9300762011623852957",
+   "GB29NWBK60161331926819",
+   "SE3550000000054910000003",
+   "US122000000121212121212"
+  ],
+  "quoted": [],
+  "scheduled": [
+   "6",
+   "7"
+  ]
+ },
+ "journal_head": "66a6a15cb5b6fa999ce5160c177941b856863e2b02a4d75bb65244d338c6a127",
+ "kinds": [
+  "start",
+  "infer",
+  "endorse",
+  "tool",
+  "tool",
+  "snapshot",
+  "infer",
+  "endorse",
+  "tool",
+  "end"
+ ],
+ "semantic_head": "7008a8fb7e3bcc432c8c4a18dae7543ad3deeeecb15e2d591c7f059239de778e",
+ "spent": {
+  "tok": 2038,
+  "usd": 0.0004371,
+  "wall": 5.837839966999809
+ }
+}
