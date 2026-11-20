@@ -671,7 +671,12 @@ impl Parser {
         self.expect(Tok::Agent)?;
         let name = self.ident()?;
         let params = self.params()?;
-        let bstart = self.expect(Tok::Budget)?;
+        // `budget` é palavra contextual: só aqui, depois dos parâmetros do agente, ela abre o
+        // orçamento. Em qualquer outro lugar é um nome comum (campo, variável, parâmetro).
+        if !self.is_contextual("budget") {
+            return Err(self.err(format!("esperado `budget`, encontrado {}", self.peek().describe())));
+        }
+        let bstart = self.bump().span;
         self.expect(Tok::LBrack)?;
         let mut budget = Vec::new();
         while *self.peek() != Tok::RBrack {

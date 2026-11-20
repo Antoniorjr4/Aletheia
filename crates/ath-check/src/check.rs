@@ -2278,7 +2278,7 @@ impl<'m> Ctx<'m> {
             }
             "len" => {
                 if args.len() != 1 {
-                    self.push(Diag::new(E0, "E0007", "`len(lista)` recebe 1 argumento", e.span, "aridade"));
+                    self.push(Diag::new(E0, "E0007", "`len(lista ou texto)` recebe 1 argumento", e.span, "aridade"));
                     return LTy::never();
                 }
                 let t = self.expr(&args[0]);
@@ -2292,12 +2292,27 @@ impl<'m> Ctx<'m> {
                         origin: t.origin.clone(),
                         refn: Some(Refn::Int { lo: Some(*lo as i64), hi: Some(*hi as i64) }),
                     },
+                    // Em texto, `len` conta caracteres; o teto do tipo vira o teto do inteiro.
+                    Ty::Text => LTy {
+                        conf: t.conf,
+                        ty: Ty::Int,
+                        lab: t.lab,
+                        tok: None,
+                        origin: t.origin.clone(),
+                        refn: Some(Refn::Int {
+                            lo: Some(0),
+                            hi: match t.refn {
+                                Some(Refn::Text { max }) => Some(max as i64),
+                                _ => None,
+                            },
+                        }),
+                    },
                     Ty::Never => LTy::never(),
                     other => {
                         self.push(Diag::new(
                             E0,
                             "E0008",
-                            "`len` exige uma lista",
+                            "`len` exige uma lista ou um texto",
                             args[0].span,
                             format!("encontrado `{}`", other.show()),
                         ));

@@ -613,8 +613,9 @@ class Runtime:
         return sep.join(v)
 
     def len_(self, v) -> int:
-        if not isinstance(v, list):
-            raise RtErr("R0103", "`len` sobre valor que não é lista")
+        # Lista: número de itens. Texto: caracteres (pontos de código), a unidade de `Text[..n]`.
+        if not isinstance(v, (list, str)):
+            raise RtErr("R0103", "`len` sobre valor que não é lista nem texto")
         return len(v)
 
     def iter_list(self, v, quant: bool) -> list:

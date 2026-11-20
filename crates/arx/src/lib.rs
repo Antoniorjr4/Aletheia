@@ -2069,10 +2069,12 @@ impl<'m> Arx<'m> {
                 return Ok(Value::Text(parts.join(&sep)));
             }
             "len" => {
-                let Value::List(items) = self.eval(&args[0])? else {
-                    return Err(rt("R0103", "`len` sobre valor que não é lista").into());
+                return match self.eval(&args[0])? {
+                    Value::List(items) => Ok(Value::Int(items.len() as i64)),
+                    // Caracteres (escalares Unicode), a mesma unidade de `Text[..n]`.
+                    Value::Text(t) => Ok(Value::Int(t.chars().count() as i64)),
+                    _ => Err(rt("R0103", "`len` sobre valor que não é lista nem texto").into()),
                 };
-                return Ok(Value::Int(items.len() as i64));
             }
             "sample" => {
                 let Value::Draft(d) = self.eval(&args[0])? else {

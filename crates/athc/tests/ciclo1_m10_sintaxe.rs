@@ -137,3 +137,108 @@ fn bracos_sem_virgula_entre_si() {
     let policy = "match w {\n  Pay { to } => s.member(\"payees\", to)\n  Pw { .. } => false\n  Nop => true\n}";
     assert!(codes(&prog(policy, EXEC)).is_empty());
 }
+
+// ------------------------------------------------------------ `len` em texto e `budget` como nome
+
+/// Política sobre um `Dm`; `budget` aparece como campo do prompt, variável e campo de tipo.
+fn len_prog(policy: &str) -> String {
+    format!(
+        r#"module lenp
+type Dm = | Dm {{ to: Text[..20], body: Text[..12], budget: Int[0..9] }}
+model m {{ price_in = 0.0  price_out = 0.0  ctx = 8192  max_out = 64  reasoning = 0  ttft = 1.0  per_tok = 0.01 }}
+policy Safe(d: Dm) -> Bool = match d {{ Dm {{ to, body, budget }} => {policy} }}
+agent A() budget [tok <= 10000, usd <= 1.0, wall <= 100.0] {{
+  on go(req: Text[..200] ^ Trusted) -> Text ! {{ Infer }} {{
+    let budget = req
+    let d = infer m -> Dm {{ request = budget, budget = s.inventory("people") }}
+    let p = refine d by Safe else {{ return "recusado" }}
+    match p {{ Dm {{ to, body, .. }} => body }}
+  }}
+}}
+"#
+    )
+}
+
+const LEN_OK: &str = r#"s.member("people", to) && len(body) >= 2 && len(body) <= 5 && budget <= 9"#;
+
+#[test]
+fn len_aceita_texto_e_budget_e_nome_comum() {
+    assert!(codes(&len_prog(LEN_OK)).is_empty(), "{:?}", codes(&len_prog(LEN_OK)));
+    // `len` continua recusando o que não é lista nem texto.
+    assert!(codes(&len_prog("len(budget) == 1")).contains(&"E0008".to_string()));
+    // `budget` continua obrigatório depois dos parâmetros do agente.
+    let sem = len_prog(LEN_OK).replace(") budget [tok", ") [tok");
+    let e = parse_module(&sem).unwrap_err();
+    assert!(e.msg.contains("esperado `budget`"), "{}", e.msg);
+}
+
+/// (resultado ARX, resultado Python) para um corpo proposto pelo modelo.
+fn len_run(body: &str, tag: &str) -> (serde_json::Value, serde_json::Value) {
+    use arx::host::SimWorld;
+    use arx::model::Scripted;
+    use arx::{Arx, Value};
+    use serde_json::json;
+    let c =
+        compile(&len_prog(LEN_OK)).unwrap_or_else(|d| panic!("{:?}", d.iter().map(|x| &x.code).collect::<Vec<_>>()));
+    let models = json!({ "m": [{ "kind": "Dm", "to": "Alice", "body": body, "budget": 3 }] });
+    let world = json!({ "inventories": { "people": ["Alice"] } });
+    let mut arx = Arx::new(
+        &c.module,
+        Box::new(SimWorld::from_json(&world).unwrap()),
+        Box::new(Scripted::from_json(&models).unwrap()),
+    );
+    arx.contracts = athc::contract_hashes(&c);
+    let out = arx.run("A", "go", vec![Value::Text("x".into())]).unwrap().to_json();
+    let dir = std::env::temp_dir().join(format!("ciclo1-len-{}-{tag}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let py = ath_emit::python(&c.module, &c.check, &c.codex, "len.ath").expect("emissão");
+    let (prog, w, m, j, r) =
+        (dir.join("len.py"), dir.join("w.json"), dir.join("m.json"), dir.join("j.jsonl"), dir.join("r.json"));
+    std::fs::write(&prog, py).unwrap();
+    std::fs::write(&w, world.to_string()).unwrap();
+    std::fs::write(&m, models.to_string()).unwrap();
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let st = std::process::Command::new("python3")
+        .env("PYTHONPATH", root.join("runtimes/python"))
+        .args(["-m", "aletheia_runtime", "run"])
+        .arg(&prog)
+        .arg("--world")
+        .arg(&w)
+        .arg("--models")
+        .arg(&m)
+        .args(["--provider", "scripted", "--agent", "A", "--on", "go", "--arg-json"])
+        .arg(json!("x").to_string())
+        .arg("--journal")
+        .arg(&j)
+        .arg("--report")
+        .arg(&r)
+        .output()
+        .expect("python3");
+    assert!(r.exists(), "{}", String::from_utf8_lossy(&st.stderr));
+    let report: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&r).unwrap()).unwrap();
+    (out, report["result"].clone())
+}
+
+#[test]
+fn len_de_texto_conta_caracteres_igual_nos_dois_runtimes() {
+    use serde_json::json;
+    // (corpo, aceito pela política 2 <= len <= 5)
+    let cases = [
+        ("a", false),
+        ("ab", true),
+        ("abcde", true),
+        ("abcdef", false),
+        // 5 caracteres, 10 bytes em UTF-8: conta caractere, não byte.
+        ("ççççç", true),
+        // 2 caracteres fora do plano básico (8 bytes, 4 unidades UTF-16).
+        ("😀😀", true),
+        // 6 caracteres acentuados: recusado pela contagem de caracteres.
+        ("áéíóúã", false),
+    ];
+    for (i, (body, ok)) in cases.iter().enumerate() {
+        let (a, p) = len_run(body, &i.to_string());
+        let want = if *ok { json!(body) } else { json!("recusado") };
+        assert_eq!(a, want, "ARX: {body:?}");
+        assert_eq!(p, want, "Python: {body:?}");
+    }
+}
