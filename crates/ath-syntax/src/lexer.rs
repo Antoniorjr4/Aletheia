@@ -191,8 +191,8 @@ pub fn lex(src: &str) -> Result<Vec<Token>, LexError> {
             i += 1;
             continue;
         }
-        // comentário de linha: `--` até o fim da linha
-        if c == b'-' && i + 1 < bytes.len() && bytes[i + 1] == b'-' {
+        // comentário de linha: `--` ou `//` até o fim da linha (qualquer caractere dentro dele)
+        if (c == b'-' || c == b'/') && i + 1 < bytes.len() && bytes[i + 1] == c {
             while i < bytes.len() && bytes[i] != b'\n' {
                 i += 1;
             }
