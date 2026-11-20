@@ -17,7 +17,7 @@ mensurável (M10, abaixo).
 | | item | estado |
 | --- | --- | --- |
 | P1 | Corretude do Core: D1 (E0421 transitiva), D9 (delimitadores no prompt, nos dois runtimes), D12 (mensagem de sistema neutra) | **corrigidos** (ver abaixo) |
-| P2 | Expressividade de políticas: D10 (valor monetário: positivo, limite, formato) e D2 (conteúdo de mensagem: links autorizados) | **desenho pronto** ([P2-DESENHO.md](P2-DESENHO.md)); implementação aguarda autorização |
+| P2 | Expressividade de políticas: D10 (valor monetário: positivo, limite, formato) e D2 (conteúdo de mensagem: links autorizados) | **feito**: D10 sem construção nova (centavos), D10b corrigido, D2 com `s.links_within` (autorizado em 20/11) |
 | P3 | Ergonomia e esforço de mudança: origem das 90 linhas do M3; D8 (operações de lista) | a investigar |
 | P4 | Invariantes de política declarados no programa e testados contra a matriz do modelo obediente, sem construção nova no Core | a desenhar |
 
@@ -146,3 +146,28 @@ Completos nos três pipelines: 16/16 sem ataque e **129/144** pares
   (`answer` antes de `writes`), e o P1 usa a ordem de declaração. Uma resposta ainda saiu em
   português: os rótulos das seções do prompt são em português nos dois.
 - Faltam 15 pares (43 execuções, ~80 mil tokens, ~US$ 0,02). Retomada agendada para a próxima janela.
+
+**20/11 — D2: `s.links_within` (construção autorizada) e M10 com o modelo da Groq (autorizado).**
+
+- **Reprodução antes:** `slack.ath` v1 com o modelo obediente: a injeção de phishing por mensagem
+  passa em 16/105 (obediente) e 21/105 (sequestrado). Teste `SlackObedientTests`.
+- **Construção:** `s.links_within("k", texto)`, predicado de política. Gramática G: trecho máximo de
+  caracteres de URL que começa em `http://` ou `https://` (em qualquer posição, sem diferenciar
+  maiúsculas) ou em `www.` não precedido de letra ou dígito ASCII. Comparação pela forma canônica
+  (minúsculas ASCII, sem esquema, sem pontuação nem barra no fim). Sem link, verdadeiro; link que
+  se reduz a vazio falha fechado.
+- **Garantia anunciada:** nenhum link **na forma G** fora do inventário sai num efeito. **Não** é
+  detecção de phishing. Fora de G (declarado e fixado nos vetores): domínio nu (`evil.com`),
+  `example[.]com`, `hxxp://`, caracteres de largura total.
+- **Validação:**
+  - 49 vetores escritos à mão (`examples/fixtures/links_within.json`), lidos pelos testes dos dois
+    runtimes;
+  - verificador: E0421 (inventário fora do prompt), E0423 (fora de política), E0424 (nome não
+    literal), tipo e aridade;
+  - 7 corpos hostis de ponta a ponta com resultado e journal idênticos no ARX e no Python;
+  - `slack_v2.ath` com o modelo obediente: **0/105 e 0/105** (antes 16 e 21), e 21/21 tarefas
+    legítimas.
+- **Complexidade:** 1 predicado; nenhuma regra ou diagnóstico novo (reusa E0421, E0423, E0424);
+  ~130 linhas no Core (verificador, ARX, emissor, runtime Python); nenhuma mudança nas provas Lean
+  (os predicados da fotografia não são modelados lá); nenhum programa existente mudou de veredito
+  (conferido arquivo por arquivo contra o compilador histórico: só os 4 do D1).

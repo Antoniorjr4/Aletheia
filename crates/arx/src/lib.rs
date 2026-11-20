@@ -880,6 +880,7 @@ impl<'m> Arx<'m> {
                             | ("member", 2)
                             | ("within", 2)
                             | ("mentions", 2)
+                            | ("links_within", 2)
                     ) || (matches!(method.name.as_str(), "binds" | "authorizes") && vals.len() >= 2);
                     if !known {
                         return Err(rt("R0108", format!("método `s.{}` desconhecido", method.name)).into());
@@ -905,6 +906,9 @@ impl<'m> Arx<'m> {
                             Ok(Value::Bool(self.snapshot.within(k, &n.to_string())))
                         }
                         ("mentions", [Value::Text(k), Value::Text(x)]) => Ok(Value::Bool(self.snapshot.mentions(k, x))),
+                        ("links_within", [Value::Text(k), Value::Text(x)]) => {
+                            Ok(Value::Bool(self.snapshot.links_within(k, x)))
+                        }
                         ("mentions", [Value::Text(k), Value::Int(n)]) => {
                             Ok(Value::Bool(self.snapshot.mentions(k, &n.to_string())))
                         }

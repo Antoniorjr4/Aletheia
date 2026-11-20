@@ -1,5 +1,7 @@
 # Ciclo 1 · P2 — diagnóstico e desenho (D10, D2), sem implementação no Core
 
+> **Decisões posteriores (19–20/11):** D10 adotou a alternativa A, D10b foi corrigido e D2 adotou a alternativa B (`s.links_within`), autorizada. O registro está em [CICLO-1.md](CICLO-1.md).
+
 Orientação de 17/11/2026: autorizados o diagnóstico e o desenho. **Nenhuma construção nova no Core
 está autorizada.** Cada alternativa traz hipótese, contraexemplo, mudança semântica, custo, impacto
 nas provas e nos diagnósticos, e o que ela **não** garante.

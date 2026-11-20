@@ -1,0 +1,568 @@
+{
+ "_": "Vetores de s.links_within (ciclo 1, D2), escritos à mão; lidos pelos testes do ARX e do runtime Python. `links` são as ocorrências na forma canônica.",
+ "cases": [
+  {
+   "urls": [
+    "www.informations.com",
+    "https://Good.example/Path/",
+    "www.dora-website.com"
+   ],
+   "text": "",
+   "links": [],
+   "ok": true
+  },
+  {
+   "urls": [
+    "www.informations.com",
+    "https://Good.example/Path/",
+    "www.dora-website.com"
+   ],
+   "text": "no links here",
+   "links": [],
+   "ok": true
+  },
+  {
+   "urls": [
+    "www.informations.com",
+    "https://Good.example/Path/",
+    "www.dora-website.com"
+   ],
+   "text": "see www.informations.com",
+   "links": [
+    "www.informations.com"
+   ],
+   "ok": true
+  },
+  {
+   "urls": [
+    "www.informations.com",
+    "https://Good.example/Path/",
+    "www.dora-website.com"
+   ],
+   "text": "see www.informations.com.",
+   "links": [
+    "www.informations.com"
+   ],
+   "ok": true
+  },
+  {
+   "urls": [
+    "www.informations.com",
+    "https://Good.example/Path/",
+    "www.dora-website.com"
+   ],
+   "text": "see (www.informations.com)",
+   "links": [
+    "www.informations.com"
+   ],
+   "ok": true
+  },
+  {
+   "urls": [
+    "www.informations.com",
+    "https://Good.example/Path/",
+    "www.dora-website.com"
+   ],
+   "text": "WWW.INFORMATIONS.COM",
+   "links": [
+    "www.informations.com"
+   ],
+   "ok": true
+  },
+  {
+   "urls": [
+    "www.informations.com",
+    "https://Good.example/Path/",
+    "www.dora-website.com"
+   ],
+   "text": "visit www.secure-systems-252.com now",
+   "links": [
+    "www.secure-systems-252.com"
+   ],
+   "ok": false
+  },
+  {
+   "urls": [
+    "www.informations.com",
+    "https://Good.example/Path/",
+    "www.dora-website.com"
+   ],
+   "text": "http://www.informations.com",
+   "links": [
+    "www.informations.com"
+   ],
+   "ok": true
+  },
+  {
+   "urls": [
+    "www.informations.com",
+    "https://Good.example/Path/",
+    "www.dora-website.com"
+   ],
+   "text": "HTTPS://WWW.INFORMATIONS.COM/",
+   "links": [
+    "www.informations.com"
+   ],
+   "ok": true
+  },
+  {
+   "urls": [
+    "www.informations.com",
+    "https://Good.example/Path/",
+    "www.dora-website.com"
+   ],
+   "text": "https://good.example/path",
+   "links": [
+    "good.example/path"
+   ],
+   "ok": true
+  },
+  {
+   "urls": [
+    "www.informations.com",
+    "https://Good.example/Path/",
+    "www.dora-website.com"
+   ],
+   "text": "https://good.example/Path/,",
+   "links": [
+    "good.example/path"
+   ],
+   "ok": true
+  },
+  {
+   "urls": [
+    "www.informations.com",
+    "https://Good.example/Path/",
+    "www.dora-website.com"
+   ],
+   "text": "https://good.example/other",
+   "links": [
+    "good.example/other"
+   ],
+   "ok": false
+  },
+  {
+   "urls": [
+    "www.informations.com",
+    "https://Good.example/Path/",
+    "www.dora-website.com"
+   ],
+   "text": "www.informations.com/login",
+   "links": [
+    "www.informations.com/login"
+   ],
+   "ok": false
+  },
+  {
+   "urls": [
+    "www.informations.com",
+    "https://Good.example/Path/",
+    "www.dora-website.com"
+   ],
+   "text": "www.informations.com?x=1",
+   "links": [
+    "www.informations.com?x=1"
+   ],
+   "ok": false
+  },
+  {
+   "urls": [
+    "www.informations.com",
+    "https://Good.example/Path/",
+    "www.dora-website.com"
+   ],
+   "text": "www.informations.com and www.evil.com",
+   "links": [
+    "www.informations.com",
+    "www.evil.com"
+   ],
+   "ok": false
+  },
+  {
+   "urls": [
+    "www.informations.com",
+    "https://Good.example/Path/",
+    "www.dora-website.com"
+   ],
+   "text": "www.informations.com,www.dora-website.com",
+   "links": [
+    "www.informations.com,www.dora-website.com"
+   ],
+   "ok": false
+  },
+  {
+   "urls": [
+    "www.informations.com",
+    "https://Good.example/Path/",
+    "www.dora-website.com"
+   ],
+   "text": "www.informations.com www.dora-website.com",
+   "links": [
+    "www.informations.com",
+    "www.dora-website.com"
+   ],
+   "ok": true
+  },
+  {
+   "urls": [
+    "www.informations.com",
+    "https://Good.example/Path/",
+    "www.dora-website.com"
+   ],
+   "text": "xwww.evil.com",
+   "links": [],
+   "ok": true
+  },
+  {
+   "urls": [
+    "www.informations.com",
+    "https://Good.example/Path/",
+    "www.dora-website.com"
+   ],
+   "text": "xhttp://evil.com",
+   "links": [
+    "evil.com"
+   ],
+   "ok": false
+  },
+  {
+   "urls": [
+    "www.informations.com",
+    "https://Good.example/Path/",
+    "www.dora-website.com"
+   ],
+   "text": "http://",
+   "links": [
+    ""
+   ],
+   "ok": false
+  },
+  {
+   "urls": [
+    "www.informations.com",
+    "https://Good.example/Path/",
+    "www.dora-website.com"
+   ],
+   "text": "https://",
+   "links": [
+    ""
+   ],
+   "ok": false
+  },
+  {
+   "urls": [
+    "www.informations.com",
+    "https://Good.example/Path/",
+    "www.dora-website.com"
+   ],
+   "text": "www.",
+   "links": [
+    "www"
+   ],
+   "ok": false
+  },
+  {
+   "urls": [
+    "www.informations.com",
+    "https://Good.example/Path/",
+    "www.dora-website.com"
+   ],
+   "text": "http://evil.com/www.informations.com",
+   "links": [
+    "evil.com/www.informations.com"
+   ],
+   "ok": false
+  },
+  {
+   "urls": [
+    "www.informations.com",
+    "https://Good.example/Path/",
+    "www.dora-website.com"
+   ],
+   "text": "www.informations.com@evil.com",
+   "links": [
+    "www.informations.com@evil.com"
+   ],
+   "ok": false
+  },
+  {
+   "urls": [
+    "www.informations.com",
+    "https://Good.example/Path/",
+    "www.dora-website.com"
+   ],
+   "text": "evil.com",
+   "links": [],
+   "ok": true
+  },
+  {
+   "urls": [
+    "www.informations.com",
+    "https://Good.example/Path/",
+    "www.dora-website.com"
+   ],
+   "text": "example[.]com",
+   "links": [],
+   "ok": true
+  },
+  {
+   "urls": [
+    "www.informations.com",
+    "https://Good.example/Path/",
+    "www.dora-website.com"
+   ],
+   "text": "hxxp://evil.com",
+   "links": [],
+   "ok": true
+  },
+  {
+   "urls": [
+    "www.informations.com",
+    "https://Good.example/Path/",
+    "www.dora-website.com"
+   ],
+   "text": "http://evil.com",
+   "links": [
+    "evil.com"
+   ],
+   "ok": false
+  },
+  {
+   "urls": [
+    "www.informations.com",
+    "https://Good.example/Path/",
+    "www.dora-website.com"
+   ],
+   "text": "hTtP://EVIL.com",
+   "links": [
+    "evil.com"
+   ],
+   "ok": false
+  },
+  {
+   "urls": [
+    "www.informations.com",
+    "https://Good.example/Path/",
+    "www.dora-website.com"
+   ],
+   "text": "www.informations.com\nwww.evil.com",
+   "links": [
+    "www.informations.com",
+    "www.evil.com"
+   ],
+   "ok": false
+  },
+  {
+   "urls": [
+    "www.informations.com",
+    "https://Good.example/Path/",
+    "www.dora-website.com"
+   ],
+   "text": "www.informations.com\twww.dora-website.com",
+   "links": [
+    "www.informations.com",
+    "www.dora-website.com"
+   ],
+   "ok": true
+  },
+  {
+   "urls": [
+    "www.informations.com",
+    "https://Good.example/Path/",
+    "www.dora-website.com"
+   ],
+   "text": "wwwwww.evil.com",
+   "links": [],
+   "ok": true
+  },
+  {
+   "urls": [
+    "www.informations.com",
+    "https://Good.example/Path/",
+    "www.dora-website.com"
+   ],
+   "text": ".www.evil.com",
+   "links": [
+    "www.evil.com"
+   ],
+   "ok": false
+  },
+  {
+   "urls": [
+    "www.informations.com",
+    "https://Good.example/Path/",
+    "www.dora-website.com"
+   ],
+   "text": "http://www.informations.com/.",
+   "links": [
+    "www.informations.com"
+   ],
+   "ok": true
+  },
+  {
+   "urls": [
+    "www.informations.com",
+    "https://Good.example/Path/",
+    "www.dora-website.com"
+   ],
+   "text": "see https://good.example/path!!!",
+   "links": [
+    "good.example/path"
+   ],
+   "ok": true
+  },
+  {
+   "urls": [
+    "www.informations.com",
+    "https://Good.example/Path/",
+    "www.dora-website.com"
+   ],
+   "text": "www.informações.com",
+   "links": [
+    "www.informa"
+   ],
+   "ok": false
+  },
+  {
+   "urls": [
+    "www.informations.com",
+    "https://Good.example/Path/",
+    "www.dora-website.com"
+   ],
+   "text": "ｗｗｗ.evil.com",
+   "links": [],
+   "ok": true
+  },
+  {
+   "urls": [
+    "www.informations.com",
+    "https://Good.example/Path/",
+    "www.dora-website.com"
+   ],
+   "text": "http://www.informations.com http://www.informations.com",
+   "links": [
+    "www.informations.com",
+    "www.informations.com"
+   ],
+   "ok": true
+  },
+  {
+   "urls": [
+    "www.informations.com",
+    "https://Good.example/Path/",
+    "www.dora-website.com"
+   ],
+   "text": "\"www.dora-website.com\"",
+   "links": [
+    "www.dora-website.com"
+   ],
+   "ok": true
+  },
+  {
+   "urls": [
+    "www.informations.com",
+    "https://Good.example/Path/",
+    "www.dora-website.com"
+   ],
+   "text": "'www.dora-website.com'",
+   "links": [
+    "www.dora-website.com"
+   ],
+   "ok": true
+  },
+  {
+   "urls": [
+    "www.informations.com",
+    "https://Good.example/Path/",
+    "www.dora-website.com"
+   ],
+   "text": "www.dora-website.com/",
+   "links": [
+    "www.dora-website.com"
+   ],
+   "ok": true
+  },
+  {
+   "urls": [
+    "www.informations.com",
+    "https://Good.example/Path/",
+    "www.dora-website.com"
+   ],
+   "text": "https://good.example/path#frag",
+   "links": [
+    "good.example/path#frag"
+   ],
+   "ok": false
+  },
+  {
+   "urls": [
+    "www.informations.com",
+    "https://Good.example/Path/",
+    "www.dora-website.com"
+   ],
+   "text": "http://http://evil.com",
+   "links": [
+    "http://evil.com"
+   ],
+   "ok": false
+  },
+  {
+   "urls": [
+    "www.informations.com",
+    "https://Good.example/Path/",
+    "www.dora-website.com"
+   ],
+   "text": "www.informations.com:8080",
+   "links": [
+    "www.informations.com:8080"
+   ],
+   "ok": false
+  },
+  {
+   "urls": [
+    "www.informations.com",
+    "https://Good.example/Path/",
+    "www.dora-website.com"
+   ],
+   "text": "mailto:a@www.evil.com",
+   "links": [
+    "www.evil.com"
+   ],
+   "ok": false
+  },
+  {
+   "urls": [],
+   "text": "www.informations.com",
+   "links": [
+    "www.informations.com"
+   ],
+   "ok": false
+  },
+  {
+   "urls": [],
+   "text": "hello",
+   "links": [],
+   "ok": true
+  },
+  {
+   "urls": [
+    ""
+   ],
+   "text": "http://",
+   "links": [
+    ""
+   ],
+   "ok": false
+  },
+  {
+   "urls": [
+    "HTTP://X.COM/"
+   ],
+   "text": "x.com is at http://x.com",
+   "links": [
+    "x.com"
+   ],
+   "ok": true
+  }
+ ]
+}

@@ -74,7 +74,7 @@ fn compares_text_literal(e: &Expr) -> bool {
 }
 
 /// Os inventários confiáveis em que a política decide: `s.is_managed`/`s.scale_justified`
-/// decidem pelo inventário `managed`; `s.member("k", x)`, pelo inventário `k`.
+/// decidem pelo inventário `managed`; `s.member("k", x)` e `s.links_within("k", t)`, pelo inventário `k`.
 fn policy_inventories(e: &Expr) -> BTreeSet<String> {
     let found = std::cell::RefCell::new(BTreeSet::new());
     expr_any(e, &|x| {
@@ -82,7 +82,7 @@ fn policy_inventories(e: &Expr) -> BTreeSet<String> {
             (Some("is_managed" | "scale_justified"), _) => {
                 found.borrow_mut().insert("managed".to_string());
             }
-            (Some("member"), ExprKind::Method { args, .. }) => {
+            (Some("member" | "links_within"), ExprKind::Method { args, .. }) => {
                 if let Some(Expr { kind: ExprKind::Str(k), .. }) = args.first() {
                     found.borrow_mut().insert(k.clone());
                 }
@@ -2043,7 +2043,10 @@ impl<'m> Ctx<'m> {
                     }
                     return LTy::trusted(Ty::Bool);
                 }
-                "inventory" | "member" | "within" | "mentions" | "binds" | "authorizes" => {
+                "inventory" | "member" | "within" | "mentions" | "links_within" | "binds" | "authorizes" => {
+                    // `s.links_within("k", texto)` (ciclo 1, D2): toda ocorrência de link na forma G
+                    // (`http://`, `https://`, `www.`) dentro de `texto` pertence ao inventário
+                    // confiável `k`. Propriedade sintática; não é detecção de phishing.
                     // `s.within("k", x)`: `x` (decimal) ≤ o limite confiável `k`; `s.mentions("k", x)`:
                     // `x` aparece literalmente num texto confiável `k` (Rev12, contratos `requires`);
                     // `s.binds("r", x1, …, xn)`: a tupla é uma linha da relação confiável `r` (Rev13:
@@ -2104,9 +2107,11 @@ impl<'m> Ctx<'m> {
                             .help("escreva `s.inventory(\"nome\")`: o nome do inventário não pode vir de dado"),
                         );
                     }
+                    let text_only = method.name == "links_within";
                     for (i, arg) in args.iter().enumerate() {
                         let t = self.expr(arg);
-                        if i >= 1 && !assignable(&t.ty, &Ty::Text) && !assignable(&t.ty, &Ty::Int) {
+                        let ok = assignable(&t.ty, &Ty::Text) || (!text_only && assignable(&t.ty, &Ty::Int));
+                        if i >= 1 && !ok {
                             self.mismatch(arg.span, &Ty::Text, &t.ty);
                         }
                     }

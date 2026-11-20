@@ -59,6 +59,7 @@ jobs:
           ./target/release/athc check bench/agentdojo/banking_v2_keeping.ath
           ./target/release/athc check bench/agentdojo/banking_v3_keeping.ath
           ./target/release/athc check bench/agentdojo/slack.ath
+          ./target/release/athc check bench/agentdojo/slack_v2.ath
           python3 -m pip install --quiet "agentdojo==0.1.35"
       # Ciclo 1: os programas medidos antes das correções (D1) são verificados com o compilador
       # com que foram medidos; o corrigido os recusa (E0421 transitiva), e isso também é conferido.

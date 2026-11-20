@@ -117,6 +117,42 @@ def decimal(x: str):
     return int(i) * 1_000_000 + int(f.ljust(6, "0") or "0")
 
 
+_LINK_CHARS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~/:?#[]@!$&'()*+,;=%")
+_ALNUM = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+_UPPER = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
+
+
+def links(text: str) -> list:
+    """Gramática G (ciclo 1, D2): as ocorrências de link em `text`. Cada trecho máximo de
+    caracteres de link que começa em `http://` ou `https://` (em qualquer posição, sem diferenciar
+    maiúsculas) ou em `www.` não precedido de letra ou dígito ASCII. Idêntico a `arx::host::links`."""
+    low = text.translate(_UPPER)
+    out, i, n = [], 0, len(text)
+    while i < n:
+        scheme = low.startswith("http://", i) or low.startswith("https://", i)
+        www = low.startswith("www.", i) and (i == 0 or text[i - 1] not in _ALNUM)
+        if not (scheme or www):
+            i += 1
+            continue
+        j = i
+        while j < n and text[j] in _LINK_CHARS:
+            j += 1
+        out.append(text[i:j])
+        i = j
+    return out
+
+
+def normalize_link(link: str) -> str:
+    """Forma canônica: minúsculas ASCII, sem esquema, sem pontuação nem barra no fim.
+    Idêntico a `arx::host::normalize_link`."""
+    low = link.translate(_UPPER)
+    for scheme in ("https://", "http://"):
+        if low.startswith(scheme):
+            low = low[len(scheme):]
+            break
+    return low.rstrip(".,;:!?)]}'\"/")
+
+
 class Program:
     """Metadados que o emissor gera a partir do programa verificado."""
 
@@ -508,6 +544,16 @@ class Runtime:
             if isinstance(g.get("program"), str) and type(g.get("issued")) is int and type(g.get("expires")) is int:
                 rec["program"], rec["issued"], rec["expires"] = g["program"], g["issued"], g["expires"]
             self.grants.append(rec)
+
+    def links_within(self, name: str, text) -> bool:
+        """`s.links_within("k", texto)`: todo link na forma G dentro de `texto` está no inventário
+        confiável `k`. Sem link, é verdadeiro; um link que se reduz a vazio falha fechado."""
+        self._log_snapshot()
+        self._attest_trusted()
+        if type(text) is not str:
+            return False
+        allowed = {normalize_link(u) for u in self.snapshot.get("inventories", {}).get(name, [])} - {""}
+        return all((n := normalize_link(l)) != "" and n in allowed for l in links(text))
 
     def mentions(self, name: str, x) -> bool:
         """`s.mentions("k", x)`: `x`, não vazio, aparece literalmente num texto confiável `k`."""

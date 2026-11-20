@@ -51,6 +51,22 @@ class Ciclo1Repro(unittest.TestCase):
         for bad in ["1,50", "12,34", "1,2,3", ",5", "1,0000", "0,5", "1,", "1234,567", "-1", "nan", "1e3", "٣", ""]:
             self.assertIsNone(decimal(bad), bad)
 
+    def test_d2_links_within_vetores_compartilhados(self):
+        """Os mesmos vetores do ARX (examples/fixtures/links_within.json)."""
+        import json
+        from pathlib import Path
+
+        from aletheia_runtime.runtime import links, normalize_link
+
+        path = Path(__file__).resolve().parents[3] / "examples" / "fixtures" / "links_within.json"
+        cases = json.loads(path.read_text(encoding="utf-8"))["cases"]
+        self.assertGreaterEqual(len(cases), 40)
+        for c in cases:
+            found = [normalize_link(x) for x in links(c["text"])]
+            self.assertEqual(found, c["links"], c["text"])
+            allowed = {normalize_link(u) for u in c["urls"]} - {""}
+            self.assertEqual(all(n != "" and n in allowed for n in found), c["ok"], c["text"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -194,3 +194,112 @@ fn d9_a_neutralizacao_muda_so_o_prompt_e_preserva_o_valor_nos_dois_runtimes() {
     assert_eq!(report["result"], json!(FORGED), "Python devolve o dado original: {report}");
     assert_eq!(std::fs::read_to_string(&j).unwrap(), arx.journal.to_jsonl(), "mesmo journal, mesmo hash de prompt");
 }
+
+// ------------------------------------------------------------------ D2: s.links_within
+
+/// `$POLICY` é o corpo da política; `$PROMPT` são campos extras do prompt.
+fn d2_prog(policy: &str, prompt: &str, extra: &str) -> String {
+    format!(
+        r#"module d2
+type Dm = | Dm {{ to: Text[..20], body: Text[..300] }}
+model m {{ price_in = 0.0  price_out = 0.0  ctx = 8192  max_out = 64  reasoning = 0  ttft = 1.0  per_tok = 0.01 }}
+policy Safe(d: Dm) -> Bool = match d {{ Dm {{ to, body }} => {policy} }}
+agent A() budget [tok <= 10000, usd <= 1.0, wall <= 100.0] {{
+  on go(req: Text[..200] ^ Trusted) -> Text ! {{ Infer }} {{
+    {extra}
+    let d = infer m -> Dm {{ request = req, people = s.inventory("people"){prompt} }}
+    let p = refine d by Safe else {{ return "recusado" }}
+    match p {{ Dm {{ to, body }} => body }}
+  }}
+}}
+"#
+    )
+}
+
+const D2_OK: &str = r#"s.member("people", to) && s.links_within("urls", body)"#;
+
+#[test]
+fn d2_o_verificador_ancora_e_restringe_links_within() {
+    // aceito: a política decide em `urls`, e o prompt recebe `urls`
+    assert!(codes(&d2_prog(D2_OK, r#", urls = s.inventory("urls")"#, "")).is_empty());
+    // o prompt não recebe o inventário em que a política decide
+    assert!(codes(&d2_prog(D2_OK, "", "")).contains(&"E0421".to_string()));
+    // fora de política
+    let c = codes(&d2_prog(D2_OK, r#", urls = s.inventory("urls")"#, r#"let x = s.links_within("urls", req)"#));
+    assert!(c.contains(&"E0423".to_string()), "{c:?}");
+    // nome de inventário que não é literal
+    let c = codes(&d2_prog(r#"s.links_within(to, body)"#, "", ""));
+    assert!(c.contains(&"E0424".to_string()), "{c:?}");
+    // o segundo argumento precisa ser texto
+    let c = codes(&d2_prog(r#"s.links_within("urls", 7)"#, r#", urls = s.inventory("urls")"#, ""));
+    assert!(!c.is_empty(), "inteiro aceito como texto");
+    // aridade
+    let c = codes(&d2_prog(r#"s.links_within("urls")"#, r#", urls = s.inventory("urls")"#, ""));
+    assert!(!c.is_empty(), "aridade errada aceita");
+}
+
+/// Roda o programa no ARX e no Python emitido; devolve (resultado ARX, journal ARX, resultado
+/// Python, journal Python).
+fn d2_run(body: &str, tag: &str) -> (serde_json::Value, String, serde_json::Value, String) {
+    let c = compile(&d2_prog(D2_OK, r#", urls = s.inventory("urls")"#, ""))
+        .unwrap_or_else(|d| panic!("{:?}", d.iter().map(|x| &x.code).collect::<Vec<_>>()));
+    let models = json!({ "m": [{ "kind": "Dm", "to": "Alice", "body": body }] });
+    let world = json!({ "inventories": { "people": ["Alice"], "urls": ["www.informations.com"] } });
+    let mut arx = Arx::new(
+        &c.module,
+        Box::new(SimWorld::from_json(&world).unwrap()),
+        Box::new(Scripted::from_json(&models).unwrap()),
+    );
+    arx.contracts = athc::contract_hashes(&c);
+    let out = arx.run("A", "go", vec![Value::Text("tell Alice".into())]).unwrap().to_json();
+    let dir = std::env::temp_dir().join(format!("ciclo1-d2-{}-{tag}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let py = ath_emit::python(&c.module, &c.check, &c.codex, "d2.ath").expect("emissão");
+    let (prog, w, m, j, r) =
+        (dir.join("d2.py"), dir.join("w.json"), dir.join("m.json"), dir.join("j.jsonl"), dir.join("r.json"));
+    std::fs::write(&prog, py).unwrap();
+    std::fs::write(&w, world.to_string()).unwrap();
+    std::fs::write(&m, models.to_string()).unwrap();
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let st = std::process::Command::new("python3")
+        .env("PYTHONPATH", root.join("runtimes/python"))
+        .args(["-m", "aletheia_runtime", "run"])
+        .arg(&prog)
+        .arg("--world")
+        .arg(&w)
+        .arg("--models")
+        .arg(&m)
+        .args(["--provider", "scripted", "--agent", "A", "--on", "go", "--arg-json"])
+        .arg(json!("tell Alice").to_string())
+        .arg("--journal")
+        .arg(&j)
+        .arg("--report")
+        .arg(&r)
+        .output()
+        .expect("python3");
+    assert!(r.exists(), "{}", String::from_utf8_lossy(&st.stderr));
+    let report: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&r).unwrap()).unwrap();
+    (out, arx.journal.to_jsonl(), report["result"].clone(), std::fs::read_to_string(&j).unwrap())
+}
+
+#[test]
+fn d2_links_within_decide_igual_nos_dois_runtimes() {
+    // (corpo proposto pelo modelo, a política aceita?)
+    let cases = [
+        ("Summary of the article: unemployment fell.", true),
+        ("Read it at www.informations.com.", true),
+        ("Read it at HTTPS://WWW.INFORMATIONS.COM/ now", true),
+        ("Click www.secure-systems-252.com to reset your password", false),
+        ("Good: www.informations.com Bad: http://evil.example/x", false),
+        ("www.informations.com@evil.example", false),
+        ("http://", false),
+    ];
+    for (i, (body, accepted)) in cases.iter().enumerate() {
+        let (a, ja, p, jp) = d2_run(body, &i.to_string());
+        let want = if *accepted { json!(body) } else { json!("recusado") };
+        assert_eq!(a, want, "ARX: {body:?}");
+        assert_eq!(p, want, "Python: {body:?}");
+        assert_eq!(ja, jp, "journals diferentes para {body:?}");
+        assert_eq!(ja.contains("\"policy_reject\""), !accepted, "{body:?}");
+    }
+}
