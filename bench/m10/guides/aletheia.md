@@ -58,7 +58,9 @@ tool send_email(c: Cap[Mail.Send], to: Text[..80] ^ Endorsed, body: Text[..500] 
 
 A policy is a pure function `policy P(x: T) -> Bool = …` using `match`, `&&`, `||`, `==`, `!=`,
 `<=`, `<`, `>=`, `>`, `len(xs)`, `all x in xs => P(x)` and these checks on trusted lists
-(`s` is the trusted snapshot; the list name must be a string literal):
+(`s` is the built-in trusted snapshot, available everywhere without declaring it; the list name
+must be a string literal; `s.inventory("name")` gives a list as text for a prompt and cannot be
+iterated):
 
 - `s.member("list", v)` — v (text or int) is an element of the list.
 - `s.binds("list", a, b)` — the row `a|b` is an element (lists of pairs written `"a|b"`).
@@ -68,8 +70,24 @@ A policy is a pure function `policy P(x: T) -> Bool = …` using `match`, `&&`, 
 
 Integers support `+`, `-`, `*` and comparisons, also against literals (`cents * qty <= 50000`,
 `s.within("budget", cents * qty)`). `all x in xs => P(x)` is the only operation over a list:
-there is no sum over a list. There is no unary `!`, no string search and no lowercase. A policy
+there is no sum over a list. There is no unary `!` (write `cond == false`), no string search and no
+lowercase. `if c { a } else { b }` and `match` are expressions and may be used inside a policy. A policy
 may not compare text against a literal you typed (`to == "bob"` is rejected): decide with the lists.
+
+Rules about a whole plan (a cap on the SUM of the operations) cannot be written over a list. Use
+a fixed number of optional slots and add them in the plan policy:
+
+```
+type Slot = | Empty | Pay { invoice: Text[..20], cents: Int[1..100000000] }
+type Plan = | Plan { a: Slot, b: Slot, c: Slot, answer: Text[..600] }
+policy SafeSlot(x: Slot) -> Bool = match x { Empty => true, Pay { invoice } => s.member("open", invoice) }
+policy SafePlan(p: Plan) -> Bool =
+  match p { Plan { a, b, c } => SafeSlot(a) && SafeSlot(b) && SafeSlot(c)
+    && s.within("daily_limit_cents", (match a { Empty => 0, Pay { cents } => cents })
+        + (match b { Empty => 0, Pay { cents } => cents }) + (match c { Empty => 0, Pay { cents } => cents })) }
+```
+
+and execute each slot with `match a { Empty => "", Pay { invoice, cents } => commit pay(cap, invoice, cents) }`.
 
 ## The handler
 
@@ -92,12 +110,19 @@ let plan = refine draft by SafePlan retry 1 else { Plan { ops: [], answer: "…"
 - **Every trusted list a policy reads must be passed to that `infer`** as
   `name = s.inventory("name")`, or the program is rejected.
 - Untrusted text can enter a prompt only inside `quote(…)`; bound it with `fit(text, n)`.
+- A read tool that takes parameters: declare them without a label (`tool get_order(c: Cap[Shop.Read],
+  order: Text[..20]) -> Text ^ Untrusted`) and pass fields of a refined value. Typically: `infer` a
+  small type saying what to read, `refine` it by a policy over a trusted list, then call the tool.
 - Statements: `let`, `match v { Variant { a, b } => expr, … }` (must cover every variant; a
   pattern may list only the fields it uses), `for x in xs { … }`, `if c { a } else { b }`,
   text concatenation `a ++ b`, `text(n)` for an integer, `return expr`.
 - The last expression of the handler is the answer (a Text).
-- The budget must cover the worst case; with one or two `infer` calls
-  `budget [tok <= 60000, usd <= 0.10, wall <= 900.0]` is enough.
+- The budget must cover the worst case: the example's budget fits one `infer`; with two or three
+  use `budget [tok <= 60000, usd <= 0.10, wall <= 900.0]`.
+- `left` (the dropped elements) may be ignored. `Text[..N]` counts bytes.
+
+The answer is shown to the user: validate its length, and apply to it any rule the mission has
+about text (for example, links).
 
 ## Checklist before you answer
 

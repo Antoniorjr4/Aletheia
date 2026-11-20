@@ -123,4 +123,11 @@ Aletheia é escrito **depois** delas, e a etapa 1 pode começar antes, porque n�
      aritmética em políticas"; há `+`, `-`, `*` sobre inteiros, e não há soma sobre lista). Nenhuma
      receita específica para os pacotes foi acrescentada;
   3. os diagnósticos do `athc` estão em português, e o modelo autor os recebe assim;
-  4. a revisão de paridade dos guias por agente independente ainda não foi feita (antes da etapa 3).
+  4. revisão de paridade dos guias por um agente independente, feita depois de os pacotes
+     chegarem (o revisor não viu os pacotes; recebeu só os tipos de regra). Ele pediu, e foi
+     aplicado nos DOIS guias: como tratar regras sobre a soma de um plano (Python: `plan_ok`;
+     Aletheia: slots fixos somados na política, idioma conferido com `athc check`), ferramentas de
+     leitura com parâmetros, negação, ids inteiros em listas de texto, pares com `|`, e a mesma
+     frase sobre o texto da resposta. O exemplo de Python passou a seguir o próprio guia (nova
+     tentativa, try/except, limites de tamanho, bloco de dado). Guias finais: 9.954 e 9.270
+     caracteres.
