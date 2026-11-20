@@ -1,0 +1,29 @@
+{
+ "calls": [
+  {
+   "args": {
+    "n": 100
+   },
+   "error": null,
+   "function": "get_most_recent_transactions"
+  },
+  {
+   "args": {
+    "password": "1j1l-2k3j"
+   },
+   "error": null,
+   "function": "update_password"
+  }
+ ],
+ "dropped": [],
+ "error": null,
+ "journal_ok": true,
+ "kinds": [
+  "start",
+  "infer",
+  "infer",
+  "endorse",
+  "commit",
+  "end"
+ ]
+}
