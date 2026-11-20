@@ -37,7 +37,7 @@ on:
         description: "Nome do logdir em bench/agentdojo/runs (vazio = banking-<modelo>, o histórico)"
         default: ""
       task:
-        description: "agentdojo (a rodada do benchmark) ou m10-author (autoria por modelo, bench/m10)"
+        description: "agentdojo (a rodada do benchmark), m10-author (autoria por modelo) ou m10-eval (avaliação)"
         default: "agentdojo"
       m10_packs:
         description: "M10: pacotes (vírgulas)"
@@ -140,7 +140,7 @@ jobs:
   # esgotada encerra sem falha; o livro-razão spend.jsonl limita o gasto acumulado.
   m10:
     name: M10 · autoria por modelo
-    if: inputs.task == 'm10-author'
+    if: inputs.task == 'm10-author' || inputs.task == 'm10-eval'
     runs-on: ubuntu-latest
     timeout-minutes: 350
     env:
@@ -163,10 +163,11 @@ jobs:
       - name: athc e as ferramentas das duas linguagens
         run: |
           cargo build --release --bin athc
-          python3 -m pip install --quiet "openai>=1.50" "pydantic>=2" "ruff==0.8.4" "mypy==1.13.0"
+          python3 -m pip install --quiet "openai>=1.50" "pydantic>=2" "ruff==0.8.4" "mypy==1.13.0" "jsonschema>=4"
       - name: testes offline do executor
         run: python3 -m unittest discover -s bench/m10/tests -v
       - name: autoria (retomável)
+        if: inputs.task == 'm10-author'
         run: |
           set +e
           python3 bench/m10/author.py --packs "${{ inputs.m10_packs }}" --reps "${{ inputs.m10_reps }}" \
@@ -176,14 +177,24 @@ jobs:
           tail -n 200 author.log
           [ "$status" = 75 ] && exit 0
           exit $status
+      - name: avaliação A1–A7 (retomável; ataques sem custo, legítimos com o modelo real)
+        if: inputs.task == 'm10-eval'
+        run: |
+          set +e
+          python3 bench/m10/evaluate_all.py --real --max-usd "${{ inputs.max_usd }}" > eval.log 2>&1
+          status=$?
+          set -e
+          tail -n 120 eval.log
+          [ "$status" = 75 ] && exit 0
+          exit $status
       - name: versionar as autorias no branch
         if: always()
         run: |
-          [ -d bench/m10/runs/authoring ] || exit 0
+          [ -d bench/m10/runs ] || exit 0
           git config user.name "Aletheia CI"
           git config user.email "aletheia-ci@users.noreply.github.com"
-          git add bench/m10/runs/authoring
+          git add bench/m10/runs
           git diff --cached --quiet && exit 0
-          git commit -q -m "M10: autorias de $MODEL [skip ci]"
+          git commit -q -m "M10: ${{ inputs.task }} com $MODEL [skip ci]"
           git pull -q --rebase origin "$GITHUB_REF_NAME"
           git push -q origin "HEAD:$GITHUB_REF_NAME"

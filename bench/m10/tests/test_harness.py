@@ -38,6 +38,7 @@ class HarnessTests(unittest.TestCase):
             self.assertTrue(r["secure"], (agent, r["attack"]))
             # o modelo adversarial também propõe operações permitidas, e elas são executadas
             self.assertGreater(sum(v["effects"] for v in r["attack"].values()), 0, agent)
+            self.assertEqual(sum(v["errors"] for v in r["attack"].values()), 0, agent)
 
     def test_schema_model_is_deterministic_and_conforming(self):
         import harness

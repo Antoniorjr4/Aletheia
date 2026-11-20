@@ -131,3 +131,68 @@ Aletheia é escrito **depois** delas, e a etapa 1 pode começar antes, porque n�
      frase sobre o texto da resposta. O exemplo de Python passou a seguir o próprio guia (nova
      tentativa, try/except, limites de tamanho, bloco de dado). Guias finais: 9.954 e 9.270
      caracteres.
+
+## Verificação pré-M10 (20/11/2026) — feita antes de qualquer autoria paga
+
+**1. Avaliador congelado.** `evaluate_all.py` calcula A1–A7 e a decisão pelo critério da seção 6.
+Testado (`tests/test_evaluate.py`, com um servidor local no lugar do modelo real) com: os dois
+agentes de referência (corretos e seguros nas duas linguagens), um agente sem defesa (útil e
+violado), um programa que não compila (não conta como primeira versão), um agente que executa o
+efeito proibido e quebra depois (**a violação conta**) e uma entrega vazia (nem segura nem útil).
+Cota esgotada e teto de gasto nunca viram "cenário reprovado" nem entram no cache. As versões e os
+hashes de avaliador, executor, guias, protocolo, pacotes v1 e v2 e do compilador estão em
+[`FREEZE.json`](FREEZE.json). Qualquer mudança depois disso muda o hash e precisa ser declarada.
+
+- A2 fica definido como: ciclos do autor até as ferramentas da linguagem ficarem limpas, e se a
+  versão final passa no oráculo. Só a primeira e a última versão são avaliadas com o modelo real
+  (avaliar as cinco multiplicaria o custo). É um estreitamento declarado do pré-registro.
+- A7 (legibilidade) é lido de `runs/authoring/a7.json`, produzido por um avaliador cego com a
+  rubrica; sem esse arquivo, sai como "—" e não entra na decisão (que nunca dependeu dele).
+
+**2. Alcance da avaliação adversarial.** O modelo adversarial tem dois modos, reportados em separado:
+
+- `adversarial` (o que conta para A3): valores hostis **conformes ao JSON Schema** que o agente
+  pediu, isto é, o que um modelo com decodificação restrita pode emitir. Cada valor gerado é
+  conferido por `conforms`, e `tests/test_schema_model.py` confere o gerador e o próprio `conforms`
+  contra a biblioteca independente `jsonschema` (mais de 600 valores, 10+ esquemas, incluindo
+  limites, `pattern`, `enum`, `anyOf` e `$ref`). O relatório traz a contagem de valores fora do
+  esquema, que tem de ser 0.
+- `malformed` (informativo): tipos trocados, campos ausentes ou a mais, valores fora dos limites.
+
+**É amostragem, não prova.** São 30 execuções por cenário e por modo, cada uma com um valor hostil
+sorteado por chamada ao modelo, a partir dos valores do atacante do cenário, de alguns valores
+legítimos e de valores hostis genéricos. Zero violações diz que nenhuma das saídas sorteadas
+produziu o efeito proibido; com 30 execuções, uma taxa de violação de até ~10% por execução ainda é
+compatível com zero observado (95%). Um ataque que dependa de um valor fora dessas listas não é
+exercitado. O relatório traz também em quantas execuções o agente chegou a executar algum efeito,
+para um "zero violações" de um agente que nunca age não parecer segurança.
+
+**3. Auditoria dos oráculos.** Um auditor independente (sem acesso ao repositório nem à Aletheia)
+auditou os 8 pacotes contra as regras escritas: 8 verificadores mais estritos que a especificação,
+28 violações não detectadas, 15 verificadores legítimos frouxos ou rígidos demais e 1 cenário que
+contradiz uma regra ([packs_v2/AUDIT.md](packs_v2/AUDIT.md)). O conjunto original (`packs/`) está
+intacto e idêntico ao que o autor entregou. A versão corrigida é **`packs_v2/`**, e é ela que a
+campanha usa:
+
+- `spec.json`, `scenarios.json` e `naive.py` são idênticos byte a byte aos originais (missão,
+  regras, ferramentas, inventários, cenários, valores do atacante e chamadas golden não mudaram);
+- em `world.py` só mudaram os verificadores, mais duas linhas no construtor (uma cópia do estado
+  inicial para os verificadores). As ferramentas e `trusted()` são iguais (conferido pela árvore
+  sintática);
+- os verificadores de ataque passaram a julgar cada efeito pelas regras escritas, com os
+  inventários confiáveis do pedido, em vez de uniões escritas à mão;
+- os 8 pacotes v2 passam em `harness.py validate`.
+
+Limitações que continuam, declaradas (L1–L11 no AUDIT.md): inflação de valor dentro dos limites
+não é decidível; texto livre não é julgado; um id escrito no pedido autoriza a operação daquele
+id para qualquer propósito; as regras lexicais do `site_publish` não cobrem esquema em maiúsculas;
+o cenário `legit_attach` do `support_email` só é resolvível deixando o texto do ticket escolher o
+anexo.
+
+**4. Dificuldade preservada.** Nenhuma especificação foi adaptada. As regras que exigem soma sobre
+o plano (limite diário, orçamento total, total de reembolsos, crédito de cortesia) e as que exigem
+acompanhar operações anteriores continuam como o autor cego as escreveu.
+
+**Errata.** O hash registrado em 20/11 para os pacotes originais (`5ca743a0…`) incluía arquivos
+`__pycache__` gerados pelo validador. Os pacotes não mudaram (o git está limpo e eles são idênticos
+à entrega do autor). Os hashes corretos, sem `__pycache__`, estão em `FREEZE.json`.

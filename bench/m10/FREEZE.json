@@ -1,0 +1,33 @@
+{
+ "files": {
+  "harness.py": "15b9fd89ab85bd6e59e0ea1ea2c0ac03036eb583d086373c9bd6006c9058c9cb",
+  "author.py": "6d579e27c75c57afdfb625a0ba3c6a75031dd2c8fd7fef27abb6ab73e2142ace",
+  "evaluate_all.py": "a12a5ad0d81529995c84ca098cc813e55e7a45a9f6a94941f809e28c3361e757",
+  "guides/aletheia.md": "0f3b4960fb9fc1b0ece8a338b630cfdff59a9ad04890cfe5dd7106a02e4bac55",
+  "guides/python.md": "b3705450ece877058bc0400c5bbbb4c421ffc16abffd51a0c50d1a755aca5525",
+  "PROTOCOLO.md": "3e67b39caa93c71b17783138ef8a8f8527f871c530d162d7cc0fb4a01f2ef1f4",
+  "FORMAT.md": "1a4e0db78915423ce6b08862b4b6f6bfc294e35427a84a341af11a9c62ace03c"
+ },
+ "packs": {
+  "calendar": "d553259c44b33844c8d8d18be821223c125386cd0e6ca255e738ef0f7d76eb9a",
+  "code_repo": "cf07608aae53487c4ab15b9ea8e301f8bed063e5bbbf11d9c7349303a440cc89",
+  "incidents": "355c3b1c3a0be50d99296d545d1066b3eab2d87c0ad48bb0927170bbe3098b6b",
+  "payments": "767623eb52202b8d3093ab610758f566422d74ee3a5b5ed0c2e820ada7df6cac",
+  "purchasing": "19dfedec5c551641fbb59d85f4a3c500592540f6a3268f0bda106fb0b3c5ba4b",
+  "refunds": "1940272bac334036d69b3c9eb3b60b2c7e5cc3823d4cb57dc39154e5eba3a7b3",
+  "site_publish": "5f51824702347cce26e0c89b965f1bda8ecf63d19d13f9dd64b8901e0a4c1c8b",
+  "support_email": "fb98903e0e02a01423bcef244e357ae215d68ca0e4aacaaf7bd6c3d5bdb203d4"
+ },
+ "packs_v2": {
+  "calendar": "60fbb55d678c2c85032c04ef63211ea89114a0b36e131ee7ea87d1d6b73f45cb",
+  "code_repo": "aea69a4355943e3f4e0376065a94254ee8fce4a6235267791c68a887c418943f",
+  "incidents": "3104356917e593b6c68a5f295cb9f8766405b5967f91fea7d2d6a5426e25dbbd",
+  "payments": "5454a6979ca95b1d79df8811823bd737edce93b91b285a2fd155d1e4f29c7b82",
+  "purchasing": "33fc23879e669ffc330cc002e29d6fe1c361ca0e54ea14a54a78a25a14e3c93f",
+  "refunds": "a802e4312c90016c9e3909cef1cae3262efbbefbbcdd0b48aa5756f045f993e3",
+  "site_publish": "0707d2c1c3f68c65e2736335d13db2ff79d94747a065fd6e3b4abbd82b3d30b2",
+  "support_email": "ecb9638e2c920beb85fc5b4d1c112bd690169204f756927258544bdbf02ae710"
+ },
+ "athc_commit": "3088e338d975ea3081605694a702da771053357f",
+ "athc_version": ""
+}

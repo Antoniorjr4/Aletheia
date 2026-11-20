@@ -74,8 +74,11 @@ jobs:
           grep -q "E0421" /tmp/d1.txt
       - name: testes da ponte (suíte banking v1.2.2)
         run: python3 -m unittest discover -s bench/agentdojo/tests -v
-      - name: M10, executor comum (offline)
-        run: python3 -m unittest discover -s bench/m10/tests -v
+      - name: M10, executor comum e avaliador (offline)
+        run: |
+          python3 -m pip install --quiet "jsonschema>=4" "openai>=1.50" "ruff==0.8.4" "mypy==1.13.0"
+          python3 -m unittest discover -s bench/m10/tests -v
+          for p in bench/m10/packs_v2/*/; do python3 bench/m10/harness.py validate --pack "$p"; done
       # Eixo II (Rev11): o oráculo comprometido, separado do benchmark oficial. Falha se uma
       # ação proibida produzir efeito, se um controle legítimo for recusado ou se um resíduo
       # documentado mudar de comportamento.

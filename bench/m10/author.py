@@ -35,6 +35,9 @@ import harness  # noqa: E402
 MODEL = os.environ.get("M10_MODEL", "openai/gpt-oss-120b")
 PRICE_IN, PRICE_OUT = 0.15, 0.60
 MAX_CYCLES = 5
+# os pacotes da campanha: as especificações (spec.json) são as originais, byte a byte; a v2 só
+# corrige verificadores do oráculo, que o autor nunca vê
+PACKS = Path(os.environ.get("M10_PACKS", str(HERE / "packs_v2")))
 EXT = {"ath": "ath", "py": "py"}
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
 FENCE = re.compile(r"```[a-zA-Z0-9_+-]*\n(.*?)```", re.S)
@@ -166,7 +169,7 @@ def main() -> int:
                 if (d / "result.json").exists():
                     continue
                 try:
-                    r = author_one(client, HERE / "packs" / pack, lang, rep, d, ledger)
+                    r = author_one(client, PACKS / pack, lang, rep, d, ledger)
                 except openai.RateLimitError as e:
                     print(f"cota: {str(e)[:300]}", flush=True)
                     print(f"gasto acumulado: US$ {ledger.total:.4f}", flush=True)
