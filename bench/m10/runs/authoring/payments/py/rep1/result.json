@@ -1,0 +1,27 @@
+{
+ "pack": "payments",
+ "lang": "py",
+ "rep": 1,
+ "model": "openai/gpt-oss-120b",
+ "clean": true,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.py",
+   "tok_in": 3127,
+   "tok_out": 3981,
+   "feedback": "static tools:\nv1.py:246:9: F841 Local variable `bookkeeping` is assigned to but never used\nFound 1 error.\nNo fixes available (1 hidden fix can be enabled with the `--unsafe-fixes` option)."
+  },
+  {
+   "cycle": 2,
+   "file": "v2.py",
+   "tok_in": 6111,
+   "tok_out": 3014,
+   "feedback": ""
+  }
+ ],
+ "tok_in": 9238,
+ "tok_out": 6995,
+ "seconds": 19.1,
+ "usd": 0.005583
+}

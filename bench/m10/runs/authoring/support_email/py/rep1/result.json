@@ -1,0 +1,48 @@
+{
+ "pack": "support_email",
+ "lang": "py",
+ "rep": 1,
+ "model": "openai/gpt-oss-120b",
+ "clean": false,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.py",
+   "tok_in": 3021,
+   "tok_out": 3485,
+   "feedback": "static tools:\nv1.py:121:17: E714 [*] Test for object identity should be `is not`\nFound 1 error.\n[*] 1 fixable with the `--fix` option.\nmypy:\nv1.py:241: error: Unsupported right operand type for in (\"Any | None\")  [operator]\nv1.py:248: error: Unsupported right operand type for in (\"Any | None\")  [operator]\nv1.py:255: error: Unsupported right operand type for in (\"Any | None\")  [operator]"
+  },
+  {
+   "cycle": 2,
+   "file": "v2.py",
+   "tok_in": 5716,
+   "tok_out": 3484,
+   "feedback": "static tools:\nv2.py:135:17: E714 [*] Test for object identity should be `is not`\nFound 1 error.\n[*] 1 fixable with the `--fix` option.\nmypy:\nv2.py:255: error: Unsupported right operand type for in (\"Any | None\")  [operator]\nv2.py:262: error: Unsupported right operand type for in (\"Any | None\")  [operator]\nv2.py:269: error: Unsupported right operand type for in (\"Any | None\")  [operator]"
+  },
+  {
+   "cycle": 3,
+   "file": "v3.py",
+   "tok_in": 8517,
+   "tok_out": 3423,
+   "feedback": "static tools:\nmypy:\nv3.py:254: error: Unsupported right operand type for in (\"Any | None\")  [operator]\nv3.py:261: error: Unsupported right operand type for in (\"Any | None\")  [operator]\nv3.py:268: error: Unsupported right operand type for in (\"Any | None\")  [operator]"
+  },
+  {
+   "cycle": 4,
+   "file": "v4.py",
+   "tok_in": 11285,
+   "tok_out": 3282,
+   "feedback": "static tools:\nmypy:\nv4.py:246: error: Unsupported right operand type for in (\"Any | None\")  [operator]\nv4.py:253: error: Unsupported right operand type for in (\"Any | None\")  [operator]\nv4.py:260: error: Unsupported right operand type for in (\"Any | None\")  [operator]"
+  },
+  {
+   "cycle": 5,
+   "file": "v5.py",
+   "tok_in": 13995,
+   "tok_out": 2929,
+   "feedback": "static tools:\nv5.py:3:42: F401 [*] `typing.cast` imported but unused\nFound 1 error.\n[*] 1 fixable with the `--fix` option.\nmypy:\nv5.py:246: error: Unsupported right operand type for in (\"Any | None\")  [operator]\nv5.py:253: error: Unsupported right operand type for in (\"Any | None\")  [operator]\nv5.py:260: error: Unsupported right operand type for in (\"Any | None\")  [operator]"
+  }
+ ],
+ "tok_in": 42534,
+ "tok_out": 16603,
+ "seconds": 48.0,
+ "usd": 0.016342
+}

@@ -1,0 +1,48 @@
+{
+ "pack": "payments",
+ "lang": "ath",
+ "rep": 1,
+ "model": "openai/gpt-oss-120b",
+ "clean": false,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.ath",
+   "tok_in": 3512,
+   "tok_out": 3609,
+   "feedback": "athc check:\nerror[P0001]: caractere inesperado `‑` (use a forma ASCII: `->`, `<=`, ...)\n  --> bench/m10/runs/authoring/payments/ath/rep1/v1.ath:61:78\n   |\n61 |       cents <= 100000000,                     // placeholder upper bound, per‑payment limit enforced by daily limit\n   |                                                                              ^ aqui\n\nrejeitado: 1 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 2,
+   "file": "v2.ath",
+   "tok_in": 5173,
+   "tok_out": 2263,
+   "feedback": "athc check:\nerror[P0001]: esperada uma expressão, encontrado `/`\n   --> bench/m10/runs/authoring/payments/ath/rep1/v2.ath:109:9\n    |\n109 |         // slot a\n    |         ^ aqui\n\nrejeitado: 1 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 3,
+   "file": "v3.ath",
+   "tok_in": 6793,
+   "tok_out": 2174,
+   "feedback": "athc check:\nerror[E0012]: `match` não exaustivo\n  --> bench/m10/runs/authoring/payments/ath/rep1/v3.ath:79:9\n   |\n79 |         (match a { PaySlot { cents } => cents, ScheduleSlot { cents } => cents, _ => 0 }) +\n   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ faltam: Empty, CancelSlot, MarkSlot\n\nerror[E0009]: `_` não é variante de `Slot`\n  --> bench/m10/runs/authoring/payments/ath/rep1/v3.ath:79:81\n   |\n79 |         (match a { PaySlot { cents } => cents, ScheduleSlot { cents } => cents, _ => 0 }) +\n   |                                                                                 ^ variante inexistente\n\nerror[E0012]: `match` não exaustivo\n  --> bench/m10/runs/authoring/payments/ath/rep1/v3.ath:80:9\n   |\n80 |         (match b { PaySlot { cents } => cents, ScheduleSlot { cents } => cents, _ => 0 }) +\n   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ faltam: Empty, CancelSlot, MarkSlot\n\nerror[E0009]: `_` não é variante de `Slot`\n  --> bench/m10/runs/authoring/payments/ath/rep1/v3.ath:80:81\n   |\n80 |         (match b { PaySlot { cents } => cents, ScheduleSlot { cents } => cents, _ => 0 }) +\n   |                                                                                 ^ variante inexistente\n\nerror[E0012]: `match` não exaustivo\n  --> bench/m10/runs/authoring/payments/ath/rep1/v3.ath:81:9\n   |\n81 |         (match c { PaySlot { cents } => cents, ScheduleSlot { cents } => cents, _ => 0 })\n   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ faltam: Empty, CancelSlot, MarkSlot\n\nerror[E0009]: `_` não é variante de `Slot`\n  --> bench/m10/runs/authoring/payments/ath/rep1/v3.ath:81:81\n   |\n81 |         (match c { PaySlot { cents } => cents, ScheduleSlot { cents } => cents, _ => 0 })\n   |                                                                                 ^ variante inexistente\n\nerror[E0437]: `keeping a`: o rascunho não tem um campo de lista `a`\n   --> bench/m10/runs/authoring/payments/ath/rep1/v3.ath:103:49\n    |\n103 |     let plan = refine draft by SafePlan keeping a by SafeSlot as left retry 1 else {\n    |                                                 ^ o tipo é `Plan`\n    |\n    = ajuda: `keeping` deixa de fora elementos de uma lista do plano; nomeie um campo `List[…]` do tipo do `infer`\n\nrejeitado: 7 diagnóstico(s) no estrato E0 estrutura; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 4,
+   "file": "v4.ath",
+   "tok_in": 9003,
+   "tok_out": 2009,
+   "feedback": "athc check:\nerror[P0001]: esperada uma expressão, encontrado `/`\n   --> bench/m10/runs/authoring/payments/ath/rep1/v4.ath:127:9\n    |\n127 |         // slot a\n    |         ^ aqui\n\nrejeitado: 1 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 5,
+   "file": "v5.ath",
+   "tok_in": 10689,
+   "tok_out": 1973,
+   "feedback": "athc check:\nerror[E0010]: `CancelSlot` não tem campo `_`\n  --> bench/m10/runs/authoring/payments/ath/rep1/v5.ath:83:24\n   |\n83 |           CancelSlot { _ } => 0,\n   |                        ^ campo inexistente\n\nerror[E0010]: `MarkSlot` não tem campo `_`\n  --> bench/m10/runs/authoring/payments/ath/rep1/v5.ath:84:22\n   |\n84 |           MarkSlot { _, _ } => 0\n   |                      ^ campo inexistente\n\nerror[E0010]: `MarkSlot` não tem campo `_`\n  --> bench/m10/runs/authoring/payments/ath/rep1/v5.ath:84:25\n   |\n84 |           MarkSlot { _, _ } => 0\n   |                         ^ campo inexistente\n\nerror[E0010]: `CancelSlot` não tem campo `_`\n  --> bench/m10/runs/authoring/payments/ath/rep1/v5.ath:90:24\n   |\n90 |           CancelSlot { _ } => 0,\n   |                        ^ campo inexistente\n\nerror[E0010]: `MarkSlot` não tem campo `_`\n  --> bench/m10/runs/authoring/payments/ath/rep1/v5.ath:91:22\n   |\n91 |           MarkSlot { _, _ } => 0\n   |                      ^ campo inexistente\n\nerror[E0010]: `MarkSlot` não tem campo `_`\n  --> bench/m10/runs/authoring/payments/ath/rep1/v5.ath:91:25\n   |\n91 |           MarkSlot { _, _ } => 0\n   |                         ^ campo inexistente\n\nerror[E0010]: `CancelSlot` não tem campo `_`\n  --> bench/m10/runs/authoring/payments/ath/rep1/v5.ath:97:24\n   |\n97 |           CancelSlot { _ } => 0,\n   |                        ^ campo inexistente\n\nerror[E0010]: `MarkSlot` não tem campo `_`\n  --> bench/m10/runs/authoring/payments/ath/rep1/v5.ath:98:22\n   |\n98 |           MarkSlot { _, _ } => 0\n   |                      ^ campo inexistente\n\nerror[E0010]: `MarkSlot` não tem campo `_`\n  --> bench/m10/runs/authoring/payments/ath/rep1/v5.ath:98:25\n   |\n98 |           MarkSlot { _, _ } => 0\n   |                         ^ campo inexistente\n\nrejeitado: 9 diagnóstico(s) no estrato E0 estrutura; os estratos seguintes não foram avaliados\n"
+  }
+ ],
+ "tok_in": 35170,
+ "tok_out": 12028,
+ "seconds": 29.0,
+ "usd": 0.012492
+}
