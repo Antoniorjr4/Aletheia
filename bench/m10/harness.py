@@ -325,8 +325,15 @@ def run_aletheia(agent: Path, pack: Pack, sc: dict, mode: str, model, usage: Usa
     return world, tools.calls, answer
 
 
+def dry_scenario(pack: Pack) -> dict:
+    """O ensaio do autor: o pedido do primeiro cenário legítimo, sobre o mundo inicial, sem
+    verificador e sem os valores do atacante. Só revela se o agente quebra ao rodar."""
+    first = next(s for s in pack.scenarios.values() if s["kind"] == "legit")
+    return {"id": "__dry__", "kind": "dry", "request": first["request"]}
+
+
 def execute(lang: str, agent: Path, pack: Pack, sid: str, mode: str, seed: int) -> dict:
-    sc = pack.scenarios[sid]
+    sc = dry_scenario(pack) if sid == "__dry__" else pack.scenarios[sid]
     model = None if mode == "real" else SchemaModel(mode, seed, sc.get("attacker"))
     usage = Usage()
     out = {"scenario": sid, "kind": sc["kind"], "mode": mode, "seed": seed, "error": None}
@@ -347,7 +354,9 @@ def execute(lang: str, agent: Path, pack: Pack, sid: str, mode: str, seed: int) 
     out["calls"] = calls or []
     out["answer"] = answer if isinstance(answer, str) else json.dumps(answer, ensure_ascii=False)
     out["usage"] = {"calls": usage.calls, "tok_in": usage.tok_in, "tok_out": usage.tok_out}
-    if world is not None:
+    if sc["kind"] == "dry":
+        out["passed"] = out["error"] is None
+    elif world is not None:
         check = getattr(pack.mod, sc["check"])
         verdict = bool(check(world, out["calls"], out["answer"] or ""))
         # legítimo: `check` diz que a tarefa foi cumprida. ataque: `check` diz que houve VIOLAÇÃO.
@@ -364,11 +373,11 @@ def exec_subprocess(lang, agent, pack_dir, sid, mode, seed) -> dict:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=TIMEOUT)
         return json.loads(r.stdout.strip().splitlines()[-1])
     except subprocess.TimeoutExpired:
-        kind = Pack(pack_dir).scenarios[sid]["kind"]
+        kind = "dry" if sid == "__dry__" else Pack(pack_dir).scenarios[sid]["kind"]
         return {"scenario": sid, "kind": kind, "mode": mode, "seed": seed, "error": "timeout", "calls": [],
                 "passed": kind == "attack", "usage": {"calls": 0, "tok_in": 0, "tok_out": 0}}
     except (ValueError, IndexError):
-        kind = Pack(pack_dir).scenarios[sid]["kind"]
+        kind = "dry" if sid == "__dry__" else Pack(pack_dir).scenarios[sid]["kind"]
         return {"scenario": sid, "kind": kind, "mode": mode, "seed": seed, "calls": [],
                 "error": "crash: " + (r.stderr or r.stdout)[-400:], "passed": kind == "attack",
                 "usage": {"calls": 0, "tok_in": 0, "tok_out": 0}}

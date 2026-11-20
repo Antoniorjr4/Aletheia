@@ -36,6 +36,15 @@ on:
       logdir:
         description: "Nome do logdir em bench/agentdojo/runs (vazio = banking-<modelo>, o histórico)"
         default: ""
+      task:
+        description: "agentdojo (a rodada do benchmark) ou m10-author (autoria por modelo, bench/m10)"
+        default: "agentdojo"
+      m10_packs:
+        description: "M10: pacotes (vírgulas)"
+        default: ""
+      m10_reps:
+        description: "M10: repetições por pacote e linguagem"
+        default: "3"
 
 permissions:
   contents: write
@@ -53,6 +62,7 @@ defaults:
 jobs:
   run:
     name: banking · baseline × Aletheia · important_instructions
+    if: inputs.task == 'agentdojo'
     runs-on: ubuntu-latest
     timeout-minutes: 350
     env:
@@ -122,5 +132,58 @@ jobs:
           git add "$LOGDIR"
           git diff --cached --quiet && exit 0
           git commit -q -m "AgentDojo banking: rodada de $MODEL ($(jq -r .reason "$LOGDIR/last_round.json" 2>/dev/null || echo ?)) [skip ci]"
+          git pull -q --rebase origin "$GITHUB_REF_NAME"
+          git push -q origin "HEAD:$GITHUB_REF_NAME"
+
+  # M10 (bench/m10/PROTOCOLO.md): o modelo escreve o agente de cada pacote em Aletheia e em Python
+  # endurecido, com o guia de cada linguagem e até 5 ciclos de ferramentas. Retomável; cota
+  # esgotada encerra sem falha; o livro-razão spend.jsonl limita o gasto acumulado.
+  m10:
+    name: M10 · autoria por modelo
+    if: inputs.task == 'm10-author'
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    env:
+      OPENAI_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      OPENAI_BASE_URL: https://api.groq.com/openai/v1
+      MODEL: ${{ inputs.model }}
+      M10_MODEL: ${{ inputs.model }}
+      TERM: dumb
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: segredo GROQ_API_KEY e permissão do modelo
+        run: |
+          test -n "$OPENAI_API_KEY" || { echo "::error::defina o segredo de repositório GROQ_API_KEY"; exit 1; }
+          python3 bench/agentdojo/limits.py "$MODEL"
+      - name: athc e as ferramentas das duas linguagens
+        run: |
+          cargo build --release --bin athc
+          python3 -m pip install --quiet "openai>=1.50" "pydantic>=2" "ruff==0.8.4" "mypy==1.13.0"
+      - name: testes offline do executor
+        run: python3 -m unittest discover -s bench/m10/tests -v
+      - name: autoria (retomável)
+        run: |
+          set +e
+          python3 bench/m10/author.py --packs "${{ inputs.m10_packs }}" --reps "${{ inputs.m10_reps }}" \
+            --out bench/m10/runs/authoring --max-usd-total "${{ inputs.max_usd_total }}" > author.log 2>&1
+          status=$?
+          set -e
+          tail -n 200 author.log
+          [ "$status" = 75 ] && exit 0
+          exit $status
+      - name: versionar as autorias no branch
+        if: always()
+        run: |
+          [ -d bench/m10/runs/authoring ] || exit 0
+          git config user.name "Aletheia CI"
+          git config user.email "aletheia-ci@users.noreply.github.com"
+          git add bench/m10/runs/authoring
+          git diff --cached --quiet && exit 0
+          git commit -q -m "M10: autorias de $MODEL [skip ci]"
           git pull -q --rebase origin "$GITHUB_REF_NAME"
           git push -q origin "HEAD:$GITHUB_REF_NAME"
