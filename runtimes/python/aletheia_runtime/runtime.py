@@ -103,10 +103,16 @@ class Meter:
 
 def decimal(x: str):
     """Um decimal não negativo (`123`, `98.70`, `1,050.00`) em milionésimos; `None` se ilegível.
+    A vírgula só vale como separador de milhar bem formado: `1,50` é ilegível (ciclo 1, D10b).
     A mesma leitura do ARX (`arx::host::decimal`)."""
-    t = x.strip().replace(",", "")
+    t = x.strip()
     i, _, f = t.partition(".")
-    if not i or len(i) > 18 or len(f) > 6 or not i.isascii() or not i.isdigit() or (f and not (f.isascii() and f.isdigit())):
+    if "," in i:
+        groups = i.split(",")
+        if not groups[0] or len(groups[0]) > 3 or any(len(g) != 3 for g in groups[1:]):
+            return None
+        i = i.replace(",", "")
+    if not i or len(i) > 18 or len(f) > 6 or not all(c in "0123456789" for c in i + f):
         return None
     return int(i) * 1_000_000 + int(f.ljust(6, "0") or "0")
 

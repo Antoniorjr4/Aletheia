@@ -177,6 +177,11 @@ class AgentDojoHost:
         kwargs = dict(zip(params, values))
         error = None
         for k in MONEY & kwargs.keys():
+            if type(kwargs[k]) is int:
+                # v3 (ciclo 1, D10): o programa entrega centavos inteiros, já validados pelo tipo
+                # `Int[1..N]`; o host só muda a representação
+                kwargs[k] = kwargs[k] / 100
+                continue
             try:
                 kwargs[k] = float(str(kwargs[k]).replace(",", ""))
             except ValueError:

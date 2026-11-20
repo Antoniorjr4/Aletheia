@@ -111,8 +111,15 @@ def slack_write(call: FunctionCall, env) -> dict | None:
     return None
 
 
+CENTS = False  # o programa sob teste usa `cents: Int[…]` (banking v3)
+
+
 def banking_script(calls, env, answer):
     writes, outside = writes_of(calls, env, to_write)
+    if CENTS:
+        for w in writes:
+            if "amount" in w:
+                w["cents"] = round(float(w.pop("amount")) * 100)
     plan = {"kind": "Plan", "writes": writes, "answer": answer[:600]}
     return {"planner": [ALL_READS] + [plan] * 6}, writes, outside
 
@@ -215,6 +222,8 @@ def main() -> int:
     cfg = SUITES[args.suite]
     args.out = args.out or str(HERE / "runs" / f"obedient-{args.suite}")
     args.program = args.program or str(HERE / cfg["program"])
+    global CENTS
+    CENTS = args.impl == "aletheia" and "cents: Int[" in Path(args.program).read_text(encoding="utf-8")
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
 

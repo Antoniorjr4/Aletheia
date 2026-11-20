@@ -100,3 +100,19 @@ autorização no momento. Nenhum merge sem autorização.
 - M10: pré-registro em [bench/m10/PROTOCOLO.md](../bench/m10/PROTOCOLO.md). A escolha do modelo
   autor fica antes da etapa 1.
 - Workflow pago: o pipeline histórico usa o compilador histórico; sem ele, `run.py` recusa.
+
+**19/11 — sala de guerra; orçamento Groq de US$ 1,00 autorizado.**
+
+- **D10b corrigido.** Antes: `decimal("1,50")` = 150, `"12,34"` = 1234, `"1,2,3"` = 123, `",5"` = 5.
+  Agora a vírgula só vale como separador de milhar bem formado (`1,050.00`), e o resto é ilegível
+  (falha fechado em `s.within` e `s.binds`). Mesma leitura nos dois runtimes, com teste em cada um.
+- **D10 adotado sem construção nova:** `bench/agentdojo/banking_v3_keeping.ath`, com
+  `cents: Int[1..100000000]` no lugar de `amount: Text[..16]`. `tests/test_v3_cents.py`: 11 valores
+  hostis (0, negativo, acima do limite, 10^30, texto, vírgula decimal, fração, nulo, booleano,
+  lista, objeto) são recusados pelo tipo antes da política, sem efeito; valores válidos chegam à
+  função oficial com o valor exato; o modelo obediente dá os mesmos números do v2 (0/144 ataques,
+  125/144, 14/16).
+- **Rodada paga do ciclo** (logdir `banking-ciclo1-openai-gpt-oss-120b`, teto acumulado US$ 0,25):
+  `aletheia@banking_v2_keeping` (runtime corrigido: mede D9/D12), `aletheia@banking_v3_keeping`
+  (mede a utilidade dos centavos) e `hardened:keeping` (P1), pareados, na suíte inteira. Estimativa:
+  480 execuções × ~1.850 tokens ≈ 890 mil tokens ≈ US$ 0,20, em 3 janelas do limite diário de 400 mil.

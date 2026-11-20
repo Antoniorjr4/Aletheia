@@ -32,6 +32,7 @@ LABELS = {
     "aletheia-v2-strict-gpt-oss-120b": "Aletheia v2 strict",
     "aletheia-v2-keeping-gpt-oss-120b": "Aletheia v2 keeping",
     "hardened-keeping-gpt-oss-120b": "P1 Python endurecido (keeping)",
+    "aletheia-v3-keeping-gpt-oss-120b": "Aletheia v3 keeping (centavos)",
 }
 
 
@@ -74,6 +75,9 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("logdir")
     ap.add_argument("--baseline", default=None)
+    ap.add_argument("--pipelines", default="aletheia-v2-strict,aletheia-v2-keeping,hardened-keeping",
+                    help="pipelines do logdir (sem o sufixo do modelo), na ordem")
+    ap.add_argument("--title", default="banking · Strict × Keeping × P1 (16/11/2026)")
     a = ap.parse_args()
     logdir = Path(a.logdir)
     from agentdojo.task_suite.load_suites import get_suite
@@ -81,7 +85,7 @@ def main() -> int:
     suite = get_suite("v1.2.2", SUITE)
     uts = sorted(suite.user_tasks, key=lambda k: int(k.rsplit("_", 1)[1]))
     injs = sorted(suite.injection_tasks, key=lambda k: int(k.rsplit("_", 1)[1]))
-    pipes = ["aletheia-v2-strict-gpt-oss-120b", "aletheia-v2-keeping-gpt-oss-120b", "hardened-keeping-gpt-oss-120b"]
+    pipes = [f"{x}-gpt-oss-120b" for x in a.pipelines.split(",")]
     data = {p: load(logdir, p, SUITE, ATTACK, uts, injs) for p in pipes}
     if a.baseline:
         data["baseline-gpt-oss-120b"] = load(Path(a.baseline), "baseline-gpt-oss-120b", SUITE, ATTACK, uts, injs)
@@ -113,7 +117,7 @@ def main() -> int:
             out["paired"].append({"a": x, "b": y, "metric": name, "only_a": only_x, "only_b": only_y,
                                   "p": round(mcnemar_exact(only_x, only_y), 4)})
     (logdir / "compare.json").write_text(json.dumps(out, ensure_ascii=False, indent=1))
-    md = render(out, order)
+    md = render(out, order, a.title)
     (logdir / "compare.md").write_text(md)
     print(md)
     return 0
@@ -123,9 +127,9 @@ def pct(r):
     return f"{100 * r['k'] / r['n']:.1f}% ({r['k']}/{r['n']}; IC95 {100 * r['lo']:.0f}–{100 * r['hi']:.0f}%)" if r["n"] else "—"
 
 
-def render(o, order):
+def render(o, order, title):
     c = o["coverage"]
-    lines = ["# banking · Strict × Keeping × P1 (16/11/2026)", "",
+    lines = [f"# {title}", "",
              f"Pares completos em todos os pipelines: {c['benign']}/16 sem ataque · {c['attacked']}/144 sob ataque.", "",
              "| pipeline | utilidade | utilidade sob ataque | ASR | tokens/execução | US$/execução |",
              "| --- | --- | --- | --- | --- | --- |"]

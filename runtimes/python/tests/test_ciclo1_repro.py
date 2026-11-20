@@ -42,6 +42,15 @@ class Ciclo1Repro(unittest.TestCase):
     def test_d12_a_mensagem_de_sistema_e_neutra(self):
         self.assertNotIn("Aletheia", providers.SYSTEM, "D12: a mensagem de sistema cita a linguagem")
 
+    def test_d10b_a_virgula_so_vale_como_separador_de_milhar(self):
+        from aletheia_runtime.runtime import decimal
+
+        self.assertEqual(decimal("1,050.00"), 1_050_000_000)
+        self.assertEqual(decimal("1,000,000"), 1_000_000_000_000)
+        self.assertEqual(decimal("98.70"), 98_700_000)
+        for bad in ["1,50", "12,34", "1,2,3", ",5", "1,0000", "0,5", "1,", "1234,567", "-1", "nan", "1e3", "٣", ""]:
+            self.assertIsNone(decimal(bad), bad)
+
 
 if __name__ == "__main__":
     unittest.main()

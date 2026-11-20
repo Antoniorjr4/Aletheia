@@ -57,6 +57,7 @@ jobs:
           cargo build --release --bin athc
           ./target/release/athc check bench/agentdojo/banking_v2_strict.ath
           ./target/release/athc check bench/agentdojo/banking_v2_keeping.ath
+          ./target/release/athc check bench/agentdojo/banking_v3_keeping.ath
           ./target/release/athc check bench/agentdojo/slack.ath
           python3 -m pip install --quiet "agentdojo==0.1.35"
       # Ciclo 1: os programas medidos antes das correções (D1) são verificados com o compilador

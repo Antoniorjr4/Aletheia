@@ -21,8 +21,20 @@ pub struct TrustedSnapshot {
 /// Um decimal não negativo (`123`, `98.70`, `1,050.00`) em milionésimos; `None` se ilegível.
 /// O runtime Python usa a mesma leitura (`aletheia_runtime.runtime.decimal`).
 pub fn decimal(x: &str) -> Option<i128> {
-    let t: String = x.trim().chars().filter(|&ch| ch != ',').collect();
-    let (int, frac) = t.split_once('.').unwrap_or((&t, ""));
+    let t = x.trim();
+    let (int, frac) = t.split_once('.').unwrap_or((t, ""));
+    // Ciclo 1, D10b: a vírgula só vale como separador de milhar bem formado (`1,050.00`). Antes,
+    // toda vírgula era descartada, e `1,50` (vírgula decimal) era lido como 150.
+    let int: String = if int.contains(',') {
+        let mut groups = int.split(',');
+        let first = groups.next()?;
+        if first.is_empty() || first.len() > 3 || !groups.clone().all(|g| g.len() == 3) {
+            return None;
+        }
+        int.replace(',', "")
+    } else {
+        int.to_string()
+    };
     if int.is_empty() || int.len() > 18 || frac.len() > 6 {
         return None;
     }
@@ -543,5 +555,22 @@ impl Host for SimWorld {
             s.push(format!("pager ← {m:?}"));
         }
         s
+    }
+}
+
+#[cfg(test)]
+mod decimal_tests {
+    use super::decimal;
+
+    /// Ciclo 1, D10b. Antes da correção: `1,50` → 150, `12,34` → 1234, `1,2,3` → 123.
+    #[test]
+    fn a_virgula_so_vale_como_separador_de_milhar() {
+        assert_eq!(decimal("1,050.00"), Some(1_050_000_000));
+        assert_eq!(decimal("1,000,000"), Some(1_000_000_000_000));
+        assert_eq!(decimal("98.70"), Some(98_700_000));
+        assert_eq!(decimal("12"), Some(12_000_000));
+        for bad in ["1,50", "12,34", "1,2,3", ",5", "1,0000", "0,5", "1,", "1234,567", "-1", "nan", "1e3", "٣", ""] {
+            assert_eq!(decimal(bad), None, "{bad:?}");
+        }
     }
 }
