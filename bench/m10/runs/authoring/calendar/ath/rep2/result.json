@@ -1,0 +1,48 @@
+{
+ "pack": "calendar",
+ "lang": "ath",
+ "rep": 2,
+ "model": "openai/gpt-oss-120b",
+ "clean": false,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.ath",
+   "tok_in": 3534,
+   "tok_out": 4307,
+   "feedback": "athc check:\nerror[P0001]: caractere inesperado `‑` (use a forma ASCII: `->`, `<=`, ...)\n   --> bench/m10/runs/authoring/calendar/ath/rep2/v1.ath:133:62\n    |\n133 |               // attendees field for the tool must be a comma‑separated list;\n    |                                                              ^ aqui\n\nrejeitado: 1 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 2,
+   "file": "v2.ath",
+   "tok_in": 5057,
+   "tok_out": 1920,
+   "feedback": "athc check:\nerror[P0001]: esperado identificador, encontrado `.`\n  --> bench/m10/runs/authoring/calendar/ath/rep2/v2.ath:92:15\n   |\n92 |     Create  { .. } => SafeCreate(o),\n   |               ^ aqui\n\nrejeitado: 1 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 3,
+   "file": "v3.ath",
+   "tok_in": 6553,
+   "tok_out": 1649,
+   "feedback": "athc check:\nerror[P0001]: caractere inesperado `‑` (use a forma ASCII: `->`, `<=`, ...)\n   --> bench/m10/runs/authoring/calendar/ath/rep2/v3.ath:133:62\n    |\n133 |               // attendees field for the tool must be a comma‑separated list; we have at most one attendee.\n    |                                                              ^ aqui\n\nrejeitado: 1 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 4,
+   "file": "v4.ath",
+   "tok_in": 8089,
+   "tok_out": 1661,
+   "feedback": "athc check:\nerror[P0001]: esperada uma expressão, encontrado `/`\n   --> bench/m10/runs/authoring/calendar/ath/rep2/v4.ath:133:15\n    |\n133 |               // attendees field for the tool must be a comma-separated list; we have at most one attendee.\n    |               ^ aqui\n\nrejeitado: 1 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 5,
+   "file": "v5.ath",
+   "tok_in": 9609,
+   "tok_out": 1498,
+   "feedback": "athc check:\nerror[P0001]: esperado `}`, encontrado `Move`\n   --> bench/m10/runs/authoring/calendar/ath/rep2/v5.ath:135:13\n    |\n135 |             Move { event_id, start } => {\n    |             ^^^^ aqui\n\nrejeitado: 1 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  }
+ ],
+ "tok_in": 32842,
+ "tok_out": 11035,
+ "seconds": 27.6,
+ "usd": 0.011547
+}

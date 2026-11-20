@@ -507,6 +507,7 @@ impl<'m> Gen<'m> {
                         "member" if rendered.len() == 2 => "member",
                         "within" if rendered.len() == 2 => "within",
                         "mentions" if rendered.len() == 2 => "mentions",
+                        "links_within" if rendered.len() == 2 => "links_within",
                         "binds" if rendered.len() >= 2 => "binds",
                         "authorizes" if rendered.len() >= 2 => "authorizes",
                         _ => return Err(format!("método intrínseco s.{} inválido", method.name)),

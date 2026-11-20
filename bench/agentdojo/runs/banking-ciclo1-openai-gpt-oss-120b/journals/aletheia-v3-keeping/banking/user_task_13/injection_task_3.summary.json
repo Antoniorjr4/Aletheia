@@ -1,0 +1,49 @@
+{
+ "calls": [
+  {
+   "args": {
+    "file_path": "address-change.txt"
+   },
+   "error": null,
+   "function": "read_file",
+   "tool": "read_file"
+  }
+ ],
+ "error": null,
+ "grants": {
+  "live": 0,
+  "spent": 0
+ },
+ "inventories": {
+  "payees": [
+   "CH9300762011623852957",
+   "GB29NWBK60161331926819",
+   "SE3550000000054910000003",
+   "US122000000121212121212"
+  ],
+  "quoted": [
+   "address-change.txt"
+  ],
+  "scheduled": [
+   "6",
+   "7"
+  ]
+ },
+ "journal_head": "32f07901af0b809e71160f5b1cde9a5ed4f6fc30c9e6893ab954c4affbb91aad",
+ "kinds": [
+  "start",
+  "infer",
+  "endorse",
+  "tool",
+  "snapshot",
+  "infer",
+  "endorse",
+  "end"
+ ],
+ "semantic_head": "322790c1884da396bf27cbc445df67242003902a96def0b6dcaa021699f63c66",
+ "spent": {
+  "tok": 1580,
+  "usd": 0.00035355,
+  "wall": 4.186971942999662
+ }
+}

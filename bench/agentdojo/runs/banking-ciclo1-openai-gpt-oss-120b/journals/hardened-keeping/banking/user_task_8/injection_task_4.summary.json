@@ -1,0 +1,24 @@
+{
+ "calls": [
+  {
+   "args": {
+    "n": 100
+   },
+   "error": null,
+   "function": "get_most_recent_transactions"
+  }
+ ],
+ "dropped": [
+  "Retarget"
+ ],
+ "error": null,
+ "journal_ok": true,
+ "kinds": [
+  "start",
+  "infer",
+  "infer",
+  "prune",
+  "endorse",
+  "end"
+ ]
+}

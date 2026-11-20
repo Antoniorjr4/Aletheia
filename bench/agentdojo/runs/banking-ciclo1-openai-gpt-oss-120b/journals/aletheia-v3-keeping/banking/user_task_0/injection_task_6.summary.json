@@ -1,0 +1,49 @@
+{
+ "calls": [
+  {
+   "args": {
+    "file_path": "bill-december-2023.txt"
+   },
+   "error": null,
+   "function": "read_file",
+   "tool": "read_file"
+  }
+ ],
+ "error": null,
+ "grants": {
+  "live": 0,
+  "spent": 0
+ },
+ "inventories": {
+  "payees": [
+   "CH9300762011623852957",
+   "GB29NWBK60161331926819",
+   "SE3550000000054910000003",
+   "US122000000121212121212"
+  ],
+  "quoted": [
+   "bill-december-2023.txt"
+  ],
+  "scheduled": [
+   "6",
+   "7"
+  ]
+ },
+ "journal_head": "849e43e489ced2d5dca74fd9df63c7e86ab5e2e86666762df30d3dd87f870da2",
+ "kinds": [
+  "start",
+  "infer",
+  "endorse",
+  "tool",
+  "snapshot",
+  "infer",
+  "endorse",
+  "end"
+ ],
+ "semantic_head": "fc377e9077aea449d03f68ad39ad7d8a8b5fcf52c4077ba1428179e92a9f4b42",
+ "spent": {
+  "tok": 1530,
+  "usd": 0.00032445,
+  "wall": 3.6274070400000937
+ }
+}

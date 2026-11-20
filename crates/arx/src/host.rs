@@ -21,8 +21,20 @@ pub struct TrustedSnapshot {
 /// Um decimal não negativo (`123`, `98.70`, `1,050.00`) em milionésimos; `None` se ilegível.
 /// O runtime Python usa a mesma leitura (`aletheia_runtime.runtime.decimal`).
 pub fn decimal(x: &str) -> Option<i128> {
-    let t: String = x.trim().chars().filter(|&ch| ch != ',').collect();
-    let (int, frac) = t.split_once('.').unwrap_or((&t, ""));
+    let t = x.trim();
+    let (int, frac) = t.split_once('.').unwrap_or((t, ""));
+    // Ciclo 1, D10b: a vírgula só vale como separador de milhar bem formado (`1,050.00`). Antes,
+    // toda vírgula era descartada, e `1,50` (vírgula decimal) era lido como 150.
+    let int: String = if int.contains(',') {
+        let mut groups = int.split(',');
+        let first = groups.next()?;
+        if first.is_empty() || first.len() > 3 || !groups.clone().all(|g| g.len() == 3) {
+            return None;
+        }
+        int.replace(',', "")
+    } else {
+        int.to_string()
+    };
     if int.is_empty() || int.len() > 18 || frac.len() > 6 {
         return None;
     }
@@ -36,7 +48,60 @@ pub fn decimal(x: &str) -> Option<i128> {
     Some(v)
 }
 
+/// Os bytes que continuam um link: letras e dígitos ASCII e a pontuação de URL (RFC 3986).
+fn is_link_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b"-._~/:?#[]@!$&'()*+,;=%".contains(&b)
+}
+
+/// **Gramática G (ciclo 1, D2).** As ocorrências de link em `text`: cada trecho máximo de bytes
+/// de link que começa em `http://` ou `https://` (em qualquer posição, sem diferenciar maiúsculas)
+/// ou em `www.` não precedido de letra ou dígito ASCII. Idêntico a `links` do runtime Python.
+pub fn links(text: &str) -> Vec<&str> {
+    let b = text.as_bytes();
+    let starts = |i: usize, p: &[u8]| b.len() >= i + p.len() && b[i..i + p.len()].eq_ignore_ascii_case(p);
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < b.len() {
+        let scheme = starts(i, b"http://") || starts(i, b"https://");
+        let www = starts(i, b"www.") && (i == 0 || !b[i - 1].is_ascii_alphanumeric());
+        if !(scheme || www) {
+            i += 1;
+            continue;
+        }
+        let mut j = i;
+        while j < b.len() && is_link_byte(b[j]) {
+            j += 1;
+        }
+        out.push(&text[i..j]);
+        i = j;
+    }
+    out
+}
+
+/// A forma canônica de um link para comparação: minúsculas ASCII, sem o esquema, sem pontuação
+/// nem barra no fim. Idêntico a `normalize_link` do runtime Python.
+pub fn normalize_link(link: &str) -> String {
+    let l = link.to_ascii_lowercase();
+    let l = l.strip_prefix("https://").or_else(|| l.strip_prefix("http://")).unwrap_or(&l);
+    l.trim_end_matches(['.', ',', ';', ':', '!', '?', ')', ']', '}', '\'', '"', '/']).to_string()
+}
+
 impl TrustedSnapshot {
+    /// `s.links_within("k", texto)`: todo link na forma G dentro de `texto` está no inventário
+    /// confiável `k` (comparação pela forma canônica). Sem link, é verdadeiro. Um link que se
+    /// reduz a vazio (`http://`) nunca pertence: falha fechado.
+    pub fn links_within(&self, name: &str, text: &str) -> bool {
+        let allowed: Vec<String> = self
+            .inventories
+            .get(name)
+            .map(|v| v.iter().map(|u| normalize_link(u)).filter(|u| !u.is_empty()).collect())
+            .unwrap_or_default();
+        links(text).iter().all(|l| {
+            let n = normalize_link(l);
+            !n.is_empty() && allowed.contains(&n)
+        })
+    }
+
     pub fn inventory_text(&self, name: &str) -> String {
         self.inventories.get(name).map(|v| v.join(", ")).unwrap_or_default()
     }
@@ -543,5 +608,50 @@ impl Host for SimWorld {
             s.push(format!("pager ← {m:?}"));
         }
         s
+    }
+}
+
+#[cfg(test)]
+mod decimal_tests {
+    use super::decimal;
+
+    /// Ciclo 1, D10b. Antes da correção: `1,50` → 150, `12,34` → 1234, `1,2,3` → 123.
+    #[test]
+    fn a_virgula_so_vale_como_separador_de_milhar() {
+        assert_eq!(decimal("1,050.00"), Some(1_050_000_000));
+        assert_eq!(decimal("1,000,000"), Some(1_000_000_000_000));
+        assert_eq!(decimal("98.70"), Some(98_700_000));
+        assert_eq!(decimal("12"), Some(12_000_000));
+        for bad in ["1,50", "12,34", "1,2,3", ",5", "1,0000", "0,5", "1,", "1234,567", "-1", "nan", "1e3", "٣", ""] {
+            assert_eq!(decimal(bad), None, "{bad:?}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod links_tests {
+    use super::*;
+
+    /// Os mesmos vetores do runtime Python (examples/fixtures/links_within.json).
+    #[test]
+    fn vetores_compartilhados() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../examples/fixtures/links_within.json");
+        let cases: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let cases = cases["cases"].as_array().unwrap();
+        assert!(cases.len() >= 40);
+        for c in cases {
+            let inv: Vec<String> =
+                c["urls"].as_array().unwrap().iter().map(|x| x.as_str().unwrap().to_string()).collect();
+            let snap = TrustedSnapshot {
+                inventories: [("urls".to_string(), inv)].into_iter().collect(),
+                ..Default::default()
+            };
+            let text = c["text"].as_str().unwrap();
+            let found: Vec<String> = links(text).iter().map(|l| normalize_link(l)).collect();
+            let want: Vec<String> =
+                c["links"].as_array().unwrap().iter().map(|x| x.as_str().unwrap().to_string()).collect();
+            assert_eq!(found, want, "links de {text:?}");
+            assert_eq!(snap.links_within("urls", text), c["ok"].as_bool().unwrap(), "{text:?}");
+        }
     }
 }

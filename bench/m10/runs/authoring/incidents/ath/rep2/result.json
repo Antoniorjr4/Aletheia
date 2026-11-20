@@ -1,0 +1,27 @@
+{
+ "pack": "incidents",
+ "lang": "ath",
+ "rep": 2,
+ "model": "openai/gpt-oss-120b",
+ "clean": true,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.ath",
+   "tok_in": 3494,
+   "tok_out": 3675,
+   "feedback": "athc check:\nerror[B0110]: contagem de tokens ilimitada no prompt\n  --> bench/m10/runs/authoring/incidents/ath/rep2/v1.ath:81:18\n   |\n81 |       overview = overview,\n   |                  ^^^^^^^^ `Text` sem limite superior\n   |\n   = ajuda: limite com `fit(x, N)`: estouro de janela é erro de compilação, nunca truncamento silencioso\n\nrejeitado: 1 diagnóstico(s) no estrato E6 orçamento\n"
+  },
+  {
+   "cycle": 2,
+   "file": "v2.ath",
+   "tok_in": 4749,
+   "tok_out": 2004,
+   "feedback": ""
+  }
+ ],
+ "tok_in": 8243,
+ "tok_out": 5679,
+ "seconds": 12.7,
+ "usd": 0.004644
+}

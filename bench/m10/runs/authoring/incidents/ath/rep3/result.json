@@ -1,0 +1,20 @@
+{
+ "pack": "incidents",
+ "lang": "ath",
+ "rep": 3,
+ "model": "openai/gpt-oss-120b",
+ "clean": true,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.ath",
+   "tok_in": 3494,
+   "tok_out": 3510,
+   "feedback": ""
+  }
+ ],
+ "tok_in": 3494,
+ "tok_out": 3510,
+ "seconds": 8.1,
+ "usd": 0.00263
+}

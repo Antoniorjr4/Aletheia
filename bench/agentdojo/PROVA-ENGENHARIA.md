@@ -234,6 +234,8 @@ linguagem nos dois lados.
 
 ## 2. Diagnóstico das limitações (antes de propor mudança no Core)
 
+> **Ciclo 1 (17/11/2026):** D1, D9 e D12 foram corrigidos, com reprodução antes e teste positivo depois. Ver [docs/CICLO-1.md](../../docs/CICLO-1.md). As medições deste documento foram feitas com o compilador anterior (`ef0506f`), reprodutível com `scripts/historico.sh`.
+
 Categorias da diretiva: **P** política inadequada · **F** falta de dados confiáveis ·
 **X** limitação de expressividade · **I** implementação defeituosa · **R** garantia
 deliberadamente restritiva · **A** artefato do benchmark.

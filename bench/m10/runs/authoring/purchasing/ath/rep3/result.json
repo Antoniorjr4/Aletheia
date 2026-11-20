@@ -1,0 +1,48 @@
+{
+ "pack": "purchasing",
+ "lang": "ath",
+ "rep": 3,
+ "model": "openai/gpt-oss-120b",
+ "clean": true,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.ath",
+   "tok_in": 3385,
+   "tok_out": 4188,
+   "feedback": "athc check:\nerror[P0001]: esperado identificador, encontrado `budget`\n  --> bench/m10/runs/authoring/purchasing/ath/rep3/v1.ath:80:7\n   |\n80 |       budget = s.inventory(\"budget_cents\"),\n   |       ^^^^^^ aqui\n\nrejeitado: 1 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 2,
+   "file": "v2.ath",
+   "tok_in": 4695,
+   "tok_out": 1878,
+   "feedback": "athc check:\nerror[P0001]: esperada uma expressão, encontrado `)`\n  --> bench/m10/runs/authoring/purchasing/ath/rep3/v2.ath:89:21\n   |\n89 |           Empty => (),\n   |                     ^ aqui\n\nrejeitado: 1 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 3,
+   "file": "v3.ath",
+   "tok_in": 5999,
+   "tok_out": 1886,
+   "feedback": "athc check:\nerror[E0012]: `match` não exaustivo\n  --> bench/m10/runs/authoring/purchasing/ath/rep3/v3.ath:64:9\n   |\n64 |         (match a { Empty => 0, Order { quantity } => quantity, _ => 0 })\n   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ faltam: Cancel, Approve\n\nerror[E0009]: `_` não é variante de `Slot`\n  --> bench/m10/runs/authoring/purchasing/ath/rep3/v3.ath:64:64\n   |\n64 |         (match a { Empty => 0, Order { quantity } => quantity, _ => 0 })\n   |                                                                ^ variante inexistente\n\nerror[E0012]: `match` não exaustivo\n  --> bench/m10/runs/authoring/purchasing/ath/rep3/v3.ath:65:11\n   |\n65 |         + (match b { Empty => 0, Order { quantity } => quantity, _ => 0 })\n   |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ faltam: Cancel, Approve\n\nerror[E0009]: `_` não é variante de `Slot`\n  --> bench/m10/runs/authoring/purchasing/ath/rep3/v3.ath:65:66\n   |\n65 |         + (match b { Empty => 0, Order { quantity } => quantity, _ => 0 })\n   |                                                                  ^ variante inexistente\n\nerror[E0012]: `match` não exaustivo\n  --> bench/m10/runs/authoring/purchasing/ath/rep3/v3.ath:66:11\n   |\n66 |         + (match c { Empty => 0, Order { quantity } => quantity, _ => 0 })\n   |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ faltam: Cancel, Approve\n\nerror[E0009]: `_` não é variante de `Slot`\n  --> bench/m10/runs/authoring/purchasing/ath/rep3/v3.ath:66:66\n   |\n66 |         + (match c { Empty => 0, Order { quantity } => quantity, _ => 0 })\n   |                                                                  ^ variante inexistente\n\nrejeitado: 6 diagnóstico(s) no estrato E0 estrutura; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 4,
+   "file": "v4.ath",
+   "tok_in": 7749,
+   "tok_out": 1632,
+   "feedback": "athc check:\nerror[P0001]: esperada uma expressão, encontrado `)`\n   --> bench/m10/runs/authoring/purchasing/ath/rep3/v4.ath:107:21\n    |\n107 |           Empty => ()\n    |                     ^ aqui\n\nrejeitado: 1 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 5,
+   "file": "v5.ath",
+   "tok_in": 9122,
+   "tok_out": 1505,
+   "feedback": ""
+  }
+ ],
+ "tok_in": 30950,
+ "tok_out": 11089,
+ "seconds": 26.4,
+ "usd": 0.011296
+}

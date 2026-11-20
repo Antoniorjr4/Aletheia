@@ -1,0 +1,48 @@
+{
+ "pack": "payments",
+ "lang": "ath",
+ "rep": 3,
+ "model": "openai/gpt-oss-120b",
+ "clean": true,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.ath",
+   "tok_in": 3512,
+   "tok_out": 3396,
+   "feedback": "athc check:\nerror[P0001]: esperada uma expressão, encontrado `let`\n  --> bench/m10/runs/authoring/payments/ath/rep3/v1.ath:73:7\n   |\n73 |       let total = \n   |       ^^^ aqui\n\nrejeitado: 1 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 2,
+   "file": "v2.ath",
+   "tok_in": 4962,
+   "tok_out": 3278,
+   "feedback": "athc check:\nerror[P0001]: esperado identificador, encontrado `[`\n  --> bench/m10/runs/authoring/payments/ath/rep3/v2.ath:83:9\n   |\n83 |         [] => true,\n   |         ^ aqui\n\nrejeitado: 1 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 3,
+   "file": "v3.ath",
+   "tok_in": 6449,
+   "tok_out": 1562,
+   "feedback": "athc check:\nerror[E0012]: `match` não exaustivo\n  --> bench/m10/runs/authoring/payments/ath/rep3/v3.ath:77:9\n   |\n77 |         (match o {\n   |         ^^^^^^^^^^ faltam: Cancel, Mark\n\nerror[E0009]: `_` não é variante de `Op`\n  --> bench/m10/runs/authoring/payments/ath/rep3/v3.ath:80:11\n   |\n80 |           _ => true\n   |           ^ variante inexistente\n\nrejeitado: 2 diagnóstico(s) no estrato E0 estrutura; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 4,
+   "file": "v4.ath",
+   "tok_in": 7801,
+   "tok_out": 1679,
+   "feedback": "athc check:\nerror[E0422]: descompasso entre o inventário confiável e a política\n   --> bench/m10/runs/authoring/payments/ath/rep3/v4.ath:101:32\n    |\n101 |     let plan = refine draft by SafePlan retry 1 else {\n    |                                ^^^^^^^^ o prompt recebe `s.managed()`, mas `SafePlan` compara com literais de texto\n    |\n    = ajuda: decida pela mesma fotografia: `s.is_managed(x)` no lugar de `x == \"…\"`\n\nrejeitado: 1 diagnóstico(s) no estrato E3 integridade e confidencialidade; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 5,
+   "file": "v5.ath",
+   "tok_in": 9168,
+   "tok_out": 1815,
+   "feedback": ""
+  }
+ ],
+ "tok_in": 31892,
+ "tok_out": 11730,
+ "seconds": 28.6,
+ "usd": 0.011822
+}

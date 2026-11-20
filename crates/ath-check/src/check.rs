@@ -74,7 +74,7 @@ fn compares_text_literal(e: &Expr) -> bool {
 }
 
 /// Os inventários confiáveis em que a política decide: `s.is_managed`/`s.scale_justified`
-/// decidem pelo inventário `managed`; `s.member("k", x)`, pelo inventário `k`.
+/// decidem pelo inventário `managed`; `s.member("k", x)` e `s.links_within("k", t)`, pelo inventário `k`.
 fn policy_inventories(e: &Expr) -> BTreeSet<String> {
     let found = std::cell::RefCell::new(BTreeSet::new());
     expr_any(e, &|x| {
@@ -82,7 +82,7 @@ fn policy_inventories(e: &Expr) -> BTreeSet<String> {
             (Some("is_managed" | "scale_justified"), _) => {
                 found.borrow_mut().insert("managed".to_string());
             }
-            (Some("member"), ExprKind::Method { args, .. }) => {
+            (Some("member" | "links_within"), ExprKind::Method { args, .. }) => {
                 if let Some(Expr { kind: ExprKind::Str(k), .. }) = args.first() {
                     found.borrow_mut().insert(k.clone());
                 }
@@ -2043,7 +2043,10 @@ impl<'m> Ctx<'m> {
                     }
                     return LTy::trusted(Ty::Bool);
                 }
-                "inventory" | "member" | "within" | "mentions" | "binds" | "authorizes" => {
+                "inventory" | "member" | "within" | "mentions" | "links_within" | "binds" | "authorizes" => {
+                    // `s.links_within("k", texto)` (ciclo 1, D2): toda ocorrência de link na forma G
+                    // (`http://`, `https://`, `www.`) dentro de `texto` pertence ao inventário
+                    // confiável `k`. Propriedade sintática; não é detecção de phishing.
                     // `s.within("k", x)`: `x` (decimal) ≤ o limite confiável `k`; `s.mentions("k", x)`:
                     // `x` aparece literalmente num texto confiável `k` (Rev12, contratos `requires`);
                     // `s.binds("r", x1, …, xn)`: a tupla é uma linha da relação confiável `r` (Rev13:
@@ -2104,9 +2107,11 @@ impl<'m> Ctx<'m> {
                             .help("escreva `s.inventory(\"nome\")`: o nome do inventário não pode vir de dado"),
                         );
                     }
+                    let text_only = method.name == "links_within";
                     for (i, arg) in args.iter().enumerate() {
                         let t = self.expr(arg);
-                        if i >= 1 && !assignable(&t.ty, &Ty::Text) && !assignable(&t.ty, &Ty::Int) {
+                        let ok = assignable(&t.ty, &Ty::Text) || (!text_only && assignable(&t.ty, &Ty::Int));
+                        if i >= 1 && !ok {
                             self.mismatch(arg.span, &Ty::Text, &t.ty);
                         }
                     }
@@ -2273,7 +2278,7 @@ impl<'m> Ctx<'m> {
             }
             "len" => {
                 if args.len() != 1 {
-                    self.push(Diag::new(E0, "E0007", "`len(lista)` recebe 1 argumento", e.span, "aridade"));
+                    self.push(Diag::new(E0, "E0007", "`len(lista ou texto)` recebe 1 argumento", e.span, "aridade"));
                     return LTy::never();
                 }
                 let t = self.expr(&args[0]);
@@ -2287,12 +2292,27 @@ impl<'m> Ctx<'m> {
                         origin: t.origin.clone(),
                         refn: Some(Refn::Int { lo: Some(*lo as i64), hi: Some(*hi as i64) }),
                     },
+                    // Em texto, `len` conta caracteres; o teto do tipo vira o teto do inteiro.
+                    Ty::Text => LTy {
+                        conf: t.conf,
+                        ty: Ty::Int,
+                        lab: t.lab,
+                        tok: None,
+                        origin: t.origin.clone(),
+                        refn: Some(Refn::Int {
+                            lo: Some(0),
+                            hi: match t.refn {
+                                Some(Refn::Text { max }) => Some(max as i64),
+                                _ => None,
+                            },
+                        }),
+                    },
                     Ty::Never => LTy::never(),
                     other => {
                         self.push(Diag::new(
                             E0,
                             "E0008",
-                            "`len` exige uma lista",
+                            "`len` exige uma lista ou um texto",
                             args[0].span,
                             format!("encontrado `{}`", other.show()),
                         ));
@@ -3160,8 +3180,14 @@ impl<'m> Ctx<'m> {
     fn anchor_check(&mut self, p: &'m PolicyDecl, policy: &Ident, ispan: Span) {
         let given = self.anchored.get(&ispan).cloned().unwrap_or_default();
         let anchored = !given.is_empty();
-        let missing: Vec<String> = policy_inventories(&p.body).difference(&given).cloned().collect();
-        if reads_snapshot(&p.body) && (!anchored || !missing.is_empty()) {
+        // Ciclo 1, D1: a âncora segue as chamadas entre políticas. `SafePlan` que delega a
+        // `SafeWrite` decide pelos inventários que `SafeWrite` lê, e pelos literais que ela compara.
+        let bodies = self.policy_closure(p);
+        let read: BTreeSet<String> = bodies.iter().flat_map(|b| policy_inventories(b)).collect();
+        let reads = bodies.iter().any(|b| reads_snapshot(b));
+        let literal = bodies.iter().any(|b| compares_text_literal(b));
+        let missing: Vec<String> = read.difference(&given).cloned().collect();
+        if reads && (!anchored || !missing.is_empty()) {
             let want = missing
                 .iter()
                 .map(|k| if k == "managed" { "s.managed()".to_string() } else { format!("s.inventory(\"{k}\")") })
@@ -3180,7 +3206,7 @@ impl<'m> Ctx<'m> {
                     .help(format!("passe o inventário ao modelo como `campo = {want}`: nunca copiado de literal, log ou resposta de modelo")),
                 );
         }
-        if anchored && compares_text_literal(&p.body) {
+        if anchored && literal {
             self.push(
                 Diag::new(
                     E3,
@@ -3192,6 +3218,33 @@ impl<'m> Ctx<'m> {
                 .help("decida pela mesma fotografia: `s.is_managed(x)` no lugar de `x == \"…\"`"),
             );
         }
+    }
+
+    /// O corpo da política e os de todas as políticas que ela chama, transitivamente (sem
+    /// repetição: uma recursão entre políticas não trava a análise).
+    fn policy_closure(&self, p: &'m PolicyDecl) -> Vec<&'m Expr> {
+        let mut seen: HashSet<&str> = HashSet::new();
+        let mut todo = vec![p];
+        let mut out = Vec::new();
+        while let Some(q) = todo.pop() {
+            if !seen.insert(q.name.name.as_str()) {
+                continue;
+            }
+            out.push(&q.body);
+            let called = std::cell::RefCell::new(Vec::new());
+            expr_any(&q.body, &|x| {
+                if let ExprKind::Call { callee, .. } = &x.kind {
+                    called.borrow_mut().push(callee.name.clone());
+                }
+                false
+            });
+            for name in called.into_inner() {
+                if let Some(r) = self.policies.get(&name).copied() {
+                    todo.push(r);
+                }
+            }
+        }
+        out
     }
 
     /// **`keeping campo by Política` (v1.0-RC7).** O campo existe no tipo do rascunho e é uma

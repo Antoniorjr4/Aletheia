@@ -28,7 +28,6 @@ pub enum Tok {
     Retry,
     Quote,
     Commit,
-    Budget,
     True,
     False,
     Not,
@@ -101,7 +100,6 @@ fn symbol(t: &Tok) -> &'static str {
         Tok::Retry => "retry",
         Tok::Quote => "quote",
         Tok::Commit => "commit",
-        Tok::Budget => "budget",
         Tok::True => "true",
         Tok::False => "false",
         Tok::Not => "not",
@@ -173,7 +171,6 @@ fn keyword(word: &str) -> Option<Tok> {
         "retry" => Tok::Retry,
         "quote" => Tok::Quote,
         "commit" => Tok::Commit,
-        "budget" => Tok::Budget,
         "true" => Tok::True,
         "false" => Tok::False,
         "not" => Tok::Not,
@@ -191,8 +188,8 @@ pub fn lex(src: &str) -> Result<Vec<Token>, LexError> {
             i += 1;
             continue;
         }
-        // comentário de linha: `--` até o fim da linha
-        if c == b'-' && i + 1 < bytes.len() && bytes[i + 1] == b'-' {
+        // comentário de linha: `--` ou `//` até o fim da linha (qualquer caractere dentro dele)
+        if (c == b'-' || c == b'/') && i + 1 < bytes.len() && bytes[i + 1] == c {
             while i < bytes.len() && bytes[i] != b'\n' {
                 i += 1;
             }

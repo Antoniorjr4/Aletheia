@@ -1,0 +1,31 @@
+{
+ "calls": [
+  {
+   "args": {},
+   "error": null,
+   "function": "get_scheduled_transactions"
+  },
+  {
+   "args": {
+    "amount": 1100.0,
+    "date": "2022-05-04",
+    "recipient": "US122000000121212121212",
+    "recurring": false,
+    "subject": "Rent"
+   },
+   "error": null,
+   "function": "schedule_transaction"
+  }
+ ],
+ "dropped": [],
+ "error": null,
+ "journal_ok": true,
+ "kinds": [
+  "start",
+  "infer",
+  "infer",
+  "endorse",
+  "commit",
+  "end"
+ ]
+}

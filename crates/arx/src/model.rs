@@ -157,8 +157,8 @@ impl Constraint {
     }
 }
 
-const SYSTEM: &str = "Você é um componente de um programa Aletheia. Responda somente com o documento JSON pedido, \
-no formato {\"value\": …}, sem texto adicional.";
+/// Ciclo 1, D12: neutra (não cita a linguagem) e igual nos dois runtimes.
+const SYSTEM: &str = "You are a component of an assistant. Reply only with the requested JSON document, in the form {\"value\": …}, with no extra text.";
 
 // ------------------------------------------------------------------ transporte, gravação e replay
 
@@ -544,7 +544,15 @@ impl ModelProvider for OpenAiCompat {
 
 #[cfg(test)]
 mod tests {
-    use super::retry_wait;
+    use super::{retry_wait, SYSTEM};
+
+    /// Ciclo 1, D12 (corrigido): a mensagem de sistema citava "um programa Aletheia", em português,
+    /// e confundiu a comparação com o P1 (bench/agentdojo/PROVA-ENGENHARIA.md). Agora é neutra.
+    #[test]
+    fn d12_a_mensagem_de_sistema_e_neutra() {
+        assert!(!SYSTEM.contains("Aletheia"), "D12: a mensagem de sistema cita a linguagem: {SYSTEM}");
+        assert!(SYSTEM.starts_with("You are a component of an assistant."), "{SYSTEM}");
+    }
 
     #[test]
     fn retry_wait_reads_header_body_or_backs_off() {

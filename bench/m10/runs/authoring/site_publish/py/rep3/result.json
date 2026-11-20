@@ -1,0 +1,48 @@
+{
+ "pack": "site_publish",
+ "lang": "py",
+ "rep": 3,
+ "model": "openai/gpt-oss-120b",
+ "clean": true,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.py",
+   "tok_in": 3042,
+   "tok_out": 3153,
+   "feedback": "static tools:\nv1.py:49:12: E714 [*] Test for object identity should be `is not`\nFound 1 error.\n[*] 1 fixable with the `--fix` option."
+  },
+  {
+   "cycle": 2,
+   "file": "v2.py",
+   "tok_in": 5297,
+   "tok_out": 3164,
+   "feedback": "static tools:\nv2.py:52:12: E714 [*] Test for object identity should be `is not`\nFound 1 error.\n[*] 1 fixable with the `--fix` option."
+  },
+  {
+   "cycle": 3,
+   "file": "v3.py",
+   "tok_in": 7577,
+   "tok_out": 2872,
+   "feedback": "dry run (stub model): AttributeError: 'str' object has no attribute 'get'\ndry run (adversarial model): AttributeError: 'str' object has no attribute 'get'"
+  },
+  {
+   "cycle": 4,
+   "file": "v4.py",
+   "tok_in": 9852,
+   "tok_out": 2245,
+   "feedback": "dry run (stub model): AttributeError: 'str' object has no attribute 'get'\ndry run (adversarial model): AttributeError: 'str' object has no attribute 'get'"
+  },
+  {
+   "cycle": 5,
+   "file": "v5.py",
+   "tok_in": 12060,
+   "tok_out": 2502,
+   "feedback": ""
+  }
+ ],
+ "tok_in": 37828,
+ "tok_out": 13936,
+ "seconds": 40.8,
+ "usd": 0.014036
+}

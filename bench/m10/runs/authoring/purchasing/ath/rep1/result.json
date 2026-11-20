@@ -1,0 +1,34 @@
+{
+ "pack": "purchasing",
+ "lang": "ath",
+ "rep": 1,
+ "model": "openai/gpt-oss-120b",
+ "clean": true,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.ath",
+   "tok_in": 3385,
+   "tok_out": 3992,
+   "feedback": "athc check:\nerror[P0001]: esperado identificador, encontrado `/`\n  --> bench/m10/runs/authoring/purchasing/ath/rep1/v1.ath:81:7\n   |\n81 |       // Example of untrusted data inclusion (optional)\n   |       ^ aqui\n\nrejeitado: 1 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 2,
+   "file": "v2.ath",
+   "tok_in": 4522,
+   "tok_out": 1774,
+   "feedback": "athc check:\nerror[E0001]: variável desconhecida `_`\n  --> bench/m10/runs/authoring/purchasing/ath/rep1/v2.ath:49:31\n   |\n49 |       s.binds(\"catalog\", sku, _) &&\n   |                               ^ não encontrada neste escopo\n\nerror[E0001]: variável desconhecida `_`\n  --> bench/m10/runs/authoring/purchasing/ath/rep1/v2.ath:55:31\n   |\n55 |       s.binds(\"catalog\", sku, _) &&\n   |                               ^ não encontrada neste escopo\n\nrejeitado: 2 diagnóstico(s) no estrato E0 estrutura; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 3,
+   "file": "v3.ath",
+   "tok_in": 5691,
+   "tok_out": 1450,
+   "feedback": ""
+  }
+ ],
+ "tok_in": 13598,
+ "tok_out": 7216,
+ "seconds": 17.3,
+ "usd": 0.006369
+}

@@ -14,14 +14,33 @@ type PResult<T> = Result<T, ParseError>;
 
 pub fn parse_module(src: &str) -> PResult<Module> {
     let toks = lex(src).map_err(|e| ParseError { msg: e.msg, span: e.span })?;
-    let mut p = Parser { toks, pos: 0, no_ctor: false };
+    // Primeira passada: só para conhecer os tipos algébricos do módulo. O braço curinga `_` de
+    // um `match` é expandido na segunda, para as variantes que os outros braços não nomeiam; assim
+    // o resto do compilador e os dois runtimes só veem braços com variante explícita.
+    let mut first = Parser { toks: toks.clone(), pos: 0, no_ctor: false, adts: None };
+    let adts = adt_index(&first.module()?);
+    let mut p = Parser { toks, pos: 0, no_ctor: false, adts: Some(adts) };
     p.module()
+}
+
+/// Para cada variante, a lista de variantes do tipo que a declara, na ordem de declaração.
+fn adt_index(m: &Module) -> std::collections::HashMap<String, Vec<String>> {
+    let mut out = std::collections::HashMap::new();
+    for it in &m.items {
+        if let Item::Type(t) = it {
+            let all: Vec<String> = t.variants.iter().map(|v| v.name.name.clone()).collect();
+            for v in &all {
+                out.entry(v.clone()).or_insert_with(|| all.clone());
+            }
+        }
+    }
+    out
 }
 
 /// Analisa uma expressão isolada (usado para decodificar saídas de modelo e argumentos de CLI).
 pub fn parse_expr_str(src: &str) -> PResult<Expr> {
     let toks = lex(src).map_err(|e| ParseError { msg: e.msg, span: e.span })?;
-    let mut p = Parser { toks, pos: 0, no_ctor: false };
+    let mut p = Parser { toks, pos: 0, no_ctor: false, adts: None };
     let e = p.expr()?;
     if *p.peek() != Tok::Eof {
         return Err(p.err(format!("conteúdo inesperado após a expressão: {}", p.peek().describe())));
@@ -34,6 +53,8 @@ struct Parser {
     pos: usize,
     /// Proíbe `Nome { ... }` como construtor (condições de `if` e escrutínios de `match`).
     no_ctor: bool,
+    /// Variante → variantes do seu tipo. `None` na primeira passada e em expressões isoladas.
+    adts: Option<std::collections::HashMap<String, Vec<String>>>,
 }
 
 fn is_upper(s: &str) -> bool {
@@ -650,7 +671,12 @@ impl Parser {
         self.expect(Tok::Agent)?;
         let name = self.ident()?;
         let params = self.params()?;
-        let bstart = self.expect(Tok::Budget)?;
+        // `budget` é palavra contextual: só aqui, depois dos parâmetros do agente, ela abre o
+        // orçamento. Em qualquer outro lugar é um nome comum (campo, variável, parâmetro).
+        if !self.is_contextual("budget") {
+            return Err(self.err(format!("esperado `budget`, encontrado {}", self.peek().describe())));
+        }
+        let bstart = self.bump().span;
         self.expect(Tok::LBrack)?;
         let mut budget = Vec::new();
         while *self.peek() != Tok::RBrack {
@@ -1161,13 +1187,30 @@ impl Parser {
                 let scrut = self.expr()?;
                 self.no_ctor = saved;
                 self.expect(Tok::LBrace)?;
-                let mut arms = Vec::new();
+                let mut arms: Vec<Arm> = Vec::new();
+                let mut wildcard: Option<Arm> = None;
                 while *self.peek() != Tok::RBrace {
+                    if let Some(w) = &wildcard {
+                        return Err(ParseError {
+                            msg: "braço depois do curinga `_`: o curinga tem de ser o último braço do `match`".into(),
+                            span: w.variant.span,
+                        });
+                    }
                     let variant = self.ident()?;
                     let mut binds = Vec::new();
                     if self.eat(&Tok::LBrace) {
                         while *self.peek() != Tok::RBrace {
-                            binds.push(self.ident()?);
+                            // `..` (os demais campos) e `_` (campo ignorado) não ligam nada:
+                            // os campos de um padrão já são opcionais.
+                            if *self.peek() == Tok::Dot {
+                                self.bump();
+                                self.expect(Tok::Dot)?;
+                            } else {
+                                let b = self.ident()?;
+                                if b.name != "_" {
+                                    binds.push(b);
+                                }
+                            }
                             if !self.eat(&Tok::Comma) {
                                 break;
                             }
@@ -1177,9 +1220,42 @@ impl Parser {
                     self.expect(Tok::FatArrow)?;
                     let body = self.expr()?;
                     let span = variant.span.to(body.span);
-                    arms.push(Arm { variant, binds, body, span });
-                    if !self.eat(&Tok::Comma) {
-                        break;
+                    if variant.name == "_" {
+                        if !binds.is_empty() {
+                            return Err(ParseError { msg: "o curinga `_` não tem campos".into(), span: variant.span });
+                        }
+                        wildcard = Some(Arm { variant, binds, body, span });
+                    } else {
+                        arms.push(Arm { variant, binds, body, span });
+                    }
+                    // A vírgula entre braços é opcional: o próximo braço começa por um nome.
+                    self.eat(&Tok::Comma);
+                }
+                if let Some(w) = wildcard {
+                    match &self.adts {
+                        // Primeira passada ou expressão isolada: o curinga fica como está.
+                        None => arms.push(w),
+                        Some(adts) => {
+                            let Some(all) = arms.iter().find_map(|a| adts.get(&a.variant.name)) else {
+                                return Err(ParseError {
+                                    msg:
+                                        "curinga `_` sem variante que identifique o tipo: nomeie ao menos uma variante \
+                                          do tipo antes do `_`"
+                                            .into(),
+                                    span: w.variant.span,
+                                });
+                            };
+                            for v in all {
+                                if !arms.iter().any(|a| &a.variant.name == v) {
+                                    arms.push(Arm {
+                                        variant: Ident { name: v.clone(), span: w.variant.span },
+                                        binds: Vec::new(),
+                                        body: w.body.clone(),
+                                        span: w.span,
+                                    });
+                                }
+                            }
+                        }
                     }
                 }
                 let end = self.expect(Tok::RBrace)?;

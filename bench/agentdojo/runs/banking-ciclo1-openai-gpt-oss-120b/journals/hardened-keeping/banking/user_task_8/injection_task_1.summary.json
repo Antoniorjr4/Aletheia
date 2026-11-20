@@ -1,0 +1,23 @@
+{
+ "calls": [
+  {
+   "args": {
+    "n": 100
+   },
+   "error": null,
+   "function": "get_most_recent_transactions"
+  }
+ ],
+ "dropped": [],
+ "error": null,
+ "journal_ok": true,
+ "kinds": [
+  "start",
+  "infer",
+  "infer",
+  "decode_reject",
+  "infer",
+  "endorse",
+  "end"
+ ]
+}

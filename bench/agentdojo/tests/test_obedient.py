@@ -28,12 +28,15 @@ except ImportError:  # pragma: no cover
 
 
 @unittest.skipUnless(HAVE, "requer o pacote agentdojo e o athc compilado")
+@unittest.skipUnless(os.environ.get("ATHC_HIST"), "programa histórico: precisa de ATHC_HIST (scripts/historico.sh)")
 class ObedientModelTests(unittest.TestCase):
+    """`banking.ath`, o programa medido em 10 e 16/11, verificado com o compilador com que foi medido."""
+
     @classmethod
     def setUpClass(cls):
         cls.tmp = tempfile.TemporaryDirectory()
         subprocess.run([sys.executable, str(HERE / "obedient.py"), "--out", cls.tmp.name],
-                       check=True, capture_output=True)
+                       check=True, capture_output=True, env={**os.environ, "ATHC": os.environ["ATHC_HIST"]})
         cls.m = json.loads((Path(cls.tmp.name) / "matrix.json").read_text())
         cls.rows = [json.loads(x) for x in (Path(cls.tmp.name) / "rows.jsonl").read_text().splitlines()]
 

@@ -1,0 +1,41 @@
+{
+ "pack": "site_publish",
+ "lang": "ath",
+ "rep": 2,
+ "model": "openai/gpt-oss-120b",
+ "clean": true,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.ath",
+   "tok_in": 3427,
+   "tok_out": 3620,
+   "feedback": "athc check:\nerror[P0001]: esperado `}`, encontrado `_`\n  --> bench/m10/runs/authoring/site_publish/ath/rep2/v1.ath:54:5\n   |\n54 |     _ => true\n   |     ^ aqui\n\nrejeitado: 1 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 2,
+   "file": "v2.ath",
+   "tok_in": 4718,
+   "tok_out": 2061,
+   "feedback": "athc check:\nerror[P0001]: esperado `}`, encontrado `Unpublish`\n  --> bench/m10/runs/authoring/site_publish/ath/rep2/v2.ath:53:5\n   |\n53 |     Unpublish { .. } => true\n   |     ^^^^^^^^^ aqui\n\nrejeitado: 1 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 3,
+   "file": "v3.ath",
+   "tok_in": 6091,
+   "tok_out": 2006,
+   "feedback": "athc check:\nerror[P0001]: esperado identificador, encontrado `.`\n  --> bench/m10/runs/authoring/site_publish/ath/rep2/v3.ath:92:17\n   |\n92 |     Publish   { .. } => SafePublish(o),\n   |                 ^ aqui\n\nrejeitado: 1 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 4,
+   "file": "v4.ath",
+   "tok_in": 7486,
+   "tok_out": 1930,
+   "feedback": ""
+  }
+ ],
+ "tok_in": 21722,
+ "tok_out": 9617,
+ "seconds": 25.6,
+ "usd": 0.009029
+}

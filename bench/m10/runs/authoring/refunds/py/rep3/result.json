@@ -1,0 +1,34 @@
+{
+ "pack": "refunds",
+ "lang": "py",
+ "rep": 3,
+ "model": "openai/gpt-oss-120b",
+ "clean": true,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.py",
+   "tok_in": 3069,
+   "tok_out": 3629,
+   "feedback": "static tools:\nv1.py:191:9: F841 Local variable `accounts_raw` is assigned to but never used\nFound 1 error.\nNo fixes available (1 hidden fix can be enabled with the `--unsafe-fixes` option).\nmypy:\nv1.py:67: error: Unsupported operand types for < (\"int\" and \"None\")  [operator]\nv1.py:67: note: Left operand is of type \"Any | None\"\nv1.py:70: error: Unsupported operand types for < (\"int\" and \"None\")  [operator]\nv1.py:70: note: Left operand is of type \"Any | None\"\nv1.py:86: error: Unsupported operand types for < (\"int\" and \"None\")  [operator]\nv1.py:86: note: Left operand is of type \"Any | None\"\nv1.py:102: error: Argument 1 to \"links_ok\" has incompatible type \"Any | None\"; expected \"str\"  [arg-type]\nv1.py:117: error: Argument 1 to \"links_ok\" has incompatible type \"Any | None\"; expected \"str\"  [arg-type]\nv1.py:261: error: Item \"None\" of \"list[Any] | Any | None\" has no attribute \"__iter__\" (not iterable)  [union-attr]\nv1.py:278: error: Item \"None\" of \"list[Any] | Any | None\" has no attribute \"__iter__\" (not iterable)  [union-attr]\nv1.py:290: error: Item \"None\" of \"list[Any] | Any | None\" has no attribute \"__iter__\" (not iterable)  [union-attr]\nv1.py:335: error: Incompatible return value type (got \"list[Any] | Any | None\", expected \"str\")  [return-value]"
+  },
+  {
+   "cycle": 2,
+   "file": "v2.py",
+   "tok_in": 6112,
+   "tok_out": 3428,
+   "feedback": "static tools:\nmypy:\nv2.py:72: error: Unsupported operand types for < (\"int\" and \"None\")  [operator]\nv2.py:72: note: Left operand is of type \"Any | None\"\nv2.py:74: error: Unsupported operand types for < (\"int\" and \"None\")  [operator]\nv2.py:74: note: Left operand is of type \"Any | None\"\nv2.py:92: error: Unsupported operand types for < (\"int\" and \"None\")  [operator]\nv2.py:92: note: Left operand is of type \"Any | None\""
+  },
+  {
+   "cycle": 3,
+   "file": "v3.py",
+   "tok_in": 8889,
+   "tok_out": 6264,
+   "feedback": ""
+  }
+ ],
+ "tok_in": 18070,
+ "tok_out": 13321,
+ "seconds": 36.0,
+ "usd": 0.010703
+}

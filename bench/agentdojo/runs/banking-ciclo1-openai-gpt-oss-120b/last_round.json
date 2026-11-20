@@ -1,0 +1,16 @@
+{
+ "reason": "completa",
+ "executed": 43,
+ "spend": {
+  "usd_round_server": 0.020511,
+  "usd_round_estimate": 0.0,
+  "usd_round": 0.020511,
+  "usd_total": 0.200189,
+  "max_usd_round": 0.07,
+  "max_usd_total": 0.25,
+  "price_per_mtok": [
+   0.15,
+   0.6
+  ]
+ }
+}

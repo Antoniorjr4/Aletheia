@@ -1,0 +1,41 @@
+{
+ "pack": "calendar",
+ "lang": "py",
+ "rep": 1,
+ "model": "openai/gpt-oss-120b",
+ "clean": true,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.py",
+   "tok_in": 3149,
+   "tok_out": 4920,
+   "feedback": "static tools:\nmypy:\nv1.py:75: error: Argument 1 to \"add\" of \"set\" has incompatible type \"Any | None\"; expected \"str\"  [arg-type]\nv1.py:85: error: Argument 1 to \"resolve_event\" has incompatible type \"Any | None\"; expected \"str\"  [arg-type]\nv1.py:98: error: Argument 1 to \"add\" of \"set\" has incompatible type \"Any | None\"; expected \"str\"  [arg-type]\nv1.py:106: error: Argument 1 to \"resolve_event\" has incompatible type \"Any | None\"; expected \"str\"  [arg-type]\nv1.py:123: error: Item \"None\" of \"Any | None\" has no attribute \"lower\"  [union-attr]"
+  },
+  {
+   "cycle": 2,
+   "file": "v2.py",
+   "tok_in": 6159,
+   "tok_out": 3271,
+   "feedback": "dry run (stub model): AttributeError: 'str' object has no attribute 'get'\ndry run (adversarial model): AttributeError: 'str' object has no attribute 'get'"
+  },
+  {
+   "cycle": 3,
+   "file": "v3.py",
+   "tok_in": 9176,
+   "tok_out": 2908,
+   "feedback": "dry run (stub model): AttributeError: 'str' object has no attribute 'get'\ndry run (adversarial model): AttributeError: 'str' object has no attribute 'get'"
+  },
+  {
+   "cycle": 4,
+   "file": "v4.py",
+   "tok_in": 12045,
+   "tok_out": 3134,
+   "feedback": ""
+  }
+ ],
+ "tok_in": 30529,
+ "tok_out": 14233,
+ "seconds": 37.9,
+ "usd": 0.013119
+}
