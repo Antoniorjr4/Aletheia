@@ -175,6 +175,11 @@ mais de um fator (tipo do valor, mensagem de sistema, ordem do esquema — D13),
 sobre o P1 não é atribuível só aos centavos. D13 segue para correção com reprodução antes, agora que
 os 144 pares estão fechados.
 
+**20/11 — orçamento do ciclo elevado para até US$ 1,50** (autorização do dono do projeto), depois
+de a 1ª janela de autoria do M10 projetar ~US$ 0,55 para as 48 autorias contra US$ 0,35–0,40
+estimados. Gasto até aqui: US$ 0,2002 (AgentDojo) + US$ 0,0555 (M10). Registro das janelas em
+[bench/m10/PROTOCOLO.md](../bench/m10/PROTOCOLO.md).
+
 **20/11 — D2: `s.links_within` (construção autorizada) e M10 com o modelo da Groq (autorizado).**
 
 - **Reprodução antes:** `slack.ath` v1 com o modelo obediente: a injeção de phishing por mensagem

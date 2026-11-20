@@ -196,3 +196,22 @@ acompanhar operações anteriores continuam como o autor cego as escreveu.
 **Errata.** O hash registrado em 20/11 para os pacotes originais (`5ca743a0…`) incluía arquivos
 `__pycache__` gerados pelo validador. Os pacotes não mudaram (o git está limpo e eles são idênticos
 à entrega do autor). Os hashes corretos, sem `__pycache__`, estão em `FREEZE.json`.
+
+## Autoria — registro das janelas
+
+**20/11, 1ª janela** ([44754775158](https://github.com/Antoniorjr4/Aletheia/actions/runs/44754775158)).
+Parou no limite de tokens por dia do projeto na Groq (3 milhões; a cota repõe continuamente, cerca
+de 125 mil tokens por hora) com **4 de 48** autorias e US$ 0,0555 (inclui uma quinta, interrompida).
+
+| pacote | linguagem | rep | resultado | tokens | US$ |
+| --- | --- | --- | --- | --- | --- |
+| payments | Aletheia | 1 | não limpo em 5 ciclos | 47.198 | 0,0125 |
+| payments | Python | 1 | limpo em 2 ciclos | 16.233 | 0,0056 |
+| support_email | Aletheia | 1 | não limpo em 5 ciclos | 42.611 | 0,0117 |
+| support_email | Python | 1 | não limpo em 5 ciclos | 59.137 | 0,0163 |
+
+**Desvio de custo, declarado.** A média por autoria (US$ 0,0115) projeta cerca de US$ 0,55 para as
+48, acima da estimativa da seção 7 (US$ 0,35–0,40) e do teto de US$ 0,45. Em 20/11 o dono do projeto
+autorizou elevar o orçamento do ciclo de US$ 1,00 para **até US$ 1,50**. O teto da autoria passa a
+US$ 0,70; o da avaliação continua US$ 0,25. Nada mais do protocolo muda: 8 pacotes, 3 repetições,
+2 linguagens, até 5 ciclos, mesmo modelo, mesmos guias e mesmo avaliador congelado.
