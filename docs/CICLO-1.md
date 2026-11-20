@@ -116,3 +116,33 @@ autorização no momento. Nenhum merge sem autorização.
   `aletheia@banking_v2_keeping` (runtime corrigido: mede D9/D12), `aletheia@banking_v3_keeping`
   (mede a utilidade dos centavos) e `hardened:keeping` (P1), pareados, na suíte inteira. Estimativa:
   480 execuções × ~1.850 tokens ≈ 890 mil tokens ≈ US$ 0,20, em 3 janelas do limite diário de 400 mil.
+
+**20/11 — rodada paga do ciclo, 1ª janela** ([44655413682](https://github.com/Antoniorjr4/Aletheia/actions/runs/44655413682)).
+Parou no limite diário da Groq com 437 de 480 execuções e US$ 0,1797 gastos (teto US$ 0,25).
+Completos nos três pipelines: 16/16 sem ataque e **129/144** pares
+([compare.md](../bench/agentdojo/runs/banking-ciclo1-openai-gpt-oss-120b/compare.md)).
+
+| pipeline | utilidade | utilidade sob ataque | ataques cumpridos | tokens/execução |
+| --- | --- | --- | --- | --- |
+| Aletheia v2 keeping (runtime corrigido) | 11/16 | 71/129 | **0/129** | 1.849 |
+| Aletheia v3 keeping (centavos) | 10/16 | 84/129 | **0/129** | 1.885 |
+| P1 Python endurecido (keeping) | 8/16 | 65/129 | **0/129** | 1.805 |
+
+- **D12 (mensagem de sistema neutra), medido.** Nos mesmos 72 pares da rodada de 16–17/11: Aletheia
+  v2 foi de 33 para **42**, e o P1 de 42 para 45 (o P1 não mudou de código: a variação dele, 3
+  pares, é o ruído do modelo). A desvantagem de 9 pares desapareceu. Nos 11 pares em que a Aletheia
+  alegava não ter os dados, ela agora acerta 7 (antes 0). Esses 11 foram escolhidos por serem
+  falhas, então parte da melhora é regressão à média, e o número que vale é o dos 72.
+- **D10 (centavos), medido.** Nenhum sinal de confusão de unidade: os valores enviados pelo v3 são
+  os da suíte (98,70; 200,29; 1.100; 1.200…), sem valores 100× maiores ou menores. Utilidade sob
+  ataque 84 contra 71 do v2 (McNemar 19 × 6, p = 0,015, sem correção para comparações múltiplas).
+  Sem ataque, 10 contra 11 (p = 1,0). Os centavos não custaram utilidade.
+- **Aletheia × P1:** v2 12 × 6 (p = 0,24); v3 28 × 9 (p = 0,003, sem correção). Segurança igual
+  (0 ataques nos três).
+- **Observação D13 (não corrigida no meio da campanha).** A captura das requisições HTTP mostrou que
+  as duas implementações enviam o mesmo prompt de usuário, o mesmo teto de tokens, temperatura e
+  esforço de raciocínio. Diferem na mensagem de sistema ("an assistant" × "a banking assistant") e
+  na ordem das propriedades do esquema JSON: o runtime Aletheia as ordena alfabeticamente
+  (`answer` antes de `writes`), e o P1 usa a ordem de declaração. Uma resposta ainda saiu em
+  português: os rótulos das seções do prompt são em português nos dois.
+- Faltam 15 pares (43 execuções, ~80 mil tokens, ~US$ 0,02). Retomada agendada para a próxima janela.
