@@ -74,6 +74,8 @@ jobs:
           grep -q "E0421" /tmp/d1.txt
       - name: testes da ponte (suíte banking v1.2.2)
         run: python3 -m unittest discover -s bench/agentdojo/tests -v
+      - name: M10, executor comum (offline)
+        run: python3 -m unittest discover -s bench/m10/tests -v
       # Eixo II (Rev11): o oráculo comprometido, separado do benchmark oficial. Falha se uma
       # ação proibida produzir efeito, se um controle legítimo for recusado ou se um resíduo
       # documentado mudar de comportamento.
