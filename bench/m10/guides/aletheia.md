@@ -66,9 +66,10 @@ A policy is a pure function `policy P(x: T) -> Bool = …` using `match`, `&&`, 
 - `s.mentions("list", t)` — text t (non-empty) occurs inside some element.
 - `s.links_within("list", t)` — every link (`http://`, `https://`, `www.`) in t is in the list.
 
-There is no unary `!`, no string search, no lowercase, no arithmetic in policies. A policy may
-not compare text against a literal you typed (`to == "bob"` is rejected): decide with the lists.
-Numbers may be compared with literals (`cents <= 50000`).
+Integers support `+`, `-`, `*` and comparisons, also against literals (`cents * qty <= 50000`,
+`s.within("budget", cents * qty)`). `all x in xs => P(x)` is the only operation over a list:
+there is no sum over a list. There is no unary `!`, no string search and no lowercase. A policy
+may not compare text against a literal you typed (`to == "bob"` is rejected): decide with the lists.
 
 ## The handler
 

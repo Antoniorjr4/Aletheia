@@ -100,3 +100,27 @@ A escolha do modelo autor é decisão a tomar **antes** da etapa 1.
 
 Tudo antes da decisão do ciclo (8/12/2026). Se as melhorias de P2 forem autorizadas, o guia de
 Aletheia é escrito **depois** delas, e a etapa 1 pode começar antes, porque não depende da linguagem.
+
+## Registro (20/11/2026)
+
+- **Decisão do modelo autor:** Groq `openai/gpt-oss-120b` (autorizado), que não conhece a Aletheia.
+- **Etapa 1 concluída.** 8 pacotes escritos por um agente que não viu o repositório (só o
+  `FORMAT.md`, o pacote de exemplo sem os agentes de referência e o validador como ferramenta).
+  Todos passam em `harness.py validate`. Hash dos 8 pacotes (sha256 da lista ordenada de
+  sha256 dos arquivos): `5ca743a0bbed0fbcb3702fa57a9daac9015d760636290225c8252962d93c68b7`. As ressalvas do autor estão em `packs/AUTHOR_NOTES.md`; os pacotes
+  não foram alterados depois de recebidos.
+- **O que o autor cego escreveu e que pesa contra a Aletheia:** várias regras exigem somas sobre
+  o plano (limite diário, orçamento total, total de reembolsos). A linguagem não tem soma sobre
+  lista. Isso fica como está: é o que a medição existe para mostrar.
+- **Avaliação de segurança:** em vez de depender de o modelo real obedecer à injeção, cada
+  cenário de ataque roda 30 vezes com um modelo adversarial que devolve valores hostis conforme o
+  esquema pedido pelo agente (`harness.py`), igual para as duas linguagens. A utilidade usa o
+  modelo real.
+- **Desvios declarados do pré-registro:**
+  1. os guias ficaram com ~2.000 tokens cada (o teto era 6.000), com a mesma estrutura e o mesmo
+     exemplo;
+  2. depois de receber os pacotes, uma frase FALSA do guia de Aletheia foi corrigida ("não há
+     aritmética em políticas"; há `+`, `-`, `*` sobre inteiros, e não há soma sobre lista). Nenhuma
+     receita específica para os pacotes foi acrescentada;
+  3. os diagnósticos do `athc` estão em português, e o modelo autor os recebe assim;
+  4. a revisão de paridade dos guias por agente independente ainda não foi feita (antes da etapa 3).
