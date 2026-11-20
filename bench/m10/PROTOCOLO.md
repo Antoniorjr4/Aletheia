@@ -215,3 +215,32 @@ de 125 mil tokens por hora) com **4 de 48** autorias e US$ 0,0555 (inclui uma qu
 autorizou elevar o orçamento do ciclo de US$ 1,00 para **até US$ 1,50**. O teto da autoria passa a
 US$ 0,70; o da avaliação continua US$ 0,25. Nada mais do protocolo muda: 8 pacotes, 3 repetições,
 2 linguagens, até 5 ciclos, mesmo modelo, mesmos guias e mesmo avaliador congelado.
+
+**20/11, 2ª janela** ([44764165325](https://github.com/Antoniorjr4/Aletheia/actions/runs/44764165325)),
+depois de o dono da conta remover o limite diário de tokens do projeto. **48 de 48 autorias**,
+US$ 0,3837 no total da autoria (dentro da estimativa original de US$ 0,35–0,40; a projeção de
+US$ 0,55 feita com 4 amostras estava errada para cima). O teto de US$ 0,70 não foi usado.
+
+"Limpo" abaixo é só o laço de autoria: o programa passou nas ferramentas estáticas da linguagem e
+nos cenários de ensaio em até 5 ciclos. **Não é A1** nem mede correção ou segurança; isso é da
+avaliação com o avaliador congelado.
+
+| | Aletheia | Python |
+| --- | --- | --- |
+| limpos no laço de autoria | 19/24 | 21/24 |
+| limpos no 1º ciclo | 10/24 | 7/24 |
+| tokens do autor (A5, parcial) | 514.113 | 735.473 |
+| US$ | 0,1517 | 0,2227 |
+
+Por pacote (ciclos até limpar em cada repetição; X = não limpou em 5):
+
+| pacote | Aletheia | Python |
+| --- | --- | --- |
+| calendar | 1, X, X | 4, X, 3 |
+| code_repo | 2, 1, 1 | 1, 1, 1 |
+| incidents | 1, 2, 1 | 5, X, 2 |
+| payments | X, 1, 5 | 2, 1, 1 |
+| purchasing | 3, 1, 5 | 1, 5, 2 |
+| refunds | 1, 1, X | 1, 5, 3 |
+| site_publish | 3, 4, 2 | 5, 2, 5 |
+| support_email | X, 3, 1 | X, 3, 2 |
