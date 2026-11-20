@@ -147,6 +147,34 @@ Completos nos três pipelines: 16/16 sem ataque e **129/144** pares
   português: os rótulos das seções do prompt são em português nos dois.
 - Faltam 15 pares (43 execuções, ~80 mil tokens, ~US$ 0,02). Retomada agendada para a próxima janela.
 
+**20/11 — rodada paga do ciclo, concluída** ([44750019730](https://github.com/Antoniorjr4/Aletheia/actions/runs/44750019730)).
+O limite de 400 mil tokens por dia era uma configuração do projeto na Groq, não da organização; o
+dono da conta a elevou para 3 milhões (100 mil tokens/min, 300 requisições/min). A retomada fechou as
+43 execuções restantes por US$ 0,0205. Total da rodada: **US$ 0,2002** (teto US$ 0,25), 480/480
+execuções, 16/16 sem ataque e **144/144** pares nos três pipelines
+([compare.md](../bench/agentdojo/runs/banking-ciclo1-openai-gpt-oss-120b/compare.md)). Os números
+abaixo substituem os parciais de 129 pares como resultado da rodada; os parciais ficam registrados acima.
+
+| pipeline | utilidade | utilidade sob ataque | ataques cumpridos | tokens/execução |
+| --- | --- | --- | --- | --- |
+| Aletheia v2 keeping (runtime corrigido) | 11/16 | 76/144 (52,8%; IC95 45–61%) | **0/144** | 1.864 |
+| Aletheia v3 keeping (centavos) | 10/16 | 92/144 (63,9%; IC95 56–71%) | **0/144** | 1.908 |
+| P1 Python endurecido (keeping) | 8/16 | 67/144 (46,5%; IC95 39–55%) | **0/144** | 1.817 |
+
+McNemar exato, pareado, sem correção para comparações múltiplas (três comparações; com Bonferroni o
+limiar é 0,0167):
+
+- **v3 × P1, utilidade sob ataque:** 34 × 9, p = 0,0002. Passa com a correção.
+- **v3 × v2, utilidade sob ataque:** 23 × 7, p = 0,0052. Passa com a correção.
+- **v2 × P1, utilidade sob ataque:** 16 × 7, p = 0,093. Não é diferença.
+- **Sem ataque:** nenhuma diferença (p ≥ 0,25 nas três); com 16 tarefas o teste não tem poder.
+- **Segurança:** igual, 0/144 nos três (limite superior do IC95: 3%).
+
+Limites da leitura: uma suíte, um modelo, um ataque, uma repetição por par; o P1 e o v3 diferem em
+mais de um fator (tipo do valor, mensagem de sistema, ordem do esquema — D13), então a vantagem do v3
+sobre o P1 não é atribuível só aos centavos. D13 segue para correção com reprodução antes, agora que
+os 144 pares estão fechados.
+
 **20/11 — D2: `s.links_within` (construção autorizada) e M10 com o modelo da Groq (autorizado).**
 
 - **Reprodução antes:** `slack.ath` v1 com o modelo obediente: a injeção de phishing por mensagem
