@@ -212,3 +212,14 @@ compilam com política de negócio insuficiente. Detalhe e limites em
   ~130 linhas no Core (verificador, ARX, emissor, runtime Python); nenhuma mudança nas provas Lean
   (os predicados da fotografia não são modelados lá); nenhum programa existente mudou de veredito
   (conferido arquivo por arquivo contra o compilador histórico: só os 4 do D1).
+
+**24/11 — pós-M10: ergonomia e diagnóstico, sem campanha paga.** O resultado do M10 (NÃO SUPERIOR)
+não muda. Feito: sintaxe `//`, `_`, `{ .. }`, vírgula opcional (`e92ca42`); `len` em texto e `budget`
+contextual (`ced796c`); vários erros de sintaxe por compilação, com recuperação só em fronteira de
+item (`881106d`); âncora de inventário através de `let`, resolvida por escopo e com prompt idêntico
+nos dois runtimes (`26fb9e8`). Reanálise das 45 versões rejeitadas em
+[bench/m10/runs/reanalise/TABELA.md](../bench/m10/runs/reanalise/TABELA.md): 6 compilam agora (0
+antes), as 6 sem violação nos ataques adversariais; 72 erros restantes, 26 deles de garantia
+(política, efeitos, orçamento), que não serão relaxados. É banco de regressão, não evidência.
+Variantes homônimas: proposta em [p2/variantes-homonimas.md](p2/variantes-homonimas.md), sem código;
+a causa raiz é o idioma de slots fixos imposto por D8, que fica em P3.
