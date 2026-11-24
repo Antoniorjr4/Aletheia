@@ -17,10 +17,12 @@ pub fn compile(src: &str) -> Result<Compiled, Vec<Diag>> {
     let module = ath_syntax::parse_module_all(src).map_err(|errs| {
         errs.into_iter().map(|e| Diag::new(Stratum::Parse, "P0001", e.msg, e.span, "aqui")).collect::<Vec<_>>()
     })?;
+    let mut module = module;
     let check = check_module(&module);
     if !check.ok() {
         return Err(check.diags);
     }
+    inline_snapshot_vars(&mut module, &check.facts.anchor_vars);
     let codex = ath_codex::address(&module)
         .map_err(|m| vec![Diag::new(Stratum::E0, "C0001", m, ath_syntax::Span::default(), "")])?;
     Ok(Compiled { module, check, codex })
@@ -271,4 +273,32 @@ pub fn summary(c: &Compiled, st: Style) -> String {
         ath_codex::short(&c.codex.root)
     );
     o
+}
+
+/// Ciclo 1: num campo de `infer`, uma variável ligada por `let` à fotografia confiável é trocada
+/// pela própria expressão da fotografia (`s.inventory("k")`, `s.managed()`). O verificador já
+/// resolveu o escopo e decidiu quais variáveis são essas; a troca não muda o valor (a fotografia é
+/// imutável e lida uma vez) e faz os dois runtimes rotularem o campo como na forma direta.
+fn inline_snapshot_vars(m: &mut Module, at: &[(ath_syntax::Span, ath_syntax::ast::Expr)]) {
+    if at.is_empty() {
+        return;
+    }
+    let mut f = |e: &mut ath_syntax::ast::Expr| {
+        if matches!(e.kind, ath_syntax::ast::ExprKind::Var(_)) {
+            if let Some((_, a)) = at.iter().find(|(s, _)| *s == e.span) {
+                let span = e.span;
+                *e = ath_syntax::ast::Expr { kind: a.kind.clone(), span };
+            }
+        }
+    };
+    for it in &mut m.items {
+        if let ath_syntax::ast::Item::Agent(ag) = it {
+            for h in &mut ag.handlers {
+                h.body.walk_mut(&mut f);
+            }
+            for h in &mut ag.handles {
+                h.body.walk_mut(&mut f);
+            }
+        }
+    }
 }

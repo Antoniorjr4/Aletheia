@@ -136,6 +136,11 @@ pub struct Facts {
     /// Laços (`for`) e quantificadores (`all`/`any`), indexados pelo span: limites de iterações.
     pub loop_bounds: HashMap<Span, (u32, u32)>,
     pub loops: usize,
+    /// Ciclo 1: campos de `infer` que entregam ao modelo uma variável ligada por `let` a
+    /// `s.inventory("k")` ou `s.managed()`: span da variável → a expressão da fotografia. O
+    /// compilador substitui a variável pela expressão antes de entregar a árvore aos backends,
+    /// para que os dois runtimes rotulem o campo como fotografia confiável, como na forma direta.
+    pub anchor_vars: Vec<(Span, Expr)>,
 }
 
 /// Recuo entre tentativas de reconciliação no ARX, em segundos.
@@ -185,6 +190,9 @@ pub struct Ctx<'m> {
     pub diags: Vec<Diag>,
     pub facts: Facts,
     scopes: Vec<Vec<(String, LTy)>>,
+    /// Ligações `let` cujo valor é a fotografia confiável, pela posição (profundidade, índice) da
+    /// ligação em `scopes`. Só o `let` de um bloco cria entrada; o bloco as apaga ao sair.
+    let_anchor: HashMap<(usize, usize), Expr>,
     pc: Label,
     /// v1.0-RC10: confidencialidade do contexto de controle (ramo decidido por dado secreto).
     pc_conf: Conf,
@@ -226,6 +234,7 @@ impl<'m> Ctx<'m> {
             diags: Vec::new(),
             facts: Facts::default(),
             scopes: Vec::new(),
+            let_anchor: HashMap::new(),
             pc: Label::Trusted,
             pc_conf: Conf::Public,
             pc_span: None,
@@ -348,6 +357,27 @@ impl<'m> Ctx<'m> {
         if let Some(s) = self.scopes.last_mut() {
             s.push((name.to_string(), t));
         }
+    }
+
+    /// A expressão da fotografia a que `e` equivale, se `e` for `s.inventory("k")`/`s.managed()`
+    /// ou uma variável cuja ligação visível é um `let` de uma delas (direto ou por outra variável).
+    /// A fotografia é capturada uma vez por execução e é imutável nos dois runtimes, e `let` não
+    /// se reatribui: ler a variável é ler a fotografia.
+    fn snapshot_expr(&self, e: &Expr) -> Option<Expr> {
+        if e.inventory_anchor().is_some() {
+            return Some(e.clone());
+        }
+        let ExprKind::Var(name) = &e.kind else { return None };
+        for (d, s) in self.scopes.iter().enumerate().rev() {
+            for (i, (n, _)) in s.iter().enumerate().rev() {
+                if n == name {
+                    // A ligação visível é esta: se não for um `let` da fotografia, não é âncora,
+                    // mesmo que uma ligação mais externa com o mesmo nome fosse.
+                    return self.let_anchor.get(&(d, i)).cloned();
+                }
+            }
+        }
+        None
     }
 
     fn lookup(&self, name: &str) -> Option<LTy> {
@@ -1477,6 +1507,8 @@ impl<'m> Ctx<'m> {
 
     fn block(&mut self, b: &Block) -> LTy {
         self.scopes.push(Vec::new());
+        let depth = self.scopes.len() - 1;
+        self.let_anchor.retain(|(d, _), _| *d < depth);
         let mut diverged = false;
         for s in &b.stmts {
             match s {
@@ -1487,7 +1519,12 @@ impl<'m> Ctx<'m> {
                     if matches!(t.ty, Ty::IdemKey) {
                         self.facts.linear_lets.insert(*span);
                     }
+                    let anchor = self.snapshot_expr(value);
                     self.bind(&name.name, t);
+                    if let Some(a) = anchor {
+                        let i = self.scopes[depth].len() - 1;
+                        self.let_anchor.insert((depth, i), a);
+                    }
                     // v1.0-RC8: `keeping … as nome` liga também a lista do que foi deixado de fora
                     // (só a do `refine` que é o valor desta ligação, não a de um `let` aninhado)
                     if self.keep_bind.as_ref().is_some_and(|(s, ..)| *s == value.span) {
@@ -1521,6 +1558,7 @@ impl<'m> Ctx<'m> {
             None if diverged => LTy::never(),
             None => LTy::trusted(Ty::Unit),
         };
+        self.let_anchor.retain(|(d, _), _| *d < depth);
         self.scopes.pop();
         out
     }
@@ -2877,8 +2915,15 @@ impl<'m> Ctx<'m> {
         let (oty, _) = self.resolve(out);
         // Ancoragem: o prompt recebe o inventário da fotografia confiável. O `refine` que decidir
         // sobre este rascunho confere que a política usa a mesma fonte (E0421/E0422).
-        let names: BTreeSet<String> =
-            fields.iter().filter_map(|(_, v)| v.inventory_anchor()).map(str::to_string).collect();
+        let mut names: BTreeSet<String> = BTreeSet::new();
+        for (_, v) in fields {
+            if let Some(k) = v.inventory_anchor() {
+                names.insert(k.to_string());
+            } else if let Some(a) = self.snapshot_expr(v) {
+                names.insert(a.inventory_anchor().expect("snapshot_expr só devolve âncoras").to_string());
+                self.facts.anchor_vars.push((v.span, a));
+            }
+        }
         if !names.is_empty() {
             self.anchored.insert(e.span, names);
         }

@@ -806,6 +806,83 @@ pub struct Expr {
     pub span: Span,
 }
 
+impl Block {
+    /// Visita, em pré-ordem e com acesso mutável, todas as expressões deste bloco.
+    pub fn walk_mut(&mut self, f: &mut dyn FnMut(&mut Expr)) {
+        for st in &mut self.stmts {
+            match st {
+                Stmt::Let { value, .. } => value.walk_mut(f),
+                Stmt::Expr(x) => x.walk_mut(f),
+            }
+        }
+        if let Some(t) = &mut self.tail {
+            t.walk_mut(f);
+        }
+    }
+}
+
+impl Expr {
+    /// Visita esta expressão e todas as subexpressões, em pré-ordem, com acesso mutável. Se `f`
+    /// substituir o nó, os filhos visitados são os do nó novo.
+    pub fn walk_mut(&mut self, f: &mut dyn FnMut(&mut Expr)) {
+        f(self);
+        match &mut self.kind {
+            ExprKind::Int(_) | ExprKind::Bool(_) | ExprKind::Str(_) | ExprKind::Var(_) | ExprKind::Transfer(_) => {}
+            ExprKind::Field(x, _) | ExprKind::Unary(_, x) | ExprKind::Return(x) => x.walk_mut(f),
+            ExprKind::Quote(x) | ExprKind::Commit(x) => x.walk_mut(f),
+            ExprKind::Call { args, .. } => args.iter_mut().for_each(|a| a.walk_mut(f)),
+            ExprKind::Method { recv, args, .. } => {
+                recv.walk_mut(f);
+                args.iter_mut().for_each(|a| a.walk_mut(f));
+            }
+            ExprKind::Ctor { fields, .. } | ExprKind::Infer { fields, .. } => {
+                fields.iter_mut().for_each(|(_, v)| v.walk_mut(f))
+            }
+            ExprKind::Binary(_, l, r) => {
+                l.walk_mut(f);
+                r.walk_mut(f);
+            }
+            ExprKind::If { cond, then, els } => {
+                cond.walk_mut(f);
+                then.walk_mut(f);
+                if let Some(b) = els {
+                    b.walk_mut(f);
+                }
+            }
+            ExprKind::Match { scrut, arms } => {
+                scrut.walk_mut(f);
+                arms.iter_mut().for_each(|a| a.body.walk_mut(f));
+            }
+            ExprKind::Block(b) => b.walk_mut(f),
+            ExprKind::Refine { draft, els, .. } => {
+                draft.walk_mut(f);
+                els.walk_mut(f);
+            }
+            ExprKind::Atomic { recover, body, on_failure, on_cf } => {
+                recover.walk_mut(f);
+                body.walk_mut(f);
+                if let Some((_, b)) = on_failure {
+                    b.walk_mut(f);
+                }
+                if let Some((_, b)) = on_cf {
+                    b.walk_mut(f);
+                }
+            }
+            ExprKind::Await { cond, .. } => cond.walk_mut(f),
+            ExprKind::Reconcile { els, .. } => els.walk_mut(f),
+            ExprKind::List(xs) => xs.iter_mut().for_each(|x| x.walk_mut(f)),
+            ExprKind::For { iter, body, .. } => {
+                iter.walk_mut(f);
+                body.walk_mut(f);
+            }
+            ExprKind::Quant { iter, body, .. } => {
+                iter.walk_mut(f);
+                body.walk_mut(f);
+            }
+        }
+    }
+}
+
 impl Expr {
     /// `s.managed()` ou `s.telemetry()`: um campo do prompt que vem da fotografia confiável do
     /// host. Os dois backends o rotulam como `Trusted` no payload do modelo.
