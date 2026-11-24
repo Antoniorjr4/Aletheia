@@ -1168,11 +1168,15 @@ impl Parser {
                 Ok(Expr { kind: ExprKind::For { var, iter: Box::new(iter), body }, span })
             }
             Tok::Ident(name)
-                if (name == "all" || name == "any")
+                if (name == "all" || name == "any" || name == "sum")
                     && matches!(self.peek_at(1), Tok::Ident(_))
                     && matches!(self.peek_at(2), Tok::Ident(k) if k == "in") =>
             {
-                let all = name == "all";
+                let op = match name.as_str() {
+                    "all" => QuantOp::All,
+                    "any" => QuantOp::Any,
+                    _ => QuantOp::Sum,
+                };
                 self.bump();
                 let var = self.ident()?;
                 self.bump(); // in
@@ -1183,7 +1187,7 @@ impl Parser {
                 self.expect(Tok::FatArrow)?;
                 let body = self.expr()?;
                 let span = start.to(body.span);
-                Ok(Expr { kind: ExprKind::Quant { all, var, iter: Box::new(iter), body: Box::new(body) }, span })
+                Ok(Expr { kind: ExprKind::Quant { op, var, iter: Box::new(iter), body: Box::new(body) }, span })
             }
             Tok::LBrack => {
                 self.bump();
@@ -1500,7 +1504,7 @@ policy P(p: List[Action, 1..3]) -> Bool = all a in p => true
         assert_eq!(md.prop("overhead"), Some(640.0));
         let Item::Policy(p) = &m.items[2] else { panic!() };
         assert_eq!(p.params[0].ty.sig(), "List[Action, 1..3]");
-        assert!(matches!(p.body.kind, ExprKind::Quant { all: true, .. }));
+        assert!(matches!(p.body.kind, ExprKind::Quant { op: QuantOp::All, .. }));
         let e = parse_expr_str(r#"for x in [1, 2] { f(x) }"#).unwrap();
         let ExprKind::For { iter, .. } = &e.kind else { panic!("{e:?}") };
         assert!(matches!(&iter.kind, ExprKind::List(v) if v.len() == 2));

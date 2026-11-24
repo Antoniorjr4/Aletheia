@@ -806,8 +806,12 @@ impl Canon<'_> {
                 self.locals.pop();
                 self.w(")");
             }
-            ExprKind::Quant { all, var, iter, body } => {
-                self.w(if *all { "(all " } else { "(any " });
+            ExprKind::Quant { op, var, iter, body } => {
+                self.w(match op {
+                    QuantOp::All => "(all ",
+                    QuantOp::Any => "(any ",
+                    QuantOp::Sum => "(sum ",
+                });
                 self.expr(iter);
                 self.w(" ");
                 self.locals.push(var.name.clone());

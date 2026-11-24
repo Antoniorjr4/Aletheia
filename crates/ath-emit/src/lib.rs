@@ -797,7 +797,23 @@ impl<'m> Gen<'m> {
                 r?;
                 "None".into()
             }
-            ExprKind::Quant { all, var, iter, body } => {
+            ExprKind::Quant { op: QuantOp::Sum, var, iter, body } => {
+                let it = self.expr(iter)?;
+                let t = self.assign("q", "0".into());
+                self.env.push(Vec::new());
+                let x = self.bind(&var.name);
+                self.line(format!("for {x} in R.iter_list({it}, True):"));
+                let r = self.indented(|g| {
+                    let a = g.expr(body)?;
+                    g.line(format!("{t} = R.binop(\"+\", {t}, R.sum_body({a}))"));
+                    Ok(())
+                });
+                self.env.pop();
+                r?;
+                t
+            }
+            ExprKind::Quant { op, var, iter, body } => {
+                let all = &(*op == QuantOp::All);
                 let it = self.expr(iter)?;
                 let t = self.assign("q", if *all { "True" } else { "False" }.into());
                 self.env.push(Vec::new());

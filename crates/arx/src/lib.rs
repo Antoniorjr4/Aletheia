@@ -1227,7 +1227,25 @@ impl<'m> Arx<'m> {
                 }
                 Ok(Value::Unit)
             }
-            ExprKind::Quant { all, var, iter, body } => {
+            ExprKind::Quant { op: QuantOp::Sum, var, iter, body } => {
+                let Value::List(items) = self.eval(iter)? else {
+                    return Err(rt("R0103", "`sum` sobre valor que não é lista").into());
+                };
+                // Mesma aritmética de `+`: inteiro de 64 bits com volta (igual ao runtime Python).
+                let mut acc: i64 = 0;
+                for item in items {
+                    self.scopes.push(vec![(var.name.clone(), item)]);
+                    let r = self.eval(body);
+                    self.scopes.pop();
+                    match r? {
+                        Value::Int(n) => acc = acc.wrapping_add(n),
+                        _ => return Err(rt("R0103", "corpo de `sum` não inteiro").into()),
+                    }
+                }
+                Ok(Value::Int(acc))
+            }
+            ExprKind::Quant { op, var, iter, body } => {
+                let all = &(*op == QuantOp::All);
                 let Value::List(items) = self.eval(iter)? else {
                     return Err(rt("R0103", "quantificador sobre valor que não é lista").into());
                 };

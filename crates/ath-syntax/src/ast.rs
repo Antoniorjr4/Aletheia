@@ -909,6 +909,23 @@ impl Expr {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum QuantOp {
+    All,
+    Any,
+    Sum,
+}
+
+impl QuantOp {
+    pub fn keyword(self) -> &'static str {
+        match self {
+            QuantOp::All => "all",
+            QuantOp::Any => "any",
+            QuantOp::Sum => "sum",
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum ExprKind {
     Int(i64),
@@ -987,8 +1004,10 @@ pub enum ExprKind {
         body: Block,
     },
     /// `all x in xs => cond` / `any x in xs => cond`: quantificador limitado (puro em políticas).
+    /// `all x in xs => p`, `any x in xs => p` (Bool) e `sum x in xs => n` (Int): dobras sobre uma
+    /// lista delimitada, as únicas formas de iterar dentro de uma política.
     Quant {
-        all: bool,
+        op: QuantOp,
         var: Ident,
         iter: Box<Expr>,
         body: Box<Expr>,

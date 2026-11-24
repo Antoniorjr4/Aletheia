@@ -618,6 +618,11 @@ class Runtime:
             raise RtErr("R0103", "`len` sobre valor que não é lista nem texto")
         return len(v)
 
+    def sum_body(self, v):
+        if not is_int(v):
+            raise RtErr("R0103", "corpo de `sum` não inteiro")
+        return v
+
     def iter_list(self, v, quant: bool) -> list:
         if not isinstance(v, list):
             raise RtErr("R0103", "quantificador sobre valor que não é lista" if quant else "`for` sobre valor que não é lista")

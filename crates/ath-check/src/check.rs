@@ -593,17 +593,29 @@ impl<'m> Ctx<'m> {
                 Item::Type(d) => {
                     self.types.insert(d.name.name.clone(), d);
                     for v in &d.variants {
-                        if let Some((_, pv)) = self.variants.get(&v.name.name).copied() {
-                            self.push(
-                                Diag::new(
-                                    E0,
-                                    "E0002",
-                                    format!("variante `{}` definida mais de uma vez", v.name.name),
-                                    v.name.span,
-                                    "redefinida aqui",
-                                )
-                                .secondary(pv.name.span, "primeira definição"),
-                            );
+                        if let Some((pd, pv)) = self.variants.get(&v.name.name).copied() {
+                            let mut diag = Diag::new(
+                                E0,
+                                "E0002",
+                                format!("variante `{}` definida mais de uma vez", v.name.name),
+                                v.name.span,
+                                "redefinida aqui",
+                            )
+                            .secondary(pv.name.span, "primeira definição");
+                            // Nomes de variante são do módulo, não do tipo: diga qual nome usar.
+                            if pd.name.name != d.name.name {
+                                diag = diag
+                                    .note(format!(
+                                        "`{}` já é variante de `{}`; nomes de variante valem para o módulo inteiro",
+                                        v.name.name, pd.name.name
+                                    ))
+                                    .help(format!(
+                                        "dê a esta variante um nome próprio, como `{}{}`; para um total sobre uma lista, \
+                                         use `sum x in xs => …` em vez de slots fixos com `{}`",
+                                        v.name.name, d.name.name, v.name.name
+                                    ));
+                            }
+                            self.push(diag);
                         } else {
                             self.variants.insert(v.name.name.clone(), (d, v));
                         }
@@ -1694,7 +1706,7 @@ impl<'m> Ctx<'m> {
             ExprKind::List(items) => self.list_lit(items),
             ExprKind::For { var, iter, body } => {
                 if self.in_policy {
-                    self.impure(e.span, "laço `for` (use `all x in xs => …` ou `any`)");
+                    self.impure(e.span, "laço `for` (use `all x in xs => …`, `any` ou `sum`)");
                 }
                 let Some((it, elem)) = self.iteration(e.span, iter, "for") else {
                     self.scopes.push(vec![(var.name.clone(), LTy::never())]);
@@ -1702,40 +1714,68 @@ impl<'m> Ctx<'m> {
                     self.scopes.pop();
                     return LTy::trusted(Ty::Unit);
                 };
-                let saved = (self.pc, self.pc_span);
-                // O número de iterações é decidido pela lista: fluxo implícito, como num `match`.
+                let saved = (self.pc, self.pc_span, self.pc_conf, self.pc_conf_span);
+                // O número de iterações é decidido pela lista: fluxo implícito, como num `match`,
+                // para a integridade e para a confidencialidade.
                 if it.lab < self.pc {
                     self.pc = it.lab;
                     self.pc_span = Some(iter.span);
+                }
+                if it.conf > self.pc_conf {
+                    self.pc_conf = it.conf;
+                    self.pc_conf_span = Some(iter.span);
                 }
                 self.scopes.push(vec![(var.name.clone(), elem)]);
                 self.block(body);
                 self.scopes.pop();
-                (self.pc, self.pc_span) = saved;
+                (self.pc, self.pc_span, self.pc_conf, self.pc_conf_span) = saved;
                 LTy::trusted(Ty::Unit)
             }
-            ExprKind::Quant { var, iter, body, .. } => {
-                let Some((it, elem)) = self.iteration(e.span, iter, "quantificador") else {
+            ExprKind::Quant { op, var, iter, body } => {
+                let sum = *op == QuantOp::Sum;
+                let want = if sum { Ty::Int } else { Ty::Bool };
+                let Some((it, elem)) = self.iteration(e.span, iter, op.keyword()) else {
                     self.scopes.push(vec![(var.name.clone(), LTy::never())]);
                     self.expr(body);
                     self.scopes.pop();
-                    return LTy::trusted(Ty::Bool);
+                    return LTy::trusted(want);
                 };
-                let saved = (self.pc, self.pc_span);
+                let saved = (self.pc, self.pc_span, self.pc_conf, self.pc_conf_span);
                 if it.lab < self.pc {
                     self.pc = it.lab;
                     self.pc_span = Some(iter.span);
                 }
+                if it.conf > self.pc_conf {
+                    self.pc_conf = it.conf;
+                    self.pc_conf_span = Some(iter.span);
+                }
                 self.scopes.push(vec![(var.name.clone(), elem)]);
                 let b = self.expr(body);
                 self.scopes.pop();
-                (self.pc, self.pc_span) = saved;
-                if !assignable(&b.ty, &Ty::Bool) {
-                    self.mismatch(body.span, &Ty::Bool, &b.ty);
+                (self.pc, self.pc_span, self.pc_conf, self.pc_conf_span) = saved;
+                if !assignable(&b.ty, &want) {
+                    self.mismatch(body.span, &want, &b.ty);
                 }
-                let mut out = LTy::trusted(Ty::Bool);
+                let mut out = LTy::trusted(want);
+                // O resultado depende da lista e do corpo: os dois rótulos, nas duas dimensões
+                // (Ciclo 1: antes a confidencialidade não era propagada pelo quantificador).
                 out.meet_from(&it);
                 out.meet_from(&b);
+                out.join_conf_from(&it);
+                out.join_conf_from(&b);
+                if sum {
+                    // Soma de k termos em [a, b], k em [n_lo, n_hi]: o intervalo é provado pelo
+                    // tipo da lista e pelo refinamento do corpo; sem um deles, `Int` sem limite.
+                    let (n_lo, n_hi) = match &it.ty {
+                        Ty::List(_, _, lo, hi) => (*lo as i64, *hi as i64),
+                        _ => (0, 0),
+                    };
+                    if let Some(Refn::Int { lo, hi }) = b.refn {
+                        let lo = lo.and_then(|a| if a >= 0 { n_lo.checked_mul(a) } else { n_hi.checked_mul(a) });
+                        let hi = hi.and_then(|b| if b >= 0 { n_hi.checked_mul(b) } else { n_lo.checked_mul(b) });
+                        out.refn = Some(Refn::Int { lo, hi });
+                    }
+                }
                 out
             }
         }
@@ -1801,7 +1841,9 @@ impl<'m> Ctx<'m> {
             Ty::List(elem, er, lo, hi) => {
                 self.facts.loop_bounds.insert(span, (*lo, *hi));
                 self.facts.loops += 1;
-                let mut el = LTy::declared((**elem).clone(), it.lab, *er, it.origin.clone());
+                // O elemento herda integridade e confidencialidade da lista: iterar um segredo
+                // não o torna público (Ciclo 1: antes só a integridade era herdada).
+                let mut el = LTy::declared((**elem).clone(), it.lab, *er, it.origin.clone()).with_conf(it.conf);
                 if el.tok.is_none() {
                     el.tok = ty_tokens(elem, *er).filter(|_| matches!(**elem, Ty::List(..)));
                 }
@@ -2255,7 +2297,9 @@ impl<'m> Ctx<'m> {
                     }
                     _ => Some(Refn::Text { max: 20 }),
                 };
-                let mut out = LTy::declared(Ty::Text, t.lab, refn, t.origin.clone());
+                // A representação decimal de um segredo é o segredo (Ciclo 1: antes a
+                // confidencialidade se perdia aqui).
+                let mut out = LTy::declared(Ty::Text, t.lab, refn, t.origin.clone()).with_conf(t.conf);
                 out.tok = refn.map(|r| match r {
                     Refn::Text { max } => max as u64,
                     _ => 20,
