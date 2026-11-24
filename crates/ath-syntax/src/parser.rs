@@ -196,8 +196,8 @@ impl Parser {
     /// antes do ponto do erro. `None` se os delimitadores se desequilibram ou se o arquivo acaba.
     fn resync(&self, start: usize, at: usize) -> Option<usize> {
         let mut depth: u32 = 0;
-        for i in start..self.toks.len() {
-            let t = &self.toks[i].tok;
+        for (i, tk) in self.toks.iter().enumerate().skip(start) {
+            let t = &tk.tok;
             if depth == 0 && i > start && i >= at && Self::starts_item(t) {
                 return Some(i);
             }
