@@ -223,3 +223,21 @@ antes), as 6 sem violação nos ataques adversariais; 72 erros restantes, 26 del
 (política, efeitos, orçamento), que não serão relaxados. É banco de regressão, não evidência.
 Variantes homônimas: proposta em [p2/variantes-homonimas.md](p2/variantes-homonimas.md), sem código;
 a causa raiz é o idioma de slots fixos imposto por D8, que fica em P3.
+
+**24/11 — P3 iniciada: D8 resolvido; D14 encontrado e fechado.** Decisão delegada pelo dono do projeto
+("decida e execute"). `sum x in xs => n` entra no núcleo como terceira dobra delimitada, ao lado de
+`all`/`any`: corpo `Int`, mesma aritmética de `+` nos dois runtimes, intervalo do resultado provado
+pelo tipo quando o corpo tem intervalo declarado (o provador do E5 não deriva intervalos de `match`
+nem de literais; limite registrado). Remove a necessidade do idioma de slots fixos. Testes em
+`crates/athc/tests/ciclo1_sum.rs`, com equivalência ARX × Python em 9 planos.
+
+**D14 (defeito de garantia, pré-existente desde a RC10):** ao tipar a soma, quatro fluxos de
+confidencialidade aceitos indevidamente: elemento de lista `Secret` tratado como `Public` dentro de
+`for`/`all`/`any`; contagem de iterações de `for` sobre lista `Secret`; resultado de `all`/`any` sobre
+lista `Secret`; `text(n)` descartando a confidencialidade. Os quatro agora dão E0440. Nenhum programa
+`.ath` do repositório muda de aceitação (comparação arquivo a arquivo contra o compilador anterior).
+Não há medição publicada que dependesse desses fluxos: nenhum benchmark usa `^ Secret`.
+
+Variantes homônimas: aplicada só a opção A (E0002 diz o tipo e sugere nome e `sum`); resolução de
+nomes inalterada. O guia do M10 está congelado e não foi alterado; uma campanha futura precisa de
+guia novo, versionado à parte.
