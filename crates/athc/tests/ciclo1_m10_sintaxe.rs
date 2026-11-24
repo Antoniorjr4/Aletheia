@@ -242,3 +242,74 @@ fn len_de_texto_conta_caracteres_igual_nos_dois_runtimes() {
         assert_eq!(p, want, "Python: {body:?}");
     }
 }
+
+// ------------------------------------------------------------ vários erros de sintaxe por compilação
+
+fn p0001(src: &str) -> Vec<String> {
+    match compile(src) {
+        Ok(_) => Vec::new(),
+        Err(d) => d.into_iter().filter(|x| x.code == "P0001").map(|x| x.msg).collect(),
+    }
+}
+
+const BASE: &str = r#"module rec
+type A = | A1 { x: Int[0..9] } | A2
+type B = | B1 | B2
+model m { price_in = 0.0  price_out = 0.0  ctx = 8192  max_out = 64  reasoning = 0  ttft = 1.0  per_tok = 0.01 }
+policy PA(a: A) -> Bool = match a { A1 { x } => x <= 3, A2 => true }
+policy PB(b: B) -> Bool = match b { B1 => true, B2 => false }
+"#;
+
+#[test]
+fn erros_em_itens_diferentes_sao_todos_reportados() {
+    assert!(compile(BASE).is_ok());
+    // Três itens quebrados; o último nem fecha a chave.
+    let src = BASE.replace("x <= 3, A2", "x <= = 3, A2").replace("B2 => false }", "B2 => }")
+        + "policy PC(b: B) -> Bool = match b { B1 => true,\n";
+    let e = p0001(&src);
+    assert_eq!(e.len(), 3, "{e:?}");
+    // Item desequilibrado ANTES dos outros: depois dele não há ponto seguro, a análise para ali.
+    let src = BASE.replace("type B = | B1 | B2", "type B = | B1 | B2 {").replace("x <= 3, A2", "x <= = 3, A2");
+    assert_eq!(p0001(&src).len(), 1, "{:?}", p0001(&src));
+}
+
+#[test]
+fn cada_item_quebrado_conta_uma_vez_e_os_intactos_nao_acusam_nada() {
+    let src = BASE.replace("x <= 3, A2", "x <= = 3, A2").replace("B2 => false }", "B2 => }");
+    let e = p0001(&src);
+    assert_eq!(e.len(), 2, "{e:?}");
+    // Mesmo arquivo com só um item quebrado: um erro, e o mesmo erro.
+    let um = p0001(&BASE.replace("x <= 3, A2", "x <= = 3, A2"));
+    assert_eq!(um.len(), 1);
+    assert_eq!(um[0], e[0]);
+}
+
+#[test]
+fn item_sem_fecho_nao_gera_erro_em_cascata() {
+    // A chave de `PA` nunca fecha: tudo o que vem depois está dentro dela. Um erro só.
+    let src = BASE.replace("A2 => true }", "A2 => true ");
+    assert_eq!(p0001(&src).len(), 1, "{:?}", p0001(&src));
+    // Fecho a mais: profundidade negativa, para no primeiro erro.
+    let src = BASE.replace("B2 => false }", "B2 => false } }") + "policy PZ(b: B) -> Bool = = true\n";
+    assert_eq!(p0001(&src).len(), 1, "{:?}", p0001(&src));
+}
+
+#[test]
+fn curinga_nao_acusa_erro_quando_o_tipo_esta_no_item_descartado() {
+    // `type B` quebrado e um `match` com curinga sobre B: só o erro real do tipo aparece.
+    let src = BASE.replace("type B = | B1 | B2", "type B = | B1 | B2 x").replace("B2 => false }", "_ => false }");
+    let e = p0001(&src);
+    assert_eq!(e.len(), 1, "{e:?}");
+    assert!(!e[0].contains("curinga"), "{e:?}");
+}
+
+#[test]
+fn com_erro_de_sintaxe_o_verificador_nao_roda() {
+    // Erro de sintaxe num item e erro de tipo noutro: só o de sintaxe sai; nenhuma árvore parcial
+    // chega ao verificador.
+    let src = BASE.replace("x <= 3, A2", "x <= = 3, A2").replace("B2 => false", "B2 => 7");
+    match compile(&src) {
+        Err(d) => assert!(d.iter().all(|x| x.code == "P0001"), "{:?}", d.iter().map(|x| &x.code).collect::<Vec<_>>()),
+        Ok(_) => panic!("aceito com erro de sintaxe"),
+    }
+}

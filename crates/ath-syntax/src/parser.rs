@@ -13,14 +13,35 @@ pub struct ParseError {
 type PResult<T> = Result<T, ParseError>;
 
 pub fn parse_module(src: &str) -> PResult<Module> {
-    let toks = lex(src).map_err(|e| ParseError { msg: e.msg, span: e.span })?;
+    parse_module_all(src).map_err(|mut errs| errs.swap_remove(0))
+}
+
+/// Como [`parse_module`], mas devolve todos os erros de sintaxe independentes do módulo.
+///
+/// A recuperação é por item de topo: um erro dentro de um item descarta o item inteiro e a análise
+/// recomeça no próximo `type`/`model`/`authority`/`witness`/`bind`/`tool`/`policy`/`agent` em
+/// profundidade zero de chaves, colchetes e parênteses. Se os delimitadores do item não se
+/// equilibram, não há ponto seguro de recomeço e a análise para ali: na dúvida, um erro a menos,
+/// nunca um erro em cascata. Nenhuma árvore sai daqui se houver erro.
+pub fn parse_module_all(src: &str) -> Result<Module, Vec<ParseError>> {
+    let toks = lex(src).map_err(|e| vec![ParseError { msg: e.msg, span: e.span }])?;
     // Primeira passada: só para conhecer os tipos algébricos do módulo. O braço curinga `_` de
     // um `match` é expandido na segunda, para as variantes que os outros braços não nomeiam; assim
-    // o resto do compilador e os dois runtimes só veem braços com variante explícita.
+    // o resto do compilador e os dois runtimes só veem braços com variante explícita. Com erro de
+    // sintaxe na primeira, a segunda não roda: sem todos os tipos, a expansão do curinga poderia
+    // acusar um erro que é só consequência do item descartado.
     let mut first = Parser { toks: toks.clone(), pos: 0, no_ctor: false, adts: None };
-    let adts = adt_index(&first.module()?);
-    let mut p = Parser { toks, pos: 0, no_ctor: false, adts: Some(adts) };
-    p.module()
+    let (m, errs) = first.module_recovering();
+    if !errs.is_empty() {
+        return Err(errs);
+    }
+    let mut p = Parser { toks, pos: 0, no_ctor: false, adts: Some(adt_index(&m)) };
+    let (m, errs) = p.module_recovering();
+    if errs.is_empty() {
+        Ok(m)
+    } else {
+        Err(errs)
+    }
 }
 
 /// Para cada variante, a lista de variantes do tipo que a declara, na ordem de declaração.
@@ -135,18 +156,66 @@ impl Parser {
 
     // ------------------------------------------------------------ itens
 
-    fn module(&mut self) -> PResult<Module> {
+    fn module_header(&mut self) -> PResult<String> {
         self.expect(Tok::Module)?;
         let mut name = self.ident()?.name;
         while self.eat(&Tok::Dot) {
             name.push('.');
             name.push_str(&self.ident()?.name);
         }
+        Ok(name)
+    }
+
+    /// Itens analisados sem erro e todos os erros independentes (ver [`parse_module_all`]).
+    fn module_recovering(&mut self) -> (Module, Vec<ParseError>) {
+        let mut errs = Vec::new();
+        let name = match self.module_header() {
+            Ok(n) => n,
+            // Sem cabeçalho válido não há como saber onde começa o primeiro item.
+            Err(e) => return (Module { name: String::new(), items: Vec::new() }, vec![e]),
+        };
         let mut items = Vec::new();
         while *self.peek() != Tok::Eof {
-            items.push(self.item()?);
+            let start = self.pos;
+            match self.item() {
+                Ok(it) => items.push(it),
+                Err(e) => {
+                    let at = self.pos;
+                    errs.push(e);
+                    match self.resync(start, at) {
+                        Some(next) => self.pos = next,
+                        None => break,
+                    }
+                }
+            }
         }
-        Ok(Module { name, items })
+        (Module { name, items }, errs)
+    }
+
+    /// Próximo início de item em profundidade zero, a partir do começo do item que falhou e não
+    /// antes do ponto do erro. `None` se os delimitadores se desequilibram ou se o arquivo acaba.
+    fn resync(&self, start: usize, at: usize) -> Option<usize> {
+        let mut depth: u32 = 0;
+        for i in start..self.toks.len() {
+            let t = &self.toks[i].tok;
+            if depth == 0 && i > start && i >= at && Self::starts_item(t) {
+                return Some(i);
+            }
+            match t {
+                Tok::LBrace | Tok::LBrack | Tok::LParen => depth += 1,
+                Tok::RBrace | Tok::RBrack | Tok::RParen => depth = depth.checked_sub(1)?,
+                Tok::Eof => return None,
+                _ => {}
+            }
+        }
+        None
+    }
+
+    fn starts_item(t: &Tok) -> bool {
+        matches!(
+            t,
+            Tok::Type | Tok::Model | Tok::Authority | Tok::Witness | Tok::Bind | Tok::Tool | Tok::Policy | Tok::Agent
+        )
     }
 
     fn item(&mut self) -> PResult<Item> {

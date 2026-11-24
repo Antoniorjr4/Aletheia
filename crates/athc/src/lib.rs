@@ -14,8 +14,9 @@ pub struct Compiled {
 }
 
 pub fn compile(src: &str) -> Result<Compiled, Vec<Diag>> {
-    let module =
-        ath_syntax::parse_module(src).map_err(|e| vec![Diag::new(Stratum::Parse, "P0001", e.msg, e.span, "aqui")])?;
+    let module = ath_syntax::parse_module_all(src).map_err(|errs| {
+        errs.into_iter().map(|e| Diag::new(Stratum::Parse, "P0001", e.msg, e.span, "aqui")).collect::<Vec<_>>()
+    })?;
     let check = check_module(&module);
     if !check.ok() {
         return Err(check.diags);
