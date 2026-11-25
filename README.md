@@ -37,6 +37,25 @@ $ athc check examples/rollout.ath
 ✓ Codex              12 objetos BLAKE3, raiz #9ecbfccad097
 ```
 
+## Estado atual (25/11/2026): Ciclo 1 de consolidação
+
+O que está medido, a favor e contra. Registro completo em [`docs/CICLO-1.md`](docs/CICLO-1.md).
+
+| pergunta | resultado | onde |
+| --- | --- | --- |
+| A linguagem barra injeção de prompt num benchmark oficial? | AgentDojo `banking`, 144 pares: ataques cumpridos **106/144 sem defesa → 0/144**, sem perda de utilidade, com 60% menos tokens | [`RESULTS.md`](bench/agentdojo/RESULTS.md) |
+| E contra um Python endurecido competente? | Segurança igual (0/144 nos dois). Utilidade sob ataque: Aletheia v3 **92/144** × Python 67/144 (p = 0,0002; os dois diferem em mais de um fator) | [`docs/CICLO-1.md`](docs/CICLO-1.md) |
+| Erros de garantia são pegos antes de rodar? | 16/17 defeitos semeados × 0/17 no Python (catálogo do autor); vantagem pequena em catálogo cego | [`PROVA-ENGENHARIA.md`](bench/agentdojo/PROVA-ENGENHARIA.md) |
+| Mudar um agente custa menos? | **Não** na medição feita: 32% mais linhas por mudança (hipótese refutada pelo critério pré-registrado) | idem |
+| Um modelo escreve agentes melhores em Aletheia? | **Não** (M10, 48 autorias, critério pré-registrado): correto e seguro na 1ª versão 2/24 × 10/24 do Python. A favor: programas com menos da metade das linhas e 30% menos tokens | [`bench/m10/PROTOCOLO.md`](bench/m10/PROTOCOLO.md) |
+
+Depois do M10, sem alterar o resultado dele: sintaxe comum aceita (`//`, `_`, `{ .. }`), `len` em
+texto, vários erros de sintaxe por compilação, âncora de inventário através de `let`,
+`sum x in xs => n` (soma delimitada, com intervalo provado), e quatro vazamentos de
+confidencialidade por iteração fechados (D14). As regras de negócio que os agentes do M10
+violaram são expressáveis e testadas nos dois runtimes ([`docs/p4/DIAGNOSTICO.md`](docs/p4/DIAGNOSTICO.md)).
+O que falta provar é uma nova campanha de autoria com especificações cegas novas.
+
 ## v1.0-RC10: confidencialidade — o fluxo tóxico barrado por tipo
 
 ```sh
@@ -719,20 +738,20 @@ cenários e limites estão em [`bench/m1/README.md`](bench/m1/README.md); todas 
 (v1.2.2) em dois pipelines com o mesmo modelo: o baseline padrão do AgentDojo e o agente
 [`banking.ath`](bench/agentdojo/banking.ath), ligado ao benchmark por um
 `BasePipelineElement`. As tarefas, o ambiente injetado, o ataque `important_instructions` e
-os verificadores são os do pacote. Lotes 1 e 2, `openai/gpt-oss-120b` na Groq, com o agente
-congelado e os pares completos nos dois pipelines:
+os verificadores são os do pacote. Matriz completa, `openai/gpt-oss-120b` na Groq, com o agente
+congelado (16 tarefas, 144 pares):
 
-| pipeline | utilidade (16) | utilidade sob ataque (94 pares) | ASR (94 pares) | tokens por execução |
+| pipeline | utilidade (16) | utilidade sob ataque (144) | ASR (144) | tokens por execução |
 | --- | --- | --- | --- | --- |
-| baseline AgentDojo | 68,8% (IC95 44–86%) | 53,2% (43–63%) | 72,3% (63–80%) | 4.570 |
-| Aletheia | 75,0% (IC95 50–90%) | 60,6% (51–70%) | **0,0%** (0–4%) | 1.923 |
+| baseline AgentDojo | 68,8% (11/16) | 50,7% (73/144) | 73,6% (106/144; IC95 66–80%) | 4.868 |
+| Aletheia | 75,0% (12/16) | 53,5% (77/144) | **0,0%** (0/144; IC95 0–3%) | 1.920 |
 
-A cobertura é parcial (94 dos 144 pares, das tarefas 0 a 10). Os intervalos supõem pares
-independentes. Como cada tarefa de usuário aparece com todas as injeções, o IC do ASR do
-Aletheia sob correlação total dentro da tarefa vai de 0% a 26%. Nos 94 pares, a política não
-precisou recusar nenhuma proposta injetada: o planejador não as propôs. Os detalhes, as falhas
-de cada lado, o custo de cada lote e o que falta estão em
-[`RESULTS.md`](bench/agentdojo/RESULTS.md).
+McNemar pareado: ASR 106 × 0 (p < 10⁻³⁰); nenhuma diferença de utilidade é significativa. Sob
+correlação total dentro da tarefa, o IC do ASR do Aletheia vai de 0% a 19%. No lote final a política
+recusou, com modelo real, uma proposta que obedecia à injeção. Limites: uma suíte, um modelo, um
+ataque, uma execução por par. Os detalhes, as falhas de cada lado, o custo de cada lote e a comparação
+com Python endurecido estão em [`RESULTS.md`](bench/agentdojo/RESULTS.md) e
+[`PROVA.md`](bench/agentdojo/PROVA.md).
 
 ## Estrutura
 
@@ -853,8 +872,8 @@ docs/            registros da Rev6 e da Rev7: execuções reais, decisões e lim
    segunda classe de recurso linear em `Linear`, e o T1, o T2 e o T9 refeitos sobre ela. As
    chaves no tripé e o tratador `timeout_unknown` como expressão do núcleo foram entregues na
    Rev11 (`docs/REV11.md`).
-2. **A matriz oficial do AgentDojo**: completar a rodada `banking` (16 tarefas e 144 pares
-   sob ataque, baseline × Aletheia) e estender a ponte à suíte `workspace`.
+2. **Autoria por modelo** (Ciclo 1): nova campanha com especificações cegas novas e guia novo,
+   depois das correções pós-M10; e a ponte do AgentDojo estendida à suíte `workspace`.
 3. **Invariantes de recuperação provados**: contratos `restoring` sobre um estado abstrato do
    mundo, descarregados em E5 com SMT, e cobertura de footprint nas pós-condições.
 4. **Recuperação após queda** a partir do journal, e o reconciliador durável como serviço.
