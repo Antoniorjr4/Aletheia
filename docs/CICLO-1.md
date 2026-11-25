@@ -249,3 +249,9 @@ escritas e testadas nos dois runtimes: os ataques do M10 e 7 variantes hostis s�
 política; os legítimos passam. Corrigido no caminho: `(` em linha nova não é mais chamada da linha
 anterior. Em aberto: nada impede o autor de omitir a regra; unidades em tipos é a proposta de maior
 efeito e exige decisão.
+
+**25/11 — autorização geral do dono do projeto** ("No que precisar de minha autorização, considere
+autorizado"). Interpretação aplicada: cobre as decisões de linguagem dentro do ciclo, inclusive
+construção nova no núcleo (unidades em tipos, proposta em [p4/DIAGNOSTICO.md](p4/DIAGNOSTICO.md)).
+Não cobre merge de PR, gasto acima do orçamento de US$ 1,50 do ciclo nem mudança de critério,
+resultado ou teste; esses continuam exigindo pedido explícito.
