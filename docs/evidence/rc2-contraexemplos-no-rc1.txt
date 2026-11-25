@@ -1,0 +1,103 @@
+warning: method `recover` is never used
+   --> crates/athc/tests/rc2.rs:104:8
+    |
+ 31 | impl World {
+    | ---------- method in this implementation
+...
+104 |     fn recover(&self, wal: &str, extra: &[&str]) -> Output {
+    |        ^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `athc` (test "rc2") generated 1 warning
+
+running 2 tests
+test sigkill_between_authorization_and_intent_never_strands_a_grant ... FAILED
+test two_processes_cannot_spend_the_same_grant ... FAILED
+
+failures:
+
+---- sigkill_between_authorization_and_intent_never_strands_a_grant stdout ----
+
+thread 'sigkill_between_authorization_and_intent_never_strands_a_grant' panicked at crates/athc/tests/rc2.rs:178:13:
+operação 1: a concessão 97835ea11dd2 foi consumida e nenhuma intenção do WAL a cita
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/std/src/panicking.rs:689:5
+   1: core::panicking::panic_fmt
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/panicking.rs:80:14
+   2: rc2::sigkill_between_authorization_and_intent_never_strands_a_grant
+             at ./tests/rc2.rs:178:13
+   3: rc2::sigkill_between_authorization_and_intent_never_strands_a_grant::{closure#0}
+             at ./tests/rc2.rs:166:68
+   4: <rc2::sigkill_between_authorization_and_intent_never_strands_a_grant::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+   5: <fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+
+---- two_processes_cannot_spend_the_same_grant stdout ----
+
+thread 'two_processes_cannot_spend_the_same_grant' panicked at crates/athc/tests/rc2.rs:207:5:
+assertion `left == right` failed: uma concessão foi consumida duas vezes: ["97835ea11dd287f268d6314d0b2d4530d41b4811c12c73ef8a5f26d92f4f93fb", "97835ea11dd287f268d6314d0b2d4530d41b4811c12c73ef8a5f26d92f4f93fb", "eef5db663ba714eb6b1c1e0d2362a170a8a6713f3c1970c2b771df730a8e9256", "eef5db663ba714eb6b1c1e0d2362a170a8a6713f3c1970c2b771df730a8e9256", "5e79d3a0d0204071588cef66613f87c10417f6edc27cbbe3ad3276046e12d12f", "5e79d3a0d0204071588cef66613f87c10417f6edc27cbbe3ad3276046e12d12f"]
+✓ verificado: E0 E1 E2 E3 E5 E6 · Codex #27cda7f99b01
+▶ Treasurer.settle("Pague 120.00 a ACME (NF 4471) e 75.50 a BETA; ag"…)  provedor: scripted
+        t      +Δt
+      0,0     +0,6  statement(⟨cap⟩, "TREASURY")  2 linhas de texto
+      0,6     +2,9  infer planner · tentativa 1  → Plan { pays: [Pay { to: "ACME", amount: "120.00", memo: "NF 4471" }, Pay { to: "BETA", amount: "75.50", memo: "pedido da tesouraria" }], finals: [Schedule { to: "BETA", amount: "250.00", date: "2026-12-01" }], answer: "Paguei 120.00 a ACME e 75.50 a BETA; agendei 250"… }  (294 tok estimados, US$ 0,0001)
+                    ✓ Endorsed(SafePlan)
+      3,5     +0,0  pay(⟨cap⟩, "ACME", "120.00", "NF 4471", k1)  "pay #3 120.00 -> ACME"
+      3,5     +0,0  pay(⟨cap⟩, "BETA", "75.50", "pedido da tesouraria", k2)  "pay #4 75.50 -> BETA"
+      3,5     +0,0  commit schedule(⟨cap⟩, "BETA", "250.00", "2026-12-01", k3)  "schedule #6 250.00 -> BETA em 2026-12-01"
+      3,5     +0,0  commit receipt(⟨cap⟩, "Paguei 120.00 a ACME e 75.50 a BETA; agendei 250"…, k4)  "receipt #7"
+◀ resultado: "Paguei 120.00 a ACME e 75.50 a BETA; agendei 250"…
+
+  orçamento 294 / 40.000 tok · US$ 0,0001 / 0,10 · 3,5 s / 900,0 s
+  mundo     ACME 120.00 · BETA 75.50 · MALLORY 0.00 · TREASURY 9804.50
+  wal       /tmp/ath-rc2-1228-race/a.wal · execução r · 13 registros · 4 intenção(ões), 0 em aberto
+  journal   /tmp/ath-rc2-1228-race/a.journal.jsonl · 19 entradas · cabeça #8d7caa0ea816 · cadeia íntegra
+
+✓ verificado: E0 E1 E2 E3 E5 E6 · Codex #27cda7f99b01
+▶ Treasurer.settle("Pague 120.00 a ACME (NF 4471) e 75.50 a BETA; ag"…)  provedor: scripted
+        t      +Δt
+      0,0     +0,6  statement(⟨cap⟩, "TREASURY")  2 linhas de texto
+      0,6     +2,9  infer planner · tentativa 1  → Plan { pays: [Pay { to: "ACME", amount: "120.00", memo: "NF 4471" }, Pay { to: "BETA", amount: "75.50", memo: "pedido da tesouraria" }], finals: [Schedule { to: "BETA", amount: "250.00", date: "2026-12-01" }], answer: "Paguei 120.00 a ACME e 75.50 a BETA; agendei 250"… }  (294 tok estimados, US$ 0,0001)
+                    ✓ Endorsed(SafePlan)
+      3,5     +0,0  pay(⟨cap⟩, "ACME", "120.00", "NF 4471", k1)  "pay #3 120.00 -> ACME"
+      3,5     +0,0  pay(⟨cap⟩, "BETA", "75.50", "pedido da tesouraria", k2)  "pay #4 75.50 -> BETA"
+      3,5     +0,0  commit schedule(⟨cap⟩, "BETA", "250.00", "2026-12-01", k3)  "schedule #5 250.00 -> BETA em 2026-12-01"
+      3,5     +0,0  commit receipt(⟨cap⟩, "Paguei 120.00 a ACME e 75.50 a BETA; agendei 250"…, k4)  "receipt #7"
+◀ resultado: "Paguei 120.00 a ACME e 75.50 a BETA; agendei 250"…
+
+  orçamento 294 / 40.000 tok · US$ 0,0001 / 0,10 · 3,5 s / 900,0 s
+  mundo     ACME 120.00 · BETA 75.50 · MALLORY 0.00 · TREASURY 9804.50
+  wal       /tmp/ath-rc2-1228-race/b.wal · execução r · 13 registros · 4 intenção(ões), 0 em aberto
+  journal   /tmp/ath-rc2-1228-race/b.journal.jsonl · 19 entradas · cabeça #377ed26c9eb2 · cadeia íntegra
+
+  left: 6
+ right: 3
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/std/src/panicking.rs:689:5
+   1: core::panicking::panic_fmt
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/panicking.rs:80:14
+   2: core::panicking::assert_failed_inner
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/panicking.rs:434:23
+   3: core::panicking::assert_failed::<usize, usize>
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/panicking.rs:394:5
+   4: rc2::two_processes_cannot_spend_the_same_grant
+             at ./tests/rc2.rs:207:5
+   5: rc2::two_processes_cannot_spend_the_same_grant::{closure#0}
+             at ./tests/rc2.rs:193:47
+   6: <rc2::two_processes_cannot_spend_the_same_grant::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+   7: <fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/function.rs:250:5
+
+
+failures:
+    sigkill_between_authorization_and_intent_never_strands_a_grant
+    two_processes_cannot_spend_the_same_grant
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.66s
+
+error: test failed, to rerun pass `-p athc --test rc2`

@@ -18,7 +18,7 @@ impl Stratum {
             Stratum::E0 => "E0 estrutura",
             Stratum::E1 => "E1 multiplicidade",
             Stratum::E2 => "E2 efeitos",
-            Stratum::E3 => "E3 integridade",
+            Stratum::E3 => "E3 integridade e confidencialidade",
             Stratum::E5 => "E5 refinamentos",
             Stratum::E6 => "E6 orçamento",
         }

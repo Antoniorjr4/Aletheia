@@ -1,0 +1,27 @@
+{
+ "pack": "support_email",
+ "lang": "py",
+ "rep": 3,
+ "model": "openai/gpt-oss-120b",
+ "clean": true,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.py",
+   "tok_in": 3021,
+   "tok_out": 3211,
+   "feedback": "static tools:\nv1.py:52:17: E714 [*] Test for object identity should be `is not`\nFound 1 error.\n[*] 1 fixable with the `--fix` option."
+  },
+  {
+   "cycle": 2,
+   "file": "v2.py",
+   "tok_in": 5228,
+   "tok_out": 2940,
+   "feedback": ""
+  }
+ ],
+ "tok_in": 8249,
+ "tok_out": 6151,
+ "seconds": 17.5,
+ "usd": 0.004928
+}

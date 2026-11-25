@@ -1,0 +1,21 @@
+-- v1.0-RC6: a primeira leitura de uma API independente (GitHub), por HTTPS, com o segredo por
+-- referência. `GH_TOKEN` vem do ambiente do executor.
+module rc6.github_probe
+
+tool repo_name(c: Cap[Repo.Read]) -> Text[..100] ^ Untrusted
+  ! { Repo.Read } reversible latency 5.0
+
+bind github {
+  url       = "https://api.github.com"
+  auth      = secret("GH_TOKEN")
+  repo_name = "GET /repos/Antoniorjr4/aletheia-sandbox -> full_name"
+}
+
+agent Probe(repo: Cap[Repo.Read])
+  budget [tok <= 10, usd <= 0.01, wall <= 60.0]
+{
+  on ask(q: Text[..16] ^ Trusted) -> Text ! { Repo.Read } {
+    let n = repo_name(repo)
+    "lido"
+  }
+}

@@ -10,6 +10,8 @@
   --replay cassete.json     reproduz as respostas gravadas (requisições idênticas exigidas)
   --agent A --on evento     (padrão: o primeiro agente e o primeiro handler)
   --arg-json JSON           argumento do evento no formato `Value::to_json` (repetível)
+  --grants concessões.json --run-id R
+                            as concessões (`s.authorizes`) e a identidade da execução
   --journal saída.jsonl     journal encadeado
   --core-journal saída.jsonl
                             a vista do núcleo λ_Ath do journal (act, endorse, end), reencadeada
@@ -81,9 +83,52 @@ def replay(argv: list) -> int:
     return 1
 
 
+def crash(argv: list) -> int:
+    """`crash programa.py --world w.json --models m.json --at ponto:n --wal saída.jsonl [--fuel 3]`:
+    roda com a queda injetada no ponto `ponto` (authorized, logged, intent, sent, confirmed, closed) da `n`-ésima
+    operação com chave; reinicia com o WAL persistido e o mesmo provedor e recupera. Escreve o
+    WAL final. Código 4 se o programa terminou antes da queda."""
+    from .wal import Crash, Wal
+
+    path, rest = argv[0], argv[1:]
+    opts = {rest[i].lstrip("-"): rest[i + 1] for i in range(0, len(rest), 2)}
+    prog = load_program(path)
+    world = SimWorld(json.load(open(opts["world"], encoding="utf-8")) if "world" in opts else {})
+    models = json.load(open(opts["models"], encoding="utf-8")) if "models" in opts else {}
+    point, nth = opts["at"].split(":")
+    rt = Runtime(prog, world, Scripted(models))
+    rt.wal = Wal()
+    rt.wal.crash = (point, int(nth))
+    if "grants" in opts:
+        rt.run_id = opts.get("run-id", "")
+        rt.load_grants(json.load(open(opts["grants"], encoding="utf-8")))
+    agent = opts.get("agent") or next(iter(prog.agents))
+    event = opts.get("on") or next(iter(prog.agents[agent]["handlers"]))
+    try:
+        rt.run(agent, event, [])
+    except Crash:
+        pass
+    except RtErr:
+        return 4
+    else:
+        return 4
+    # o reinício: um processo novo, o WAL que sobrou e o mesmo provedor remoto
+    rt2 = Runtime(prog, world, Scripted(models))
+    rt2.wal = Wal()
+    rt2.wal.log, _ = Wal.read(rt.wal.to_jsonl().encode("utf-8"))
+    # o registro de consumo é durável: sobrevive à queda junto com o WAL
+    rt2.spent_view = dict(rt.owners) if "grants" in opts else None
+    rt2.recover(int(opts.get("fuel", "3")))
+    with open(opts["wal"], "w", encoding="utf-8", newline="\n") as f:
+        f.write(rt2.wal.to_jsonl())
+    return 0
+
+
 def main(argv: list) -> int:
     if len(argv) >= 3 and argv[0] == "replay":
         return replay(argv[1:])
+    if len(argv) >= 2 and argv[0] == "crash":
+        return crash(argv[1:])
     if len(argv) < 2 or argv[0] != "run":
         print(__doc__, file=sys.stderr)
         return 2
@@ -117,6 +162,13 @@ def main(argv: list) -> int:
     raw = [json.loads(a) for a in opts.get("arg-json", [])]
     args = [from_arg(shape, j) if shape is not None else j for (_, shape, _), j in zip(params, raw)]
     rt = Runtime(prog, world, provider)
+    if one("grants"):
+        rt.run_id = one("run-id") or ""
+        rt.load_grants(json.load(open(one("grants"), encoding="utf-8")))
+    rt.now_unix = int(one("now") or 0)
+    if one("args-sig"):
+        rt.run_id = one("run-id") or ""
+        rt.args_attestation = (opts.get("arg-json", []), one("args-sig"))
     result, error = None, None
     try:
         result = to_json(rt.run(agent, event, args))
@@ -127,7 +179,8 @@ def main(argv: list) -> int:
             f.write(rt.journal.to_jsonl())
     if one("core-journal"):
         with open(one("core-journal"), "w", encoding="utf-8", newline="\n") as f:
-            f.write(core_view(rt.journal.entries).to_jsonl())
+            comp = [n for n, t in prog.tools.items() if t.get("class") == "compensable"]
+            f.write(core_view(rt.journal.entries, comp).to_jsonl())
     if recorder is not None:
         manifest = {"source_path": one("source") or path, "agent": agent, "event": event, "args": raw,
                     "world": json.load(open(one("world"), encoding="utf-8")) if one("world") else {}}
@@ -143,6 +196,13 @@ def main(argv: list) -> int:
         "world": world.state(),
         "spent": {"tok": rt.meter.tok, "usd": rt.meter.usd, "wall": rt.meter.wall},
         "journal_head": rt.journal.head,
+        # Rev13 (M-V): o registro semântico (vista do núcleo, sem tempo) e o de evidências
+        # (journal integral, com as medições), separados
+        "digests": {
+            "semantic": core_view(rt.journal.entries,
+                                  {n for n, t in prog.tools.items() if t["class"] == "compensable"}).head,
+            "evidence": rt.journal.head,
+        },
     }
     if one("report"):
         with open(one("report"), "w", encoding="utf-8", newline="\n") as f:

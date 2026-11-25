@@ -37,6 +37,181 @@ $ athc check examples/rollout.ath
 ✓ Codex              12 objetos BLAKE3, raiz #9ecbfccad097
 ```
 
+## Estado atual (25/11/2026): Ciclo 1 de consolidação
+
+O que está medido, a favor e contra. Registro completo em [`docs/CICLO-1.md`](docs/CICLO-1.md).
+
+| pergunta | resultado | onde |
+| --- | --- | --- |
+| A linguagem barra injeção de prompt num benchmark oficial? | AgentDojo `banking`, 144 pares: ataques cumpridos **106/144 sem defesa → 0/144**, sem perda de utilidade, com 60% menos tokens | [`RESULTS.md`](bench/agentdojo/RESULTS.md) |
+| E contra um Python endurecido competente? | Segurança igual (0/144 nos dois). Utilidade sob ataque: Aletheia v3 **92/144** × Python 67/144 (p = 0,0002; os dois diferem em mais de um fator) | [`docs/CICLO-1.md`](docs/CICLO-1.md) |
+| Erros de garantia são pegos antes de rodar? | 16/17 defeitos semeados × 0/17 no Python (catálogo do autor); vantagem pequena em catálogo cego | [`PROVA-ENGENHARIA.md`](bench/agentdojo/PROVA-ENGENHARIA.md) |
+| Mudar um agente custa menos? | **Não** na medição feita: 32% mais linhas por mudança (hipótese refutada pelo critério pré-registrado) | idem |
+| Um modelo escreve agentes melhores em Aletheia? | **Não** (M10, 48 autorias, critério pré-registrado): correto e seguro na 1ª versão 2/24 × 10/24 do Python. A favor: programas com menos da metade das linhas e 30% menos tokens | [`bench/m10/PROTOCOLO.md`](bench/m10/PROTOCOLO.md) |
+
+Depois do M10, sem alterar o resultado dele: sintaxe comum aceita (`//`, `_`, `{ .. }`), `len` em
+texto, vários erros de sintaxe por compilação, âncora de inventário através de `let`,
+`sum x in xs => n` (soma delimitada, com intervalo provado), e quatro vazamentos de
+confidencialidade por iteração fechados (D14). As regras de negócio que os agentes do M10
+violaram são expressáveis e testadas nos dois runtimes ([`docs/p4/DIAGNOSTICO.md`](docs/p4/DIAGNOSTICO.md)).
+O que falta provar é uma nova campanha de autoria com especificações cegas novas.
+
+## v1.0-RC10: confidencialidade — o fluxo tóxico barrado por tipo
+
+```sh
+scripts/rc10-smoke.sh            # sem rede: a triagem legítima, o leak recusado, o rótulo do servidor
+```
+
+O padrão do servidor MCP do GitHub noticiado em nov/2026 (Invariant Labs): um agente com acesso a
+um repositório privado e a um público é levado, por um issue público com injeção, a copiar o
+privado para o público — o "lethal trifecta" (dado privado + conteúdo não confiável + canal de
+saída), que "exige controle arquitetural". A RC10 acrescenta a dimensão de **confidencialidade**
+(`Public ⊑ Internal ⊑ Secret`), dual da integridade: uma fonte privada é `^ Secret`, um canal
+público declara `^ Public`, e o verificador recusa (`E0440`) qualquer caminho de um dado secreto
+a um canal mais público — por derivação ou por fluxo implícito, antes de qualquer efeito, qualquer
+que seja a decisão do modelo. Com a integridade (RC5+), as três pernas do trifecta caem por eixos
+independentes. Em Lean, `no_toxic_flow` prova a não-interferência; em runtime, o rótulo do
+servidor MCP só eleva (`R0648`). Detalhes em [`docs/RC10.md`](docs/RC10.md).
+
+## v1.0-RC9: ferramentas de um servidor MCP, sob os tipos do programa
+
+```sh
+scripts/rc9-smoke.sh              # sem rede: a face MCP do ath-world, com modos hostis
+```
+
+Um `bind` liga as ferramentas do programa às de um servidor MCP (`mcp = env("…")`, stdio, nas
+eras `2026-07-28` e `initialize`). Antes de qualquer efeito, o que o servidor anuncia de cada
+ferramenta é conferido contra a declaração do programa (argumentos, obrigatórios, `enum`, tipo
+do caminho de saída), e o que o servidor diz de si só restringe: uma anotação que admite perigo
+numa leitura recusa, uma que promete segurança não muda nada, um rótulo `_meta.ifc` não
+confiável num resultado declarado confiável é culpa do provedor, descrições e `instructions` não
+chegam a prompt algum. Pedidos do servidor ao modelo ou ao usuário são recusados; o processo não
+herda o ambiente do executor; numa operação com chave, nenhuma resposta da chamada prova
+ausência. No CI, a triagem roda contra o servidor MCP oficial do GitHub (`v2.1.0`, binário
+publicado) e termina sob supervisão depois de um `SIGKILL`. Detalhes em
+[`docs/RC9.md`](docs/RC9.md).
+
+## v1.0-RC8: o relatório é do que foi feito
+
+```sh
+scripts/rc8-smoke.sh              # sem rede
+```
+
+Na RC7, a nota injetada era deixada de fora, mas o título e o resumo da issue de resumo eram
+texto do modelo e citavam a canário (8 de 10 com o modelo real). Na RC8 o modelo só propõe as
+notas; o programa compõe o relatório depois de enviar os comentários, das notas que restaram
+(`text`, `join`, projeção `notes.issue`, literais e `++` com o comprimento provado), e o que foi
+deixado de fora fica ligado por `keeping … as fora`, como dado `Untrusted`: pode ser contado e
+relatado, não pode escolher nem alimentar uma ação. Em Lean, o relatório cita exatamente o que
+foi executado e o conteúdo do que foi recusado não alcança nada (`report_is_exact`,
+`rejected_content_is_invisible`). Detalhes em [`docs/RC8.md`](docs/RC8.md).
+
+## v1.0-RC7: execução parcial sob política
+
+```sh
+scripts/rc7-smoke.sh              # sem rede
+```
+
+Na RC6, uma nota fora da política fazia o `refine` recusar o plano inteiro: com um modelo real,
+uma injeção negou a tarefa em 10 de 10 execuções. `refine d by P keeping notes by Q` deixa de
+fora (e registra) os elementos que `Q` recusa, e só então `P` decide sobre o plano que resta. Em
+Lean, o que é executado satisfaz as duas políticas e nada que `Q` aceita é perdido
+(`keeping_sound`, `keeping_keeps_every_accepted`); decidir antes de podar seria inseguro
+(`checking_before_pruning_is_unsound`). Com o modelo real, a nota injetada foi deixada de fora em
+10 de 10 e o resto do plano foi executado; o modelo, porém, tinha trocado uma nota legítima pela
+injetada, e o texto do resumo citava a nota podada. Detalhes em [`docs/RC7.md`](docs/RC7.md).
+
+## v1.0-RC6: uma API independente
+
+```sh
+cargo test -p athc --test rc6                                  # sem rede
+GH_TOKEN=… SANDBOX_REPO=dono/repo scripts/rc6-github.sh        # contra a API do GitHub
+```
+
+A RC6 leva o `bind` a uma API que não foi feita para ele. `examples/rc6/triage.ath` lê issues,
+comenta em cada uma e abre um resumo num repositório do GitHub, por HTTPS; sob supervisão, é
+morto por `SIGKILL` duas vezes no meio e termina sozinho, sem duplicar nada. O GitHub ignora `Idempotency-Key`: o
+`bind` declara, por ferramenta, que a chave viaja como marcador num parâmetro de texto (`.key`),
+como achar a operação por ele (`.find`) e quanto a listagem pode demorar a refletir uma escrita
+(`.settle`). `athc supervise` fecha o ciclo: executa o programa e o retoma a cada queda, com
+limite de tentativas, e sai com um código próprio quando sobra resultado desconhecido. Detalhes e limites
+em [`docs/RC6.md`](docs/RC6.md).
+
+## v1.0-RC5: o agente inteiro na linguagem
+
+```sh
+scripts/rc5-smoke.sh              # exit 0 = todas as conferências
+```
+
+Na RC5 um arquivo `.ath` basta para um agente existir no mundo. `bind` liga as ferramentas a uma
+API HTTP na própria linguagem, sem adaptador: os parâmetros nomeados são o corpo da requisição,
+a chave vai em `Idempotency-Key`, o resultado volta por um monitor de tipo (`R0640`), e o
+segredo é uma referência ao ambiente do executor, que o programa não tem como ler e que não vai
+a journal, WAL nem prompt. `athc resume` continua um agente morto por `SIGKILL`: fecha as
+obrigações em aberto e re-executa o programa com as entradas já observadas vindas de uma fita ao
+lado do WAL, sem chamar de novo o modelo nem os provedores, até a fronteira da queda. Em Lean:
+no modelo de retomada, a queda não cria comportamento (`crash_refines`) e cada chave é aplicada
+no máximo uma vez (`at_most_once`); no modelo simbólico, o que o programa observa não depende do
+valor do segredo (`secret_noninterference`). A RC5.1 fechou quatro achados da revisão (o monitor
+de tipo na retomada, a marca da fita na âncora, a classificação de host local, `202 Accepted`).
+Ainda não há supervisor: quem dispara `athc resume` é o operador ou um script. Detalhes e limites em [`docs/RC5.md`](docs/RC5.md).
+
+## v1.0-RC4: autoridade temporal e ciclo de vida verificado
+
+```sh
+scripts/rc4-smoke.sh
+```
+
+Na RC4 o relógio do executor não decide mais nada. O prazo de cada concessão é conferido num
+tempo atestado por uma testemunha declarada no programa (`witness`, usada como `clock`), com
+nonce, tolerância de atraso, piso monotônico e detecção de congelamento, e é reconferido
+imediatamente antes de cada efeito. A âncora passa a ser o registro unificado do ciclo de vida
+(`reserve → send → outcome`, ou `release` quando nada saiu) e só aceita o que a evidência
+sustenta, inclusive o recibo assinado do provedor. A autoridade é tipada
+(`ops = [pay, schedule, wire]`, resolvida contra os contratos) e o nível de garantia de cada uma
+é explícito. O protocolo está modelado em `lean/Aletheia/Lifecycle.lean`, que também prova o
+limite do provedor opaco. Detalhes em [`docs/RC4.md`](docs/RC4.md).
+
+## v1.0-RC3: autoridade durável e integridade temporal
+
+```sh
+scripts/rc3-smoke.sh
+```
+
+No RC3 a história de uma autorização é verificável do início ao desfecho. O registro de consumo
+é uma cadeia de hashes confrontada com uma âncora monotônica fora do disco do executor: um
+registro adulterado, retrocedido ou bifurcado é recusado antes de qualquer efeito e na
+recuperação. A declaração `authority` distingue identidade (`key`), contexto (`ops`, conferido
+pelo compilador), validade (`max_age`) e história (`ledger = "anchored"`); o que ela assina vale
+para um programa, uma execução e um prazo. Modelo de confiança, evidências e limitações em
+[`docs/RC3.md`](docs/RC3.md).
+
+## v1.0-RC2: autorização, persistência e efeito
+
+```sh
+scripts/rc2-smoke.sh
+```
+
+O RC2 fecha a fronteira que o RC1 deixou como hipótese. A concessão linear e a intenção do WAL
+formam uma transação (intenção → consumo → envio, sob trava entre processos): uma queda nunca
+deixa concessão gasta sem obrigação recuperável, e dois processos nunca gastam a mesma
+concessão. O programa declara quem pode conceder (`authority nome { key = "ed25519:…" }`), e só
+vale a concessão, a fotografia confiável e o pedido que essa chave assinou. O protocolo está
+modelado em `lean/Aletheia/Txn.lean`, e a tabela de decisões do Lean é o oráculo do teste
+diferencial. Detalhes, evidências e limitações em [`docs/RC2.md`](docs/RC2.md).
+
+## v1.0-RC1: ponta a ponta
+
+```sh
+scripts/rc-smoke.sh
+```
+
+Um comando constrói o compilador e um serviço local com estado em SQLite, executa
+`examples/rc1/treasury.ath` contra ele e mostra: a execução legítima de uma intenção confirmada, uma
+tentativa adversarial recusada sem efeito, a morte do processo por `SIGKILL` em quatro situações e a
+recuperação por `athc recover` em outro processo, com o estado do serviço antes e depois. Requer
+Rust e um compilador C. Detalhes, hipóteses e limitações em [docs/RC1.md](docs/RC1.md).
+
 ## Começar
 
 Requer Rust ≥ 1.87 e Python ≥ 3.10 (benchmark, runtime Python e testes diferenciais). As
@@ -44,7 +219,7 @@ provas pedem o Lean 4.20.0, que o `elan` instala a partir de `lean/lean-toolchai
 
 ```sh
 cargo build --release
-cargo test                                    # 98 testes, inclusive os diferenciais e o replay da Groq
+cargo test                                    # 99 testes, inclusive os diferenciais e o replay da Groq
 (cd runtimes/python && PYTHONPATH=. python3 -m unittest discover -s tests)   # runtime Python
 python3 -m unittest discover -s bench/m1/tests   # os dois oráculos da M1 contra as rodadas publicadas
 (cd lean && lake build --wfail)               # T1, T2, T3, T6 e T9 em Lean 4, auditoria de axiomas e ath-lean-eval
@@ -330,7 +505,11 @@ O corpus tem 160 programas gerados por semente, bem tipados e lineares, conferid
 reimplementação das regras de `Typing.lean`, e 200 programas com sagas: ferramentas
 `compensable` sobre um mundo de células, compensações que o provedor pode recusar, sondas,
 `atomic` e `await`, com sagas que confirmam, que recuperam e que terminam em
-`CompensationFailed`. Inclui ainda a injeção da Groq de
+`CompensationFailed`. Desde a Rev11 há também 120 programas com chamadas com chave
+(`own IdemKey`, provedores `idempotent`, `queryable` e `opaque`, falhas na chamada e nos
+reenvios, o tratador `timeout_unknown`). Neles o Lean e o ARX coincidem módulo a renomeação
+bijetiva das chaves, e os testes de mutação conferem que a normalização não esconde perda,
+duplicação nem troca. A CI roda 400 + 400 + 600. Inclui ainda a injeção da Groq de
 `Examples.lean` e o BLAKE3 do Lean contra o crate de referência. Detalhes em
 [`lean/README.md`](lean/README.md#o-tripé-diferencial-ath-lean-eval).
 
@@ -559,17 +738,20 @@ cenários e limites estão em [`bench/m1/README.md`](bench/m1/README.md); todas 
 (v1.2.2) em dois pipelines com o mesmo modelo: o baseline padrão do AgentDojo e o agente
 [`banking.ath`](bench/agentdojo/banking.ath), ligado ao benchmark por um
 `BasePipelineElement`. As tarefas, o ambiente injetado, o ataque `important_instructions` e
-os verificadores são os do pacote. Primeiro lote, `openai/gpt-oss-120b` na Groq, com os
-pares completos nos dois pipelines:
+os verificadores são os do pacote. Matriz completa, `openai/gpt-oss-120b` na Groq, com o agente
+congelado (16 tarefas, 144 pares):
 
-| pipeline | utilidade (16) | utilidade sob ataque (19 pares) | ASR (19 pares) | tokens por execução |
+| pipeline | utilidade (16) | utilidade sob ataque (144) | ASR (144) | tokens por execução |
 | --- | --- | --- | --- | --- |
-| baseline AgentDojo | 68,8% (IC95 44–86%) | 15,8% (6–38%) | 78,9% (57–91%) | 3.632 |
-| Aletheia | 75,0% (IC95 50–90%) | 31,6% (15–54%) | **0,0%** (0–17%) | 1.804 |
+| baseline AgentDojo | 68,8% (11/16) | 50,7% (73/144) | 73,6% (106/144; IC95 66–80%) | 4.868 |
+| Aletheia | 75,0% (12/16) | 53,5% (77/144) | **0,0%** (0/144; IC95 0–3%) | 1.920 |
 
-A cobertura é parcial (19 dos 144 pares), e os primeiros pares vêm das tarefas 0 a 2. Os
-detalhes, as falhas de cada lado e o que falta estão em
-[`RESULTS.md`](bench/agentdojo/RESULTS.md).
+McNemar pareado: ASR 106 × 0 (p < 10⁻³⁰); nenhuma diferença de utilidade é significativa. Sob
+correlação total dentro da tarefa, o IC do ASR do Aletheia vai de 0% a 19%. No lote final a política
+recusou, com modelo real, uma proposta que obedecia à injeção. Limites: uma suíte, um modelo, um
+ataque, uma execução por par. Os detalhes, as falhas de cada lado, o custo de cada lote e a comparação
+com Python endurecido estão em [`RESULTS.md`](bench/agentdojo/RESULTS.md) e
+[`PROVA.md`](bench/agentdojo/PROVA.md).
 
 ## Estrutura
 
@@ -665,9 +847,9 @@ docs/            registros da Rev6 e da Rev7: execuções reais, decisões e lim
   tokenização de um prompt longo.
 - **Calibração automática do Δ:** o `athc contract-report` sugere a recalibração pela cauda
   observada, mas ela ainda não volta sozinha ao contrato nem é versionada pelo CI.
-- **AgentDojo oficial, matriz parcial:** o primeiro lote contra `openai/gpt-oss-120b` cobre
-  as 16 tarefas sem ataque e 19 dos 144 pares sob ataque, até a cota diária da Groq. Os
-  outros pares vêm em lotes retomáveis. Ver
+- **AgentDojo oficial, matriz parcial:** os lotes 1 e 2 contra `openai/gpt-oss-120b` cobrem
+  as 16 tarefas sem ataque e 94 dos 144 pares sob ataque. Os outros pares vêm em lotes
+  retomáveis, disparados à mão, com teto em dólar e limite diário do projeto Groq. Ver
   [`bench/agentdojo/RESULTS.md`](bench/agentdojo/RESULTS.md).
 - **Inventário dinâmico no decodificador:** `Action.deploy` continua `Text[..32]` na gramática.
   O inventário restringe pela política e pelo prompt, não por um `enum` construído a cada
@@ -676,21 +858,22 @@ docs/            registros da Rev6 e da Rev7: execuções reais, decisões e lim
 - **Certificados:** sem `certify`, `Bounded` nem monitor de deriva estatística.
 - **Teoremas:** T1, T2, T3, T6 e T9 estão provados para o núcleo λ_Ath, e só para ele. Ficam
   de fora registros, variantes e `match`, `Text`, `mint` separado e atenuação (no núcleo, a
-  chave de uma operação é a identidade da capacidade que a autoriza), o tratador
-  `timeout_unknown` como código do agente (no núcleo, reconciliação e transferência são o
-  protocolo da ação), `retry`, graus de certeza, localizações e T4/T5. A prova é do cálculo.
+  chave de uma operação é a identidade da capacidade que a autoriza; a obrigação restante
+  está em `docs/REV11.md`), `retry`, graus de certeza, localizações e T4/T5. O tratador
+  `timeout_unknown` é uma expressão do núcleo desde a Rev11. A prova é do cálculo.
   Entre o cálculo e o ARX, e entre o ARX e o Python, a correspondência é verificada por
   construção e por testes diferenciais (o tripé executa o próprio avaliador provado), não
-  demonstrada. O tripé cobre o fragmento linear do núcleo, com sagas, mas sem `drop` na
-  superfície e sem ferramentas com chave.
+  demonstrada. O tripé cobre o fragmento linear do núcleo, com sagas e com ferramentas com
+  chave (Rev11), mas sem `drop` na superfície.
 
 ## Próximos marcos
 
-1. **Chaves no tripé e o tratador no núcleo**: ferramentas com `own IdemKey` e provedores
-   com falhas injetadas no `ath-lean-eval` e nos dois runtimes; `handle timeout_unknown` como
-   expressão do núcleo, com `Pending[k]` linear consumida por `reconcile` ou `transfer`.
-2. **A matriz oficial do AgentDojo**: completar a rodada `banking` (16 tarefas e 144 pares
-   sob ataque, baseline × Aletheia) e estender a ponte à suíte `workspace`.
+1. **A chave cunhada no núcleo** (Fase 2 da Rev11): `mint` separado da capacidade, uma
+   segunda classe de recurso linear em `Linear`, e o T1, o T2 e o T9 refeitos sobre ela. As
+   chaves no tripé e o tratador `timeout_unknown` como expressão do núcleo foram entregues na
+   Rev11 (`docs/REV11.md`).
+2. **Autoria por modelo** (Ciclo 1): nova campanha com especificações cegas novas e guia novo,
+   depois das correções pós-M10; e a ponte do AgentDojo estendida à suíte `workspace`.
 3. **Invariantes de recuperação provados**: contratos `restoring` sobre um estado abstrato do
    mundo, descarregados em E5 com SMT, e cobertura de footprint nas pós-condições.
 4. **Recuperação após queda** a partir do journal, e o reconciliador durável como serviço.

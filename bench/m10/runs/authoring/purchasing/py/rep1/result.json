@@ -1,0 +1,20 @@
+{
+ "pack": "purchasing",
+ "lang": "py",
+ "rep": 1,
+ "model": "openai/gpt-oss-120b",
+ "clean": true,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.py",
+   "tok_in": 3000,
+   "tok_out": 3962,
+   "feedback": ""
+  }
+ ],
+ "tok_in": 3000,
+ "tok_out": 3962,
+ "seconds": 11.0,
+ "usd": 0.002827
+}

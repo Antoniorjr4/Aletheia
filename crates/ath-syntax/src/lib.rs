@@ -5,10 +5,11 @@
 
 pub mod ast;
 pub mod lexer;
+pub mod obligations;
 pub mod parser;
 pub mod span;
 
-pub use parser::{parse_expr_str, parse_module, ParseError};
+pub use parser::{parse_expr_str, parse_module, parse_module_all, ParseError};
 pub use span::Span;
 
 /// Estimativa de tokens usada pelo Marco Zero: 4 caracteres por token.

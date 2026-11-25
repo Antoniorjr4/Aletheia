@@ -1,0 +1,8 @@
+{
+  "planner": [
+    { "kind": "Plan",
+      "pays": [ { "kind": "Pay", "to": "ACME", "amount": "120.00", "memo": "NF 4471" } ],
+      "finals": [ { "kind": "Wire", "to": "BETA", "amount": "300.00" } ],
+      "answer": "Paguei 120.00 a ACME e remeti 300.00 para BETA." }
+  ]
+}

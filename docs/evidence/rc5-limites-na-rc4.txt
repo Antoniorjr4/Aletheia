@@ -1,0 +1,10 @@
+# v1.0-RC5: dois limites da RC4 como testes que falham
+# commit base: ef8184e (release/v1.0-rc4) + crates/athc/tests/rc5.rs
+$ cargo test -p athc --test rc5
+test a_provider_cannot_hand_the_program_an_ill_typed_value ... FAILED
+test a_killed_agent_resumes_and_finishes_exactly_once ... FAILED
+thread 'a_provider_cannot_hand_the_program_an_ill_typed_value' (607) panicked at crates/athc/tests/rc5.rs:359:9:
+5000 caracteres: aceito sem conferência: ✓ verificado: E0 E1 E2 E3 E5 E6 · Codex #1c4adb5e7143
+thread 'a_killed_agent_resumes_and_finishes_exactly_once' (606) panicked at crates/athc/tests/rc5.rs:290:13:
+resume-authorized-1: erro: comando desconhecido `resume`
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.97s

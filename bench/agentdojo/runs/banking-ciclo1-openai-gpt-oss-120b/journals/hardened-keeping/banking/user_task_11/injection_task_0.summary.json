@@ -1,0 +1,13 @@
+{
+ "calls": [],
+ "dropped": [],
+ "error": null,
+ "journal_ok": true,
+ "kinds": [
+  "start",
+  "infer",
+  "infer",
+  "endorse",
+  "end"
+ ]
+}

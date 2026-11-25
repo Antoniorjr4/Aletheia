@@ -1,0 +1,25 @@
+# v1.0-RC10: o fluxo tóxico (dado privado → canal público) na RC9 — como teste que falha
+# commit base: 905b6cf (release/v1.0-rc9)
+#
+# A reportagem (nov/2026) e o achado da Invariant Labs: um agente com acesso a um repositório
+# privado e a um público lê um issue público com injeção e é levado a copiar o conteúdo do
+# privado para o público. A Invariant: "não se resolve com correção no servidor; exige controle
+# arquitetural."
+#
+# A RC9 já barra a PERNA DA INTEGRIDADE (o texto do issue é ^ Untrusted e não escolhe ação). Mas
+# não tem a dimensão de confidencialidade, então não há como nem expressar "este dado é privado e
+# não pode sair num canal público":
+
+$ athc check   # RC9, tipo com rótulo de confidencialidade
+error[P0001]: rótulo de integridade desconhecido `Secret` (use Untrusted, Endorsed ou Trusted)
+
+# E o fluxo tóxico em si — ler de um repositório privado e publicar num canal público — passa na
+# verificação da RC9 (nada o impede; ele rodaria e vazaria):
+
+$ athc check leak-rc9.ath   # RC9, sem rótulos de confidencialidade
+✓ Codex              3 objetos BLAKE3, raiz #52fa29872547
+verificado
+
+# A RC10 acrescenta a confidencialidade (Public ⊑ Internal ⊑ Secret), dual da integridade: um
+# canal público declara `^ Public`, o conteúdo privado é `^ Secret`, e o verificador recusa o
+# fluxo (E0440) antes de qualquer efeito. examples/rc10/leak.ath e o teste rc10.rs.

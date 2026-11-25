@@ -1,7 +1,10 @@
 use arx::cassette::{first_divergence, Cassette};
-use arx::host::SimWorld;
+use arx::grant::{Grant, GrantStore};
+use arx::host::{Host, SimWorld};
 use arx::journal::Journal;
 use arx::model::{Constraint, Masked, ModelProvider, OpenAiCompat, Recorder, Replay, Scripted};
+use arx::remote::RemoteHost;
+use arx::wal::{CrashMode, CrashPoint, Wal, WalState};
 use arx::{Arx, Value};
 use ath_check::fmt;
 use ath_grammar::Dialect;
@@ -25,7 +28,16 @@ uso:
                          [--world mundo.json] [--models modelos.json] [--journal saída.jsonl]
                          [--provider masked|scripted|openai] [--report relatório.json]
                          [--core-journal núcleo.jsonl]
+                         [--host tcp://127.0.0.1:PORTA --trusted confiável.json --timeout s]
+                         [--run-id R] [--grants concessões.json] [--wal execução.wal]
+                         [--kill-at intent|sent|confirmed|closed:N]
       verifica e executa um handler no runtime ARX
+      --host      executa as ferramentas num serviço externo (ath-world) em vez do mundo simulado;
+                  a fotografia confiável `s.…` vem de --trusted, nunca do serviço
+      --grants    as concessões desta execução (`s.authorizes`); o consumo fica em <arquivo>.spent
+      --wal       write-ahead log durável das operações com chave e das sagas; o journal de
+                  evidências passa a ser gravado entrada a entrada
+      --kill-at   SIGKILL no próprio processo no ponto dado da N-ésima operação com chave
       (sem --world/--models, usa fixtures/world.json e fixtures/models.json ao lado do arquivo)
       provedores:
         masked    (padrão) roteiro como proposta + máscara derivada do tipo: saída válida por construção
@@ -34,6 +46,24 @@ uso:
                   OPENAI_API_KEY, OPENAI_BASE_URL (ex.: https://api.groq.com/openai/v1), ALETHEIA_MODEL
                   ou pelos argumentos --model ID --base-url URL
                   [--constraint json-schema|gbnf|none] [--schema core|full]
+  athc resume <arquivo.ath> --wal execução.wal [as mesmas fontes de `run`: --trusted, --grants,
+                         --args-sig, --arg, --anchor, --clock, --host] [--journal saída.jsonl]
+      (v1.0-RC5) retoma, num processo novo, a execução interrompida que o WAL registra: fecha as
+      obrigações em aberto pelo protocolo de cada provedor (sem compensar as sagas) e re-executa
+      o programa, com as entradas já observadas vindas da fita `<wal>.tape` (o modelo e os
+      provedores não são chamados de novo), até a fronteira da queda; dali em diante, ao vivo.
+      R0650 retomada divergente · R0652 outra fotografia ou outros argumentos · R0653 execução
+      já encerrada por `athc recover`
+      (um programa com `bind` alcança a API do provedor por HTTP: a url e o segredo vêm do
+      ambiente do executor; --no-bind executa sem a ligação e o programa recusa, R0641)
+  athc supervise <arquivo.ath> --wal execução.wal [as opções de `run`] [--max-resumes N]
+                         [--backoff s] [--attempt-timeout s]
+      (v1.0-RC6) executa o programa e, se o processo cair (sinal, pânico, ou a tentativa passar
+      do prazo), o retoma com `athc resume`, até N vezes (padrão 5), com espera crescente. Sem
+      estado próprio: se o WAL já registra a execução, começa pela retomada. Registra cada
+      tentativa em `<wal>.supervisor.jsonl`.
+      saída: 0 concluído · 1 o programa terminou com falha (não é queda) · 3 concluído com
+      operações de RESULTADO DESCONHECIDO · 4 o executor recusou antes de executar · 5 desistiu
   athc grammar <arquivo.ath> --type T [--format all|schema|gbnf|shape] [--decode 'proposta']
       mostra a gramática derivada do tipo T e, com --decode, a decodificação mascarada de uma proposta
   athc hash <arquivo.ath> [--codex dir]
@@ -51,6 +81,40 @@ uso:
   athc replay <cassete.json> [--journal saída.jsonl] [--emit-py programa.py]
       reexecuta o programa embutido no cassete contra as respostas gravadas e exige o mesmo
       journal, byte a byte
+  athc grant --out concessões.json --run R --origin confirmation:REF
+             (--op OP --arg X … | --from intenção.json)
+      registra a confirmação estruturada do principal: cada concessão é uma operação com os
+      argumentos exatos, vale para a execução R e é consumida por um efeito. --from lê
+      {\"operations\": [{\"op\": …, \"args\": […]}]}; uma entrada marcada \"ambiguous\" é recusada
+      --sign chave    assina cada concessão com a chave privada da autoridade (`athc keygen`)
+      --program P --ttl S
+                      (v1.0-RC3) liga a assinatura ao programa P (raiz do Codex) e a um prazo de
+                      S segundos (padrão 600); vale também para `athc sign`
+  athc keygen --out chave
+      gera um par Ed25519: grava a chave privada em `chave` (modo 0600) e imprime a pública, que
+      o programa declara: authority nome { key = \"ed25519:…\" }
+  athc sign --key chave --trusted confiável.json
+  athc sign --key chave --run R --arg X … [--out pedido.sig]
+      assina uma fonte Trusted: a fotografia confiável (grava confiável.json.sig) ou os
+      argumentos do evento da execução R (imprime a assinatura; passe-a em `run --args-sig`)
+  athc run … --anchor tcp://host:porta
+      (v1.0-RC3) ancora o registro de consumo num estado monotônico fora do disco do executor
+      (`ath-world serve`): um registro retrocedido (L0002) ou bifurcado (L0003) é recusado antes
+      de qualquer efeito. Obrigatório se a autoridade declara ledger = \"anchored\"
+  athc recover <arquivo.ath> --wal execução.wal --host tcp://… [--trusted confiável.json]
+               [--fuel 3] [--timeout s] [--report relatório.json] [--inspect] [--retry-escalated]
+      recupera uma execução interrompida: confere a integridade do WAL, lista as obrigações em
+      aberto, reconcilia cada uma pelo protocolo da classe do provedor (idempotent reenvia,
+      queryable consulta, opaque escala), compensa as sagas interrompidas e persiste tudo no WAL
+      --inspect   só confere e lista; não envia nada
+      --strict-authority (em `athc check`) recusa (E0430) autoridade com garantia mais fraca que a
+                      temporal (RC4): só identidade (RC2), forma textual (RC3) ou tipada incompleta
+      --clock tcp://…   (RC4) a testemunha de tempo autenticado declarada pelo programa
+      --retry-escalated
+                  tenta de novo as operações escaladas cujo provedor tem protocolo (o serviço
+                  estava fora do ar, ou o programa transferiu a obrigação); opaque continua escalada
+      saída: 0 nada pendente · 3 há operações que exigem intervenção · 2 erro (WAL ilegível,
+      corrompido, ausente ou de outro programa)
   athc emit <arquivo.ath> --target py [--out programa.py]
       emite o programa para Python sobre o aletheia_runtime (segunda realização da semântica do ARX)";
 
@@ -65,7 +129,10 @@ fn parse_opts(args: &[String]) -> Result<Opts, String> {
     let mut i = 0;
     while i < args.len() {
         let a = &args[i];
-        if let Some(name) = a.strip_prefix("--") {
+        if a == "--inspect" || a == "--retry-escalated" || a == "--strict-authority" || a == "--no-bind" {
+            flags.entry(a[2..].to_string()).or_default().push("true".into());
+            i += 1;
+        } else if let Some(name) = a.strip_prefix("--") {
             let v = args.get(i + 1).ok_or_else(|| format!("`--{name}` exige um valor"))?;
             flags.entry(name.to_string()).or_default().push(v.clone());
             i += 2;
@@ -115,12 +182,27 @@ fn main() -> ExitCode {
     };
     let r = match cmd.as_str() {
         "check" => cmd_check(&opts, st),
-        "run" => cmd_run(&opts, st),
+        "run" => cmd_run(&opts, st, false),
+        "resume" => cmd_resume(&opts, st),
         "hash" => cmd_hash(&opts, st),
         "grammar" => cmd_grammar(&opts, st),
         "verify-journal" => cmd_verify(&opts, st),
         "contract-report" => cmd_contract_report(&opts, st),
+        "obligations" => cmd_obligations(&opts, st),
         "emit" => cmd_emit(&opts, st),
+        "grant" => cmd_grant(&opts),
+        "keygen" => cmd_keygen(&opts),
+        "sign" => cmd_sign(&opts),
+        "recover" => return cmd_recover(&opts, st),
+        "supervise" => {
+            return match cmd_supervise(&opts, st) {
+                Ok(code) => ExitCode::from(code),
+                Err(e) => {
+                    eprintln!("erro: {e}");
+                    ExitCode::from(2)
+                }
+            }
+        }
         "replay" => cmd_replay(&opts, st),
         "help" | "--help" | "-h" => {
             println!("{USAGE}");
@@ -166,6 +248,112 @@ fn cmd_check(opts: &Opts, st: Style) -> Result<bool, String> {
     let Some(c) = compile_or_report(&path, &src, st) else { return Ok(false) };
     println!("$ athc check {path}");
     print!("{}", summary(&c, st));
+    // **As ligações** (RC5): o que o programa alcança no mundo, e com que segredo (só o nome).
+    for i in &c.module.items {
+        if let ath_syntax::ast::Item::Bind(b) = i {
+            let url = match (&b.mcp, &b.url) {
+                (Some(ath_syntax::ast::BindUrl::Env(v)), _) => format!("servidor MCP de env({v})"),
+                (Some(ath_syntax::ast::BindUrl::Lit(c)), _) => format!("servidor MCP `{c}`"),
+                (None, ath_syntax::ast::BindUrl::Lit(u)) => u.clone(),
+                (None, ath_syntax::ast::BindUrl::Env(v)) => format!("env({v})"),
+            };
+            println!(
+                "{} ligação `{}`: {} ferramenta(s) → {url}{}{}",
+                st.green("✓"),
+                b.name.name,
+                b.routes.len() + b.calls.len(),
+                b.auth.as_ref().map(|s| format!(" · segredo `{s}` (por referência)")).unwrap_or_default(),
+                if b.status.is_some() { " · consulta por chave" } else { "" }
+            );
+        }
+    }
+    // **O nível de garantia de cada autoridade** (RC4): a compatibilidade com as formas
+    // anteriores é explícita, nunca confundida com a garantia temporal.
+    let mut weak = Vec::new();
+    for i in &c.module.items {
+        if let ath_syntax::ast::Item::Authority(d) = i {
+            let g = d.guarantee();
+            let missing = d.missing();
+            if g == ath_syntax::ast::Guarantee::Temporal {
+                println!("{} autoridade `{}`: garantia {}", st.green("✓"), d.name.name, g.name());
+            } else {
+                println!(
+                    "{} autoridade `{}`: garantia {} · falta: {}",
+                    st.bold("!"),
+                    d.name.name,
+                    g.name(),
+                    missing.join(", ")
+                );
+                weak.push((d.name.name.clone(), g));
+            }
+        }
+    }
+    if opts.one("strict-authority").is_some() && !weak.is_empty() {
+        for (n, g) in &weak {
+            eprintln!("erro[E0430]: a autoridade `{n}` tem garantia {}, mais fraca que a temporal (RC4) exigida por --strict-authority", g.name());
+        }
+        return Ok(false);
+    }
+    Ok(true)
+}
+
+/// `athc obligations prog.ath [--json]`: o destino de cada contrato `requires` (Rev13, M-I) —
+/// descarregado estaticamente (levantado para um `refine`) ou lacuna dinâmica, com o motivo.
+fn cmd_obligations(opts: &Opts, st: Style) -> Result<bool, String> {
+    let (path, src) = load(opts)?;
+    let Some(c) = compile_or_report(&path, &src, st) else { return Ok(false) };
+    let ob = ath_syntax::obligations::analyze(&c.module);
+    let line = |sp: ath_syntax::Span| src[..sp.lo as usize].matches('\n').count() + 1;
+    let mut rows = Vec::new();
+    for s in &ob.sites {
+        let (status, why) = match &s.status {
+            ath_syntax::obligations::Status::Discharged { refines } => (
+                "descarregada",
+                format!(
+                    "levantada para o refine em {}",
+                    refines.iter().map(|r| format!("L{}", line(*r))).collect::<Vec<_>>().join(", ")
+                ),
+            ),
+            ath_syntax::obligations::Status::Dynamic { reason } => ("dinâmica", reason.clone()),
+        };
+        rows.push(serde_json::json!({ "tool": s.tool, "line": line(s.call), "status": status, "reason": why }));
+    }
+    let lifted: Vec<serde_json::Value> = ob
+        .lifted
+        .iter()
+        .flat_map(|((lo, _), ls)| {
+            let l = src[..*lo as usize].matches('\n').count() + 1;
+            ls.iter().map(move |x| {
+                serde_json::json!({ "refine_line": l, "tool": x.tool, "variant": x.variant,
+                "path": x.path.iter().map(|p| match p { ath_syntax::obligations::Step::Elem => "[*]".to_string(),
+                    ath_syntax::obligations::Step::Field(v, f) => format!("{v}.{f}") }).collect::<Vec<_>>(),
+                "binds": x.binds })
+            })
+        })
+        .collect();
+    if opts.one("format") == Some("json") {
+        println!("{}", serde_json::to_string_pretty(&serde_json::json!({ "sites": rows, "lifted": lifted })).unwrap());
+        return Ok(true);
+    }
+    println!("$ athc obligations {path}");
+    for r in &rows {
+        println!(
+            "  L{:<4} {:<24} {:<13} {}",
+            r["line"],
+            r["tool"].as_str().unwrap_or(""),
+            r["status"].as_str().unwrap_or(""),
+            r["reason"].as_str().unwrap_or("")
+        );
+    }
+    for l in &lifted {
+        println!(
+            "  refine L{} ⇐ {} ({} em {})",
+            l["refine_line"],
+            l["tool"].as_str().unwrap_or(""),
+            l["variant"].as_str().unwrap_or(""),
+            l["path"]
+        );
+    }
     Ok(true)
 }
 
@@ -198,13 +386,235 @@ fn fixture(opts: &Opts, flag: &str, file: &str, default_name: &str) -> Option<Pa
     candidate.exists().then_some(candidate)
 }
 
-fn cmd_run(opts: &Opts, st: Style) -> Result<bool, String> {
+/// **`athc resume` (RC5)**: retoma, num processo novo, a execução que um WAL registra. Primeiro
+/// a recuperação fecha as intenções em aberto pelo protocolo de cada provedor (sem compensar as
+/// sagas: elas continuam); depois o programa é re-executado desde o início, com as entradas já
+/// observadas vindas do WAL, e segue ao vivo a partir da fronteira da queda (`arx::resume`).
+fn cmd_resume(opts: &Opts, st: Style) -> Result<bool, String> {
+    if opts.one("wal").is_none() {
+        return Err("`athc resume` exige --wal (a execução a retomar)".into());
+    }
+    // RC5.1: a fita é conferida contra a âncora ANTES da fase de recuperação. A recuperação
+    // reenvia operações idempotentes em aberto: nenhuma chamada sai com a fita adulterada.
+    if let Some(a) = opts.one("anchor") {
+        let (path, src) = load(opts)?;
+        let Some(c) = compile_or_report(&path, &src, st) else { return Ok(false) };
+        let temporal = c
+            .module
+            .items
+            .iter()
+            .any(|i| matches!(i, Item::Authority(d) if d.guarantee() == ath_syntax::ast::Guarantee::Temporal));
+        if temporal {
+            let wp = opts.one("wal").unwrap_or_default();
+            let wal = Wal::open(PathBuf::from(wp)).map_err(|e| e.to_string())?;
+            let run = wal.log.entries.first().and_then(|e| e["detail"]["run"].as_str()).unwrap_or_default().to_string();
+            let tape = Wal::open(PathBuf::from(format!("{wp}.tape"))).map_err(|e| e.to_string())?;
+            let mut anchor = arx::anchor::TcpAnchor::new(a.strip_prefix("tcp://").unwrap_or(a), 5.0)?;
+            arx::tape_verify(&mut anchor, &c.codex.root, &run, &tape.log.entries, true)?;
+        }
+    }
+    let mut pre = Opts { file: opts.file.clone(), flags: opts.flags.clone() };
+    pre.flags.insert("intents-only".into(), vec![String::new()]);
+    pre.flags.remove("kill-at");
+    println!("{} retomada, fase 1: as obrigações em aberto", st.bold("↻"));
+    let code = recover(&pre, st)?;
+    if code == 2 {
+        return Ok(false);
+    }
+    println!("{} retomada, fase 2: o programa, das entradas gravadas até a fronteira da queda", st.bold("↻"));
+    cmd_run(opts, st, true)
+}
+
+/// **`athc supervise` (RC6)**: executa o programa e, se o processo cair, o retoma. É a camada
+/// que faltava entre "há um comando que retoma" e "o agente termina sem ninguém olhando".
+///
+/// O supervisor é um processo pai sem estado próprio: o que ele sabe está no WAL. Se o WAL já
+/// registra uma execução, ele começa pela retomada; por isso o próprio supervisor pode cair e
+/// ser iniciado de novo. A cada tentativa lança `athc run` ou `athc resume` como processo filho
+/// e classifica o fim dele:
+///
+/// | o filho | o supervisor |
+/// |---|---|
+/// | terminou com sucesso | confere o WAL: sem obrigação escalada, sai 0; com alguma, sai 3 |
+/// | terminou com falha do programa (saída 1) | não é queda: o programa decidiu. Sai 1, sem retomar |
+/// | recusou antes de executar (saída 2: fita adulterada, outra história, ambiente) | sai 4, sem retomar |
+/// | foi morto por sinal, entrou em pânico, ou passou do prazo da tentativa | é queda: espera e retoma |
+/// | caiu mais vezes que `--max-resumes` | desiste e sai 5: o que está em aberto fica no WAL |
+///
+/// Resultado desconhecido nunca vira sucesso nem tentativa infinita: uma obrigação que o
+/// programa transferiu (`transfer`) ou que a recuperação escalou aparece na saída 3, com a chave.
+fn cmd_supervise(opts: &Opts, st: Style) -> Result<u8, String> {
+    use std::io::Write as _;
+    let wp = opts.one("wal").ok_or("`athc supervise` exige --wal: é nele que a execução sobrevive à queda")?;
+    let file = opts.file.clone().ok_or("informe o arquivo .ath")?;
+    let num = |k: &str, default: f64| -> Result<f64, String> {
+        opts.one(k).map_or(Ok(default), |v| v.parse::<f64>().map_err(|_| format!("--{k} inválido")))
+    };
+    let max_resumes = num("max-resumes", 5.0)? as u32;
+    let mut backoff = num("backoff", 1.0)?;
+    let attempt_timeout = num("attempt-timeout", 0.0)?;
+    // quedas injetadas, uma por tentativa: só para demonstração e teste
+    let kills: Vec<&str> = opts.one("inject-kills").map(|k| k.split(',').collect()).unwrap_or_default();
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let own = ["max-resumes", "backoff", "attempt-timeout", "inject-kills", "kill-at"];
+    let mut pass: Vec<String> = Vec::new();
+    let mut keys: Vec<&String> = opts.flags.keys().collect();
+    keys.sort();
+    for k in keys.into_iter().filter(|k| !own.contains(&k.as_str())) {
+        for v in &opts.flags[k] {
+            pass.push(format!("--{k}"));
+            if !["inspect", "retry-escalated", "strict-authority", "no-bind"].contains(&k.as_str()) {
+                pass.push(v.clone());
+            }
+        }
+    }
+    let log_path = format!("{wp}.supervisor.jsonl");
+    let note = |entry: serde_json::Value| {
+        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&log_path) {
+            let _ = writeln!(f, "{entry}");
+        }
+    };
+    let mut attempt = 0u32;
+    let mut resumes = 0u32;
+    loop {
+        // o WAL decide: se já registra a execução, é retomada (inclusive depois de o próprio
+        // supervisor ter caído)
+        let started = std::fs::metadata(wp).is_ok_and(|m| m.len() > 0);
+        let mode = if started { "resume" } else { "run" };
+        // (o limite conta quedas, não retomadas: uma queda antes de o WAL existir também conta)
+        if resumes > max_resumes {
+            println!(
+                "{} supervisor: {} queda(s), limite de {} retomada(s) atingido; desisto. O que está em aberto continua no WAL `{wp}`",
+                st.red("✗"),
+                attempt,
+                max_resumes
+            );
+            note(json!({ "attempt": attempt, "outcome": "gave-up", "at": now_unix() }));
+            return Ok(5);
+        }
+        let mut c = std::process::Command::new(&exe);
+        c.arg(mode).arg(&file).args(&pass);
+        if let Some(k) = kills.get(attempt as usize) {
+            c.args(["--kill-at", k]);
+        }
+        println!("{} supervisor: tentativa {} ({mode})", st.bold("⟳"), attempt + 1);
+        let t0 = std::time::Instant::now();
+        let mut child = c.spawn().map_err(|e| format!("não foi possível lançar o executor: {e}"))?;
+        let pid = child.id();
+        let (status, timed_out) = loop {
+            match child.try_wait().map_err(|e| e.to_string())? {
+                Some(s) => break (s, false),
+                None if attempt_timeout > 0.0 && t0.elapsed().as_secs_f64() > attempt_timeout => {
+                    let _ = child.kill();
+                    break (child.wait().map_err(|e| e.to_string())?, true);
+                }
+                None => std::thread::sleep(std::time::Duration::from_millis(25)),
+            }
+        };
+        #[cfg(unix)]
+        let signal = std::os::unix::process::ExitStatusExt::signal(&status);
+        #[cfg(not(unix))]
+        let signal: Option<i32> = None;
+        let outcome = match (status.code(), signal, timed_out) {
+            (_, _, true) => "timeout".to_string(),
+            (_, Some(sig), _) => format!("signal:{sig}"),
+            (Some(c), _, _) => format!("exit:{c}"),
+            _ => "unknown".to_string(),
+        };
+        note(json!({ "attempt": attempt + 1, "mode": mode, "pid": pid, "outcome": outcome, "at": now_unix(),
+                     "seconds": t0.elapsed().as_secs_f64() }));
+        attempt += 1;
+        match status.code() {
+            Some(0) if !timed_out => {
+                // terminou: há resultado desconhecido que o programa transferiu ou a recuperação escalou?
+                let wal = Wal::open(PathBuf::from(wp)).map_err(|e| e.to_string())?;
+                let mut last: HashMap<String, String> = HashMap::new();
+                for e in &wal.log.entries {
+                    if let (Some(kind), Some(key)) = (e["kind"].as_str(), e["detail"]["key"].as_str()) {
+                        if matches!(kind, "intent" | "close" | "escalate") {
+                            last.insert(key.to_string(), kind.to_string());
+                        }
+                    }
+                }
+                let mut unknown: Vec<&String> =
+                    last.iter().filter(|(_, k)| k.as_str() != "close").map(|(key, _)| key).collect();
+                unknown.sort();
+                if unknown.is_empty() {
+                    println!(
+                        "{} supervisor: concluído em {attempt} tentativa(s), {resumes} retomada(s)",
+                        st.green("✓")
+                    );
+                    return Ok(0);
+                }
+                println!(
+                    "{} supervisor: o programa terminou, mas {} operação(ões) têm RESULTADO DESCONHECIDO ({}); exigem conferência humana ou `athc recover --retry-escalated`",
+                    st.red("!"),
+                    unknown.len(),
+                    unknown.iter().map(|k| k.as_str()).collect::<Vec<_>>().join(", ")
+                );
+                return Ok(3);
+            }
+            Some(1) if !timed_out => {
+                println!(
+                    "{} supervisor: o programa terminou com falha; não é uma queda, não há o que retomar",
+                    st.red("✗")
+                );
+                return Ok(1);
+            }
+            Some(2) if !timed_out => {
+                println!(
+                    "{} supervisor: o executor recusou antes de executar; nada foi feito nesta tentativa, não retomo",
+                    st.red("✗")
+                );
+                return Ok(4);
+            }
+            _ => {
+                println!(
+                    "{} supervisor: o executor caiu ({outcome}, pid {pid}); retomo em {backoff:.1} s",
+                    st.red("↯")
+                );
+                resumes += 1;
+                if resumes > max_resumes {
+                    continue;
+                }
+                std::thread::sleep(std::time::Duration::from_secs_f64(backoff));
+                backoff = (backoff * 2.0).min(60.0);
+            }
+        }
+    }
+}
+
+fn cmd_run(opts: &Opts, st: Style, resume: bool) -> Result<bool, String> {
     let (path, src) = load(opts)?;
     let Some(c) = compile_or_report(&path, &src, st) else { return Ok(false) };
+    // RC5: a execução a retomar. O WAL diz qual é (execução, agente, evento, argumentos).
+    let mut resumed: Option<(Wal, serde_json::Value)> = None;
+    let mut in_tape: Option<Wal> = None;
+    if resume {
+        let wp = opts.one("wal").unwrap_or_default();
+        let w = Wal::open(PathBuf::from(wp)).map_err(|e| e.to_string())?;
+        if w.read.fresh {
+            return Err(format!("W0003: o WAL `{wp}` não existe: não há execução a retomar"));
+        }
+        let head = w.log.entries.first().filter(|e| e["kind"] == "run").map(|e| e["detail"].clone());
+        let Some(head) = head else {
+            return Err(format!("W0004: o WAL `{wp}` não começa com o registro da execução (`run`)"));
+        };
+        if head["program"].as_str() != Some(c.codex.root.as_str()) {
+            return Err(format!(
+                "W0004: o WAL é de outro programa (Codex #{}), não de `{path}` (Codex #{})",
+                ath_codex::short(head["program"].as_str().unwrap_or_default()),
+                ath_codex::short(&c.codex.root)
+            ));
+        }
+        in_tape = Some(Wal::open(PathBuf::from(format!("{wp}.tape"))).map_err(|e| e.to_string())?);
+        resumed = Some((w, head));
+    }
+    let head_str = |k: &str| resumed.as_ref().and_then(|(_, h)| h[k].as_str().map(String::from));
     println!("{} verificado: E0 E1 E2 E3 E5 E6 · Codex #{}", st.green("✓"), ath_codex::short(&c.codex.root));
 
-    let agent = match opts.one("agent") {
-        Some(a) => a.to_string(),
+    let agent = match opts.one("agent").map(String::from).or(head_str("agent")) {
+        Some(a) => a,
         None => c
             .module
             .items
@@ -216,7 +626,15 @@ fn cmd_run(opts: &Opts, st: Style) -> Result<bool, String> {
         Some(p) => read_json(&p)?,
         None => json!({}),
     };
-    let world = SimWorld::from_json(&world_json)?;
+    let run_id = head_str("run").or(opts.one("run-id").map(String::from)).unwrap_or_else(fresh_run_id);
+    let has_binds = c.module.items.iter().any(|i| matches!(i, Item::Bind(_))) && opts.one("no-bind").is_none();
+    let world: Box<dyn Host> = match opts.one("host") {
+        Some(addr) => Box::new(remote_host(opts, addr, &run_id)?),
+        // RC5: com `bind`, o provedor é o do programa; o host só traz a fotografia confiável
+        None if has_binds && opts.one("world").is_none() => Box::new(remote_host(opts, NO_HOST, &run_id)?),
+        None => Box::new(SimWorld::from_json(&world_json)?),
+    };
+    let (world, bound) = bind_host(opts, &c.module, world, &run_id)?;
     let mut tape: Option<(Rc<RefCell<Vec<arx::model::Exchange>>>, serde_json::Value)> = None;
     let provider: Box<dyn ModelProvider> = if let Some(cp) = opts.one("replay") {
         let c = Cassette::load(Path::new(cp))?;
@@ -235,11 +653,107 @@ fn cmd_run(opts: &Opts, st: Style) -> Result<bool, String> {
         build_provider(opts, &path)?
     };
     let provider_name = provider.name();
-    let mut arx = Arx::new(&c.module, Box::new(world), provider);
+    // a fotografia confiável é uma entrada do programa: a retomada exige a mesma
+    let trusted_hash = blake3::hash(format!("{:?}", world.trusted_snapshot()).as_bytes()).to_hex().to_string();
+    let mut arx = Arx::new(&c.module, world, provider);
+    if let Some((w, head)) = &resumed {
+        let tp = in_tape.as_ref().expect("fita");
+        let rs = arx::resume::Resume::of(&w.log, &tp.log);
+        let origin = tp.log.entries.first().map(|e| e["detail"].clone()).unwrap_or_default();
+        if rs.settled_by_recovery {
+            return Err(
+                "R0653: `athc recover` já compensou as sagas desta execução: ela foi encerrada e não é retomável"
+                    .into(),
+            );
+        }
+        let _ = head;
+        if origin["trusted"].as_str().is_some_and(|h| h != trusted_hash) {
+            return Err(
+                "R0652: a fotografia confiável (`--trusted`) não é a da execução original; nada foi executado".into()
+            );
+        }
+        arx.resume = Some(rs);
+    }
     arx.contracts = athc::contract_hashes(&c);
+    arx.run_id = run_id.clone();
+    arx.bound = bound;
+    arx.now_unix = now_unix();
+    if let Some(g) = opts.one("grants") {
+        arx.grants = GrantStore::open(Path::new(g))?;
+        // com autoridade declarada, falha fechado na carga: uma concessão sem a assinatura dela
+        // recusa o arquivo inteiro (o runtime também a ignora, em `s.authorizes`)
+        // (RC4: num programa temporal a conferência espera o tempo atestado, mais abaixo)
+        if !arx.authorities.is_empty() && !arx.temporal {
+            for (i, x) in arx.grants.grants.iter().enumerate() {
+                if let Err(why) = arx.attest_grant(x) {
+                    return Err(format!(
+                        "G0001: concessão {} ({}) sem assinatura válida de uma autoridade do programa ({why}); nada foi executado",
+                        i + 1,
+                        &x.id[..12]
+                    ));
+                }
+            }
+        }
+        // a âncora: o registro é confrontado com ela agora, antes de qualquer coisa executar
+        // (RC4: com autoridade temporal, a âncora é o registro unificado, ligado abaixo)
+        match opts.one("anchor").filter(|_| !arx.temporal) {
+            Some(a) => {
+                let anchor = arx::anchor::TcpAnchor::new(a.strip_prefix("tcp://").unwrap_or(a), 5.0)?;
+                let program = arx.program.clone();
+                arx.grants.attach_anchor(Box::new(anchor), &program, &run_id)?;
+            }
+            None if !arx.temporal && arx.authorities.iter().any(|a| a.anchored) => {
+                return Err(
+                    "R0637: a autoridade do programa exige o registro de consumo ancorado; informe --anchor tcp://…"
+                        .into(),
+                )
+            }
+            None => {}
+        }
+    }
+    // **RC4**: o registro unificado e a testemunha de tempo. Sem os dois, um programa com
+    // autoridade temporal não executa (`R0639`, na primeira instrução da execução).
+    if arx.temporal {
+        // o relógio do executor nunca decide num programa temporal: sem tempo atestado, nenhuma
+        // assinatura é válida (falha fechado)
+        arx.now_unix = 0;
+        if let (Some(a), Some(t)) = (opts.one("anchor"), opts.one("clock")) {
+            let reg = arx::lifecycle::TcpRegistry::new(a, 5.0)?;
+            let time = arx::lifecycle::TcpTime::new(t, 5.0)?;
+            arx.attach_lifecycle(Box::new(reg), Box::new(time))?;
+            arx.lc_start().map_err(|e| format!("{}: {}; nenhum efeito", e.code, e.msg))?;
+            for (i, x) in arx.grants.grants.iter().enumerate() {
+                if let Err(why) = arx.attest_grant(x) {
+                    return Err(format!(
+                        "G0001: concessão {} ({}) sem assinatura válida de uma autoridade do programa ({why}, no tempo atestado); nada foi executado",
+                        i + 1,
+                        &x.id[..12]
+                    ));
+                }
+            }
+        }
+    }
+    // RC5: as concessões das operações já decididas desta execução. A re-execução passa pela
+    // conferência antecipada (`refine`) como a original passou; a fronteira dessas operações
+    // devolve o desfecho gravado e não consome nada. Uma operação nova que as reivindique é
+    // recusada pelo registro de consumo (relido sob trava) ou pela âncora.
+    if let Some(rs) = &arx.resume {
+        for (k, d) in &rs.intents {
+            let dead = k.strip_prefix('k').and_then(|n| n.parse().ok()).is_some_and(|n| rs.dead(n));
+            for id in d["grants"].as_array().into_iter().flatten().filter_map(|x| x.as_str()).filter(|_| !dead) {
+                arx.replay_grants.insert(id.to_string());
+                arx.grants.spent.remove(id);
+            }
+        }
+    }
+    if let Some(s) = opts.one("args-sig") {
+        // a assinatura, ou o arquivo que a contém
+        let sig = std::fs::read_to_string(s).map(|t| t.trim().to_string()).unwrap_or_else(|_| s.to_string());
+        arx.args_attestation = Some((opts.flags.get("arg").cloned().unwrap_or_default(), sig));
+    }
     let args_src: Vec<String> = opts.flags.get("arg").cloned().unwrap_or_default();
-    let event = match opts.one("on") {
-        Some(e) => e.to_string(),
+    let event = match opts.one("on").map(String::from).or(head_str("event")) {
+        Some(e) => e,
         None => c
             .module
             .items
@@ -264,6 +778,91 @@ fn cmd_run(opts: &Opts, st: Style) -> Result<bool, String> {
         args.push(v);
     }
 
+    let jpath = PathBuf::from(opts.one("journal").unwrap_or(".arx/journal.jsonl"));
+    if let Some(dir) = jpath.parent() {
+        if !dir.as_os_str().is_empty() {
+            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        }
+    }
+    if let Some((_, head)) = &resumed {
+        let now: Vec<serde_json::Value> = args.iter().map(Value::to_json).collect();
+        if head["args"] != json!(now) {
+            return Err("R0652: os argumentos (`--arg`) não são os da execução original; nada foi executado".into());
+        }
+    }
+    if let Some((mut w, _)) = resumed {
+        if let Some(k) = opts.one("kill-at") {
+            let (point, n) = k.split_once(':').ok_or("--kill-at espera ponto:N")?;
+            let point = CrashPoint::parse(point).ok_or("--kill-at: ponto inválido")?;
+            w.crash = Some((point, n.parse().map_err(|_| "--kill-at: N inválido")?));
+            w.crash_mode = CrashMode::Kill;
+        }
+        let gen = arx.resume.as_ref().map_or(0, |r| r.generation) + 1;
+        if let Some(t) = in_tape.as_mut() {
+            t.append(0.0, "resume", json!({ "generation": gen }));
+        }
+        arx.wal = Some(w);
+        arx.tape = in_tape;
+        arx.journal.stream_to(&jpath).map_err(|e| format!("falha ao abrir o journal: {e}"))?;
+    } else if let Some(wp) = opts.one("wal") {
+        // todo efeito não reversível precisa de chave: sem ela não há intenção a persistir
+        for i in &c.module.items {
+            if let Item::Tool(t) = i {
+                let keyed = t.params.iter().any(|p| p.ty.unlabeled().base_name() == "IdemKey");
+                if t.class != ath_syntax::ast::EffClass::Reversible && !keyed {
+                    return Err(format!(
+                        "W0005: `--wal` exige uma chave (`own IdemKey`) em todo efeito não reversível; `{}` não tem",
+                        t.name.name
+                    ));
+                }
+            }
+        }
+        let mut w = Wal::open(PathBuf::from(wp)).map_err(|e| e.to_string())?;
+        if !w.log.entries.is_empty() {
+            return Err(format!(
+                "W0004: o WAL `{wp}` já registra uma execução ({} registros); use `athc recover`, não `athc run`",
+                w.log.entries.len()
+            ));
+        }
+        if let Some(k) = opts.one("kill-at") {
+            let (point, n) = k.split_once(':').ok_or("--kill-at espera ponto:N")?;
+            let point = CrashPoint::parse(point).ok_or(
+                "--kill-at: ponto deve ser authorized, logged, spent, reserved, intent, sent, confirmed ou closed",
+            )?;
+            w.crash = Some((point, n.parse().map_err(|_| "--kill-at: N inválido")?));
+            w.crash_mode = CrashMode::Kill;
+        }
+        let mut head = json!({ "run": run_id, "program": c.codex.root, "agent": agent, "event": event,
+                    "args": args.iter().map(Value::to_json).collect::<Vec<_>>() });
+        // o registro de consumo que as intenções desta execução vão citar: a recuperação o lê
+        if let Some(l) = arx.grants.ledger() {
+            let abs = std::path::absolute(l).unwrap_or_else(|_| l.to_path_buf());
+            head["ledger"] = json!(abs.display().to_string());
+        }
+        // com âncora, a recuperação é obrigada a confrontar o registro com ela
+        if let Some(a) = opts.one("anchor").filter(|_| arx.grants.anchored()) {
+            head["anchor"] = json!(a);
+        }
+        // RC4: a recuperação é obrigada a usar o mesmo registro unificado e a mesma testemunha
+        if let (true, Some(a), Some(t)) = (arx.lc.is_some(), opts.one("anchor"), opts.one("clock")) {
+            head["lifecycle"] = json!({ "anchor": a, "clock": t, "scope": arx.lc.as_ref().map(|l| l.scope.clone()) });
+        }
+        w.append(0.0, "run", head);
+        arx.wal = Some(w);
+        // RC5: a fita das entradas, ao lado do WAL (que continua byte a byte o da RC4)
+        // (uma fita sem o seu WAL é órfã: o WAL é novo, ela é posta de lado)
+        let tp = PathBuf::from(format!("{wp}.tape"));
+        if std::fs::metadata(&tp).is_ok_and(|m| m.len() > 0) {
+            std::fs::rename(&tp, format!("{wp}.tape.orphan")).map_err(|e| e.to_string())?;
+        }
+        let mut t = Wal::open(tp).map_err(|e| e.to_string())?;
+        t.append(0.0, "origin", json!({ "run": run_id, "program": c.codex.root, "trusted": trusted_hash }));
+        arx.tape = Some(t);
+        arx.journal.stream_to(&jpath).map_err(|e| format!("falha ao abrir o journal: {e}"))?;
+    } else if opts.one("kill-at").is_some() {
+        return Err("`--kill-at` exige `--wal`".into());
+    }
+
     let shown: Vec<String> = args.iter().map(Value::show).collect();
     println!(
         "{} {}.{}({})  {}",
@@ -273,7 +872,17 @@ fn cmd_run(opts: &Opts, st: Style) -> Result<bool, String> {
         shown.join(", "),
         st.dim(&format!("provedor: {provider_name}"))
     );
+    // RC5.1: numa execução com autoridade temporal (a âncora é parte do protocolo), a âncora
+    // guarda também a marca da fita das entradas
+    if let (Some(a), true) = (opts.one("anchor"), arx.tape.is_some() && arx.temporal) {
+        let anchor = arx::anchor::TcpAnchor::new(a.strip_prefix("tcp://").unwrap_or(a), 5.0)?;
+        arx.tape_attach(Box::new(anchor), &c.codex.root, &run_id)?;
+    }
     let result = arx.run(&agent, &event, args);
+    // (a marca final da fita: o que a execução inteira observou)
+    if let Err(e) = arx.tape_seal() {
+        eprintln!("aviso: {e}");
+    }
     println!("  {}", st.dim(&format!("{:>7}  {:>7}", "t", "+Δt")));
     for ev in &arx.events {
         println!(
@@ -291,7 +900,20 @@ fn cmd_run(opts: &Opts, st: Style) -> Result<bool, String> {
             println!("  {:>7}  {:>7}  {}", "", "", mark);
         }
     }
+    if let Some(rs) = &arx.resume {
+        println!(
+            "{} retomada: {} entrada(s) do WAL, {} chamada(s) ao vivo{}",
+            st.bold("↻"),
+            rs.replayed,
+            rs.live,
+            arx.diverged.as_ref().map(|d| format!(" · DIVERGENTE: {d}")).unwrap_or_default()
+        );
+    }
     let ok = match &result {
+        Ok(v) if arx.diverged.is_some() => {
+            println!("{} abortado: R0650 retomada divergente (resultado descartado: {})", st.red("✗"), v.show());
+            false
+        }
         Ok(v) => {
             println!("{} resultado: {}", st.bold("◀"), v.show());
             true
@@ -320,11 +942,17 @@ fn cmd_run(opts: &Opts, st: Style) -> Result<bool, String> {
     if !world.is_empty() {
         println!("  {:<9} {}", "mundo", world.join("; "));
     }
-    let jpath = PathBuf::from(opts.one("journal").unwrap_or(".arx/journal.jsonl"));
-    if let Some(dir) = jpath.parent() {
-        if !dir.as_os_str().is_empty() {
-            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-        }
+    if let Some(w) = &arx.wal {
+        let stw = WalState::of(&w.log);
+        println!(
+            "  {:<9} {} · execução {} · {} registros · {} intenção(ões), {} em aberto",
+            "wal",
+            opts.one("wal").unwrap_or_default(),
+            run_id,
+            w.log.entries.len(),
+            stw.intents.len(),
+            stw.open().len()
+        );
     }
     std::fs::write(&jpath, arx.journal.to_jsonl()).map_err(|e| format!("falha ao gravar o journal: {e}"))?;
     let chain = if Journal::verify(&arx.journal.entries).is_ok() { "cadeia íntegra" } else { "cadeia INVÁLIDA" };
@@ -337,7 +965,7 @@ fn cmd_run(opts: &Opts, st: Style) -> Result<bool, String> {
         chain
     );
     if let Some(cp) = opts.one("core-journal") {
-        let core = Journal::core_view(&arx.journal.entries);
+        let core = Journal::core_view_with(&arx.journal.entries, &athc::compensable_tools(&c.module));
         std::fs::write(cp, core.to_jsonl()).map_err(|e| format!("falha ao gravar o journal do núcleo: {e}"))?;
         println!(
             "  {:<9} {cp} · {} entradas · cabeça #{} (vista do núcleo λ_Ath)",
@@ -396,6 +1024,15 @@ fn cmd_run(opts: &Opts, st: Style) -> Result<bool, String> {
                 .collect::<Vec<_>>(),
             "spent": { "tok": arx.meter.tok, "usd": arx.meter.usd, "wall": arx.meter.wall },
             "journal_head": arx.journal.head,
+            "run": run_id,
+            "grants_spent": arx.grants.spent.iter().cloned().collect::<Vec<_>>(),
+            // Rev13 (M-V): dois registros separados. O semântico é a cabeça da cadeia da vista do
+            // núcleo — determinístico, sem tempo nem latência: o que o programa fez. O de
+            // evidências é a cabeça do journal integral — com as medições reais: como e quando.
+            "digests": {
+                "semantic": arx::journal::Journal::core_view_with(&arx.journal.entries, &athc::compensable_tools(&c.module)).head,
+                "evidence": arx.journal.head,
+            },
         });
         let text = serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?;
         std::fs::write(rp, text).map_err(|e| format!("falha ao gravar o relatório: {e}"))?;
@@ -765,4 +1402,512 @@ fn cmd_replay(opts: &Opts, st: Style) -> Result<bool, String> {
             Ok(false)
         }
     }
+}
+
+/// Uma identidade de execução nova: o instante e o processo, resumidos.
+fn fresh_run_id() -> String {
+    let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+    let h = blake3::hash(format!("{t}:{}", std::process::id()).as_bytes()).to_hex().to_string();
+    format!("run-{}", &h[..12])
+}
+
+/// O endereço de um host sem provedor: num programa com `bind`, só a fotografia confiável vem
+/// do host; uma ferramenta sem ligação fica inacessível (a porta 9 descarta).
+const NO_HOST: &str = "127.0.0.1:9";
+
+fn remote_host(opts: &Opts, addr: &str, run: &str) -> Result<RemoteHost, String> {
+    let mut attestation = None;
+    let snapshot = match opts.one("trusted") {
+        Some(p) => {
+            // os bytes que viram a fotografia são os mesmos que a assinatura ao lado cobre
+            let bytes = std::fs::read(p).map_err(|e| format!("falha ao ler `{p}`: {e}"))?;
+            if let Ok(sig) = std::fs::read_to_string(format!("{p}.sig")) {
+                attestation = Some((arx::sign::trusted_payload(&bytes), sig.trim().to_string()));
+            }
+            let j = serde_json::from_slice(&bytes).map_err(|e| format!("`{p}` não é JSON: {e}"))?;
+            RemoteHost::snapshot_from_json(&j)?
+        }
+        None => arx::host::TrustedSnapshot::default(),
+    };
+    let timeout =
+        opts.one("timeout").map(|t| t.parse::<f64>().map_err(|_| "--timeout inválido")).transpose()?.unwrap_or(3.0);
+    let mut h = RemoteHost::new(addr, run, timeout, snapshot)?;
+    h.attestation = attestation;
+    Ok(h)
+}
+
+/// RC5: se o módulo declara `bind`, o host desta execução é a ligação: as ferramentas ligadas
+/// vão à API HTTP; o resto (e a fotografia confiável) continua no host dado. `--no-bind`
+/// executa sem a ligação (o programa recusa com `R0641`, como no backend Python).
+fn bind_host(
+    opts: &Opts,
+    m: &ath_syntax::ast::Module,
+    inner: Box<dyn Host>,
+    run: &str,
+) -> Result<(Box<dyn Host>, bool), String> {
+    let has = m.items.iter().any(|i| matches!(i, Item::Bind(_)));
+    if !has || opts.one("no-bind").is_some() {
+        return Ok((inner, false));
+    }
+    let timeout = match opts.one("timeout") {
+        Some(t) => t.parse::<f64>().map_err(|_| "--timeout inválido")?,
+        None => 5.0,
+    };
+    let env = |k: &str| std::env::var(k).ok();
+    Ok((Box::new(arx::bind::BoundHost::attach(m, inner, run, timeout, &env)?), true))
+}
+
+/// `athc grant`: a confirmação estruturada do principal vira concessões. Cada concessão é uma
+/// operação com os argumentos exatos; nada é combinado nem inferido.
+fn cmd_grant(opts: &Opts) -> Result<bool, String> {
+    let out = PathBuf::from(opts.one("out").ok_or("informe --out")?);
+    let run = opts.one("run").ok_or("informe --run (a execução para a qual a concessão vale)")?;
+    let origin = opts.one("origin").ok_or("informe --origin confirmation:REF (de onde vem a autoridade)")?;
+    let mut ops: Vec<(String, Vec<String>)> = Vec::new();
+    if let Some(f) = opts.one("from") {
+        let j = read_json(Path::new(f))?;
+        for (i, o) in j["operations"].as_array().ok_or("intenção sem `operations`")?.iter().enumerate() {
+            if o.get("ambiguous").is_some_and(|a| a != &json!(false)) {
+                return Err(format!(
+                    "operação {} é ambígua ({}): confirme a tupla exata com --op/--arg; nada foi concedido",
+                    i + 1,
+                    o["ambiguous"]
+                ));
+            }
+            let op = o["op"].as_str().ok_or_else(|| format!("operação {} sem `op`", i + 1))?;
+            let args: Vec<String> = o["args"]
+                .as_array()
+                .ok_or_else(|| format!("operação {} sem `args`", i + 1))?
+                .iter()
+                .map(|a| match a {
+                    serde_json::Value::String(x) => Ok(x.clone()),
+                    serde_json::Value::Number(n) => Ok(n.to_string()),
+                    _ => Err(format!("operação {}: argumento que não é texto nem número", i + 1)),
+                })
+                .collect::<Result<_, _>>()?;
+            ops.push((op.to_string(), args));
+        }
+    } else {
+        let op = opts.one("op").ok_or("informe --op e --arg…, ou --from intenção.json")?;
+        ops.push((op.to_string(), opts.flags.get("arg").cloned().unwrap_or_default()));
+    }
+    let secret = match opts.one("sign") {
+        Some(k) => Some(read_secret(k)?),
+        None => None,
+    };
+    let stamp = stamp_opts(opts)?;
+    let mut doc = if out.exists() { read_json(&out)? } else { json!({ "grants": [] }) };
+    // a carga confere as que já estão no arquivo (origem, id) antes de acrescentar
+    let mut store = GrantStore::from_json(&doc)?;
+    for (op, args) in ops {
+        let mut nonce = 0;
+        let mut g = loop {
+            let g = Grant::new(run, &op, &args, origin, nonce);
+            if !store.grants.iter().any(|x| x.id == g.id) {
+                break g;
+            }
+            nonce += 1;
+        };
+        // a assinatura cobre a identidade: execução, operação, argumentos, origem e nonce
+        match (&secret, &stamp) {
+            // com vínculos: o programa, a execução e o prazo entram no que é assinado
+            (Some(k), Some((program, issued, expires))) => {
+                let st = arx::sign::Stamp::sign(k, "grant2", &g.id, program, run, *issued, *expires);
+                (g.program, g.issued, g.expires, g.sig) =
+                    (Some(st.program), Some(st.issued), Some(st.expires), Some(st.sig));
+            }
+            (Some(k), None) => g.sig = Some(arx::sign::sign(k, "grant", &g.id)),
+            _ => {}
+        }
+        println!(
+            "concedido {} · {}({}) · execução {} · origem {}{}",
+            &g.id[..12],
+            g.op,
+            g.args.join(", "),
+            g.run,
+            g.origin,
+            secret.as_ref().map(|k| format!(" · assinado por {}", arx::sign::public_of(k))).unwrap_or_default()
+        );
+        doc["grants"].as_array_mut().ok_or("arquivo de concessões inválido")?.push(g.to_json());
+        store.grants.push(g);
+    }
+    // a carga recusa origens sem autoridade antes de qualquer coisa ir para o disco
+    GrantStore::from_json(&doc)?;
+    let text = serde_json::to_string_pretty(&doc).map_err(|e| e.to_string())?;
+    std::fs::write(&out, text).map_err(|e| format!("falha ao gravar `{}`: {e}", out.display()))?;
+    Ok(true)
+}
+
+fn read_secret(path: &str) -> Result<[u8; 32], String> {
+    let t = std::fs::read_to_string(path).map_err(|e| format!("chave `{path}`: {e}"))?;
+    arx::sign::parse_secret(&t).map_err(|e| format!("chave `{path}`: {e}"))
+}
+
+fn now_unix() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+/// `--program arquivo.ath [--ttl segundos] [--issued instante]`: o carimbo de uma assinatura com
+/// vínculos — a raiz do Codex do programa e o intervalo de validade.
+fn stamp_opts(opts: &Opts) -> Result<Option<(String, u64, u64)>, String> {
+    let Some(p) = opts.one("program") else { return Ok(None) };
+    let src = std::fs::read_to_string(p).map_err(|e| format!("falha ao ler `{p}`: {e}"))?;
+    let c = athc::compile(&src).map_err(|d| format!("`{p}` não compila ({} diagnóstico(s))", d.len()))?;
+    let num = |k: &str| opts.one(k).map(|v| v.parse::<u64>().map_err(|_| format!("--{k} inválido"))).transpose();
+    let issued = num("issued")?.unwrap_or_else(now_unix);
+    let ttl = num("ttl")?.unwrap_or(600);
+    Ok(Some((c.codex.root, issued, issued + ttl)))
+}
+
+/// `athc keygen`: o par da autoridade. A privada fica com o principal; a pública vai no programa.
+fn cmd_keygen(opts: &Opts) -> Result<bool, String> {
+    use std::io::{Read, Write};
+    let out = opts.one("out").ok_or("informe --out (onde gravar a chave privada)")?;
+    if Path::new(out).exists() {
+        return Err(format!("`{out}` já existe: uma chave não é sobrescrita"));
+    }
+    let mut seed = [0u8; 32];
+    std::fs::File::open("/dev/urandom")
+        .and_then(|mut f| f.read_exact(&mut seed))
+        .map_err(|e| format!("sem fonte de aleatoriedade (/dev/urandom): {e}"))?;
+    let mut o = std::fs::OpenOptions::new();
+    o.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        o.mode(0o600);
+    }
+    let hex: String = seed.iter().map(|b| format!("{b:02x}")).collect();
+    o.open(out)
+        .and_then(|mut f| f.write_all(format!("{hex}\n").as_bytes()))
+        .map_err(|e| format!("falha ao gravar `{out}`: {e}"))?;
+    println!("{}", arx::sign::public_of(&seed));
+    Ok(true)
+}
+
+/// `athc sign`: a autoridade assina uma fonte Trusted (a fotografia ou os argumentos do evento).
+fn cmd_sign(opts: &Opts) -> Result<bool, String> {
+    let key = read_secret(opts.one("key").ok_or("informe --key (a chave privada da autoridade)")?)?;
+    let stamp = stamp_opts(opts)?;
+    if let Some(t) = opts.one("trusted") {
+        let bytes = std::fs::read(t).map_err(|e| format!("falha ao ler `{t}`: {e}"))?;
+        let digest = arx::sign::trusted_payload(&bytes);
+        let sig = match &stamp {
+            Some((program, issued, expires)) => {
+                let run =
+                    opts.one("run").ok_or("com --program, a fotografia é assinada para uma execução: informe --run")?;
+                arx::sign::Stamp::sign(&key, "trusted2", &digest, program, run, *issued, *expires).to_json().to_string()
+            }
+            None => arx::sign::sign(&key, "trusted", &digest),
+        };
+        let out = format!("{t}.sig");
+        std::fs::write(&out, format!("{sig}\n")).map_err(|e| format!("falha ao gravar `{out}`: {e}"))?;
+        println!("assinado {t} → {out} · {}", arx::sign::public_of(&key));
+        return Ok(true);
+    }
+    let run = opts.one("run").ok_or("informe --trusted ARQUIVO, ou --run R com os --arg do evento")?;
+    let raw: Vec<String> = opts.flags.get("arg").cloned().unwrap_or_default();
+    let base = arx::sign::args_payload(run, &raw);
+    let sig = match &stamp {
+        Some((program, issued, expires)) => {
+            arx::sign::Stamp::sign(&key, "args2", &base, program, run, *issued, *expires).to_json().to_string()
+        }
+        None => arx::sign::sign(&key, "args", &base),
+    };
+    match opts.one("out") {
+        Some(o) => std::fs::write(o, format!("{sig}\n")).map_err(|e| format!("falha ao gravar `{o}`: {e}"))?,
+        None => println!("{sig}"),
+    }
+    Ok(true)
+}
+
+/// `athc recover`: retoma as obrigações de uma execução interrompida a partir do WAL.
+fn cmd_recover(opts: &Opts, st: Style) -> ExitCode {
+    match recover(opts, st) {
+        Ok(code) => ExitCode::from(code),
+        Err(e) => {
+            eprintln!("erro: {e}");
+            ExitCode::from(2)
+        }
+    }
+}
+
+fn wal_summary(log: &Journal) -> (WalState, Vec<String>, Vec<String>, Vec<u64>) {
+    let stw = WalState::of(log);
+    let open: Vec<String> = stw.open().into_iter().map(|(k, _)| k.clone()).collect();
+    let escalated: Vec<String> =
+        stw.outcome.iter().filter(|(_, v)| *v == "escalated").map(|(k, _)| k.clone()).collect();
+    let sagas: Vec<u64> = stw.sagas.iter().filter(|(_, s)| !s.ended).map(|(id, _)| *id).collect();
+    (stw, open, escalated, sagas)
+}
+
+fn stw_provider(log: &Journal, key: &str) -> String {
+    log.entries
+        .iter()
+        .find(|e| e["kind"] == "intent" && e["detail"]["key"] == key)
+        .and_then(|e| e["detail"]["provider"].as_str())
+        .unwrap_or_default()
+        .to_string()
+}
+
+fn recover(opts: &Opts, st: Style) -> Result<u8, String> {
+    let (path, src) = load(opts)?;
+    let wp = opts.one("wal").ok_or("informe --wal")?;
+    let Some(c) = compile_or_report(&path, &src, st) else { return Ok(2) };
+    // 1. integridade: qualquer falha de leitura ou de cadeia interrompe a recuperação aqui
+    let wal = Wal::open(PathBuf::from(wp)).map_err(|e| e.to_string())?;
+    if wal.read.fresh {
+        return Err(format!("W0003: o WAL `{wp}` não existe: não há execução a recuperar (confira o caminho)"));
+    }
+    let entries = wal.log.entries.len();
+    println!(
+        "{} WAL íntegro: {} · {} registros · cabeça #{}",
+        st.green("✓"),
+        wp,
+        entries,
+        &wal.log.head[..12.min(wal.log.head.len())]
+    );
+    if let Some(t) = &wal.read.torn {
+        println!(
+            "  {} última linha interrompida ({} bytes) descartada e guardada em {wp}.torn: um registro está inteiro ou ausente",
+            st.bold("!"),
+            t.len()
+        );
+    }
+    let head = wal.log.entries.first().filter(|e| e["kind"] == "run").map(|e| e["detail"].clone());
+    let Some(head) = head else {
+        return Err(format!("W0004: o WAL `{wp}` não começa com o registro da execução (`run`)"));
+    };
+    let run = head["run"].as_str().unwrap_or_default().to_string();
+    if head["program"].as_str() != Some(c.codex.root.as_str()) {
+        return Err(format!(
+            "W0004: o WAL é de outro programa (Codex #{}), não de `{path}` (Codex #{})",
+            ath_codex::short(head["program"].as_str().unwrap_or_default()),
+            ath_codex::short(&c.codex.root)
+        ));
+    }
+    println!(
+        "  execução {run} · {}.{} · Codex #{}",
+        head["agent"].as_str().unwrap_or("?"),
+        head["event"].as_str().unwrap_or("?"),
+        ath_codex::short(&c.codex.root)
+    );
+
+    // 2. as obrigações
+    let (stw, open, escalated_before, sagas) = wal_summary(&wal.log);
+    println!(
+        "  {} intenção(ões): {} fechada(s), {} em aberto, {} escalada(s) antes; {} saga(s) interrompida(s)",
+        stw.intents.len(),
+        stw.intents.len() - open.len() - escalated_before.len(),
+        open.len(),
+        escalated_before.len(),
+        sagas.len()
+    );
+    for (k, d) in stw.open() {
+        println!(
+            "  {} {k} {}({}) · provedor {} · sem desfecho",
+            st.bold("○"),
+            d["tool"].as_str().unwrap_or("?"),
+            d["args"]
+                .as_array()
+                .map(|a| a
+                    .iter()
+                    .filter(|x| x.get("cap").is_none())
+                    .map(|x| x.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", "))
+                .unwrap_or_default(),
+            d["provider"].as_str().unwrap_or("?")
+        );
+    }
+    let before = json!({ "entries": entries, "open": open, "escalated": escalated_before, "interrupted_sagas": sagas });
+    let inspect = opts.one("inspect").is_some();
+    let mut actions: Vec<serde_json::Value> = Vec::new();
+    let mut world = serde_json::Value::Null;
+    let wal = if inspect {
+        wal
+    } else {
+        // 3. os protocolos permitidos, contra o serviço real
+        let has_binds = c.module.items.iter().any(|i| matches!(i, Item::Bind(_)));
+        let addr = match opts.one("host") {
+            Some(a) => a,
+            None if has_binds => NO_HOST,
+            None => return Err("informe --host (ou --inspect para só conferir)".into()),
+        };
+        let host = remote_host(opts, addr, &run)?;
+        let (host, bound) = bind_host(opts, &c.module, Box::new(host), &run)?;
+        let mut arx = Arx::new(&c.module, host, Box::new(Scripted::default()));
+        arx.bound = bound;
+        arx.run_id = run.clone();
+        // as intenções que citam concessões só se decidem com o registro de consumo
+        let cites = stw.open().iter().any(|(_, d)| d["grants"].as_array().is_some_and(|a| !a.is_empty()));
+        let ledger = opts.one("grants").map(|g| format!("{g}.spent")).or(head["ledger"].as_str().map(String::from));
+        // RC4: o registro unificado e a testemunha de tempo, os mesmos da execução
+        if arx.temporal {
+            let lc = &head["lifecycle"];
+            let a = opts.one("anchor").map(String::from).or(lc["anchor"].as_str().map(String::from));
+            let t = opts.one("clock").map(String::from).or(lc["clock"].as_str().map(String::from));
+            let (Some(a), Some(t)) = (a, t) else {
+                return Err(format!("R0639: {}; informe --anchor e --clock (nada foi enviado)", arx::lifecycle::R0639));
+            };
+            let reg = arx::lifecycle::TcpRegistry::new(&a, 5.0)?;
+            let time = arx::lifecycle::TcpTime::new(&t, 5.0)?;
+            arx.attach_lifecycle(Box::new(reg), Box::new(time))?;
+        }
+        if !arx.temporal && (cites || ledger.is_some()) {
+            let l = ledger.ok_or(
+                "W0007: há intenção em aberto que cita concessões e o WAL não registra o registro de consumo; informe --grants",
+            )?;
+            // uma execução ancorada só é recuperada com a âncora: um registro retrocedido ou
+            // bifurcado interrompe a recuperação (L0002, L0003), tenha ou não intenção em aberto
+            let anchor_url = opts.one("anchor").map(String::from).or(head["anchor"].as_str().map(String::from));
+            let mut anchor = match &anchor_url {
+                Some(a) => Some(arx::anchor::TcpAnchor::new(a.strip_prefix("tcp://").unwrap_or(a), 5.0)?),
+                None => None,
+            };
+            let program = arx.program.clone();
+            let bound = anchor.as_mut().map(|a| (a as &mut dyn arx::anchor::Anchor, program.as_str(), run.as_str()));
+            let anchored = bound.is_some();
+            match arx::grant::ledger_owners(Path::new(&l), bound) {
+                Ok(v) => arx.spent_view = Some(v),
+                Err(e) if anchored => return Err(format!("{e} (a recuperação não enviou nem escreveu nada)")),
+                Err(e) if cites => {
+                    return Err(format!("W0007: {e}; sem ele não há como saber se a operação saiu (nada foi enviado)"))
+                }
+                Err(_) => {}
+            }
+        }
+        let before = wal.log.entries.len();
+        arx.wal = Some(wal);
+        let fuel = opts.one("fuel").map(|f| f.parse::<u32>().map_err(|_| "--fuel inválido")).transpose()?.unwrap_or(3);
+        // RC4: primeiro o que a âncora sabe (integridade do WAL, desfechos, liberações); depois a
+        // recuperação local, para o resto (as sagas e as operações sem concessão)
+        // RC5: os valores que os provedores devolverem à recuperação vão para a fita das entradas
+        arx.tape = Wal::open(PathBuf::from(format!("{wp}.tape"))).ok();
+        if arx.temporal {
+            arx.lc_recover(fuel).map_err(|e| format!("{e} (a recuperação parou antes de qualquer envio)"))?;
+        }
+        arx.skip_sagas = opts.one("intents-only").is_some();
+        arx.recover_with(fuel, opts.one("retry-escalated").is_some());
+        actions = arx.wal.as_ref().map(|w| w.log.entries[before..].to_vec()).unwrap_or_default();
+        for a in &actions {
+            let d = &a["detail"];
+            let key = d["key"].as_str().unwrap_or("-");
+            match a["kind"].as_str() {
+                Some("close") if d["evidence"].as_str().is_some_and(|e| e.starts_with("anchor:")) => println!(
+                    "  {} {key} {} · {}",
+                    st.green("●"),
+                    if d["status"] == "done" { "aplicada" } else { "não aplicada" },
+                    match d["evidence"].as_str().unwrap_or_default() {
+                        "anchor:outcome" => "desfecho restaurado do registro ancorado (recibo do provedor), sem consultar o provedor",
+                        "anchor:unsent" => "provadamente não enviada (reserva sem autorização de envio): reserva liberada, concessão livre",
+                        "anchor:released" => "liberação restaurada do registro ancorado",
+                        _ => "a intenção não chegou a reservar: nada saiu, nenhuma concessão consumida",
+                    }
+                ),
+                Some("close") if d["evidence"] == "recovery:unspent" => println!(
+                    "  {} {key} não enviada · a intenção existia, o consumo não: {} concessão(ões) continua(m) livre(s)",
+                    st.green("●"),
+                    d["released"].as_array().map_or(0, |a| a.len())
+                ),
+                Some("close") => println!(
+                    "  {} {key} {} · evidência: {} ({} tentativa(s))",
+                    st.green("●"),
+                    if d["status"] == "done" { "aplicada" } else { "não aplicada" },
+                    d["evidence"].as_str().unwrap_or("?"),
+                    d["attempts"]
+                ),
+                Some("escalate") => {
+                    println!("  {} {key} ESCALADA · {}", st.red("▲"), d["reason"].as_str().unwrap_or("?"))
+                }
+                Some("compensated") => println!(
+                    "  {} saga {} · estorno de {} {key} · {}",
+                    st.bold("↩"),
+                    d["saga"],
+                    d["of"].as_str().unwrap_or("?"),
+                    if d["ok"] == json!(true) { "feito" } else { "FALHOU" }
+                ),
+                Some("saga_unlog") => {
+                    println!("  {} saga {} · {key} não aplicada: nada a estornar", st.dim("·"), d["saga"])
+                }
+                Some("saga_end") => {
+                    println!("  {} saga {} encerrada · resíduo {}", st.bold("■"), d["saga"], d["residual"])
+                }
+                Some("saga_pending") => println!(
+                    "  {} saga {} continua aberta · {}",
+                    st.red("▲"),
+                    d["saga"],
+                    d["reason"].as_str().unwrap_or("?")
+                ),
+                _ => {}
+            }
+        }
+        world = arx.host.state();
+        arx.wal.take().ok_or("wal")?
+    };
+    // 4. o que ficou
+    let (_, open, escalated, sagas) = wal_summary(&wal.log);
+    let residual: Vec<&serde_json::Value> = wal
+        .log
+        .entries
+        .iter()
+        .filter(|e| e["kind"] == "saga_end" && e["detail"]["residual"].as_u64().unwrap_or(0) > 0)
+        .collect();
+    let needs = !open.is_empty() || !escalated.is_empty() || !sagas.is_empty() || !residual.is_empty();
+    if needs && inspect {
+        println!("{} há pendências (nada foi enviado: rode `athc recover` sem --inspect):", st.bold("!"));
+    } else if needs {
+        println!("{} exige intervenção:", st.red("✗"));
+    }
+    if needs {
+        for k in &open {
+            if inspect {
+                println!("    {k}: sem desfecho");
+            } else {
+                println!("    {k}: sem desfecho (o provedor não deu resposta conclusiva; rode `athc recover` de novo quando ele voltar)");
+            }
+        }
+        for k in &escalated {
+            let opaque = stw_provider(&wal.log, k) == "opaque";
+            if opaque {
+                println!("    {k}: resultado desconhecido — o provedor é opaco: não há como saber pelo sistema se o efeito aconteceu; confira fora dele");
+            } else {
+                println!("    {k}: escalada sem resposta conclusiva — tente `athc recover --retry-escalated` com o provedor no ar");
+            }
+        }
+        for s in &sagas {
+            println!("    saga {s}: interrompida e ainda não compensada");
+        }
+        for e in &residual {
+            println!("    saga {}: {} estorno(s) não confirmado(s)", e["detail"]["saga"], e["detail"]["residual"]);
+        }
+    } else {
+        println!(
+            "{} nada pendente: toda intenção tem desfecho com evidência e nenhuma saga ficou aberta",
+            st.green("✓")
+        );
+    }
+    println!(
+        "  wal       {} registros (+{}) · cabeça #{}",
+        wal.log.entries.len(),
+        wal.log.entries.len() - entries,
+        &wal.log.head[..12.min(wal.log.head.len())]
+    );
+    if let Some(rp) = opts.one("report") {
+        let report = json!({
+            "run": run,
+            "program": c.codex.root,
+            "wal": { "path": wp, "entries": wal.log.entries.len(), "head": wal.log.head, "torn_bytes": wal.read.torn.as_ref().map(Vec::len) },
+            "before": before,
+            "actions": actions,
+            "after": { "open": open, "escalated": escalated, "interrupted_sagas": sagas,
+                       "sagas_with_residual": residual.iter().map(|e| e["detail"]["saga"].clone()).collect::<Vec<_>>() },
+            "needs_intervention": needs,
+            "inspect_only": inspect,
+            "world": world,
+        });
+        std::fs::write(rp, serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?)
+            .map_err(|e| format!("falha ao gravar o relatório: {e}"))?;
+    }
+    Ok(if needs { 3 } else { 0 })
 }

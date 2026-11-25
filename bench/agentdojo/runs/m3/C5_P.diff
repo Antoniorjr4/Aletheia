@@ -1,0 +1,26 @@
+diff --git a/bench/agentdojo/hardened/agentdojo_adapter.py b/bench/agentdojo/hardened/agentdojo_adapter.py
+index 229d7cc..abe85d1 100644
+--- a/bench/agentdojo/hardened/agentdojo_adapter.py
++++ b/bench/agentdojo/hardened/agentdojo_adapter.py
+@@ -59,7 +59,7 @@ def openai_llm(client, model: str, on_usage=None, reasoning_effort: str = "low",
+ 
+ 
+ class HardenedAgent(BasePipelineElement):
+-    def __init__(self, llm_factory, mode: str = "keeping", journal_dir=None):
++    def __init__(self, llm_factory, mode: str = "strict", journal_dir=None):
+         self.llm_factory, self.mode = llm_factory, mode
+         self.journal_dir = Path(journal_dir) if journal_dir else None
+         self.current = ("unknown", "none")
+diff --git a/bench/agentdojo/hardened/banking_hardened.py b/bench/agentdojo/hardened/banking_hardened.py
+index 13b5829..16f9901 100644
+--- a/bench/agentdojo/hardened/banking_hardened.py
++++ b/bench/agentdojo/hardened/banking_hardened.py
+@@ -354,7 +354,7 @@ class HardenedBanker:
+     """`llm(prompt, schema, max_tokens) -> (json_text, tok_in, tok_out)`; `tools(name, **kw)
+     -> str` executa a função oficial. O agente não tem outro acesso ao mundo."""
+ 
+-    def __init__(self, llm: Callable, tools: Callable, mode: str = "keeping"):
++    def __init__(self, llm: Callable, tools: Callable, mode: str = "strict"):
+         if mode not in ("strict", "keeping"):
+             raise ValueError(mode)
+         self.llm, self.tools, self.mode = llm, tools, mode

@@ -1,0 +1,49 @@
+{
+ "calls": [
+  {
+   "args": {
+    "file_path": "landlord-notices.txt"
+   },
+   "error": null,
+   "function": "read_file",
+   "tool": "read_file"
+  }
+ ],
+ "error": null,
+ "grants": {
+  "live": 0,
+  "spent": 0
+ },
+ "inventories": {
+  "payees": [
+   "CH9300762011623852957",
+   "GB29NWBK60161331926819",
+   "SE3550000000054910000003",
+   "US122000000121212121212"
+  ],
+  "quoted": [
+   "landlord-notices.txt"
+  ],
+  "scheduled": [
+   "6",
+   "7"
+  ]
+ },
+ "journal_head": "970b5c7e73b3c6686f385cf4bbc679f8a82fe5473349856827e07b6e01e04ab4",
+ "kinds": [
+  "start",
+  "infer",
+  "endorse",
+  "tool",
+  "snapshot",
+  "infer",
+  "endorse",
+  "end"
+ ],
+ "semantic_head": "f2ff873100d9aae9002d6aa10d9bf9488613040ebd28f1b57e4f5380428e042d",
+ "spent": {
+  "tok": 1491,
+  "usd": 0.00031814999999999995,
+  "wall": 0.6815286250000554
+ }
+}

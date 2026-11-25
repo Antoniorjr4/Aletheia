@@ -1,0 +1,22 @@
+-- v1.0-RC10: o fluxo tóxico, recusado antes de qualquer efeito.
+--
+-- O agente lê o corpo de um issue do repositório PRIVADO (`^ Secret`) e tenta publicá-lo num
+-- canal público (`post_public`, que aceita só `^ Public`). É exatamente o que a injeção do issue
+-- público tentaria obter. O compilador recusa (E0440): o dado secreto não chega ao canal público.
+-- Nada é executado.
+module rc10.leak
+
+tool read_private(c: Cap[Repo.Read], issue: Text[..8]) -> Text[..600] ^ Secret
+  ! { Repo.Read } reversible latency 10.0
+
+tool post_public(c: Cap[Repo.Write], body: Text[..600] ^ Public) -> Unit
+  ! { Repo.Write } irrevocable latency 10.0
+
+agent Leaker(r: Cap[Repo.Read], w: Cap[Repo.Write])
+  budget [tok <= 10, usd <= 0.10, wall <= 30.0]
+{
+  on go(issue: Text[..8] ^ Trusted) -> Unit ! { Repo.Read, Repo.Write } {
+    let private = read_private(r, issue)
+    commit post_public(w, private)
+  }
+}

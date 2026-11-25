@@ -74,7 +74,7 @@ fn compares_text_literal(e: &Expr) -> bool {
 }
 
 /// Os inventários confiáveis em que a política decide: `s.is_managed`/`s.scale_justified`
-/// decidem pelo inventário `managed`; `s.member("k", x)`, pelo inventário `k`.
+/// decidem pelo inventário `managed`; `s.member("k", x)` e `s.links_within("k", t)`, pelo inventário `k`.
 fn policy_inventories(e: &Expr) -> BTreeSet<String> {
     let found = std::cell::RefCell::new(BTreeSet::new());
     expr_any(e, &|x| {
@@ -82,7 +82,7 @@ fn policy_inventories(e: &Expr) -> BTreeSet<String> {
             (Some("is_managed" | "scale_justified"), _) => {
                 found.borrow_mut().insert("managed".to_string());
             }
-            (Some("member"), ExprKind::Method { args, .. }) => {
+            (Some("member" | "links_within"), ExprKind::Method { args, .. }) => {
                 if let Some(Expr { kind: ExprKind::Str(k), .. }) = args.first() {
                     found.borrow_mut().insert(k.clone());
                 }
@@ -121,6 +121,8 @@ pub struct Facts {
     /// Ponto de consumo (`sample`, `refine`) → nó `infer` de origem.
     pub draft_src: HashMap<Span, Span>,
     pub integrity_checks: usize,
+    /// v1.0-RC10: verificações de fluxo de confidencialidade (argumento → sink).
+    pub confidentiality_checks: usize,
     pub refinement_checks: usize,
     pub tool_calls: usize,
     /// Blocos `atomic` e, para cada ferramenta compensável usada neles, o compensador.
@@ -134,6 +136,11 @@ pub struct Facts {
     /// Laços (`for`) e quantificadores (`all`/`any`), indexados pelo span: limites de iterações.
     pub loop_bounds: HashMap<Span, (u32, u32)>,
     pub loops: usize,
+    /// Ciclo 1: campos de `infer` que entregam ao modelo uma variável ligada por `let` a
+    /// `s.inventory("k")` ou `s.managed()`: span da variável → a expressão da fotografia. O
+    /// compilador substitui a variável pela expressão antes de entregar a árvore aos backends,
+    /// para que os dois runtimes rotulem o campo como fotografia confiável, como na forma direta.
+    pub anchor_vars: Vec<(Span, Expr)>,
 }
 
 /// Recuo entre tentativas de reconciliação no ARX, em segundos.
@@ -168,24 +175,35 @@ pub const MODEL_PROPS: [&str; 6] = ["price_in", "price_out", "ctx", "max_out", "
 pub const MODEL_OPTIONAL: [&str; 2] = ["reasoning", "overhead"];
 /// Identidade versionada do contrato Δ.
 pub const MODEL_META: [&str; 3] = ["id", "provider", "version"];
-const BUILTINS: [&str; 3] = ["fit", "sample", "len"];
+const BUILTINS: [&str; 5] = ["fit", "sample", "len", "text", "join"];
 
 pub struct Ctx<'m> {
     pub m: &'m Module,
     pub types: HashMap<String, &'m TypeDecl>,
     pub variants: HashMap<String, (&'m TypeDecl, &'m Variant)>,
+    /// v1.0-RC8: o `refine` que inicializa o `let` em curso (só ele pode ter `keeping … as`)
+    let_init: Option<Span>,
+    keep_bind: Option<(Span, Ident, LTy)>,
     pub tools: HashMap<String, &'m ToolDecl>,
     pub models: HashMap<String, &'m ModelDecl>,
     pub policies: HashMap<String, &'m PolicyDecl>,
     pub diags: Vec<Diag>,
     pub facts: Facts,
     scopes: Vec<Vec<(String, LTy)>>,
+    /// Ligações `let` cujo valor é a fotografia confiável, pela posição (profundidade, índice) da
+    /// ligação em `scopes`. Só o `let` de um bloco cria entrada; o bloco as apaga ao sair.
+    let_anchor: HashMap<(usize, usize), Expr>,
     pc: Label,
+    /// v1.0-RC10: confidencialidade do contexto de controle (ramo decidido por dado secreto).
+    pc_conf: Conf,
     pc_span: Option<Span>,
+    pc_conf_span: Option<Span>,
     used: BTreeMap<String, Span>,
     ret: Option<Ty>,
     ret_refn: Option<Refn>,
     in_policy: bool,
+    /// dentro de um contrato `requires` (onde `s.authorizes` é permitido)
+    in_requires: bool,
     commit_ok: bool,
     /// Pilha de blocos `atomic` abertos; cada um guarda as chamadas compensáveis que contém.
     atomic_stack: Vec<Vec<Span>>,
@@ -196,6 +214,8 @@ pub struct Ctx<'m> {
     /// `infer`s (por span) e os inventários confiáveis que o seu prompt recebe
     /// (`s.managed()`, `s.inventory("k")`).
     anchored: HashMap<Span, BTreeSet<String>>,
+    /// as operações de `s.authorizes("op", …)` nos contratos, com o lugar
+    auth_ops: Vec<(String, Span)>,
 }
 
 use Stratum::{E0, E1, E2, E3, E5, E6};
@@ -206,23 +226,30 @@ impl<'m> Ctx<'m> {
             m,
             types: HashMap::new(),
             variants: HashMap::new(),
+            let_init: None,
+            keep_bind: None,
             tools: HashMap::new(),
             models: HashMap::new(),
             policies: HashMap::new(),
             diags: Vec::new(),
             facts: Facts::default(),
             scopes: Vec::new(),
+            let_anchor: HashMap::new(),
             pc: Label::Trusted,
+            pc_conf: Conf::Public,
             pc_span: None,
+            pc_conf_span: None,
             used: BTreeMap::new(),
             ret: None,
             ret_refn: None,
             in_policy: false,
+            in_requires: false,
             commit_ok: false,
             atomic_stack: Vec::new(),
             in_handle: false,
             taint_calls: false,
             anchored: HashMap::new(),
+            auth_ops: Vec::new(),
         }
     }
 
@@ -257,6 +284,15 @@ impl<'m> Ctx<'m> {
                 "Text" => hi.map(|h| Refn::Text { max: h as u32 }),
                 _ => None,
             },
+            _ => None,
+        }
+    }
+
+    /// v1.0-RC10: a confidencialidade declarada num tipo (`^ Secret`), se houver.
+    pub fn conf_of(&self, te: &TypeExpr) -> Option<Conf> {
+        match te {
+            TypeExpr::ConfLabeled(_, c, _) => Some(*c),
+            TypeExpr::Labeled(inner, ..) | TypeExpr::Own(inner, _) => self.conf_of(inner),
             _ => None,
         }
     }
@@ -323,6 +359,27 @@ impl<'m> Ctx<'m> {
         }
     }
 
+    /// A expressão da fotografia a que `e` equivale, se `e` for `s.inventory("k")`/`s.managed()`
+    /// ou uma variável cuja ligação visível é um `let` de uma delas (direto ou por outra variável).
+    /// A fotografia é capturada uma vez por execução e é imutável nos dois runtimes, e `let` não
+    /// se reatribui: ler a variável é ler a fotografia.
+    fn snapshot_expr(&self, e: &Expr) -> Option<Expr> {
+        if e.inventory_anchor().is_some() {
+            return Some(e.clone());
+        }
+        let ExprKind::Var(name) = &e.kind else { return None };
+        for (d, s) in self.scopes.iter().enumerate().rev() {
+            for (i, (n, _)) in s.iter().enumerate().rev() {
+                if n == name {
+                    // A ligação visível é esta: se não for um `let` da fotografia, não é âncora,
+                    // mesmo que uma ligação mais externa com o mesmo nome fosse.
+                    return self.let_anchor.get(&(d, i)).cloned();
+                }
+            }
+        }
+        None
+    }
+
     fn lookup(&self, name: &str) -> Option<LTy> {
         for s in self.scopes.iter().rev() {
             for (n, t) in s.iter().rev() {
@@ -375,6 +432,7 @@ impl<'m> Ctx<'m> {
                 let (t, _) = self.resolve(inner);
                 (t, Some(*l))
             }
+            TypeExpr::ConfLabeled(inner, _, _) => self.resolve(inner),
             TypeExpr::Own(inner, _) => self.resolve(inner),
             TypeExpr::List { elem, lo, hi, .. } => {
                 let (et, el) = self.resolve(elem);
@@ -535,17 +593,29 @@ impl<'m> Ctx<'m> {
                 Item::Type(d) => {
                     self.types.insert(d.name.name.clone(), d);
                     for v in &d.variants {
-                        if let Some((_, pv)) = self.variants.get(&v.name.name).copied() {
-                            self.push(
-                                Diag::new(
-                                    E0,
-                                    "E0002",
-                                    format!("variante `{}` definida mais de uma vez", v.name.name),
-                                    v.name.span,
-                                    "redefinida aqui",
-                                )
-                                .secondary(pv.name.span, "primeira definição"),
-                            );
+                        if let Some((pd, pv)) = self.variants.get(&v.name.name).copied() {
+                            let mut diag = Diag::new(
+                                E0,
+                                "E0002",
+                                format!("variante `{}` definida mais de uma vez", v.name.name),
+                                v.name.span,
+                                "redefinida aqui",
+                            )
+                            .secondary(pv.name.span, "primeira definição");
+                            // Nomes de variante são do módulo, não do tipo: diga qual nome usar.
+                            if pd.name.name != d.name.name {
+                                diag = diag
+                                    .note(format!(
+                                        "`{}` já é variante de `{}`; nomes de variante valem para o módulo inteiro",
+                                        v.name.name, pd.name.name
+                                    ))
+                                    .help(format!(
+                                        "dê a esta variante um nome próprio, como `{}{}`; para um total sobre uma lista, \
+                                         use `sum x in xs => …` em vez de slots fixos com `{}`",
+                                        v.name.name, d.name.name, v.name.name
+                                    ));
+                            }
+                            self.push(diag);
                         } else {
                             self.variants.insert(v.name.name.clone(), (d, v));
                         }
@@ -554,6 +624,9 @@ impl<'m> Ctx<'m> {
                 Item::Model(d) => {
                     self.models.insert(d.name.name.clone(), d);
                 }
+                Item::Authority(d) => self.check_key("autoridade", &d.name.name, &d.key, d.key_span),
+                Item::Witness(d) => self.check_key("testemunha", &d.name.name, &d.key, d.key_span),
+                Item::Bind(_) => {}
                 Item::Tool(d) => {
                     self.tools.insert(d.name.name.clone(), d);
                 }
@@ -580,6 +653,420 @@ impl<'m> Ctx<'m> {
         for item in &m.items {
             if let Item::Agent(a) = item {
                 self.check_agent(a);
+            }
+        }
+        self.check_authority_scope();
+    }
+
+    /// A forma da chave é conferida aqui; o ponto da curva, na carga (`arx::sign`).
+    fn check_key(&mut self, what: &str, name: &str, key: &str, span: Span) {
+        let hex = key.strip_prefix("ed25519:");
+        if !hex.is_some_and(|h| h.len() == 64 && h.bytes().all(|b| b.is_ascii_hexdigit())) {
+            self.push(
+                Diag::new(
+                    E0,
+                    "E0426",
+                    format!("chave inválida na {what} `{name}`"),
+                    span,
+                    "esperado `ed25519:` e 64 dígitos hexadecimais",
+                )
+                .help("gere um par com `athc keygen --out chave` e declare a chave pública impressa"),
+            );
+        }
+    }
+
+    /// **A ligação nativa (RC5).** Cada rota de um `bind` nomeia uma ferramenta declarada
+    /// (`E0431`), ligada uma só vez (`E0432`). Um segredo não viaja em claro para outro host
+    /// (`E0433`), e uma operação com chave, que muda o mundo, não é um `GET` (`E0434`).
+    fn check_binds(&mut self) {
+        let binds: Vec<&BindDecl> =
+            self.m.items.iter().filter_map(|i| if let Item::Bind(b) = i { Some(b) } else { None }).collect();
+        let mut seen: Vec<&Ident> = Vec::new();
+        for b in binds {
+            if let (BindUrl::Lit(u), Some(secret)) = (&b.url, &b.auth) {
+                if u.starts_with("http://") && !ath_syntax::ast::loopback_url(u) {
+                    self.push(
+                        Diag::new(
+                            E2,
+                            "E0433",
+                            format!("o segredo `{secret}` de `bind {}` viajaria em claro", b.name.name),
+                            b.url_span,
+                            "http sem TLS para outro host",
+                        )
+                        .help("use `https://`, ou ligue ao próprio host (127.0.0.1)"),
+                    );
+                }
+            }
+            if let (BindUrl::Lit(u), None) = (&b.url, &b.mcp) {
+                if ath_syntax::ast::url_authority(u).is_none() {
+                    self.push(Diag::new(
+                        E0,
+                        "E0431",
+                        format!("a url de `bind {}` não é http(s), ou carrega credenciais", b.name.name),
+                        b.url_span,
+                        "esperado `http://…`, `https://…` ou `env(\"NOME\")`",
+                    ));
+                }
+            }
+            for (t, route) in &b.routes {
+                let Some(decl) = self.tools.get(t.name.as_str()).copied() else {
+                    self.push(
+                        Diag::new(
+                            E0,
+                            "E0431",
+                            format!("`bind {}` liga `{}`, que não é uma ferramenta do módulo", b.name.name, t.name),
+                            t.span,
+                            "ferramenta não declarada",
+                        )
+                        .help("cada rota de um `bind` tem o nome de uma `tool` (fora `url`, `auth` e `status`)"),
+                    );
+                    continue;
+                };
+                if seen.iter().any(|s| s.name == t.name) {
+                    self.push(Diag::new(
+                        E0,
+                        "E0432",
+                        format!("a ferramenta `{}` é ligada mais de uma vez", t.name),
+                        t.span,
+                        "segunda ligação",
+                    ));
+                }
+                seen.push(t);
+                let keyed = decl.params.iter().any(|p| p.ty.unlabeled().base_name() == "IdemKey");
+                // v1.0-RC6: um parâmetro do caminho é um parâmetro de dados da ferramenta
+                let data = |n: &str| {
+                    decl.params
+                        .iter()
+                        .any(|p| p.name.name == n && matches!(p.ty.unlabeled().base_name(), "Text" | "Int"))
+                };
+                let finder = b.finds.iter().find(|(f, _)| f.name == t.name).map(|(_, r)| r);
+                for r in std::iter::once(route).chain(finder) {
+                    for n in r.path_params() {
+                        if !data(n) {
+                            self.push(
+                                Diag::new(
+                                    E0,
+                                    "E0435",
+                                    format!("a rota de `{}` usa `{{{n}}}`, que não é um parâmetro `Text` ou `Int` da ferramenta", t.name),
+                                    t.span,
+                                    "parâmetro de caminho sem origem",
+                                )
+                                .help("o caminho só recebe dados que o programa passa à ferramenta; o host é sempre o da `url`"),
+                            );
+                        }
+                    }
+                }
+                let marker = b.keys.iter().find(|(k, _)| k.name == t.name).map(|(_, p)| p.as_str());
+                let text =
+                    |n: &str| decl.params.iter().any(|p| p.name.name == n && p.ty.unlabeled().base_name() == "Text");
+                if let Some(p) = marker {
+                    if !keyed || !text(p) || route.path_params().contains(&p) {
+                        self.push(
+                            Diag::new(
+                                E0,
+                                "E0436",
+                                format!("`{}.key = \"{p}\"`: a chave viaja num parâmetro `Text` do corpo de uma ferramenta com `own IdemKey`", t.name),
+                                t.span,
+                                "marcador de chave sem lugar",
+                            )
+                            .help("declare a chave na ferramenta e escolha um parâmetro de texto que o provedor guarda e devolve"),
+                        );
+                    }
+                }
+                if finder.is_none() && b.settles.iter().any(|(k, _)| k.name == t.name) {
+                    self.push(Diag::new(
+                        E0,
+                        "E0436",
+                        format!("`{}.settle` exige `{}.find`", t.name, t.name),
+                        t.span,
+                        "espera sem consulta",
+                    ));
+                }
+                if let Some(f) = finder {
+                    if marker.is_none() || f.method != "GET" {
+                        self.push(
+                            Diag::new(
+                                E0,
+                                "E0436",
+                                format!("`{}.find` é um `GET` e exige `{}.key`", t.name, t.name),
+                                t.span,
+                                "consulta por chave sem marcador",
+                            )
+                            .help("a consulta acha a operação pelo marcador que `.key` põe no parâmetro"),
+                        );
+                    }
+                }
+                if route.method == "GET" && (keyed || decl.class != EffClass::Reversible) {
+                    self.push(
+                        Diag::new(
+                            E2,
+                            "E0434",
+                            format!("`{}` muda o mundo e está ligada a um `GET`", t.name),
+                            t.span,
+                            "operação com chave, ou não `reversible`",
+                        )
+                        .help("`GET` é para leituras; ligue a operação a `POST`, `PUT` ou `PATCH`"),
+                    );
+                }
+            }
+            // v1.0-RC9: as chamadas de um `bind` MCP
+            for (t, call) in &b.calls {
+                let Some(decl) = self.tools.get(t.name.as_str()).copied() else {
+                    self.push(
+                        Diag::new(
+                            E0,
+                            "E0431",
+                            format!("`bind {}` liga `{}`, que não é uma ferramenta do módulo", b.name.name, t.name),
+                            t.span,
+                            "ferramenta não declarada",
+                        )
+                        .help("cada chamada de um `bind` tem o nome de uma `tool` (fora `mcp`, `auth` e `arg.…`)"),
+                    );
+                    continue;
+                };
+                if seen.iter().any(|s| s.name == t.name) {
+                    self.push(Diag::new(
+                        E0,
+                        "E0432",
+                        format!("a ferramenta `{}` é ligada mais de uma vez", t.name),
+                        t.span,
+                        "segunda ligação",
+                    ));
+                }
+                seen.push(t);
+                self.check_mcp_call(b, t, decl, call, false);
+                let finder = b.call_finds.iter().find(|(f, _)| f.name == t.name).map(|(_, c)| c);
+                if let Some(f) = finder {
+                    self.check_mcp_call(b, t, decl, f, true);
+                }
+                let keyed = decl.params.iter().any(|p| p.ty.unlabeled().base_name() == "IdemKey");
+                let marker = b.keys.iter().find(|(k, _)| k.name == t.name).map(|(_, p)| p.as_str());
+                let text =
+                    |n: &str| decl.params.iter().any(|p| p.name.name == n && p.ty.unlabeled().base_name() == "Text");
+                if let Some(p) = marker {
+                    let sent_as_text = call.args.iter().any(|(_, a)| a == &McpArg::Param(p.to_string()));
+                    if !keyed || !text(p) || !sent_as_text {
+                        self.push(
+                            Diag::new(
+                                E0,
+                                "E0436",
+                                format!("`{}.key = \"{p}\"`: a chave viaja num parâmetro `Text` que a chamada envia, numa ferramenta com `own IdemKey`", t.name),
+                                t.span,
+                                "marcador de chave sem lugar",
+                            )
+                            .help("declare a chave na ferramenta e escolha um parâmetro de texto que o servidor guarda e devolve"),
+                        );
+                    }
+                }
+                if finder.is_none() && b.settles.iter().any(|(k, _)| k.name == t.name) {
+                    self.push(Diag::new(
+                        E0,
+                        "E0436",
+                        format!("`{}.settle` exige `{}.find`", t.name, t.name),
+                        t.span,
+                        "espera sem consulta",
+                    ));
+                }
+                if let Some(f) = finder {
+                    if marker.is_none() || f.list.is_none() {
+                        self.push(
+                            Diag::new(
+                                E0,
+                                "E0436",
+                                format!("`{}.find` lê uma lista (`-> lista[]…`) e exige `{}.key`", t.name, t.name),
+                                t.span,
+                                "consulta por chave sem marcador",
+                            )
+                            .help("a consulta acha a operação pelo marcador que `.key` põe no parâmetro"),
+                        );
+                    }
+                }
+            }
+            for (t, _) in &b.call_finds {
+                if !b.calls.iter().any(|(c, _)| c.name == t.name) {
+                    self.push(Diag::new(
+                        E0,
+                        "E0436",
+                        format!("`{}.find` sem a chamada de `{}`", t.name, t.name),
+                        t.span,
+                        "consulta de uma ferramenta não ligada",
+                    ));
+                }
+            }
+        }
+    }
+
+    /// v1.0-RC9: uma chamada MCP. Cada valor é um parâmetro de dados da ferramenta, `int(p)` de
+    /// um parâmetro `Text` ou `Int`, um `@arg` do `bind`, ou um literal (`E0435`). A chamada
+    /// principal envia todos os parâmetros de dados (nada que o programa passa fica para trás) e
+    /// lê um caminho do resultado se a ferramenta devolve um valor (`E0439`). O que o servidor
+    /// anuncia é conferido contra isto na ligação, antes de qualquer efeito (`R0646`).
+    fn check_mcp_call(&mut self, b: &BindDecl, t: &Ident, decl: &ToolDecl, call: &McpCall, find: bool) {
+        let data = |n: &str| {
+            decl.params.iter().find(|p| p.name.name == n && matches!(p.ty.unlabeled().base_name(), "Text" | "Int"))
+        };
+        for (k, a) in &call.args {
+            let bad = match a {
+                McpArg::Param(p) | McpArg::IntOf(p) => data(p)
+                    .is_none()
+                    .then(|| format!("`{k}: {p}` usa `{p}`, que não é um parâmetro `Text` ou `Int` da ferramenta")),
+                McpArg::Arg(x) => (!b.args.iter().any(|(n, _)| &n.name == x))
+                    .then(|| format!("`{k}: @{x}` usa `@{x}`, que não é um `arg.{x}` do `bind`")),
+                _ => None,
+            };
+            if let Some(msg) = bad {
+                self.push(
+                    Diag::new(E0, "E0435", format!("a chamada de `{}`: {msg}", t.name), t.span, "argumento sem origem")
+                        .help("uma chamada só envia dados que o programa passa à ferramenta, configuração do executor (`@arg`) e literais"),
+                );
+            }
+        }
+        if find {
+            return;
+        }
+        let sent = call.params();
+        for p in &decl.params {
+            if matches!(p.ty.unlabeled().base_name(), "Text" | "Int") && !sent.contains(&p.name.name.as_str()) {
+                self.push(
+                    Diag::new(
+                        E0,
+                        "E0439",
+                        format!("a chamada de `{}` não envia `{}`", t.name, p.name.name),
+                        t.span,
+                        "parâmetro que não chega ao servidor",
+                    )
+                    .help("todo dado que o programa passa à ferramenta vai na chamada: nomeie-o num argumento"),
+                );
+            }
+        }
+        if decl.ret.unlabeled().base_name() != "Unit" && !call.projected {
+            self.push(
+                Diag::new(
+                    E0,
+                    "E0439",
+                    format!("`{}` devolve `{}`, e a chamada não diz o que ler do resultado", t.name, decl.ret.unlabeled().sig()),
+                    t.span,
+                    "resultado sem caminho",
+                )
+                .help("termine a chamada com `-> campo` (ou `-> a.b`); o tipo do campo é conferido contra o esquema de saída do servidor"),
+            );
+        }
+    }
+
+    /// **A autoridade tipada (RC4).** Cada operação de `ops = [..]` é resolvida contra os
+    /// contratos `requires s.authorizes("op", …)` do módulo: inexistente é `E0427`, repetida é
+    /// `E0428`. `clock` e `outcomes` são resolvidas contra as testemunhas declaradas (`E0429`);
+    /// a testemunha de tempo declara a tolerância de atraso admitida.
+    fn check_typed_authority(&mut self, d: &AuthorityDecl, used: &[(String, Span)]) {
+        let mut seen: Vec<&Ident> = Vec::new();
+        for op in &d.op_idents {
+            if let Some(first) = seen.iter().find(|s| s.name == op.name) {
+                let first = first.span;
+                self.push(
+                    Diag::new(
+                        E2,
+                        "E0428",
+                        format!("operação `{}` repetida na autoridade `{}`", op.name, d.name.name),
+                        op.span,
+                        "repetida",
+                    )
+                    .secondary(first, "primeira declaração"),
+                );
+                continue;
+            }
+            seen.push(op);
+            if !used.iter().any(|(u, _)| *u == op.name) {
+                let known: Vec<&str> = {
+                    let mut k: Vec<&str> = used.iter().map(|(u, _)| u.as_str()).collect();
+                    k.sort();
+                    k.dedup();
+                    k
+                };
+                self.push(
+                    Diag::new(
+                        E2,
+                        "E0427",
+                        format!("a autoridade `{}` cita a operação inexistente `{}`", d.name.name, op.name),
+                        op.span,
+                        "nenhum contrato `requires s.authorizes(…)` com esta operação",
+                    )
+                    .note(format!(
+                        "operações concedíveis neste módulo: {}",
+                        if known.is_empty() { "nenhuma".to_string() } else { known.join(", ") }
+                    )),
+                );
+            }
+        }
+        if d.op_idents.is_empty() && d.ops.is_some() {
+            self.push(Diag::new(
+                E2,
+                "E0427",
+                format!("a autoridade `{}` não concede operação alguma", d.name.name),
+                d.ops_span,
+                "`ops = []`",
+            ));
+        }
+        let witnesses: Vec<&WitnessDecl> =
+            self.m.items.iter().filter_map(|i| if let Item::Witness(w) = i { Some(w) } else { None }).collect();
+        for (role, r) in [("clock", &d.clock), ("outcomes", &d.outcomes)] {
+            let Some(r) = r else { continue };
+            match witnesses.iter().find(|w| w.name.name == r.name) {
+                None => self.push(Diag::new(
+                    E2,
+                    "E0429",
+                    format!("`{role} = {}`: a testemunha `{}` não está declarada", r.name, r.name),
+                    r.span,
+                    "declare `witness nome { key = \"ed25519:…\" }`",
+                )),
+                Some(w) if role == "clock" && w.tolerance.is_none() => self.push(
+                    Diag::new(E2, "E0429", format!("a testemunha de tempo `{}` não declara `tolerance`", w.name.name), r.span, "usada como `clock`")
+                        .note("o atraso máximo admitido entre o pedido e a resposta de tempo é parte da garantia: declare-o (segundos)"),
+                ),
+                Some(_) => {}
+            }
+        }
+    }
+
+    /// **O escopo das autoridades fecha com os contratos (E0427).** Se toda autoridade do
+    /// módulo declara `ops`, uma operação que nenhuma delas pode conceder nunca seria
+    /// autorizada: o contrato é inatingível. E um `ops` que cita uma operação que nenhum
+    /// contrato usa é um erro de digitação que daria a falsa impressão de escopo.
+    fn check_authority_scope(&mut self) {
+        self.check_binds();
+        let auths: Vec<&AuthorityDecl> =
+            self.m.items.iter().filter_map(|i| if let Item::Authority(d) = i { Some(d) } else { None }).collect();
+        let used = std::mem::take(&mut self.auth_ops);
+        for d in &auths {
+            if d.typed {
+                self.check_typed_authority(d, &used);
+                continue;
+            }
+            for op in d.ops.iter().flatten() {
+                if !used.iter().any(|(u, _)| u == op) {
+                    self.push(Diag::new(
+                        E2,
+                        "E0427",
+                        format!("a autoridade `{}` concede `{op}`, que nenhum contrato usa", d.name.name),
+                        d.ops_span,
+                        "nenhum `requires s.authorizes(…)` com esta operação",
+                    ));
+                }
+            }
+        }
+        if !auths.is_empty() && auths.iter().all(|d| d.ops.is_some()) {
+            for (op, span) in &used {
+                if !auths.iter().any(|d| d.ops.iter().flatten().any(|o| o == op)) {
+                    self.push(
+                        Diag::new(
+                            E2,
+                            "E0427",
+                            format!("nenhuma autoridade do módulo pode conceder `{op}`"),
+                            *span,
+                            "este contrato nunca seria satisfeito",
+                        )
+                        .help("acrescente a operação ao `ops` de uma autoridade"),
+                    );
+                }
             }
         }
     }
@@ -706,6 +1193,40 @@ impl<'m> Ctx<'m> {
             self.push(Diag::new(E0, "E0030", "latência e custo devem ser ≥ 0", t.name.span, "contrato Δ inválido"));
         }
         self.check_compensator(t);
+        self.check_requires(t);
+    }
+
+    /// `requires φ`: o contrato de autorização. É conferido como o corpo de uma política (puro:
+    /// nada de ferramenta, inferência ou `commit`; só os parâmetros e o estado confiável) e
+    /// precisa ser `Bool`. O runtime o avalia sobre os argumentos reais antes do efeito.
+    fn check_requires(&mut self, t: &'m ToolDecl) {
+        let Some(req) = &t.requires else { return };
+        self.in_policy = true;
+        self.scopes = vec![vec![]];
+        self.pc = Label::Trusted;
+        self.pc_span = None;
+        self.used.clear();
+        self.ret = None;
+        for prm in &t.params {
+            let (pt, _) = self.resolve(&prm.ty);
+            if !matches!(pt, Ty::Cap(_)) && !pt.is_linear() {
+                self.bind(&prm.name.name, LTy::trusted(pt));
+            }
+        }
+        self.in_requires = true;
+        let body = self.expr(req);
+        self.in_requires = false;
+        if !assignable(&body.ty, &Ty::Bool) {
+            self.push(Diag::new(
+                E0,
+                "E0430",
+                "o contrato `requires` é uma condição",
+                req.span,
+                format!("`{}` exige `Bool`, encontrado `{}`", t.name.name, body.ty.show()),
+            ));
+        }
+        self.in_policy = false;
+        self.scopes.clear();
     }
 
     /// `compensable by c`: `c` existe, não é a própria ferramenta, recebe os mesmos parâmetros
@@ -938,7 +1459,8 @@ impl<'m> Ctx<'m> {
                     origin.push(format!("evento `{}({})` ^ {}", h.event.name, p.name.name, lab.name()));
                 }
                 let refn = self.refn_of(&p.ty);
-                self.bind(&p.name.name, LTy::declared(t, lab, refn, origin));
+                let conf = self.conf_of(&p.ty).unwrap_or(Conf::Public);
+                self.bind(&p.name.name, LTy::declared(t, lab, refn, origin).with_conf(conf));
             }
             let (rt, _) = self.resolve(&h.ret);
             self.ret = Some(rt.clone());
@@ -997,15 +1519,43 @@ impl<'m> Ctx<'m> {
 
     fn block(&mut self, b: &Block) -> LTy {
         self.scopes.push(Vec::new());
+        let depth = self.scopes.len() - 1;
+        self.let_anchor.retain(|(d, _), _| *d < depth);
         let mut diverged = false;
         for s in &b.stmts {
             match s {
                 Stmt::Let { name, value, span } => {
+                    let saved = self.let_init.replace(value.span);
                     let t = self.expr(value);
+                    self.let_init = saved;
                     if matches!(t.ty, Ty::IdemKey) {
                         self.facts.linear_lets.insert(*span);
                     }
+                    let anchor = self.snapshot_expr(value);
                     self.bind(&name.name, t);
+                    if let Some(a) = anchor {
+                        let i = self.scopes[depth].len() - 1;
+                        self.let_anchor.insert((depth, i), a);
+                    }
+                    // v1.0-RC8: `keeping … as nome` liga também a lista do que foi deixado de fora
+                    // (só a do `refine` que é o valor desta ligação, não a de um `let` aninhado)
+                    if self.keep_bind.as_ref().is_some_and(|(s, ..)| *s == value.span) {
+                        let (_, n, lt) = self.keep_bind.take().unwrap();
+                        if n.name == name.name {
+                            self.push(
+                                Diag::new(
+                                    E0,
+                                    "E0438",
+                                    format!("`as {}` repete o nome da ligação", n.name),
+                                    n.span,
+                                    "o plano e o que foi deixado de fora teriam o mesmo nome",
+                                )
+                                .help("dê ao que foi deixado de fora um nome próprio, como `as recusados`"),
+                            );
+                        } else {
+                            self.bind(&n.name, lt);
+                        }
+                    }
                 }
                 Stmt::Expr(x) => {
                     let t = self.expr(x);
@@ -1020,6 +1570,7 @@ impl<'m> Ctx<'m> {
             None if diverged => LTy::never(),
             None => LTy::trusted(Ty::Unit),
         };
+        self.let_anchor.retain(|(d, _), _| *d < depth);
         self.scopes.pop();
         out
     }
@@ -1028,7 +1579,13 @@ impl<'m> Ctx<'m> {
         match &e.kind {
             ExprKind::Int(_) => LTy::trusted(Ty::Int),
             ExprKind::Bool(_) => LTy::trusted(Ty::Bool),
-            ExprKind::Str(s) => LTy { tok: Some(est_tokens(s)), ..LTy::trusted(Ty::Text) },
+            // (v1.0-RC8: o literal carrega o seu comprimento, para a composição de texto provar limites)
+            ExprKind::Str(s) => LTy {
+                conf: Conf::Public,
+                tok: Some(est_tokens(s)),
+                refn: Some(Refn::Text { max: s.chars().count() as u32 }),
+                ..LTy::trusted(Ty::Text)
+            },
             ExprKind::Var(n) => match self.lookup(n) {
                 Some(t) if matches!(t.ty, Ty::Pending) => {
                     self.push(
@@ -1096,7 +1653,9 @@ impl<'m> Ctx<'m> {
                 LTy::never()
             }
             ExprKind::Infer { model, out, fields } => self.infer(e, model, out, fields),
-            ExprKind::Refine { draft, policy, retry, els } => self.refine(e, draft, policy, *retry, els),
+            ExprKind::Refine { draft, policy, retry, els, keep } => {
+                self.refine(e, draft, policy, *retry, els, keep.as_ref())
+            }
             ExprKind::Quote(x) => self.expr(x),
             ExprKind::Commit(x) => {
                 if let ExprKind::Call { callee, .. } = &x.kind {
@@ -1147,7 +1706,7 @@ impl<'m> Ctx<'m> {
             ExprKind::List(items) => self.list_lit(items),
             ExprKind::For { var, iter, body } => {
                 if self.in_policy {
-                    self.impure(e.span, "laço `for` (use `all x in xs => …` ou `any`)");
+                    self.impure(e.span, "laço `for` (use `all x in xs => …`, `any` ou `sum`)");
                 }
                 let Some((it, elem)) = self.iteration(e.span, iter, "for") else {
                     self.scopes.push(vec![(var.name.clone(), LTy::never())]);
@@ -1155,40 +1714,68 @@ impl<'m> Ctx<'m> {
                     self.scopes.pop();
                     return LTy::trusted(Ty::Unit);
                 };
-                let saved = (self.pc, self.pc_span);
-                // O número de iterações é decidido pela lista: fluxo implícito, como num `match`.
+                let saved = (self.pc, self.pc_span, self.pc_conf, self.pc_conf_span);
+                // O número de iterações é decidido pela lista: fluxo implícito, como num `match`,
+                // para a integridade e para a confidencialidade.
                 if it.lab < self.pc {
                     self.pc = it.lab;
                     self.pc_span = Some(iter.span);
+                }
+                if it.conf > self.pc_conf {
+                    self.pc_conf = it.conf;
+                    self.pc_conf_span = Some(iter.span);
                 }
                 self.scopes.push(vec![(var.name.clone(), elem)]);
                 self.block(body);
                 self.scopes.pop();
-                (self.pc, self.pc_span) = saved;
+                (self.pc, self.pc_span, self.pc_conf, self.pc_conf_span) = saved;
                 LTy::trusted(Ty::Unit)
             }
-            ExprKind::Quant { var, iter, body, .. } => {
-                let Some((it, elem)) = self.iteration(e.span, iter, "quantificador") else {
+            ExprKind::Quant { op, var, iter, body } => {
+                let sum = *op == QuantOp::Sum;
+                let want = if sum { Ty::Int } else { Ty::Bool };
+                let Some((it, elem)) = self.iteration(e.span, iter, op.keyword()) else {
                     self.scopes.push(vec![(var.name.clone(), LTy::never())]);
                     self.expr(body);
                     self.scopes.pop();
-                    return LTy::trusted(Ty::Bool);
+                    return LTy::trusted(want);
                 };
-                let saved = (self.pc, self.pc_span);
+                let saved = (self.pc, self.pc_span, self.pc_conf, self.pc_conf_span);
                 if it.lab < self.pc {
                     self.pc = it.lab;
                     self.pc_span = Some(iter.span);
                 }
+                if it.conf > self.pc_conf {
+                    self.pc_conf = it.conf;
+                    self.pc_conf_span = Some(iter.span);
+                }
                 self.scopes.push(vec![(var.name.clone(), elem)]);
                 let b = self.expr(body);
                 self.scopes.pop();
-                (self.pc, self.pc_span) = saved;
-                if !assignable(&b.ty, &Ty::Bool) {
-                    self.mismatch(body.span, &Ty::Bool, &b.ty);
+                (self.pc, self.pc_span, self.pc_conf, self.pc_conf_span) = saved;
+                if !assignable(&b.ty, &want) {
+                    self.mismatch(body.span, &want, &b.ty);
                 }
-                let mut out = LTy::trusted(Ty::Bool);
+                let mut out = LTy::trusted(want);
+                // O resultado depende da lista e do corpo: os dois rótulos, nas duas dimensões
+                // (Ciclo 1: antes a confidencialidade não era propagada pelo quantificador).
                 out.meet_from(&it);
                 out.meet_from(&b);
+                out.join_conf_from(&it);
+                out.join_conf_from(&b);
+                if sum {
+                    // Soma de k termos em [a, b], k em [n_lo, n_hi]: o intervalo é provado pelo
+                    // tipo da lista e pelo refinamento do corpo; sem um deles, `Int` sem limite.
+                    let (n_lo, n_hi) = match &it.ty {
+                        Ty::List(_, _, lo, hi) => (*lo as i64, *hi as i64),
+                        _ => (0, 0),
+                    };
+                    if let Some(Refn::Int { lo, hi }) = b.refn {
+                        let lo = lo.and_then(|a| if a >= 0 { n_lo.checked_mul(a) } else { n_hi.checked_mul(a) });
+                        let hi = hi.and_then(|b| if b >= 0 { n_hi.checked_mul(b) } else { n_lo.checked_mul(b) });
+                        out.refn = Some(Refn::Int { lo, hi });
+                    }
+                }
                 out
             }
         }
@@ -1236,7 +1823,14 @@ impl<'m> Ctx<'m> {
             out.meet_from(&t);
         }
         let n = items.len() as u32;
-        LTy { ty: Ty::List(Box::new(elem), refn.flatten(), n, n), lab: out.lab, tok, origin: out.origin, refn: None }
+        LTy {
+            ty: Ty::List(Box::new(elem), refn.flatten(), n, n),
+            lab: out.lab,
+            conf: out.conf,
+            tok,
+            origin: out.origin,
+            refn: None,
+        }
     }
 
     /// Operando de `for`/`all`/`any`: precisa ser uma lista delimitada. Registra os limites
@@ -1247,7 +1841,9 @@ impl<'m> Ctx<'m> {
             Ty::List(elem, er, lo, hi) => {
                 self.facts.loop_bounds.insert(span, (*lo, *hi));
                 self.facts.loops += 1;
-                let mut el = LTy::declared((**elem).clone(), it.lab, *er, it.origin.clone());
+                // O elemento herda integridade e confidencialidade da lista: iterar um segredo
+                // não o torna público (Ciclo 1: antes só a integridade era herdada).
+                let mut el = LTy::declared((**elem).clone(), it.lab, *er, it.origin.clone()).with_conf(it.conf);
                 if el.tok.is_none() {
                     el.tok = ty_tokens(elem, *er).filter(|_| matches!(**elem, Ty::List(..)));
                 }
@@ -1374,6 +1970,49 @@ impl<'m> Ctx<'m> {
 
     fn field(&mut self, recv: &Expr, f: &Ident) -> LTy {
         let r = self.expr(recv);
+        let recv_conf = r.conf;
+        // **v1.0-RC8: projeção.** `xs.campo` numa lista de registros é a lista do campo de cada
+        // um, com os mesmos limites e o mesmo rótulo.
+        if let Ty::List(elem, _, lo, hi) = &r.ty {
+            if let Ty::Adt(n) = &**elem {
+                let (lo, hi, n) = (*lo, *hi, n.clone());
+                let decl: &'m TypeDecl = self.types[&n];
+                let mut found: Option<(Ty, Option<Refn>)> = None;
+                let mut ok = true;
+                for v in &decl.variants {
+                    match v.fields.iter().find(|fd| fd.name.name == f.name) {
+                        Some(fd) => {
+                            let (t, _) = self.resolve(&fd.ty);
+                            let rf = self.refn_of(&fd.ty);
+                            match &found {
+                                None => found = Some((t, rf)),
+                                Some((prev, prf)) if crate::ty::same(prev, &t) && *prf == rf => {}
+                                _ => ok = false,
+                            }
+                        }
+                        None => ok = false,
+                    }
+                }
+                if let (true, Some((t, rf))) = (ok, found) {
+                    let mut out = LTy::trusted(Ty::List(Box::new(t), rf, lo, hi));
+                    out.lab = r.lab;
+                    out.conf = recv_conf;
+                    out.origin = r.origin;
+                    return out;
+                }
+                self.push(
+                    Diag::new(
+                        E0,
+                        "E0005",
+                        format!("campo `{}` não existe, com o mesmo tipo, em todas as variantes de `{n}`", f.name),
+                        f.span,
+                        "projeção de lista",
+                    )
+                    .help("`lista.campo` exige o campo em toda variante do elemento"),
+                );
+                return LTy::never();
+            }
+        }
         let name = match &r.ty {
             Ty::Adt(n) => n.clone(),
             Ty::Never => return LTy::never(),
@@ -1412,7 +2051,7 @@ impl<'m> Ctx<'m> {
             _ => None,
         };
         match (ok, found) {
-            (true, Some(t)) => LTy::declared(t, r.lab, refn, r.origin),
+            (true, Some(t)) => LTy::declared(t, r.lab, refn, r.origin).with_conf(recv_conf),
             _ => {
                 self.push(
                     Diag::new(
@@ -1484,9 +2123,45 @@ impl<'m> Ctx<'m> {
                     }
                     return LTy::trusted(Ty::Bool);
                 }
-                "inventory" | "member" => {
-                    let member = method.name == "member";
-                    check_args(self, if member { 2 } else { 1 });
+                "inventory" | "member" | "within" | "mentions" | "links_within" | "binds" | "authorizes" => {
+                    // `s.links_within("k", texto)` (ciclo 1, D2): toda ocorrência de link na forma G
+                    // (`http://`, `https://`, `www.`) dentro de `texto` pertence ao inventário
+                    // confiável `k`. Propriedade sintática; não é detecção de phishing.
+                    // `s.within("k", x)`: `x` (decimal) ≤ o limite confiável `k`; `s.mentions("k", x)`:
+                    // `x` aparece literalmente num texto confiável `k` (Rev12, contratos `requires`);
+                    // `s.binds("r", x1, …, xn)`: a tupla é uma linha da relação confiável `r` (Rev13:
+                    // a intenção autorizada liga operação, destinatário e valor)
+                    // `s.authorizes("op", x1, …, xn)`: há uma concessão livre desta execução para a
+                    // tupla inteira, e o efeito a consome (v1.0-RC1). É linear: só existe no
+                    // contrato de uma ferramenta, onde há um efeito para consumi-la. Uma política
+                    // é pura e pode ser avaliada várias vezes; não decide com concessões.
+                    let member = method.name != "inventory";
+                    if method.name == "authorizes" {
+                        if let Some(Expr { kind: ExprKind::Str(op), .. }) = args.first() {
+                            if !self.auth_ops.iter().any(|(_, sp)| *sp == method.span) {
+                                self.auth_ops.push((op.clone(), method.span));
+                            }
+                        }
+                    }
+                    if method.name == "authorizes" && !self.in_requires {
+                        self.push(
+                            Diag::new(
+                                E2,
+                                "E0425",
+                                "autorização linear fora de `requires`",
+                                method.span,
+                                "`s.authorizes` só existe no contrato `requires` de uma ferramenta",
+                            )
+                            .help("uma concessão é consumida pelo efeito que ela autoriza: declare-a no `requires` da ferramenta"),
+                        );
+                    }
+                    if matches!(method.name.as_str(), "binds" | "authorizes") {
+                        if args.len() < 2 {
+                            check_args(self, 2);
+                        }
+                    } else {
+                        check_args(self, if member { 2 } else { 1 });
+                    }
                     if member && !self.in_policy {
                         self.push(
                             Diag::new(
@@ -1494,7 +2169,7 @@ impl<'m> Ctx<'m> {
                                 "E0423",
                                 "sonda contextual fora de política",
                                 method.span,
-                                "`s.member` só decide dentro de `policy`",
+                                format!("`s.{}` só decide dentro de `policy` ou de `requires`", method.name),
                             )
                             .help("leve a decisão para a política aplicada pelo `refine`"),
                         );
@@ -1512,9 +2187,11 @@ impl<'m> Ctx<'m> {
                             .help("escreva `s.inventory(\"nome\")`: o nome do inventário não pode vir de dado"),
                         );
                     }
+                    let text_only = method.name == "links_within";
                     for (i, arg) in args.iter().enumerate() {
                         let t = self.expr(arg);
-                        if i == 1 && !assignable(&t.ty, &Ty::Text) && !assignable(&t.ty, &Ty::Int) {
+                        let ok = assignable(&t.ty, &Ty::Text) || (!text_only && assignable(&t.ty, &Ty::Int));
+                        if i >= 1 && !ok {
                             self.mismatch(arg.span, &Ty::Text, &t.ty);
                         }
                     }
@@ -1598,29 +2275,126 @@ impl<'m> Ctx<'m> {
                         0
                     }
                 };
-                return LTy { ty: Ty::Text, lab: t.lab, tok: Some(n), origin: t.origin, refn: None };
+                return LTy { ty: Ty::Text, lab: t.lab, conf: t.conf, tok: Some(n), origin: t.origin, refn: None };
+            }
+            // **v1.0-RC8: composição de texto.** `text(n)`: o inteiro em decimal, com o comprimento
+            // provado pelos limites de `n`. `join(xs, sep)`: os textos da lista, separados. O
+            // rótulo é o mais fraco dos argumentos (como em `++`): compor não endossa nada.
+            "text" => {
+                if args.len() != 1 {
+                    self.push(Diag::new(E0, "E0007", "`text(n)` recebe 1 argumento", e.span, "aridade"));
+                    return LTy::never();
+                }
+                let t = self.expr(&args[0]);
+                if !assignable(&t.ty, &Ty::Int) {
+                    self.mismatch(args[0].span, &Ty::Int, &t.ty);
+                    return LTy::never();
+                }
+                let digits = |n: i64| n.to_string().chars().count() as u32;
+                let refn = match t.refn {
+                    Some(Refn::Int { lo: Some(lo), hi: Some(hi) }) => {
+                        Some(Refn::Text { max: digits(lo).max(digits(hi)) })
+                    }
+                    _ => Some(Refn::Text { max: 20 }),
+                };
+                // A representação decimal de um segredo é o segredo (Ciclo 1: antes a
+                // confidencialidade se perdia aqui).
+                let mut out = LTy::declared(Ty::Text, t.lab, refn, t.origin.clone()).with_conf(t.conf);
+                out.tok = refn.map(|r| match r {
+                    Refn::Text { max } => max as u64,
+                    _ => 20,
+                });
+                return out;
+            }
+            "join" => {
+                if args.len() != 2 {
+                    self.push(Diag::new(
+                        E0,
+                        "E0007",
+                        "`join(lista, separador)` recebe 2 argumentos",
+                        e.span,
+                        "aridade",
+                    ));
+                    return LTy::never();
+                }
+                let xs = self.expr(&args[0]);
+                let sep = self.expr(&args[1]);
+                if !assignable(&sep.ty, &Ty::Text) {
+                    self.mismatch(args[1].span, &Ty::Text, &sep.ty);
+                }
+                let Ty::List(elem, er, _lo, hi) = &xs.ty else {
+                    if !xs.ty.is_never() {
+                        self.push(Diag::new(
+                            E0,
+                            "E0008",
+                            "`join` exige uma lista de textos",
+                            args[0].span,
+                            format!("encontrado `{}`", xs.ty.show()),
+                        ));
+                    }
+                    return LTy::never();
+                };
+                if !assignable(elem, &Ty::Text) {
+                    self.push(Diag::new(
+                        E0,
+                        "E0008",
+                        "`join` exige uma lista de textos",
+                        args[0].span,
+                        format!("encontrado `{}`", xs.ty.show()),
+                    ));
+                    return LTy::never();
+                }
+                let hi = *hi;
+                let refn = match (er, sep.refn) {
+                    (Some(Refn::Text { max: a }), Some(Refn::Text { max: s })) => Some(Refn::Text {
+                        max: hi.saturating_mul(*a).saturating_add(hi.saturating_sub(1).saturating_mul(s)),
+                    }),
+                    _ => None,
+                };
+                let mut out = LTy::declared(Ty::Text, xs.lab.meet(sep.lab), refn, xs.origin.clone())
+                    .with_conf(xs.conf.join(sep.conf));
+                if refn.is_none() {
+                    out.tok = None;
+                }
+                return out;
             }
             "len" => {
                 if args.len() != 1 {
-                    self.push(Diag::new(E0, "E0007", "`len(lista)` recebe 1 argumento", e.span, "aridade"));
+                    self.push(Diag::new(E0, "E0007", "`len(lista ou texto)` recebe 1 argumento", e.span, "aridade"));
                     return LTy::never();
                 }
                 let t = self.expr(&args[0]);
                 return match &t.ty {
                     // O tamanho herda os limites do tipo: `len(xs)` é um `Int[a..b]` provado.
                     Ty::List(_, _, lo, hi) => LTy {
+                        conf: t.conf,
                         ty: Ty::Int,
                         lab: t.lab,
                         tok: None,
                         origin: t.origin.clone(),
                         refn: Some(Refn::Int { lo: Some(*lo as i64), hi: Some(*hi as i64) }),
                     },
+                    // Em texto, `len` conta caracteres; o teto do tipo vira o teto do inteiro.
+                    Ty::Text => LTy {
+                        conf: t.conf,
+                        ty: Ty::Int,
+                        lab: t.lab,
+                        tok: None,
+                        origin: t.origin.clone(),
+                        refn: Some(Refn::Int {
+                            lo: Some(0),
+                            hi: match t.refn {
+                                Some(Refn::Text { max }) => Some(max as i64),
+                                _ => None,
+                            },
+                        }),
+                    },
                     Ty::Never => LTy::never(),
                     other => {
                         self.push(Diag::new(
                             E0,
                             "E0008",
-                            "`len` exige uma lista",
+                            "`len` exige uma lista ou um texto",
                             args[0].span,
                             format!("encontrado `{}`", other.show()),
                         ));
@@ -1636,12 +2410,12 @@ impl<'m> Ctx<'m> {
                 if self.in_policy {
                     self.impure(e.span, "`sample`");
                 }
-                let LTy { ty, lab, origin, refn, .. } = self.expr(&args[0]);
+                let LTy { ty, lab, conf, origin, refn, .. } = self.expr(&args[0]);
                 return match ty {
                     Ty::Draft(inner, ispan) => {
                         self.facts.draft_src.insert(e.span, ispan);
                         self.use_effect("Infer", e.span);
-                        LTy::declared(*inner, lab, refn, origin).with_step("sample(…)")
+                        LTy::declared(*inner, lab, refn, origin).with_conf(conf).with_step("sample(…)")
                     }
                     Ty::Never => LTy::never(),
                     other => {
@@ -1788,6 +2562,7 @@ impl<'m> Ctx<'m> {
             let at = self.expr(a);
             if !matches!(at.ty, Ty::Cap(_) | Ty::IdemKey) {
                 taint.meet_from(&at);
+                taint.join_conf_from(&at);
             }
             let (pt, req) = self.resolve(&p.ty);
             if !assignable(&at.ty, &pt) {
@@ -1844,6 +2619,42 @@ impl<'m> Ctx<'m> {
                     self.push(d);
                 }
             }
+            // v1.0-RC10: a confidencialidade do argumento não pode passar do que o parâmetro
+            // tolera (um sink público declara `^ Public`). `pc_conf` conta como um canal: um
+            // efeito num ramo decidido por dado secreto também expõe.
+            let declared_conf = self.conf_of(&p.ty);
+            let allow = declared_conf.unwrap_or(Conf::Secret);
+            if declared_conf.is_some() {
+                self.facts.confidentiality_checks += 1;
+            }
+            let eff_conf = at.conf.join(self.pc_conf);
+            if eff_conf > allow {
+                let implicit = at.conf <= allow;
+                let mut d = Diag::new(
+                    E3,
+                    "E0440",
+                    "fluxo de confidencialidade violado",
+                    a.span,
+                    format!("confidencialidade {}", eff_conf.name()),
+                );
+                if implicit {
+                    d = d.note(format!(
+                        "o valor é {}, mas a chamada ocorre num ramo decidido por dado {}",
+                        at.conf.name(),
+                        self.pc_conf.name()
+                    ));
+                    if let Some(ps) = self.pc_conf_span {
+                        d = d.secondary(ps, format!("ramo decidido por dado {}", self.pc_conf.name()));
+                    }
+                } else if !at.origin.is_empty() {
+                    d = d.note(format!("origem: {}", at.origin.join(" → ")));
+                }
+                d = d.note(format!("exigido: {}({}: {} ^ {})", callee.name, p.name.name, pt.show(), allow.name()));
+                d = d.help(
+                    "um canal que aceita só `^ Public` não recebe dado `Secret` ou `Internal`: nenhum dado confidencial sai por um sink público, qualquer que seja a decisão do modelo",
+                );
+                self.push(d);
+            }
         }
         for eff in &tool.effects {
             self.use_effect(&eff.name, e.span);
@@ -1855,7 +2666,7 @@ impl<'m> Ctx<'m> {
             origin.push(format!("{}(…) devolve ^ {}", callee.name, lab.name()));
         }
         let refn = self.refn_of(&tool.ret);
-        let mut out = LTy::declared(rt, lab, refn, origin);
+        let mut out = LTy::declared(rt, lab, refn, origin).with_conf(self.conf_of(&tool.ret).unwrap_or(Conf::Public));
         if self.taint_calls {
             // Numa condição de controle, o que a ferramenta observa é escolhido pelos argumentos.
             if taint.lab < out.lab {
@@ -1863,6 +2674,7 @@ impl<'m> Ctx<'m> {
                 out.origin = taint.origin;
                 out.origin.push(format!("{}(…)", callee.name));
             }
+            out.conf = out.conf.join(taint.conf);
         }
         out
     }
@@ -1893,6 +2705,7 @@ impl<'m> Ctx<'m> {
                         self.expect_param(fe, &at, &fd.ty, &format!("o campo `{}.{}`", name.name, fname.name));
                     }
                     out.meet_from(&at);
+                    out.join_conf_from(&at);
                 }
                 None => self.push(Diag::new(
                     E0,
@@ -1959,9 +2772,18 @@ impl<'m> Ctx<'m> {
         let mut out = LTy::trusted(result);
         out.meet_from(&lt);
         out.meet_from(&rt);
+        out.join_conf_from(&lt);
+        out.join_conf_from(&rt);
         if op == BinOp::Concat {
             out.tok = match (lt.tok, rt.tok) {
                 (Some(a), Some(b)) => Some(a + b),
+                _ => None,
+            };
+            // v1.0-RC8: Text[..a] ++ Text[..b] é Text[..a+b]
+            out.refn = match (lt.refn, rt.refn) {
+                (Some(Refn::Text { max: a }), Some(Refn::Text { max: b })) => {
+                    Some(Refn::Text { max: a.saturating_add(b) })
+                }
                 _ => None,
             };
         }
@@ -1973,10 +2795,14 @@ impl<'m> Ctx<'m> {
         if !assignable(&c.ty, &Ty::Bool) {
             self.mismatch(cond.span, &Ty::Bool, &c.ty);
         }
-        let saved = (self.pc, self.pc_span);
+        let saved = (self.pc, self.pc_span, self.pc_conf, self.pc_conf_span);
         if c.lab < self.pc {
             self.pc = c.lab;
             self.pc_span = Some(cond.span);
+        }
+        if c.conf > self.pc_conf {
+            self.pc_conf = c.conf;
+            self.pc_conf_span = Some(cond.span);
         }
         let t = self.block(then);
         let mut out = match els {
@@ -2003,8 +2829,9 @@ impl<'m> Ctx<'m> {
             }
             None => LTy::trusted(Ty::Unit),
         };
-        (self.pc, self.pc_span) = saved;
+        (self.pc, self.pc_span, self.pc_conf, self.pc_conf_span) = saved;
         out.meet_from(&c);
+        out.join_conf_from(&c);
         out
     }
 
@@ -2025,10 +2852,14 @@ impl<'m> Ctx<'m> {
             }
         };
         let decl: &'m TypeDecl = self.types[&tname];
-        let saved = (self.pc, self.pc_span);
+        let saved = (self.pc, self.pc_span, self.pc_conf, self.pc_conf_span);
         if arms.len() > 1 && s.lab < self.pc {
             self.pc = s.lab;
             self.pc_span = Some(scrut.span);
+        }
+        if arms.len() > 1 && s.conf > self.pc_conf {
+            self.pc_conf = s.conf;
+            self.pc_conf_span = Some(scrut.span);
         }
         let mut result: Option<LTy> = None;
         let mut seen: HashSet<String> = HashSet::new();
@@ -2052,7 +2883,7 @@ impl<'m> Ctx<'m> {
                     Some(fd) => {
                         let (ft, _) = self.resolve(&fd.ty);
                         let refn = self.refn_of(&fd.ty);
-                        self.bind(&b.name, LTy::declared(ft, s.lab, refn, s.origin.clone()));
+                        self.bind(&b.name, LTy::declared(ft, s.lab, refn, s.origin.clone()).with_conf(s.conf));
                     }
                     None => {
                         self.push(Diag::new(
@@ -2090,7 +2921,7 @@ impl<'m> Ctx<'m> {
                 },
             });
         }
-        (self.pc, self.pc_span) = saved;
+        (self.pc, self.pc_span, self.pc_conf, self.pc_conf_span) = saved;
         let missing: Vec<String> =
             decl.variants.iter().filter(|v| !seen.contains(&v.name.name)).map(|v| v.name.name.clone()).collect();
         if !missing.is_empty() {
@@ -2104,6 +2935,7 @@ impl<'m> Ctx<'m> {
         }
         let mut out = result.unwrap_or_else(LTy::never);
         out.meet_from(&s);
+        out.join_conf_from(&s);
         out
     }
 
@@ -2127,8 +2959,15 @@ impl<'m> Ctx<'m> {
         let (oty, _) = self.resolve(out);
         // Ancoragem: o prompt recebe o inventário da fotografia confiável. O `refine` que decidir
         // sobre este rascunho confere que a política usa a mesma fonte (E0421/E0422).
-        let names: BTreeSet<String> =
-            fields.iter().filter_map(|(_, v)| v.inventory_anchor()).map(str::to_string).collect();
+        let mut names: BTreeSet<String> = BTreeSet::new();
+        for (_, v) in fields {
+            if let Some(k) = v.inventory_anchor() {
+                names.insert(k.to_string());
+            } else if let Some(a) = self.snapshot_expr(v) {
+                names.insert(a.inventory_anchor().expect("snapshot_expr só devolve âncoras").to_string());
+                self.facts.anchor_vars.push((v.span, a));
+            }
+        }
         if !names.is_empty() {
             self.anchored.insert(e.span, names);
         }
@@ -2141,7 +2980,7 @@ impl<'m> Ctx<'m> {
                 format!("encontrado `{}`", oty.show()),
             ));
         }
-        let mut acc = LTy { ty: Ty::Unit, lab: self.pc, tok: None, origin: Vec::new(), refn: None };
+        let mut acc = LTy { ty: Ty::Unit, lab: self.pc, conf: self.pc_conf, tok: None, origin: Vec::new(), refn: None };
         if self.pc < Label::Trusted {
             acc.origin.push("contexto de controle (pc)".into());
         }
@@ -2288,15 +3127,34 @@ impl<'m> Ctx<'m> {
             },
         );
         let refn = self.refn_of(out);
-        LTy { ty: Ty::Draft(Box::new(oty), e.span), lab: acc.lab, tok: None, origin: acc.origin, refn }
+        LTy { ty: Ty::Draft(Box::new(oty), e.span), lab: acc.lab, conf: acc.conf, tok: None, origin: acc.origin, refn }
             .with_step(format!("infer {}", model.name))
     }
 
-    fn refine(&mut self, e: &Expr, draft: &Expr, policy: &Ident, _retry: u32, els: &Block) -> LTy {
+    fn refine(&mut self, e: &Expr, draft: &Expr, policy: &Ident, _retry: u32, els: &Block, keep: Option<&Keep>) -> LTy {
         if self.in_policy {
             self.impure(e.span, "`refine`");
         }
         let d = self.expr(draft);
+        if let Some(k) = keep {
+            let dropped = self.keeping(&d.ty, k);
+            if let Some(b) = &k.bind {
+                if self.let_init != Some(e.span) {
+                    self.push(
+                        Diag::new(
+                            E0,
+                            "E0438",
+                            format!("`keeping … as {}` só liga o nome num `let`", b.name),
+                            b.span,
+                            "fora de `let x = refine …`",
+                        )
+                        .help("escreva `let plano = refine … keeping campo by Q as recusados else { … }`"),
+                    );
+                } else {
+                    self.keep_bind = Some((e.span, b.clone(), dropped.unwrap_or_else(LTy::never)));
+                }
+            }
+        }
         let infer_span = match &d.ty {
             Ty::Draft(_, ispan) => Some(*ispan),
             _ => None,
@@ -2329,49 +3187,7 @@ impl<'m> Ctx<'m> {
             Some(p) => {
                 // Inventário e política precisam vir da mesma fotografia confiável do host.
                 if let Some(ispan) = infer_span {
-                    let given = self.anchored.get(&ispan).cloned().unwrap_or_default();
-                    let anchored = !given.is_empty();
-                    let missing: Vec<String> = policy_inventories(&p.body).difference(&given).cloned().collect();
-                    if reads_snapshot(&p.body) && (!anchored || !missing.is_empty()) {
-                        let want = missing
-                            .iter()
-                            .map(|k| {
-                                if k == "managed" {
-                                    "s.managed()".to_string()
-                                } else {
-                                    format!("s.inventory(\"{k}\")")
-                                }
-                            })
-                            .collect::<Vec<_>>()
-                            .join(", ");
-                        let want = if want.is_empty() { "s.managed()".to_string() } else { want };
-                        self.push(
-                            Diag::new(
-                                E3,
-                                "E0421",
-                                "a política decide pela fotografia confiável, mas o prompt não recebe o inventário",
-                                ispan,
-                                format!("`{}` lê `s.…`; o `infer` não tem um campo `= {want}`", policy.name),
-                            )
-                            .note(format!("decidido por `refine … by {}`", policy.name))
-                            .help(format!("passe o inventário ao modelo como `campo = {want}`: nunca copiado de literal, log ou resposta de modelo")),
-                        );
-                    }
-                    if anchored && compares_text_literal(&p.body) {
-                        self.push(
-                            Diag::new(
-                                E3,
-                                "E0422",
-                                "descompasso entre o inventário confiável e a política",
-                                policy.span,
-                                format!(
-                                    "o prompt recebe `s.managed()`, mas `{}` compara com literais de texto",
-                                    policy.name
-                                ),
-                            )
-                            .help("decida pela mesma fotografia: `s.is_managed(x)` no lugar de `x == \"…\"`"),
-                        );
-                    }
+                    self.anchor_check(p, policy, ispan);
                 }
                 if p.params.len() != 1 {
                     self.push(Diag::new(
@@ -2445,5 +3261,174 @@ impl<'m> Ctx<'m> {
             out.meet_from(&eb);
         }
         out
+    }
+
+    /// O inventário que a política lê precisa estar no prompt do `infer` (E0421), e a política
+    /// decide pela fotografia, não por literais (E0422). Vale para a política do `refine` e para
+    /// a de `keeping`.
+    fn anchor_check(&mut self, p: &'m PolicyDecl, policy: &Ident, ispan: Span) {
+        let given = self.anchored.get(&ispan).cloned().unwrap_or_default();
+        let anchored = !given.is_empty();
+        // Ciclo 1, D1: a âncora segue as chamadas entre políticas. `SafePlan` que delega a
+        // `SafeWrite` decide pelos inventários que `SafeWrite` lê, e pelos literais que ela compara.
+        let bodies = self.policy_closure(p);
+        let read: BTreeSet<String> = bodies.iter().flat_map(|b| policy_inventories(b)).collect();
+        let reads = bodies.iter().any(|b| reads_snapshot(b));
+        let literal = bodies.iter().any(|b| compares_text_literal(b));
+        let missing: Vec<String> = read.difference(&given).cloned().collect();
+        if reads && (!anchored || !missing.is_empty()) {
+            let want = missing
+                .iter()
+                .map(|k| if k == "managed" { "s.managed()".to_string() } else { format!("s.inventory(\"{k}\")") })
+                .collect::<Vec<_>>()
+                .join(", ");
+            let want = if want.is_empty() { "s.managed()".to_string() } else { want };
+            self.push(
+                    Diag::new(
+                        E3,
+                        "E0421",
+                        "a política decide pela fotografia confiável, mas o prompt não recebe o inventário",
+                        ispan,
+                        format!("`{}` lê `s.…`; o `infer` não tem um campo `= {want}`", policy.name),
+                    )
+                    .note(format!("decidido por `refine … by {}`", policy.name))
+                    .help(format!("passe o inventário ao modelo como `campo = {want}`: nunca copiado de literal, log ou resposta de modelo")),
+                );
+        }
+        if anchored && literal {
+            self.push(
+                Diag::new(
+                    E3,
+                    "E0422",
+                    "descompasso entre o inventário confiável e a política",
+                    policy.span,
+                    format!("o prompt recebe `s.managed()`, mas `{}` compara com literais de texto", policy.name),
+                )
+                .help("decida pela mesma fotografia: `s.is_managed(x)` no lugar de `x == \"…\"`"),
+            );
+        }
+    }
+
+    /// O corpo da política e os de todas as políticas que ela chama, transitivamente (sem
+    /// repetição: uma recursão entre políticas não trava a análise).
+    fn policy_closure(&self, p: &'m PolicyDecl) -> Vec<&'m Expr> {
+        let mut seen: HashSet<&str> = HashSet::new();
+        let mut todo = vec![p];
+        let mut out = Vec::new();
+        while let Some(q) = todo.pop() {
+            if !seen.insert(q.name.name.as_str()) {
+                continue;
+            }
+            out.push(&q.body);
+            let called = std::cell::RefCell::new(Vec::new());
+            expr_any(&q.body, &|x| {
+                if let ExprKind::Call { callee, .. } = &x.kind {
+                    called.borrow_mut().push(callee.name.clone());
+                }
+                false
+            });
+            for name in called.into_inner() {
+                if let Some(r) = self.policies.get(&name).copied() {
+                    todo.push(r);
+                }
+            }
+        }
+        out
+    }
+
+    /// **`keeping campo by Política` (v1.0-RC7).** O campo existe no tipo do rascunho e é uma
+    /// lista; a política recebe um elemento dela (E0437, E0450); e o inventário que ela lê está
+    /// no prompt (E0421, E0422).
+    fn keeping(&mut self, d: &Ty, k: &Keep) -> Option<LTy> {
+        let (adt, infer_span) = match d {
+            Ty::Draft(inner, ispan) => match &**inner {
+                Ty::Adt(n) => (Some(n.clone()), Some(*ispan)),
+                _ => (None, Some(*ispan)),
+            },
+            _ => return None,
+        };
+        let field = k.field.name.as_str();
+        let mut elem: Option<TypeExpr> = None;
+        let mut hi = 0u32;
+        let mut not_list = false;
+        if let Some(decl) = adt.as_ref().and_then(|n| self.types.get(n.as_str()).copied()) {
+            for v in &decl.variants {
+                for f in v.fields.iter().filter(|f| f.name.name == field) {
+                    match f.ty.unlabeled() {
+                        TypeExpr::List { elem: e, hi: h, .. } => {
+                            elem = Some((**e).clone());
+                            hi = hi.max(*h);
+                        }
+                        _ => not_list = true,
+                    }
+                }
+            }
+        }
+        let Some(elem) = elem.filter(|_| !not_list) else {
+            self.push(
+                Diag::new(
+                    E0,
+                    "E0437",
+                    format!("`keeping {field}`: o rascunho não tem um campo de lista `{field}`"),
+                    k.field.span,
+                    format!("o tipo é `{}`", adt.unwrap_or_else(|| "?".into())),
+                )
+                .help("`keeping` deixa de fora elementos de uma lista do plano; nomeie um campo `List[…]` do tipo do `infer`"),
+            );
+            return None;
+        };
+        let Some(p) = self.policies.get(&k.policy.name).copied() else {
+            self.push(Diag::new(
+                E0,
+                "E0024",
+                format!("política desconhecida `{}`", k.policy.name),
+                k.policy.span,
+                "não declarada",
+            ));
+            return None;
+        };
+        if let Some(ispan) = infer_span {
+            self.anchor_check(p, &k.policy, ispan);
+        }
+        if p.params.len() != 1 {
+            self.push(Diag::new(
+                E0,
+                "E0437",
+                "a política de `keeping` recebe exatamente um elemento",
+                k.policy.span,
+                "aridade",
+            ));
+            return None;
+        }
+        let (et, _) = self.resolve(&elem);
+        let (pt, _) = self.resolve(&p.params[0].ty);
+        if !assignable(&et, &pt) {
+            self.push(Diag::new(
+                E0,
+                "E0437",
+                "política de `keeping` incompatível com o elemento",
+                k.policy.span,
+                format!("`{}` decide sobre `{}`, a lista `{field}` tem `{}`", k.policy.name, pt.show(), et.show()),
+            ));
+        } else if !self.ty_within(&et, &p.params[0].ty) {
+            self.facts.refinement_checks += 1;
+            self.push(Diag::new(
+                E5,
+                "E0450",
+                "refinamento não provado",
+                k.policy.span,
+                format!(
+                    "`{}` decide sobre `{}`, a lista `{field}` tem `{}`",
+                    k.policy.name,
+                    p.params[0].ty.unlabeled().sig(),
+                    et.show()
+                ),
+            ));
+        }
+        // o que foi deixado de fora: dados do modelo que a política recusou
+        let erefn = self.refn_of(&elem);
+        let mut out = LTy::trusted(Ty::List(Box::new(et), erefn, 0, hi));
+        out.lab = Label::Untrusted;
+        Some(out)
     }
 }

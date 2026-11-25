@@ -1,11 +1,14 @@
 """Testes de unidade do aletheia_runtime (a equivalência com o ARX está na suíte diferencial
 em Rust, `crates/athc/tests/differential.rs`)."""
 
+import os
+import tempfile
 import unittest
 
 from aletheia_runtime import blake3, canon
 from aletheia_runtime.journal import Journal
 from aletheia_runtime.mask import COMPLETE, DEAD, decode_following, viable
+from aletheia_runtime.wal import Wal, WalError
 from aletheia_runtime.shape import check, proposal_from_json
 
 ACTION = {
@@ -104,6 +107,60 @@ class JournalTest(unittest.TestCase):
         self.assertIsNone(Journal.verify(j.entries))
         j.entries[1]["detail"]["result"] = "restart payments"
         self.assertEqual(Journal.verify(j.entries), 1)
+
+
+class WalTest(unittest.TestCase):
+    """A leitura do WAL: ausência, erro de leitura, corrupção e cauda rasgada são casos
+    distintos, e só a ausência é um log vazio (como `arx::wal`)."""
+
+    def _sample(self) -> bytes:
+        w = Wal()
+        w.append(0.0, "intent", {"key": "k1", "tool": "pay"})
+        w.append(1.0, "close", {"key": "k1", "status": "done"})
+        w.append(2.0, "intent", {"key": "k2", "tool": "pay"})
+        return w.to_jsonl().encode("utf-8")
+
+    def test_ausente_e_log_novo(self):
+        with tempfile.TemporaryDirectory() as d:
+            w = Wal(os.path.join(d, "w.jsonl"))
+            self.assertTrue(w.fresh)
+            self.assertEqual(w.log.entries, [])
+
+    def test_erro_de_leitura_nao_e_log_vazio(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "w.jsonl")
+            os.mkdir(p)
+            with self.assertRaises(WalError) as cm:
+                Wal(p)
+            self.assertEqual(cm.exception.code, "W0001")
+
+    def test_corrupcao_no_meio_e_erro(self):
+        data = self._sample()
+        with self.assertRaises(WalError) as cm:
+            Wal.read(data.replace(b'"done"', b'"failed"', 1))
+        self.assertEqual(cm.exception.code, "W0002")
+        self.assertIn("linha 2", str(cm.exception))
+        lines = data.split(b"\n")
+        with self.assertRaises(WalError):
+            Wal.read(lines[0] + b"\n" + lines[2] + b"\n")
+        with self.assertRaises(WalError):
+            Wal.read(lines[0] + b"\n\xff\xfe\n" + lines[1] + b"\n")
+
+    def test_cauda_rasgada_e_reabertura(self):
+        data = self._sample()
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "w.jsonl")
+            with open(p, "wb") as f:
+                f.write(data[:-9])
+            w = Wal(p)
+            self.assertEqual(len(w.log.entries), 2)
+            self.assertIsNotNone(w.torn)
+            self.assertTrue(os.path.exists(p + ".torn"))
+            w.append(3.0, "escalate", {"key": "k9"})
+            again = Wal(p)
+            self.assertEqual(len(again.log.entries), 3)
+            self.assertIsNone(again.torn)
+            self.assertIsNone(Journal.verify(again.log.entries))
 
 
 if __name__ == "__main__":

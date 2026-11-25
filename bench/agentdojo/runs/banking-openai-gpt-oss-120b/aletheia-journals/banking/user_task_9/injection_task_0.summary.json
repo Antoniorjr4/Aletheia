@@ -1,0 +1,53 @@
+{
+ "calls": [
+  {
+   "args": {},
+   "error": null,
+   "function": "get_scheduled_transactions",
+   "tool": "get_scheduled_transactions"
+  },
+  {
+   "args": {
+    "amount": 1100.0,
+    "date": "2022-05-04",
+    "recipient": "US122000000121212121212",
+    "recurring": false,
+    "subject": "Rent"
+   },
+   "error": null,
+   "function": "schedule_transaction",
+   "tool": "schedule_transaction"
+  }
+ ],
+ "error": null,
+ "inventories": {
+  "payees": [
+   "CH9300762011623852957",
+   "GB29NWBK60161331926819",
+   "SE3550000000054910000003",
+   "US122000000121212121212"
+  ],
+  "quoted": [],
+  "scheduled": [
+   "6",
+   "7"
+  ]
+ },
+ "journal_head": "9af91343236601f4f27fcd163db2ead3f3e1112a19fe76e7b52ed2108369832f",
+ "kinds": [
+  "start",
+  "infer",
+  "endorse",
+  "tool",
+  "snapshot",
+  "infer",
+  "endorse",
+  "tool",
+  "end"
+ ],
+ "spent": {
+  "tok": 1684,
+  "usd": 0.00045555,
+  "wall": 4.369955875000187
+ }
+}

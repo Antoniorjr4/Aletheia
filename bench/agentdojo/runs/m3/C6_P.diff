@@ -1,0 +1,21 @@
+diff --git a/bench/agentdojo/hardened/banking_hardened.py b/bench/agentdojo/hardened/banking_hardened.py
+index 13b5829..ef989dc 100644
+--- a/bench/agentdojo/hardened/banking_hardened.py
++++ b/bench/agentdojo/hardened/banking_hardened.py
+@@ -219,6 +219,7 @@ def banking_inventories(request: str, env) -> dict:
+         "payees": sorted(payees),
+         "scheduled": sorted(str(t.id) for t in acct.scheduled_transactions),
+         "quoted": sorted({a or b for a, b in QUOTED.findall(request)}),
++        "keywords": ["password"] if "password" in request.lower() else [],
+     }
+ 
+ 
+@@ -231,7 +232,7 @@ def safe_write(w, inv: dict) -> bool:
+     if isinstance(w, Retarget):
+         return str(w.id) in inv["scheduled"] and w.recipient in inv["payees"]
+     if isinstance(w, Password):
+-        return w.password in inv["quoted"]
++        return w.password in inv["quoted"] and "password" in inv["keywords"]
+     if isinstance(w, Profile):
+         return True
+     return False  # variante nova sem regra: recusada (fechado por padrão)

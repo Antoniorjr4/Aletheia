@@ -10,6 +10,9 @@ pub enum Tok {
     Module,
     Type,
     Model,
+    Authority,
+    Witness,
+    Bind,
     Tool,
     Policy,
     Agent,
@@ -25,7 +28,6 @@ pub enum Tok {
     Retry,
     Quote,
     Commit,
-    Budget,
     True,
     False,
     Not,
@@ -80,6 +82,9 @@ fn symbol(t: &Tok) -> &'static str {
         Tok::Module => "module",
         Tok::Type => "type",
         Tok::Model => "model",
+        Tok::Authority => "authority",
+        Tok::Witness => "witness",
+        Tok::Bind => "bind",
         Tok::Tool => "tool",
         Tok::Policy => "policy",
         Tok::Agent => "agent",
@@ -95,7 +100,6 @@ fn symbol(t: &Tok) -> &'static str {
         Tok::Retry => "retry",
         Tok::Quote => "quote",
         Tok::Commit => "commit",
-        Tok::Budget => "budget",
         Tok::True => "true",
         Tok::False => "false",
         Tok::Not => "not",
@@ -136,6 +140,8 @@ fn symbol(t: &Tok) -> &'static str {
 pub struct Token {
     pub tok: Tok,
     pub span: Span,
+    /// Há quebra de linha entre o token anterior e este (espaços e comentários incluídos).
+    pub nl_before: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -149,6 +155,9 @@ fn keyword(word: &str) -> Option<Tok> {
         "module" => Tok::Module,
         "type" => Tok::Type,
         "model" => Tok::Model,
+        "authority" => Tok::Authority,
+        "witness" => Tok::Witness,
+        "bind" => Tok::Bind,
         "tool" => Tok::Tool,
         "policy" => Tok::Policy,
         "agent" => Tok::Agent,
@@ -164,7 +173,6 @@ fn keyword(word: &str) -> Option<Tok> {
         "retry" => Tok::Retry,
         "quote" => Tok::Quote,
         "commit" => Tok::Commit,
-        "budget" => Tok::Budget,
         "true" => Tok::True,
         "false" => Tok::False,
         "not" => Tok::Not,
@@ -182,8 +190,8 @@ pub fn lex(src: &str) -> Result<Vec<Token>, LexError> {
             i += 1;
             continue;
         }
-        // comentário de linha: `--` até o fim da linha
-        if c == b'-' && i + 1 < bytes.len() && bytes[i + 1] == b'-' {
+        // comentário de linha: `--` ou `//` até o fim da linha (qualquer caractere dentro dele)
+        if (c == b'-' || c == b'/') && i + 1 < bytes.len() && bytes[i + 1] == c {
             while i < bytes.len() && bytes[i] != b'\n' {
                 i += 1;
             }
@@ -196,7 +204,7 @@ pub fn lex(src: &str) -> Result<Vec<Token>, LexError> {
             }
             let word = &src[start..i];
             let tok = keyword(word).unwrap_or_else(|| Tok::Ident(word.to_string()));
-            out.push(Token { tok, span: Span::new(start, i) });
+            out.push(Token { tok, span: Span::new(start, i), nl_before: false });
             continue;
         }
         if c.is_ascii_digit() {
@@ -233,7 +241,7 @@ pub fn lex(src: &str) -> Result<Vec<Token>, LexError> {
             } else {
                 Tok::Int(text.parse().map_err(|_| LexError { msg: "inteiro fora do intervalo".into(), span })?)
             };
-            out.push(Token { tok, span });
+            out.push(Token { tok, span, nl_before: false });
             continue;
         }
         if c == b'"' {
@@ -267,7 +275,7 @@ pub fn lex(src: &str) -> Result<Vec<Token>, LexError> {
                 s.push(ch);
                 i += ch.len_utf8();
             }
-            out.push(Token { tok: Tok::Str(s), span: Span::new(start, i) });
+            out.push(Token { tok: Tok::Str(s), span: Span::new(start, i), nl_before: false });
             continue;
         }
         if !c.is_ascii() {
@@ -316,8 +324,14 @@ pub fn lex(src: &str) -> Result<Vec<Token>, LexError> {
             }
         };
         i += len;
-        out.push(Token { tok, span: Span::new(start, i) });
+        out.push(Token { tok, span: Span::new(start, i), nl_before: false });
     }
-    out.push(Token { tok: Tok::Eof, span: Span::new(src.len(), src.len()) });
+    out.push(Token { tok: Tok::Eof, span: Span::new(src.len(), src.len()), nl_before: false });
+    let mut prev = 0usize;
+    for t in &mut out {
+        let lo = t.span.lo as usize;
+        t.nl_before = src.as_bytes()[prev.min(lo)..lo].contains(&b'\n');
+        prev = t.span.hi as usize;
+    }
     Ok(out)
 }

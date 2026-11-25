@@ -13,15 +13,55 @@ pub struct ParseError {
 type PResult<T> = Result<T, ParseError>;
 
 pub fn parse_module(src: &str) -> PResult<Module> {
-    let toks = lex(src).map_err(|e| ParseError { msg: e.msg, span: e.span })?;
-    let mut p = Parser { toks, pos: 0, no_ctor: false };
-    p.module()
+    parse_module_all(src).map_err(|mut errs| errs.swap_remove(0))
+}
+
+/// Como [`parse_module`], mas devolve todos os erros de sintaxe independentes do módulo.
+///
+/// A recuperação é por item de topo: um erro dentro de um item descarta o item inteiro e a análise
+/// recomeça no próximo `type`/`model`/`authority`/`witness`/`bind`/`tool`/`policy`/`agent` em
+/// profundidade zero de chaves, colchetes e parênteses. Se os delimitadores do item não se
+/// equilibram, não há ponto seguro de recomeço e a análise para ali: na dúvida, um erro a menos,
+/// nunca um erro em cascata. Nenhuma árvore sai daqui se houver erro.
+pub fn parse_module_all(src: &str) -> Result<Module, Vec<ParseError>> {
+    let toks = lex(src).map_err(|e| vec![ParseError { msg: e.msg, span: e.span }])?;
+    // Primeira passada: só para conhecer os tipos algébricos do módulo. O braço curinga `_` de
+    // um `match` é expandido na segunda, para as variantes que os outros braços não nomeiam; assim
+    // o resto do compilador e os dois runtimes só veem braços com variante explícita. Com erro de
+    // sintaxe na primeira, a segunda não roda: sem todos os tipos, a expansão do curinga poderia
+    // acusar um erro que é só consequência do item descartado.
+    let mut first = Parser { toks: toks.clone(), pos: 0, no_ctor: false, adts: None };
+    let (m, errs) = first.module_recovering();
+    if !errs.is_empty() {
+        return Err(errs);
+    }
+    let mut p = Parser { toks, pos: 0, no_ctor: false, adts: Some(adt_index(&m)) };
+    let (m, errs) = p.module_recovering();
+    if errs.is_empty() {
+        Ok(m)
+    } else {
+        Err(errs)
+    }
+}
+
+/// Para cada variante, a lista de variantes do tipo que a declara, na ordem de declaração.
+fn adt_index(m: &Module) -> std::collections::HashMap<String, Vec<String>> {
+    let mut out = std::collections::HashMap::new();
+    for it in &m.items {
+        if let Item::Type(t) = it {
+            let all: Vec<String> = t.variants.iter().map(|v| v.name.name.clone()).collect();
+            for v in &all {
+                out.entry(v.clone()).or_insert_with(|| all.clone());
+            }
+        }
+    }
+    out
 }
 
 /// Analisa uma expressão isolada (usado para decodificar saídas de modelo e argumentos de CLI).
 pub fn parse_expr_str(src: &str) -> PResult<Expr> {
     let toks = lex(src).map_err(|e| ParseError { msg: e.msg, span: e.span })?;
-    let mut p = Parser { toks, pos: 0, no_ctor: false };
+    let mut p = Parser { toks, pos: 0, no_ctor: false, adts: None };
     let e = p.expr()?;
     if *p.peek() != Tok::Eof {
         return Err(p.err(format!("conteúdo inesperado após a expressão: {}", p.peek().describe())));
@@ -34,6 +74,8 @@ struct Parser {
     pos: usize,
     /// Proíbe `Nome { ... }` como construtor (condições de `if` e escrutínios de `match`).
     no_ctor: bool,
+    /// Variante → variantes do seu tipo. `None` na primeira passada e em expressões isoladas.
+    adts: Option<std::collections::HashMap<String, Vec<String>>>,
 }
 
 fn is_upper(s: &str) -> bool {
@@ -114,29 +156,80 @@ impl Parser {
 
     // ------------------------------------------------------------ itens
 
-    fn module(&mut self) -> PResult<Module> {
+    fn module_header(&mut self) -> PResult<String> {
         self.expect(Tok::Module)?;
         let mut name = self.ident()?.name;
         while self.eat(&Tok::Dot) {
             name.push('.');
             name.push_str(&self.ident()?.name);
         }
+        Ok(name)
+    }
+
+    /// Itens analisados sem erro e todos os erros independentes (ver [`parse_module_all`]).
+    fn module_recovering(&mut self) -> (Module, Vec<ParseError>) {
+        let mut errs = Vec::new();
+        let name = match self.module_header() {
+            Ok(n) => n,
+            // Sem cabeçalho válido não há como saber onde começa o primeiro item.
+            Err(e) => return (Module { name: String::new(), items: Vec::new() }, vec![e]),
+        };
         let mut items = Vec::new();
         while *self.peek() != Tok::Eof {
-            items.push(self.item()?);
+            let start = self.pos;
+            match self.item() {
+                Ok(it) => items.push(it),
+                Err(e) => {
+                    let at = self.pos;
+                    errs.push(e);
+                    match self.resync(start, at) {
+                        Some(next) => self.pos = next,
+                        None => break,
+                    }
+                }
+            }
         }
-        Ok(Module { name, items })
+        (Module { name, items }, errs)
+    }
+
+    /// Próximo início de item em profundidade zero, a partir do começo do item que falhou e não
+    /// antes do ponto do erro. `None` se os delimitadores se desequilibram ou se o arquivo acaba.
+    fn resync(&self, start: usize, at: usize) -> Option<usize> {
+        let mut depth: u32 = 0;
+        for (i, tk) in self.toks.iter().enumerate().skip(start) {
+            let t = &tk.tok;
+            if depth == 0 && i > start && i >= at && Self::starts_item(t) {
+                return Some(i);
+            }
+            match t {
+                Tok::LBrace | Tok::LBrack | Tok::LParen => depth += 1,
+                Tok::RBrace | Tok::RBrack | Tok::RParen => depth = depth.checked_sub(1)?,
+                Tok::Eof => return None,
+                _ => {}
+            }
+        }
+        None
+    }
+
+    fn starts_item(t: &Tok) -> bool {
+        matches!(
+            t,
+            Tok::Type | Tok::Model | Tok::Authority | Tok::Witness | Tok::Bind | Tok::Tool | Tok::Policy | Tok::Agent
+        )
     }
 
     fn item(&mut self) -> PResult<Item> {
         match self.peek() {
             Tok::Type => self.type_decl().map(Item::Type),
             Tok::Model => self.model_decl().map(Item::Model),
+            Tok::Authority => self.authority_decl().map(Item::Authority),
+            Tok::Witness => self.witness_decl().map(Item::Witness),
+            Tok::Bind => self.bind_decl().map(Item::Bind),
             Tok::Tool => self.tool_decl().map(Item::Tool),
             Tok::Policy => self.policy_decl().map(Item::Policy),
             Tok::Agent => self.agent_decl().map(Item::Agent),
             other => Err(self.err(format!(
-                "esperado `type`, `model`, `tool`, `policy` ou `agent`, encontrado {}",
+                "esperado `type`, `model`, `authority`, `witness`, `bind`, `tool`, `policy` ou `agent`, encontrado {}",
                 other.describe()
             ))),
         }
@@ -190,6 +283,344 @@ impl Parser {
         }
         self.expect(Tok::RBrace)?;
         Ok(ModelDecl { name, props, meta })
+    }
+
+    fn authority_decl(&mut self) -> PResult<AuthorityDecl> {
+        self.expect(Tok::Authority)?;
+        let name = self.ident()?;
+        self.expect(Tok::LBrace)?;
+        let mut d = AuthorityDecl {
+            name,
+            key: String::new(),
+            key_span: self.span(),
+            ops: None,
+            ops_span: self.span(),
+            op_idents: Vec::new(),
+            typed: false,
+            max_age: None,
+            anchored: false,
+            clock: None,
+            outcomes: None,
+        };
+        let (mut has_key, mut textual) = (false, false);
+        while *self.peek() != Tok::RBrace {
+            let field = self.ident()?;
+            self.expect(Tok::Assign)?;
+            let span = self.span();
+            match (field.name.as_str(), self.peek().clone()) {
+                ("key", Tok::Str(k)) => {
+                    self.bump();
+                    (d.key, d.key_span, has_key) = (k, span, true);
+                }
+                // forma tipada: uma lista de operações
+                ("ops", Tok::LBrack) => {
+                    self.bump();
+                    while *self.peek() != Tok::RBrack {
+                        d.op_idents.push(self.ident()?);
+                        if !self.eat(&Tok::Comma) {
+                            break;
+                        }
+                    }
+                    self.expect(Tok::RBrack)?;
+                    d.ops = Some(d.op_idents.iter().map(|i| i.name.clone()).collect());
+                    (d.ops_span, d.typed) = (span, true);
+                }
+                // forma textual (RC3)
+                ("ops", Tok::Str(o)) => {
+                    self.bump();
+                    d.ops = Some(o.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect());
+                    (d.ops_span, textual) = (span, true);
+                }
+                ("max_age", Tok::Int(n)) if n > 0 => {
+                    self.bump();
+                    d.max_age = Some(n as u64);
+                }
+                ("ledger", Tok::Ident(l)) if l == "anchored" => {
+                    self.bump();
+                    (d.anchored, d.typed) = (true, true);
+                }
+                ("ledger", Tok::Str(l)) if l == "anchored" => {
+                    self.bump();
+                    (d.anchored, textual) = (true, true);
+                }
+                ("clock", Tok::Ident(_)) => {
+                    d.clock = Some(self.ident()?);
+                    d.typed = true;
+                }
+                ("outcomes", Tok::Ident(_)) => {
+                    d.outcomes = Some(self.ident()?);
+                    d.typed = true;
+                }
+                (f, _) => {
+                    return Err(self.err(format!(
+                        "campo inválido em `authority`: `{f}` (esperado key = \"ed25519:…\", ops = [op, op], \
+                         max_age = segundos, ledger = anchored, clock = testemunha, outcomes = testemunha)"
+                    )))
+                }
+            }
+            self.eat(&Tok::Comma);
+        }
+        self.expect(Tok::RBrace)?;
+        if !has_key {
+            return Err(self.err("uma autoridade declara `key`".to_string()));
+        }
+        // a forma textual não se mistura com a tipada: a garantia de cada uma é distinta
+        if textual && d.typed {
+            return Err(self.err(format!(
+                "a autoridade `{}` mistura a forma textual (RC3: ops = \"…\", ledger = \"anchored\") com a \
+                 tipada (RC4: ops = [..], ledger = anchored, clock, outcomes)",
+                d.name.name
+            )));
+        }
+        Ok(d)
+    }
+
+    fn witness_decl(&mut self) -> PResult<WitnessDecl> {
+        self.expect(Tok::Witness)?;
+        let name = self.ident()?;
+        self.expect(Tok::LBrace)?;
+        let mut d = WitnessDecl { name, key: String::new(), key_span: self.span(), tolerance: None };
+        let mut has_key = false;
+        while *self.peek() != Tok::RBrace {
+            let field = self.ident()?;
+            self.expect(Tok::Assign)?;
+            let span = self.span();
+            match (field.name.as_str(), self.peek().clone()) {
+                ("key", Tok::Str(k)) => {
+                    self.bump();
+                    (d.key, d.key_span, has_key) = (k, span, true);
+                }
+                ("tolerance", Tok::Int(n)) if n > 0 => {
+                    self.bump();
+                    d.tolerance = Some(n as u64);
+                }
+                (f, _) => {
+                    return Err(self.err(format!(
+                        "campo inválido em `witness`: `{f}` (esperado key = \"ed25519:…\", tolerance = segundos)"
+                    )))
+                }
+            }
+            self.eat(&Tok::Comma);
+        }
+        self.expect(Tok::RBrace)?;
+        if !has_key {
+            return Err(self.err("uma testemunha declara `key`".to_string()));
+        }
+        Ok(d)
+    }
+
+    /// `bind nome { url = …, auth = secret("V"), status = "…", ferramenta = "MÉTODO /rota -> campo" }`
+    fn bind_decl(&mut self) -> PResult<BindDecl> {
+        self.expect(Tok::Bind)?;
+        let name = self.ident()?;
+        self.expect(Tok::LBrace)?;
+        let mut d = BindDecl {
+            name,
+            url: BindUrl::Lit(String::new()),
+            url_span: self.span(),
+            auth: None,
+            status: None,
+            routes: Vec::new(),
+            keys: Vec::new(),
+            finds: Vec::new(),
+            settles: Vec::new(),
+            mcp: None,
+            secret_as: None,
+            args: Vec::new(),
+            calls: Vec::new(),
+            call_finds: Vec::new(),
+        };
+        let mut has_url = false;
+        while *self.peek() != Tok::RBrace {
+            let field = self.ident()?;
+            // v1.0-RC6: `ferramenta.key = "parâmetro"` e `ferramenta.find = "GET /rota -> campo"`
+            if self.eat(&Tok::Dot) {
+                let what = self.ident()?;
+                self.expect(Tok::Assign)?;
+                // v1.0-RC9: `arg.nome = env("V") | "texto"`, configuração do executor
+                if field.name == "arg" {
+                    let v = match self.peek().clone() {
+                        Tok::Ident(w) if w == "env" => {
+                            self.bump();
+                            self.expect(Tok::LParen)?;
+                            let Tok::Str(v) = self.peek().clone() else {
+                                return Err(self.err("`env(\"NOME\")` nomeia uma variável de ambiente".to_string()));
+                            };
+                            self.bump();
+                            self.expect(Tok::RParen)?;
+                            if v.is_empty() || !v.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+                                return Err(self.err("nome de variável de ambiente inválido em `env`".to_string()));
+                            }
+                            BindUrl::Env(v)
+                        }
+                        Tok::Str(v) => {
+                            self.bump();
+                            BindUrl::Lit(v)
+                        }
+                        _ => return Err(self.err(format!("`arg.{}` é um texto ou `env(\"NOME\")`", what.name))),
+                    };
+                    if d.args.iter().any(|(a, _)| a.name == what.name) {
+                        return Err(self.err(format!("`arg.{}` declarado duas vezes", what.name)));
+                    }
+                    d.args.push((what, v));
+                    self.eat(&Tok::Comma);
+                    continue;
+                }
+                let Tok::Str(v) = self.peek().clone() else {
+                    return Err(self.err(format!("`{}.{}` é um texto", field.name, what.name)));
+                };
+                match what.name.as_str() {
+                    "key" => d.keys.push((field, v)),
+                    "find" => match (Route::parse(&v), McpCall::parse(&v)) {
+                        (Some(r), _) => d.finds.push((field, r)),
+                        (None, Some(c)) => d.call_finds.push((field, c)),
+                        _ => return Err(self.err(format!("rota inválida para `{}.find`: `{v}`", field.name))),
+                    },
+                    "settle" => match v.parse::<u32>() {
+                        Ok(n) if n <= 300 => d.settles.push((field, n)),
+                        _ => return Err(self.err(format!("`{}.settle` são segundos, de \"0\" a \"300\"", field.name))),
+                    },
+                    other => {
+                        return Err(self.err(format!(
+                            "`{}.{other}`: esperado `.key` (o parâmetro que carrega a chave), `.find` (a consulta por chave) ou `.settle` (segundos até a listagem refletir uma escrita)",
+                            field.name
+                        )))
+                    }
+                }
+                self.bump();
+                self.eat(&Tok::Comma);
+                continue;
+            }
+            self.expect(Tok::Assign)?;
+            let span = self.span();
+            // `env("V")` e `secret("V")`: uma referência ao ambiente do executor, nunca um valor
+            let reference = |me: &mut Self, word: &str| -> PResult<Option<String>> {
+                match me.peek().clone() {
+                    Tok::Ident(w) if w == word => {
+                        me.bump();
+                        me.expect(Tok::LParen)?;
+                        let Tok::Str(v) = me.peek().clone() else {
+                            return Err(me.err(format!("`{word}(\"NOME\")` nomeia uma variável de ambiente")));
+                        };
+                        me.bump();
+                        me.expect(Tok::RParen)?;
+                        if v.is_empty() || !v.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+                            return Err(me.err(format!("nome de variável de ambiente inválido em `{word}`")));
+                        }
+                        Ok(Some(v))
+                    }
+                    _ => Ok(None),
+                }
+            };
+            match field.name.as_str() {
+                "url" => {
+                    d.url = match reference(self, "env")? {
+                        Some(v) => BindUrl::Env(v),
+                        None => match self.peek().clone() {
+                            Tok::Str(u) => {
+                                self.bump();
+                                BindUrl::Lit(u)
+                            }
+                            _ => return Err(self.err("`url` é um texto ou `env(\"NOME\")`".to_string())),
+                        },
+                    };
+                    (d.url_span, has_url) = (span, true);
+                }
+                "mcp" => {
+                    d.mcp = Some(match reference(self, "env")? {
+                        Some(v) => BindUrl::Env(v),
+                        None => match self.peek().clone() {
+                            Tok::Str(u) if !u.trim().is_empty() => {
+                                self.bump();
+                                BindUrl::Lit(u)
+                            }
+                            _ => return Err(self.err("`mcp` é o comando do servidor, um texto ou `env(\"NOME\")`".to_string())),
+                        },
+                    });
+                    d.url_span = span;
+                }
+                "auth" => match reference(self, "secret")? {
+                    Some(v) => {
+                        d.auth = Some(v);
+                        // v1.0-RC9: `as "NOME"`, a variável do ambiente do servidor MCP
+                        if matches!(self.peek(), Tok::Ident(w) if w == "as") {
+                            self.bump();
+                            let Tok::Str(n) = self.peek().clone() else {
+                                return Err(self.err("`as` nomeia a variável do ambiente do servidor: `as \"NOME\"`".to_string()));
+                            };
+                            if n.is_empty() || !n.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+                                return Err(self.err(format!("nome de variável inválido em `as \"{n}\"`")));
+                            }
+                            self.bump();
+                            d.secret_as = Some(n);
+                        }
+                    }
+                    None => {
+                        return Err(self.err(
+                            "`auth` é `secret(\"NOME\")`: o segredo é uma referência ao ambiente do executor, nunca um literal do programa"
+                                .to_string(),
+                        ))
+                    }
+                },
+                f => {
+                    let Tok::Str(r) = self.peek().clone() else {
+                        return Err(self.err(format!("a rota de `{f}` é um texto: \"MÉTODO /caminho -> campo\"")));
+                    };
+                    // v1.0-RC9: uma chamada MCP, `nome(k: v, …) -> caminho`
+                    if let (None, Some(c)) = (Route::parse(&r), McpCall::parse(&r)) {
+                        if f == "status" {
+                            return Err(self.err("`status` é uma rota HTTP; num `bind` MCP a consulta é `.find`".to_string()));
+                        }
+                        self.bump();
+                        d.calls.push((field, c));
+                        self.eat(&Tok::Comma);
+                        continue;
+                    }
+                    let Some(route) = Route::parse(&r) else {
+                        return Err(self.err(format!(
+                            "rota inválida para `{f}`: `{r}` (esperado \"GET|POST|PUT|PATCH /caminho\", com `{{parâmetro}}` e `?query` opcionais, e \"-> campo\" ou \"-> [].campo\"; ou, num `bind` MCP, \"ferramenta(k: v, …) -> caminho\")"
+                        )));
+                    };
+                    self.bump();
+                    if f == "status" {
+                        d.status = Some(route);
+                    } else {
+                        d.routes.push((field, route));
+                    }
+                }
+            }
+            self.eat(&Tok::Comma);
+        }
+        self.expect(Tok::RBrace)?;
+        match (has_url, d.mcp.is_some()) {
+            (false, false) => {
+                return Err(
+                    self.err("um `bind` declara `url` (HTTP) ou `mcp` (o comando de um servidor MCP)".to_string())
+                )
+            }
+            (true, true) => return Err(self.err("um `bind` é HTTP (`url`) ou MCP (`mcp`), não os dois".to_string())),
+            (true, false)
+                if !d.calls.is_empty() || !d.call_finds.is_empty() || !d.args.is_empty() || d.secret_as.is_some() =>
+            {
+                return Err(
+                    self.err("chamadas MCP, `arg.…` e `auth … as` só valem num `bind` MCP (`mcp = …`)".to_string())
+                )
+            }
+            (false, true) if !d.routes.is_empty() || !d.finds.is_empty() || d.status.is_some() => {
+                return Err(self.err(
+                    "um `bind` MCP liga ferramentas a chamadas \"ferramenta(k: v) -> caminho\", não a rotas HTTP"
+                        .to_string(),
+                ))
+            }
+            (false, true) if d.auth.is_some() && d.secret_as.is_none() => {
+                return Err(self.err(
+                    "num `bind` MCP, o segredo vai para o ambiente do servidor: `auth = secret(\"V\") as \"NOME\"`"
+                        .to_string(),
+                ))
+            }
+            _ => {}
+        }
+        Ok(d)
     }
 
     fn params(&mut self) -> PResult<Vec<Param>> {
@@ -248,8 +679,12 @@ impl Parser {
         let mut provider = ProviderClass::Opaque;
         let mut latency = 0.0;
         let mut usd = 0.0;
+        let mut requires = None;
         loop {
-            if self.is_contextual("reversible") {
+            if self.is_contextual("requires") {
+                self.bump();
+                requires = Some(self.expr()?);
+            } else if self.is_contextual("reversible") {
                 class_span = self.bump().span;
                 class = EffClass::Reversible;
             } else if self.is_contextual("compensable") {
@@ -287,7 +722,7 @@ impl Parser {
                 break;
             }
         }
-        Ok(ToolDecl { name, params, ret, effects, class, class_span, compensator, provider, latency, usd })
+        Ok(ToolDecl { name, params, ret, effects, class, class_span, compensator, provider, latency, usd, requires })
     }
 
     fn policy_decl(&mut self) -> PResult<PolicyDecl> {
@@ -305,7 +740,12 @@ impl Parser {
         self.expect(Tok::Agent)?;
         let name = self.ident()?;
         let params = self.params()?;
-        let bstart = self.expect(Tok::Budget)?;
+        // `budget` é palavra contextual: só aqui, depois dos parâmetros do agente, ela abre o
+        // orçamento. Em qualquer outro lugar é um nome comum (campo, variável, parâmetro).
+        if !self.is_contextual("budget") {
+            return Err(self.err(format!("esperado `budget`, encontrado {}", self.peek().describe())));
+        }
+        let bstart = self.bump().span;
         self.expect(Tok::LBrack)?;
         let mut budget = Vec::new();
         while *self.peek() != Tok::RBrack {
@@ -418,7 +858,7 @@ impl Parser {
             let span = start.to(inner.span());
             return Ok(TypeExpr::Own(Box::new(inner), span));
         }
-        let base = if self.is_contextual("Cap") && *self.peek_at(1) == Tok::LBrack {
+        let mut base = if self.is_contextual("Cap") && *self.peek_at(1) == Tok::LBrack {
             self.bump();
             self.bump();
             let mut effs = vec![self.effect_name()?];
@@ -443,22 +883,49 @@ impl Parser {
                 TypeExpr::Named(id)
             }
         };
-        if self.eat(&Tok::Caret) {
+        // v1.0-RC10: um ou dois rótulos `^ …`, integridade e/ou confidencialidade, em qualquer
+        // ordem; no máximo um de cada espécie.
+        let (mut seen_int, mut seen_conf) = (false, false);
+        while self.eat(&Tok::Caret) {
             let l = self.ident()?;
-            let label = match l.name.as_str() {
-                "Untrusted" => Label::Untrusted,
-                "Endorsed" => Label::Endorsed,
-                "Trusted" => Label::Trusted,
-                other => {
-                    return Err(ParseError {
-                        msg: format!(
-                            "rótulo de integridade desconhecido `{other}` (use Untrusted, Endorsed ou Trusted)"
-                        ),
-                        span: l.span,
-                    })
+            let span = start.to(l.span);
+            base = match l.name.as_str() {
+                "Untrusted" => Some(Label::Untrusted),
+                "Endorsed" => Some(Label::Endorsed),
+                "Trusted" => Some(Label::Trusted),
+                _ => None,
+            }
+            .map(|lab| {
+                if seen_int {
+                    return Err(ParseError { msg: "rótulo de integridade repetido".into(), span: l.span });
                 }
-            };
-            return Ok(TypeExpr::Labeled(Box::new(base), label, start.to(l.span)));
+                seen_int = true;
+                Ok(TypeExpr::Labeled(Box::new(base.clone()), lab, span))
+            })
+            .or_else(|| {
+                match l.name.as_str() {
+                    "Public" => Some(Conf::Public),
+                    "Internal" => Some(Conf::Internal),
+                    "Secret" => Some(Conf::Secret),
+                    _ => None,
+                }
+                .map(|c| {
+                    if seen_conf {
+                        return Err(ParseError { msg: "rótulo de confidencialidade repetido".into(), span: l.span });
+                    }
+                    seen_conf = true;
+                    Ok(TypeExpr::ConfLabeled(Box::new(base.clone()), c, span))
+                })
+            })
+            .unwrap_or_else(|| {
+                Err(ParseError {
+                    msg: format!(
+                        "rótulo desconhecido `{}` (integridade: Untrusted, Endorsed, Trusted; confidencialidade: Public, Internal, Secret)",
+                        l.name
+                    ),
+                    span: l.span,
+                })
+            })?;
         }
         Ok(base)
     }
@@ -701,11 +1168,15 @@ impl Parser {
                 Ok(Expr { kind: ExprKind::For { var, iter: Box::new(iter), body }, span })
             }
             Tok::Ident(name)
-                if (name == "all" || name == "any")
+                if (name == "all" || name == "any" || name == "sum")
                     && matches!(self.peek_at(1), Tok::Ident(_))
                     && matches!(self.peek_at(2), Tok::Ident(k) if k == "in") =>
             {
-                let all = name == "all";
+                let op = match name.as_str() {
+                    "all" => QuantOp::All,
+                    "any" => QuantOp::Any,
+                    _ => QuantOp::Sum,
+                };
                 self.bump();
                 let var = self.ident()?;
                 self.bump(); // in
@@ -716,7 +1187,7 @@ impl Parser {
                 self.expect(Tok::FatArrow)?;
                 let body = self.expr()?;
                 let span = start.to(body.span);
-                Ok(Expr { kind: ExprKind::Quant { all, var, iter: Box::new(iter), body: Box::new(body) }, span })
+                Ok(Expr { kind: ExprKind::Quant { op, var, iter: Box::new(iter), body: Box::new(body) }, span })
             }
             Tok::LBrack => {
                 self.bump();
@@ -741,7 +1212,9 @@ impl Parser {
             }
             Tok::Ident(name) => {
                 let id = self.ident()?;
-                if *self.peek() == Tok::LParen {
+                // `(` numa linha nova abre outra expressão, não chama o nome da linha anterior:
+                // `let mine = order` seguido de `(sum … ) <= n` na linha de baixo são duas coisas.
+                if *self.peek() == Tok::LParen && !self.toks[self.pos].nl_before {
                     let args = self.args()?;
                     let span = start.to(self.prev_span());
                     return Ok(Expr { kind: ExprKind::Call { callee: id, args }, span });
@@ -789,13 +1262,30 @@ impl Parser {
                 let scrut = self.expr()?;
                 self.no_ctor = saved;
                 self.expect(Tok::LBrace)?;
-                let mut arms = Vec::new();
+                let mut arms: Vec<Arm> = Vec::new();
+                let mut wildcard: Option<Arm> = None;
                 while *self.peek() != Tok::RBrace {
+                    if let Some(w) = &wildcard {
+                        return Err(ParseError {
+                            msg: "braço depois do curinga `_`: o curinga tem de ser o último braço do `match`".into(),
+                            span: w.variant.span,
+                        });
+                    }
                     let variant = self.ident()?;
                     let mut binds = Vec::new();
                     if self.eat(&Tok::LBrace) {
                         while *self.peek() != Tok::RBrace {
-                            binds.push(self.ident()?);
+                            // `..` (os demais campos) e `_` (campo ignorado) não ligam nada:
+                            // os campos de um padrão já são opcionais.
+                            if *self.peek() == Tok::Dot {
+                                self.bump();
+                                self.expect(Tok::Dot)?;
+                            } else {
+                                let b = self.ident()?;
+                                if b.name != "_" {
+                                    binds.push(b);
+                                }
+                            }
                             if !self.eat(&Tok::Comma) {
                                 break;
                             }
@@ -805,9 +1295,42 @@ impl Parser {
                     self.expect(Tok::FatArrow)?;
                     let body = self.expr()?;
                     let span = variant.span.to(body.span);
-                    arms.push(Arm { variant, binds, body, span });
-                    if !self.eat(&Tok::Comma) {
-                        break;
+                    if variant.name == "_" {
+                        if !binds.is_empty() {
+                            return Err(ParseError { msg: "o curinga `_` não tem campos".into(), span: variant.span });
+                        }
+                        wildcard = Some(Arm { variant, binds, body, span });
+                    } else {
+                        arms.push(Arm { variant, binds, body, span });
+                    }
+                    // A vírgula entre braços é opcional: o próximo braço começa por um nome.
+                    self.eat(&Tok::Comma);
+                }
+                if let Some(w) = wildcard {
+                    match &self.adts {
+                        // Primeira passada ou expressão isolada: o curinga fica como está.
+                        None => arms.push(w),
+                        Some(adts) => {
+                            let Some(all) = arms.iter().find_map(|a| adts.get(&a.variant.name)) else {
+                                return Err(ParseError {
+                                    msg:
+                                        "curinga `_` sem variante que identifique o tipo: nomeie ao menos uma variante \
+                                          do tipo antes do `_`"
+                                            .into(),
+                                    span: w.variant.span,
+                                });
+                            };
+                            for v in all {
+                                if !arms.iter().any(|a| &a.variant.name == v) {
+                                    arms.push(Arm {
+                                        variant: Ident { name: v.clone(), span: w.variant.span },
+                                        binds: Vec::new(),
+                                        body: w.body.clone(),
+                                        span: w.span,
+                                    });
+                                }
+                            }
+                        }
                     }
                 }
                 let end = self.expect(Tok::RBrace)?;
@@ -846,6 +1369,23 @@ impl Parser {
                 let draft = self.postfix()?;
                 self.expect(Tok::By)?;
                 let policy = self.ident()?;
+                // v1.0-RC7: `keeping campo by Política` (palavra contextual: depois da política
+                // do `refine` só podem vir `keeping`, `retry` ou `else`)
+                let mut keep = None;
+                if matches!(self.peek(), Tok::Ident(w) if w == "keeping") {
+                    self.bump();
+                    let field = self.ident()?;
+                    self.expect(Tok::By)?;
+                    let policy = self.ident()?;
+                    // `as` é palavra contextual aqui (não é reservada)
+                    let bind = if matches!(self.peek(), Tok::Ident(w) if w == "as") {
+                        self.bump();
+                        Some(self.ident()?)
+                    } else {
+                        None
+                    };
+                    keep = Some(Keep { field, policy, bind });
+                }
                 let mut retry = 1;
                 if self.eat(&Tok::Retry) {
                     match self.peek().clone() {
@@ -859,7 +1399,7 @@ impl Parser {
                 self.expect(Tok::Else)?;
                 let els = self.block()?;
                 let span = start.to(els.span);
-                Ok(Expr { kind: ExprKind::Refine { draft: Box::new(draft), policy, retry, els }, span })
+                Ok(Expr { kind: ExprKind::Refine { draft: Box::new(draft), policy, retry, els, keep }, span })
             }
             Tok::Quote => {
                 self.bump();
@@ -966,7 +1506,7 @@ policy P(p: List[Action, 1..3]) -> Bool = all a in p => true
         assert_eq!(md.prop("overhead"), Some(640.0));
         let Item::Policy(p) = &m.items[2] else { panic!() };
         assert_eq!(p.params[0].ty.sig(), "List[Action, 1..3]");
-        assert!(matches!(p.body.kind, ExprKind::Quant { all: true, .. }));
+        assert!(matches!(p.body.kind, ExprKind::Quant { op: QuantOp::All, .. }));
         let e = parse_expr_str(r#"for x in [1, 2] { f(x) }"#).unwrap();
         let ExprKind::For { iter, .. } = &e.kind else { panic!("{e:?}") };
         assert!(matches!(&iter.kind, ExprKind::List(v) if v.len() == 2));

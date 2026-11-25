@@ -150,7 +150,7 @@ impl Deps<'_> {
         match t {
             TypeExpr::Named(id) => self.name(&id.name),
             TypeExpr::Refined { .. } | TypeExpr::Cap(..) => {}
-            TypeExpr::Labeled(inner, ..) | TypeExpr::Own(inner, _) => self.ty(inner),
+            TypeExpr::Labeled(inner, ..) | TypeExpr::ConfLabeled(inner, ..) | TypeExpr::Own(inner, _) => self.ty(inner),
             TypeExpr::List { elem, .. } => self.ty(elem),
         }
     }
@@ -158,12 +158,22 @@ impl Deps<'_> {
     fn item(&mut self, item: &Item) {
         match item {
             Item::Type(d) => d.variants.iter().flat_map(|v| &v.fields).for_each(|f| self.ty(&f.ty)),
-            Item::Model(_) => {}
+            // a autoridade tipada depende das testemunhas que cita (o hash delas entra no dela)
+            Item::Authority(d) => d.clock.iter().chain(&d.outcomes).for_each(|w| self.name(&w.name)),
+            Item::Model(_) | Item::Witness(_) => {}
+            // a ligação depende das ferramentas que liga
+            Item::Bind(d) => {
+                d.routes.iter().for_each(|(t, _)| self.name(&t.name));
+                d.calls.iter().for_each(|(t, _)| self.name(&t.name));
+            }
             Item::Tool(d) => {
                 d.params.iter().for_each(|p| self.ty(&p.ty));
                 self.ty(&d.ret);
                 if let Some(c) = &d.compensator {
                     self.name(&c.name);
+                }
+                if let Some(req) = &d.requires {
+                    self.expr(req);
                 }
             }
             Item::Policy(d) => {
@@ -240,9 +250,12 @@ impl Deps<'_> {
                 self.ty(out);
                 fields.iter().for_each(|(_, x)| self.expr(x));
             }
-            ExprKind::Refine { draft, policy, els, .. } => {
+            ExprKind::Refine { draft, policy, els, keep, .. } => {
                 self.expr(draft);
                 self.name(&policy.name);
+                if let Some(k) = keep {
+                    self.name(&k.policy.name);
+                }
                 self.block(els);
             }
             ExprKind::Atomic { recover, body, on_failure, on_cf } => {
@@ -324,6 +337,11 @@ impl Canon<'_> {
                 self.ty(inner);
                 self.w(")");
             }
+            TypeExpr::ConfLabeled(inner, c, _) => {
+                let _ = write!(self.out, "(conf {} ", c.name());
+                self.ty(inner);
+                self.w(")");
+            }
             TypeExpr::Own(inner, _) => {
                 self.w("(own ");
                 self.ty(inner);
@@ -368,6 +386,104 @@ impl Canon<'_> {
                 }
                 self.w(")");
             }
+            // A chave da autoridade entra no hash: trocar de autoridade é trocar de programa.
+            // Forma tipada (RC4): serialização canônica, independente da ordem e da grafia da
+            // declaração. As operações vão ordenadas; as testemunhas, pela chave e tolerância (o
+            // nome é só um rótulo); o nível de garantia vai explícito.
+            Item::Authority(d) if d.typed => {
+                let mut ops = d.ops.clone().unwrap_or_default();
+                ops.sort();
+                ops.dedup();
+                let wit = |r: &Option<Ident>| {
+                    r.as_ref()
+                        .and_then(|r| self.hashes.get(&r.name))
+                        .map(|h| format!("#{h}"))
+                        .unwrap_or_else(|| "none".into())
+                };
+                let (clock, outcomes) = (wit(&d.clock), wit(&d.outcomes));
+                let _ = write!(
+                    self.out,
+                    "(authority/typed {:?} (guarantee {}) (ops {}) (max_age {:?}) (ledger {}) (clock {clock}) (outcomes {outcomes}))",
+                    d.key,
+                    d.guarantee().tag(),
+                    ops.join(" "),
+                    d.max_age,
+                    if d.anchored { "anchored" } else { "local" }
+                );
+            }
+            Item::Witness(d) => {
+                let _ = write!(self.out, "(witness {:?} {:?})", d.key, d.tolerance);
+            }
+            // RC5: a ligação é identidade do programa (o endpoint, o nome do segredo e as rotas;
+            // nunca um valor do ambiente). As rotas em ordem de ferramenta: a ordem de escrita
+            // não muda o hash.
+            Item::Bind(d) => {
+                let _ = write!(self.out, "(bind {:?} (auth {:?}) (status {:?})", d.url, d.auth, d.status);
+                let mut routes: Vec<_> = d.routes.iter().collect();
+                routes.sort_by(|a, b| a.0.name.cmp(&b.0.name));
+                for (t, r) in routes {
+                    let _ = write!(self.out, " (route ");
+                    self.reference(&t.name);
+                    let _ = write!(self.out, " {:?} {:?} {:?})", r.method, r.path, r.field);
+                }
+                // v1.0-RC6: só aparecem quando declarados (as raízes das RC anteriores não mudam)
+                let mut keys: Vec<_> = d.keys.iter().collect();
+                keys.sort_by(|a, b| a.0.name.cmp(&b.0.name));
+                for (t, p) in keys {
+                    let _ = write!(self.out, " (key ");
+                    self.reference(&t.name);
+                    let _ = write!(self.out, " {p:?})");
+                }
+                let mut settles: Vec<_> = d.settles.iter().collect();
+                settles.sort_by(|a, b| a.0.name.cmp(&b.0.name));
+                for (t, n) in settles {
+                    let _ = write!(self.out, " (settle ");
+                    self.reference(&t.name);
+                    let _ = write!(self.out, " {n})");
+                }
+                let mut finds: Vec<_> = d.finds.iter().collect();
+                finds.sort_by(|a, b| a.0.name.cmp(&b.0.name));
+                for (t, r) in finds {
+                    let _ = write!(self.out, " (find ");
+                    self.reference(&t.name);
+                    let _ = write!(self.out, " {:?} {:?} {:?})", r.method, r.path, r.field);
+                }
+                // v1.0-RC9: a ligação MCP (o comando do servidor é configuração: entra só a
+                // referência, como a url; o nome do segredo e a variável que o recebe; os
+                // argumentos de configuração por nome; as chamadas)
+                if let Some(m) = &d.mcp {
+                    let _ = write!(self.out, " (mcp {m:?} (as {:?})", d.secret_as);
+                    let mut args: Vec<_> = d.args.iter().collect();
+                    args.sort_by(|a, b| a.0.name.cmp(&b.0.name));
+                    for (n, v) in args {
+                        let _ = write!(self.out, " (arg {:?} {v:?})", n.name);
+                    }
+                    let mut calls: Vec<_> = d
+                        .calls
+                        .iter()
+                        .map(|(t, c)| ("call", t, c))
+                        .chain(d.call_finds.iter().map(|(t, c)| ("find", t, c)))
+                        .collect();
+                    calls.sort_by(|a, b| (a.1.name.as_str(), a.0).cmp(&(b.1.name.as_str(), b.0)));
+                    for (kind, t, c) in calls {
+                        let _ = write!(self.out, " ({kind} ");
+                        self.reference(&t.name);
+                        let _ =
+                            write!(self.out, " {:?} {:?} {:?} {:?} {})", c.tool, c.args, c.list, c.path, c.projected);
+                    }
+                    let _ = write!(self.out, ")");
+                }
+                let _ = write!(self.out, ")");
+            }
+            Item::Authority(d) => {
+                let _ = write!(self.out, "(authority {:?}", d.key);
+                // os vínculos também são identidade do programa (só aparecem quando declarados:
+                // o hash de um módulo do RC2 não muda)
+                if d.bound() {
+                    let _ = write!(self.out, " (ops {:?}) (max_age {:?}) (anchored {})", d.ops, d.max_age, d.anchored);
+                }
+                let _ = write!(self.out, ")");
+            }
             Item::Model(d) => {
                 // O contrato Δ inteiro (números e identidade versionada) entra no hash: mudar o
                 // overhead, a versão ou o provedor é mudar de contrato.
@@ -394,7 +510,19 @@ impl Canon<'_> {
                     self.reference(&c.name);
                     self.w(")");
                 }
-                let _ = write!(self.out, " (provider {}) (latency {}) (usd {}))", d.provider.name(), d.latency, d.usd);
+                let _ = write!(self.out, " (provider {}) (latency {}) (usd {})", d.provider.name(), d.latency, d.usd);
+                // o contrato `requires` é parte da identidade da ferramenta (Rev12); ausente, a
+                // forma canônica é a de antes, byte a byte
+                if let Some(req) = &d.requires {
+                    self.w(" (requires ");
+                    for p in &d.params {
+                        self.locals.push(p.name.name.clone());
+                    }
+                    self.expr(req);
+                    self.locals.clear();
+                    self.w(")");
+                }
+                self.w(")");
             }
             Item::Policy(d) => {
                 self.w("(policy ");
@@ -469,6 +597,10 @@ impl Canon<'_> {
                     self.expr(value);
                     self.w(")");
                     self.locals.push(name.name.clone());
+                    // v1.0-RC8: `keeping … as nome` liga um segundo local, logo depois
+                    if let ExprKind::Refine { keep: Some(Keep { bind: Some(b), .. }), .. } = &value.kind {
+                        self.locals.push(b.name.clone());
+                    }
                 }
                 Stmt::Expr(e) => self.expr(e),
             }
@@ -508,7 +640,7 @@ impl Canon<'_> {
             ExprKind::Call { callee, args } => {
                 self.w("(call ");
                 match callee.name.as_str() {
-                    "fit" | "sample" => {
+                    "fit" | "sample" | "text" | "join" => {
                         let _ = write!(self.out, "prim:{}", callee.name);
                     }
                     n => self.reference(n),
@@ -599,11 +731,20 @@ impl Canon<'_> {
                 }
                 self.w(")");
             }
-            ExprKind::Refine { draft, policy, retry, els } => {
+            ExprKind::Refine { draft, policy, retry, els, keep } => {
                 self.w("(refine ");
                 self.expr(draft);
                 self.w(" ");
                 self.reference(&policy.name);
+                // v1.0-RC7: só aparece quando declarado (as raízes anteriores não mudam)
+                if let Some(k) = keep {
+                    let _ = write!(self.out, " (keep {:?} ", k.field.name);
+                    self.reference(&k.policy.name);
+                    if k.bind.is_some() {
+                        self.w(" as");
+                    }
+                    self.w(")");
+                }
                 let _ = write!(self.out, " (retry {retry}) ");
                 self.block(els);
                 self.w(")");
@@ -665,8 +806,12 @@ impl Canon<'_> {
                 self.locals.pop();
                 self.w(")");
             }
-            ExprKind::Quant { all, var, iter, body } => {
-                self.w(if *all { "(all " } else { "(any " });
+            ExprKind::Quant { op, var, iter, body } => {
+                self.w(match op {
+                    QuantOp::All => "(all ",
+                    QuantOp::Any => "(any ",
+                    QuantOp::Sum => "(sum ",
+                });
                 self.expr(iter);
                 self.w(" ");
                 self.locals.push(var.name.clone());

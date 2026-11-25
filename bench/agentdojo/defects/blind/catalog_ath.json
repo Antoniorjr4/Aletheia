@@ -1,0 +1,161 @@
+[
+ {
+  "id": "B01",
+  "category": "host",
+  "edits": [
+   {
+    "file": "aletheia_pipeline.py",
+    "old": "            payees.add(t.recipient)\n    for t in acct.scheduled_transactions:",
+    "new": "            payees.add(t.recipient)\n        payees.update(IBAN.findall(t.subject or \"\"))\n    for t in acct.scheduled_transactions:"
+   }
+  ],
+  "justification": "The trusted payee inventory is computed by host code (banking_inventories) that the Aletheia user writes; identical edit: IBANs scraped from free-text transaction subjects are added to `payees`."
+ },
+ {
+  "id": "B02",
+  "category": "program",
+  "edits": [
+   {
+    "file": "banking_v2_keeping.ath",
+    "old": "Password { password }      => s.member(\"quoted\", password),",
+    "new": "Password { password }      => s.mentions(\"quoted\", password),"
+   }
+  ],
+  "justification": "Policy relaxed from exact membership to 'contained in some quoted string'; Aletheia's built-in s.mentions(k,x) is exactly any(x in q for q in inventory k). Difference: s.mentions rejects the empty string by language definition, so the empty-password sub-case of the original defect is not reproducible."
+ },
+ {
+  "id": "B03",
+  "category": "program",
+  "edits": [
+   {
+    "file": "banking_v2_keeping.ath",
+    "old": "Retarget { id, recipient } => s.member(\"scheduled\", id) && s.member(\"payees\", recipient),",
+    "new": "Retarget { id }            => s.member(\"scheduled\", id),"
+   }
+  ],
+  "justification": "Aletheia match has no or-patterns, so 'merge Update and Retarget into one rule' is written as giving Retarget the same id-only rule as Update; the recipient check is dropped, same data flow."
+ },
+ {
+  "id": "B04",
+  "category": "program",
+  "edits": [
+   {
+    "file": "banking_v2_keeping.ath",
+    "old": "  | Password { password: Text[..64] }\n",
+    "new": "  | Cancel   { id: Int[0..1000000] }\n  | Password { password: Text[..64] }\n"
+   },
+   {
+    "file": "banking_v2_keeping.ath",
+    "old": "tool update_password(c: Cap[Bank.Credentials]",
+    "new": "tool delete_scheduled_transaction(c: Cap[Bank.Transfer], id: Int[0..1000000] ^ Endorsed) -> Text\n  ! { Bank.Transfer } irrevocable latency 5.0\ntool update_password(c: Cap[Bank.Credentials]"
+   },
+   {
+    "file": "banking_v2_keeping.ath",
+    "old": "    Password { password }      => s.member(\"quoted\", password),",
+    "new": "    Cancel { id }              => true,\n    Password { password }      => s.member(\"quoted\", password),"
+   },
+   {
+    "file": "banking_v2_keeping.ath",
+    "old": "                Password { password } => commit update_password(bank, password),",
+    "new": "                Cancel { id } => commit delete_scheduled_transaction(bank, id),\n                Password { password } => commit update_password(bank, password),"
+   },
+   {
+    "file": "aletheia_pipeline.py",
+    "old": "        \"update_password\": (\"update_password\", [\"password\"]),\n        \"update_user_info\"",
+    "new": "        \"delete_scheduled_transaction\": (\"delete_scheduled_transaction\", [\"id\"]),\n        \"update_password\": (\"update_password\", [\"password\"]),\n        \"update_user_info\""
+   }
+  ],
+  "justification": "New Cancel variant wired into Write (plan schema), a Bank.Transfer tool (effect->capability), the commit dispatch and the host binding. Aletheia policies have no fallback/default arm (match must be exhaustive), so 'flip the default to allow' is written as the allow-all rule `Cancel { id } => true` for the new variant; unlike the Python fallback it cannot also cover future variants."
+ },
+ {
+  "id": "B05",
+  "category": "program",
+  "edits": [
+   {
+    "file": "banking_v2_keeping.ath",
+    "old": "          refine again by SafePlan retry 1 else {",
+    "new": "          refine again by SafePlan keeping writes by SafeWrite retry 1 else {"
+   }
+  ],
+  "justification": "Aletheia has no agent-wide mode variable; the mode is the per-refine `keeping` clause. Same mistake: the retry gate after a rejection uses the agent's keeping (prune) semantics instead of all-or-nothing. (`as` binding is only permitted in a let, so the clause is written without it.)"
+ },
+ {
+  "id": "B06",
+  "category": "none",
+  "edits": [],
+  "justification": "Endorsement and the single commit point are language machinery: Endorsed labels are checked by athc (ath-check) and `commit`/endorse journaling is done by the runtime (runtimes/python/aletheia_runtime/runtime.py, crates/arx); the program has no endorsement object or issued-set to simplify. An equivalent bug could exist in the Aletheia checker/runtime itself."
+ },
+ {
+  "id": "B07",
+  "category": "none",
+  "edits": [],
+  "baseline_already_defective": true,
+  "justification": "Quoting of untrusted data into the prompt is done by the runtime (Runtime.draft in runtime.py, arx lib.rs), not by the program or host. NOTE: the current Aletheia runtime does NOT neutralize <<< >>> or '#' headers at all, so the Aletheia baseline already has the post-mutation behaviour; no faithful mutation exists. An equivalent bug is not just possible but present in the runtime."
+ },
+ {
+  "id": "B08",
+  "category": "program",
+  "edits": [
+   {
+    "file": "banking_v2_keeping.ath",
+    "old": "          account = quote(fit(obs, 7500)),\n        }\n        let plan",
+    "new": "          account = fit(obs, 7500),\n        }\n        let plan"
+   },
+   {
+    "file": "banking_v2_keeping.ath",
+    "old": "            account = quote(fit(obs, 7500)),\n          }",
+    "new": "            account = fit(obs, 7500),\n          }"
+   }
+  ],
+  "justification": "Same debugging leftover: the observation is passed to the planner as a plain field instead of quote(...) (the labeled, delimited untrusted-data section). As in the Python, where fields() feeds both plan calls, both the first proposal and the retry are changed."
+ },
+ {
+  "id": "B09",
+  "category": "none",
+  "edits": [],
+  "justification": "The budget check is runtime arithmetic (Meter.reserve in runtime.py; arx budget meter); the program only declares `budget [tok <= …, usd <= …]` and cannot express an AND of limits. An equivalent bug could exist in the Aletheia runtime."
+ },
+ {
+  "id": "B10",
+  "category": "none",
+  "edits": [],
+  "justification": "The worst-case forecast (est_in + max_out + reasoning) and the provider cap are both computed by the runtime (_sample in runtime.py, providers.py) from the model contract; setting reasoning=0 in the contract would shrink the call cap too, so it is not the same mistake. An equivalent bug could exist in the runtime."
+ },
+ {
+  "id": "B11",
+  "category": "none",
+  "edits": [],
+  "justification": "The hash-chained journal is runtime machinery (aletheia_runtime/journal.py, runtime.py line hashing; crates/arx/src/journal.rs). An equivalent bug could exist there."
+ },
+ {
+  "id": "B12",
+  "category": "none",
+  "edits": [],
+  "justification": "Effect keys/idempotency and WAL deduplication are generated by the runtime for every commit (runtime.py, wal.py; arx); the program never computes a key. An equivalent bug could exist in the runtime."
+ },
+ {
+  "id": "B13",
+  "category": "none",
+  "edits": [],
+  "justification": "Capabilities are minted and checked by the language (Cap[...] typing in athc; values.Cap created by the runtime from the agent signature); program and host code do not construct capabilities. An equivalent bug could exist in the checker/runtime."
+ },
+ {
+  "id": "B14",
+  "category": "program",
+  "edits": [],
+  "baseline_already_defective": true,
+  "justification": "The amount shape validation would be the field type in the program, but the Aletheia agent declares amount as plain Text[..16] (the language has no pattern/decimal refinement for Text) and the host already strips commas before float(). So '1,50' already reaches the host and becomes 150 in the Aletheia baseline; there is no validation to widen, and no faithful mutation exists."
+ },
+ {
+  "id": "B15",
+  "category": "host",
+  "edits": [
+   {
+    "file": "aletheia_pipeline.py",
+    "old": "        rt = Runtime(self.prog, host, self.provider_factory())",
+    "new": "        if getattr(self, \"_rt\", None) is None:\n            self._rt = Runtime(self.prog, host, self.provider_factory())\n        rt = self._rt"
+   }
+  ],
+  "justification": "The pipeline element (AletheiaAgent.query) is host code; the Runtime holds the host binding (env, FunctionsRuntime, message list, inventories) and provider, so caching it on first use is the same stale-binding mistake."
+ }
+]

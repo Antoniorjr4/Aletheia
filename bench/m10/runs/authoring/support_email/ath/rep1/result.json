@@ -1,0 +1,48 @@
+{
+ "pack": "support_email",
+ "lang": "ath",
+ "rep": 1,
+ "model": "openai/gpt-oss-120b",
+ "clean": false,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.ath",
+   "tok_in": 3406,
+   "tok_out": 4433,
+   "feedback": "athc check:\nerror[P0001]: esperado `:`, encontrado `=`\n   --> bench/m10/runs/authoring/support_email/ath/rep1/v1.ath:107:15\n    |\n107 |         reply = Empty, \n    |               ^ aqui\n\nrejeitado: 1 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 2,
+   "file": "v2.ath",
+   "tok_in": 4726,
+   "tok_out": 2302,
+   "feedback": "athc check:\nerror[P0001]: esperada uma expressão, encontrado `)`\n   --> bench/m10/runs/authoring/support_email/ath/rep1/v2.ath:118:21\n    |\n118 |           Empty => (),\n    |                     ^ aqui\n\nrejeitado: 1 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 3,
+   "file": "v3.ath",
+   "tok_in": 6076,
+   "tok_out": 1855,
+   "feedback": "athc check:\nerror[P0001]: esperada uma expressão, encontrado `/`\n   --> bench/m10/runs/authoring/support_email/ath/rep1/v3.ath:116:9\n    |\n116 |         // Execute reply if present\n    |         ^ aqui\n\nrejeitado: 1 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 4,
+   "file": "v4.ath",
+   "tok_in": 7444,
+   "tok_out": 1676,
+   "feedback": "athc check:\nerror[E0002]: variante `Empty` definida mais de uma vez\n --> bench/m10/runs/authoring/support_email/ath/rep1/v4.ath:8:5\n  |\n4 |   | Empty \n  |     ----- primeira definição\n8 |   | Empty \n  |     ^^^^^ redefinida aqui\n\nerror[E0002]: variante `Empty` definida mais de uma vez\n  --> bench/m10/runs/authoring/support_email/ath/rep1/v4.ath:12:5\n   |\n 4 |   | Empty \n   |     ----- primeira definição\n12 |   | Empty \n   |     ^^^^^ redefinida aqui\n\nerror[E0002]: variante `Empty` definida mais de uma vez\n  --> bench/m10/runs/authoring/support_email/ath/rep1/v4.ath:16:5\n   |\n 4 |   | Empty \n   |     ----- primeira definição\n16 |   | Empty \n   |     ^^^^^ redefinida aqui\n\nerror[E0008]: tipo incompatível\n   --> bench/m10/runs/authoring/support_email/ath/rep1/v4.ath:108:18\n    |\n108 |         forward: Empty, \n    |                  ^^^^^ esperado `SlotForward`, encontrado `SlotReply`\n\nerror[E0008]: tipo incompatível\n   --> bench/m10/runs/authoring/support_email/ath/rep1/v4.ath:109:17\n    |\n109 |         status: Empty, \n    |                 ^^^^^ esperado `SlotStatus`, encontrado `SlotReply`\n\nerror[E0008]: tipo incompatível\n   --> bench/m10/runs/authoring/support_email/ath/rep1/v4.ath:110:17\n    |\n110 |         delete: Empty, \n    |                 ^^^^^ esperado `SlotDelete`, encontrado `SlotReply`\n\nrejeitado: 6 diagnóstico(s) no estrato E0 estrutura; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 5,
+   "file": "v5.ath",
+   "tok_in": 9110,
+   "tok_out": 1583,
+   "feedback": "athc check:\nerror[E0500]: efeito sem capacidade\n  --> bench/m10/runs/authoring/support_email/ath/rep1/v5.ath:43:7\n   |\n43 |   ! { Ticket.Read } reversible latency 5.0\n   |       ^^^^^^^^^^^ `read_tickets` declara `Ticket.Read`, mas nenhum parâmetro `Cap[…]` o cobre\n   |\n   = ajuda: acrescente um parâmetro `c: Cap[Ticket.Read]`\n\nerror[E0500]: efeito sem capacidade\n  --> bench/m10/runs/authoring/support_email/ath/rep1/v5.ath:46:7\n   |\n46 |   ! { KB.Read } reversible latency 5.0\n   |       ^^^^^^^ `list_kb` declara `KB.Read`, mas nenhum parâmetro `Cap[…]` o cobre\n   |\n   = ajuda: acrescente um parâmetro `c: Cap[KB.Read]`\n\nrejeitado: 2 diagnóstico(s) no estrato E2 efeitos; os estratos seguintes não foram avaliados\n"
+  }
+ ],
+ "tok_in": 30762,
+ "tok_out": 11849,
+ "seconds": 28.5,
+ "usd": 0.011724
+}

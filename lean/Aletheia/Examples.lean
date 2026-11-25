@@ -53,7 +53,7 @@ def remediate : Exp :=
     (.let_ (.endorse 0 (.var 0) (.val (.int 3)))
       (.act 0 3 (.var 0)))
 
-def βR : Budget := (0 + S.mcost 0) + ((0 + 0) + (0 + S.cost 0))
+def βR : Budget := (0 + S.mcost 0) + ((0 + 0) + (0 + S.acost 0))
 
 theorem remediate_typed : HasType S Γ .T remediate .unit .T βR :=
   .let_ (.infer (.var rfl))
@@ -166,7 +166,7 @@ theorem canned_ok (n : Int) : (canned n).Ok := by
   | list t k => exact .list (by simp) (by simp)
 
 def ρ₀ : List Val := [.int 42, .cap 7]
-def s₀ : St := ⟨[], 0, 0, fun _ => 0, []⟩
+def s₀ : St := ⟨[], 0, 0, fun _ => 0, [], 100, []⟩
 def limit : Budget := fun d => match d with | .tok => 20000 | .usd => 500000 | .wall => 120000 | _ => 0
 
 /-- O runtime concede `Cluster.Write` à capacidade 7, e nada mais. -/
@@ -186,13 +186,19 @@ theorem start₀ : Start grants Γ ρ₀ s₀ where
     intro k E id hk hid x hx
     rcases k with _ | _ | k <;> simp_all [Γ, ρ₀, grants]
   fresh := by simp [s₀]
+  nokey := by intro k; rcases k with _ | _ | k <;> simp [Γ]
+  kf := ⟨by intro k x hk; rcases k with _ | _ | k <;> simp [ρ₀] at hk <;> subst hk <;> simp [s₀],
+    by simp [s₀], by simp [s₀]⟩
 
 theorem fits : s₀.spent + βR ≤ limit := by
   intro d; cases d <;> decide
 
 /-- Para qualquer resposta do modelo, a remediação executa sem erro e dentro do orçamento. -/
-theorem remediate_runs (n : Int) : ∀ err, eval S (cfg n) remediate ρ₀ s₀ ≠ .error err :=
-  progress (c := cfg n) (canned_ok n) remediate_typed remediate_linear rfl start₀ fits
+theorem remediate_runs (n : Int) : ∀ err, eval S (cfg n) remediate ρ₀ s₀ ≠ .error err := by
+  intro err h
+  obtain ⟨o, he, _⟩ := soundness_keyless (c := cfg n) (canned_ok n) remediate_typed remediate_linear
+    rfl rfl start₀ fits
+  rw [he] at h; cases h
 
 /-- T2 aplicado: a ação usou `Cap[Cluster.Write]` léxica e concedida, e a capacidade 7 foi
 consumida exatamente uma vez, para qualquer resposta do modelo. -/
@@ -200,7 +206,7 @@ theorem remediate_T2 (n : Int) :
     ∃ o new, eval S (cfg n) remediate ρ₀ s₀ = .ok o ∧ Lexical S Γ ρ₀ o.tr ∧
       Granted' S grants o.tr ∧ o.st.used = new ++ s₀.used ∧ new.Nodup ∧
       ∀ id : Nat, id ∈ new ↔ ∃ k : Nat, ρ₀[k]? = some (Val.cap id) :=
-  T2 (c := cfg n) (canned_ok n) remediate_typed remediate_linear rfl start₀ fits
+  T2 (c := cfg n) (canned_ok n) remediate_typed remediate_linear rfl rfl start₀ fits
 
 /-- Com a concessão revogada, a guarda do runtime recusa a ação. -/
 example : eval S ⟨canned 5, limit, revoked⟩ remediate ρ₀ s₀ = .error .noCap := rfl

@@ -1,0 +1,48 @@
+{
+ "pack": "refunds",
+ "lang": "py",
+ "rep": 2,
+ "model": "openai/gpt-oss-120b",
+ "clean": true,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.py",
+   "tok_in": 3069,
+   "tok_out": 4514,
+   "feedback": "static tools:\nv1.py:2:42: F401 [*] `typing.Tuple` imported but unused\nFound 1 error.\n[*] 1 fixable with the `--fix` option.\nmypy:\nv1.py:85: error: Unsupported operand types for < (\"int\" and \"None\")  [operator]\nv1.py:85: note: Left operand is of type \"Any | None\"\nv1.py:88: error: Unsupported operand types for < (\"int\" and \"None\")  [operator]\nv1.py:88: note: Left operand is of type \"Any | None\"\nv1.py:91: error: Unsupported operand types for + (\"int\" and \"None\")  [operator]\nv1.py:91: note: Right operand is of type \"Any | None\"\nv1.py:99: error: Incompatible types in assignment (expression has type \"Any | None\", variable has type \"str\")  [assignment]\nv1.py:105: error: Unsupported operand types for + (\"int\" and \"None\")  [operator]\nv1.py:105: note: Right operand is of type \"Any | None\"\nv1.py:120: error: Argument 1 to \"links_ok\" has incompatible type \"Any | None\"; expected \"str\"  [arg-type]"
+  },
+  {
+   "cycle": 2,
+   "file": "v2.py",
+   "tok_in": 6379,
+   "tok_out": 4181,
+   "feedback": "static tools:\nmypy:\nv2.py:107: error: Incompatible types in assignment (expression has type \"Any | None\", variable has type \"str\")  [assignment]"
+  },
+  {
+   "cycle": 3,
+   "file": "v3.py",
+   "tok_in": 9419,
+   "tok_out": 4688,
+   "feedback": "static tools:\nmypy:\nv3.py:110: error: Name \"cust\" already defined on line 84  [no-redef]\nv3.py:146: error: Name \"conv\" already defined on line 127  [no-redef]"
+  },
+  {
+   "cycle": 4,
+   "file": "v4.py",
+   "tok_in": 12534,
+   "tok_out": 3159,
+   "feedback": "dry run (stub model): AttributeError: 'str' object has no attribute 'get'\ndry run (adversarial model): AttributeError: 'str' object has no attribute 'get'"
+  },
+  {
+   "cycle": 5,
+   "file": "v5.py",
+   "tok_in": 15631,
+   "tok_out": 3680,
+   "feedback": ""
+  }
+ ],
+ "tok_in": 47032,
+ "tok_out": 20222,
+ "seconds": 55.5,
+ "usd": 0.019188
+}

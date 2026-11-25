@@ -48,6 +48,24 @@ pub fn python(m: &Module, _check: &CheckResult, codex: &Codex, source: &str) -> 
         }
     }
 
+    // Os contratos `requires`: uma função por ferramenta, ligada à entrada da ferramenta.
+    for item in &m.items {
+        if let Item::Tool(t) = item {
+            let Some(req) = &t.requires else { continue };
+            g.reset();
+            g.env.push(Vec::new());
+            let params: Vec<String> = t.params.iter().map(|x| g.bind(&x.name.name)).collect();
+            g.line(format!("def contract_{}(R, {}):", ident(&t.name.name), params.join(", ")));
+            g.ind += 1;
+            let a = g.expr(req)?;
+            g.line(format!("return {a}"));
+            g.ind -= 1;
+            g.env.pop();
+            g.line(format!("TOOLS[{}][\"contract\"] = contract_{}", py_str(&t.name.name), ident(&t.name.name)));
+            funcs.push(g.take());
+        }
+    }
+
     let mut agents = String::from("AGENTS = {\n");
     for item in &m.items {
         let Item::Agent(a) = item else { continue };
@@ -133,6 +151,12 @@ pub fn python(m: &Module, _check: &CheckResult, codex: &Codex, source: &str) -> 
                         "provider": t.provider.name(),
                         "latency": t.latency,
                         "usd": t.usd,
+                        // a forma dos argumentos, para a recuperação ler as intenções do WAL
+                        "params": t.params.iter().map(|p| match p.ty.unlabeled() {
+                            ath_syntax::ast::TypeExpr::Cap(..) => "cap",
+                            t if t.base_name() == "IdemKey" => "key",
+                            _ => "val",
+                        }).collect::<Vec<_>>(),
                     }),
                 );
             }
@@ -177,7 +201,51 @@ pub fn python(m: &Module, _check: &CheckResult, codex: &Codex, source: &str) -> 
     }
     let _ = writeln!(out, "\n");
     out.push_str(&agents);
-    let _ = writeln!(out, "\nPROGRAM = Program(MODULE, CODEX_ROOT, TOOLS, MODELS, AGENTS)");
+    // as autoridades declaradas e os tratadores com argumento `Trusted` (só quando há autoridade:
+    // um módulo sem ela é emitido como antes)
+    let authorities: serde_json::Map<String, Json> = m
+        .items
+        .iter()
+        .filter_map(|i| {
+            let Item::Authority(d) = i else { return None };
+            // só com `key`, a chave como texto (como no RC2); com vínculos, o registro inteiro
+            let v = if d.bound() {
+                json!({ "key": d.key, "ops": d.ops, "max_age": d.max_age, "anchored": d.anchored, "bound": true,
+                        "guarantee": d.guarantee().tag() })
+            } else {
+                json!(d.key)
+            };
+            Some((d.name.name.clone(), v))
+        })
+        .collect();
+    // RC5: as ligações (`bind`). O backend Python não fala com provedores reais: recusa.
+    let binds: Vec<Json> =
+        m.items.iter().filter_map(|i| if let Item::Bind(b) = i { Some(json!(b.name.name)) } else { None }).collect();
+    let bind_line =
+        if binds.is_empty() { String::new() } else { format!("PROGRAM.binds = {}\n", py(&Json::Array(binds))) };
+    if authorities.is_empty() {
+        let _ = writeln!(out, "\nPROGRAM = Program(MODULE, CODEX_ROOT, TOOLS, MODELS, AGENTS)");
+        out.push_str(&bind_line);
+    } else {
+        let mut trusted: Vec<Json> = Vec::new();
+        for i in &m.items {
+            if let Item::Agent(a) = i {
+                for h in &a.handlers {
+                    let t = |p: &ath_syntax::ast::Param| {
+                        matches!(&p.ty, ath_syntax::ast::TypeExpr::Labeled(_, ath_syntax::ast::Label::Trusted, _))
+                    };
+                    if h.params.iter().any(t) {
+                        trusted.push(json!(format!("{}.{}", a.name.name, h.event.name)));
+                    }
+                }
+            }
+        }
+        let _ = writeln!(out, "\nAUTHORITIES = {}", py(&Json::Object(authorities)));
+        let _ = writeln!(out, "TRUSTED_ARGS = {}", py(&Json::Array(trusted)));
+        let _ =
+            writeln!(out, "PROGRAM = Program(MODULE, CODEX_ROOT, TOOLS, MODELS, AGENTS, AUTHORITIES, TRUSTED_ARGS)");
+        out.push_str(&bind_line);
+    }
     Ok(out)
 }
 
@@ -244,6 +312,10 @@ fn py(j: &Json) -> String {
 
 struct Gen<'m> {
     m: &'m Module,
+    /// as obrigações `requires` levantadas para os `refine` e os sítios descarregados (M-I)
+    ob: ath_syntax::obligations::Obligations,
+    /// o sítio da expressão em emissão (para marcar a chamada descarregada)
+    site: Option<ath_syntax::Span>,
     tools: HashSet<String>,
     policies: HashSet<String>,
     variants: HashMap<String, String>,
@@ -257,6 +329,8 @@ struct Gen<'m> {
 impl<'m> Gen<'m> {
     fn new(m: &'m Module) -> Self {
         let mut g = Gen {
+            ob: ath_syntax::obligations::analyze(m),
+            site: None,
             m,
             tools: HashSet::new(),
             policies: HashSet::new(),
@@ -352,6 +426,11 @@ impl<'m> Gen<'m> {
                     let a = self.expr(value)?;
                     let p = self.bind(&name.name);
                     self.line(format!("{p} = {a}"));
+                    // v1.0-RC8: `keeping … as nome`
+                    if let ExprKind::Refine { keep: Some(Keep { bind: Some(b), .. }), .. } = &value.kind {
+                        let q = self.bind(&b.name);
+                        self.line(format!("{q} = R.last_dropped"));
+                    }
                 }
                 Stmt::Expr(e) => {
                     self.expr(e)?;
@@ -412,7 +491,10 @@ impl<'m> Gen<'m> {
                 let r = self.expr(r)?;
                 self.assign("t", format!("R.field({r}, {})", py_str(&f.name)))
             }
-            ExprKind::Call { callee, args } => self.call(callee, args)?,
+            ExprKind::Call { callee, args } => {
+                self.site = Some(e.span);
+                self.call(callee, args)?
+            }
             ExprKind::Method { recv, method, args } => {
                 if matches!(&recv.kind, ExprKind::Var(name) if name == "s") {
                     let rendered: Vec<String> = args.iter().map(|a| self.expr(a)).collect::<Result<_, _>>()?;
@@ -423,6 +505,11 @@ impl<'m> Gen<'m> {
                         "scale_justified" if rendered.len() == 2 => "scale_justified",
                         "inventory" if rendered.len() == 1 => "inventory",
                         "member" if rendered.len() == 2 => "member",
+                        "within" if rendered.len() == 2 => "within",
+                        "mentions" if rendered.len() == 2 => "mentions",
+                        "links_within" if rendered.len() == 2 => "links_within",
+                        "binds" if rendered.len() >= 2 => "binds",
+                        "authorizes" if rendered.len() >= 2 => "authorizes",
                         _ => return Err(format!("método intrínseco s.{} inválido", method.name)),
                     };
                     self.assign("t", format!("R.{builtin}({})", rendered.join(", ")))
@@ -550,16 +637,90 @@ impl<'m> Gen<'m> {
                     ),
                 )
             }
-            ExprKind::Refine { draft, policy, retry, els } => {
+            ExprKind::Refine { draft, policy, retry, els, keep } => {
                 if !self.policies.contains(&policy.name) {
                     return Err(format!("política `{}` ausente", policy.name));
                 }
+                // v1.0-RC7: `keeping campo by Q`, com o mínimo da lista em cada variante
+                let keep_arg = match keep {
+                    None => String::new(),
+                    Some(k) => {
+                        if !self.policies.contains(&k.policy.name) {
+                            return Err(format!("política `{}` ausente", k.policy.name));
+                        }
+                        let mut mins: Vec<String> = Vec::new();
+                        for i in &self.m.items {
+                            if let Item::Type(t) = i {
+                                for v in &t.variants {
+                                    for f in v.fields.iter().filter(|f| f.name.name == k.field.name) {
+                                        if let TypeExpr::List { lo, .. } = f.ty.unlabeled() {
+                                            mins.push(format!(
+                                                "({}, {}): {lo}",
+                                                py_str(&t.name.name),
+                                                py_str(&v.name.name)
+                                            ));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        format!(
+                            ", keep=({}, policy_{}, {}, {{{}}})",
+                            py_str(&k.field.name),
+                            ident(&k.policy.name),
+                            py_str(&k.policy.name),
+                            mins.join(", ")
+                        )
+                    }
+                };
                 let d = self.expr(draft)?;
                 let ok = self.fresh("ok");
                 let v = self.fresh("v");
                 let t = self.fresh("t");
+                // M-I: as obrigações levantadas para este `refine`, como dados
+                let lifted = self.ob.lifted_at(e.span).to_vec();
+                let extra = if lifted.is_empty() {
+                    String::new()
+                } else {
+                    let specs: Vec<String> = lifted
+                        .iter()
+                        .map(|l| {
+                            let tool = self.m.items.iter().find_map(|i| match i {
+                                Item::Tool(t) if t.name.name == l.tool => Some(t),
+                                _ => None,
+                            });
+                            let path: Vec<String> = l
+                                .path
+                                .iter()
+                                .map(|s| match s {
+                                    ath_syntax::obligations::Step::Elem => "(\"e\",)".to_string(),
+                                    ath_syntax::obligations::Step::Field(v, f) => {
+                                        format!("(\"f\", {}, {})", py_str(v), py_str(f))
+                                    }
+                                })
+                                .collect();
+                            let binds: Vec<String> = l
+                                .binds
+                                .iter()
+                                .filter_map(|(p, f)| {
+                                    let i = tool?.params.iter().position(|x| &x.name.name == p)?;
+                                    Some(format!("({i}, {})", py_str(f)))
+                                })
+                                .collect();
+                            let n = tool.map_or(0, |t| t.params.len());
+                            format!(
+                                "({}, [{}], {}, [{}], {n})",
+                                py_str(&l.tool),
+                                path.join(", "),
+                                py_str(&l.variant),
+                                binds.join(", ")
+                            )
+                        })
+                        .collect();
+                    format!(", lifted=[{}]", specs.join(", "))
+                };
                 self.line(format!(
-                    "{ok}, {v} = R.refine({d}, policy_{}, {}, {retry})",
+                    "{ok}, {v} = R.refine({d}, policy_{}, {}, {retry}{extra}{keep_arg})",
                     ident(&policy.name),
                     py_str(&policy.name)
                 ));
@@ -572,6 +733,8 @@ impl<'m> Gen<'m> {
                 self.indented(|g| {
                     let a = g.block(els)?;
                     g.line(format!("{t} = {a}"));
+                    // v1.0-RC8: o plano vem do `else`: `as` liga uma lista vazia
+                    g.line("R.last_dropped = []");
                     Ok(())
                 })?;
                 t
@@ -634,7 +797,23 @@ impl<'m> Gen<'m> {
                 r?;
                 "None".into()
             }
-            ExprKind::Quant { all, var, iter, body } => {
+            ExprKind::Quant { op: QuantOp::Sum, var, iter, body } => {
+                let it = self.expr(iter)?;
+                let t = self.assign("q", "0".into());
+                self.env.push(Vec::new());
+                let x = self.bind(&var.name);
+                self.line(format!("for {x} in R.iter_list({it}, True):"));
+                let r = self.indented(|g| {
+                    let a = g.expr(body)?;
+                    g.line(format!("{t} = R.binop(\"+\", {t}, R.sum_body({a}))"));
+                    Ok(())
+                });
+                self.env.pop();
+                r?;
+                t
+            }
+            ExprKind::Quant { op, var, iter, body } => {
+                let all = &(*op == QuantOp::All);
                 let it = self.expr(iter)?;
                 let t = self.assign("q", if *all { "True" } else { "False" }.into());
                 self.env.push(Vec::new());
@@ -659,6 +838,8 @@ impl<'m> Gen<'m> {
     }
 
     fn call(&mut self, callee: &Ident, args: &[Expr]) -> Result<String, String> {
+        // o sítio desta chamada, antes que os argumentos (que podem ter chamadas) o troquem
+        let site = self.site.take();
         match callee.name.as_str() {
             "fit" => {
                 let a = self.expr(&args[0])?;
@@ -676,10 +857,26 @@ impl<'m> Gen<'m> {
                 let a = self.expr(&args[0])?;
                 return Ok(self.assign("t", format!("R.len_({a})")));
             }
+            "text" => {
+                let a = self.expr(&args[0])?;
+                return Ok(self.assign("t", format!("R.text_({a})")));
+            }
+            "join" => {
+                let a = self.expr(&args[0])?;
+                let b = self.expr(&args[1])?;
+                return Ok(self.assign("t", format!("R.join_({a}, {b})")));
+            }
             _ => {}
         }
         if self.tools.contains(&callee.name) {
             let a = self.atoms(args)?;
+            let discharged = site.is_some_and(|s| self.ob.discharged(s));
+            if discharged {
+                return Ok(self.assign(
+                    "t",
+                    format!("R.call_tool({}, [{}], discharged=True)", py_str(&callee.name), a.join(", ")),
+                ));
+            }
             return Ok(self.assign("t", format!("R.call_tool({}, [{}])", py_str(&callee.name), a.join(", "))));
         }
         if self.policies.contains(&callee.name) {

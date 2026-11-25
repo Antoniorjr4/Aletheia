@@ -1,0 +1,20 @@
+{
+ "pack": "payments",
+ "lang": "py",
+ "rep": 3,
+ "model": "openai/gpt-oss-120b",
+ "clean": true,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.py",
+   "tok_in": 3127,
+   "tok_out": 5087,
+   "feedback": ""
+  }
+ ],
+ "tok_in": 3127,
+ "tok_out": 5087,
+ "seconds": 13.5,
+ "usd": 0.003521
+}

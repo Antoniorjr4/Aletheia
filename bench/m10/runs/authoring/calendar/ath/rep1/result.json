@@ -1,0 +1,20 @@
+{
+ "pack": "calendar",
+ "lang": "ath",
+ "rep": 1,
+ "model": "openai/gpt-oss-120b",
+ "clean": true,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.ath",
+   "tok_in": 3534,
+   "tok_out": 2507,
+   "feedback": ""
+  }
+ ],
+ "tok_in": 3534,
+ "tok_out": 2507,
+ "seconds": 5.9,
+ "usd": 0.002034
+}

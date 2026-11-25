@@ -1,0 +1,1142 @@
+[
+ {
+  "pacote": "calendar",
+  "rep": "rep2",
+  "versao": "v1.ath",
+  "erros_antes": 1,
+  "codigos_antes": [
+   "P0001"
+  ],
+  "erros_agora": 2,
+  "codigos_agora": [
+   "E0422",
+   "E0422"
+  ],
+  "categorias_agora": {
+   "garantia: política e integridade": 2
+  },
+  "corrigidos": [
+   "P0001"
+  ],
+  "remanescentes": [],
+  "revelados": [
+   "E0422"
+  ],
+  "compila": false,
+  "executa_corretamente": "não medido"
+ },
+ {
+  "pacote": "calendar",
+  "rep": "rep2",
+  "versao": "v2.ath",
+  "erros_antes": 1,
+  "codigos_antes": [
+   "P0001"
+  ],
+  "erros_agora": 2,
+  "codigos_agora": [
+   "E0422",
+   "E0422"
+  ],
+  "categorias_agora": {
+   "garantia: política e integridade": 2
+  },
+  "corrigidos": [
+   "P0001"
+  ],
+  "remanescentes": [],
+  "revelados": [
+   "E0422"
+  ],
+  "compila": false,
+  "executa_corretamente": "não medido"
+ },
+ {
+  "pacote": "calendar",
+  "rep": "rep2",
+  "versao": "v3.ath",
+  "erros_antes": 1,
+  "codigos_antes": [
+   "P0001"
+  ],
+  "erros_agora": 2,
+  "codigos_agora": [
+   "E0422",
+   "E0422"
+  ],
+  "categorias_agora": {
+   "garantia: política e integridade": 2
+  },
+  "corrigidos": [
+   "P0001"
+  ],
+  "remanescentes": [],
+  "revelados": [
+   "E0422"
+  ],
+  "compila": false,
+  "executa_corretamente": "não medido"
+ },
+ {
+  "pacote": "calendar",
+  "rep": "rep2",
+  "versao": "v4.ath",
+  "erros_antes": 1,
+  "codigos_antes": [
+   "P0001"
+  ],
+  "erros_agora": 2,
+  "codigos_agora": [
+   "E0422",
+   "E0422"
+  ],
+  "categorias_agora": {
+   "garantia: política e integridade": 2
+  },
+  "corrigidos": [
+   "P0001"
+  ],
+  "remanescentes": [],
+  "revelados": [
+   "E0422"
+  ],
+  "compila": false,
+  "executa_corretamente": "não medido"
+ },
+ {
+  "pacote": "calendar",
+  "rep": "rep2",
+  "versao": "v5.ath",
+  "erros_antes": 1,
+  "codigos_antes": [
+   "P0001"
+  ],
+  "erros_agora": 2,
+  "codigos_agora": [
+   "E0422",
+   "E0422"
+  ],
+  "categorias_agora": {
+   "garantia: política e integridade": 2
+  },
+  "corrigidos": [
+   "P0001"
+  ],
+  "remanescentes": [],
+  "revelados": [
+   "E0422"
+  ],
+  "compila": false,
+  "executa_corretamente": "não medido"
+ },
+ {
+  "pacote": "calendar",
+  "rep": "rep3",
+  "versao": "v1.ath",
+  "erros_antes": 1,
+  "codigos_antes": [
+   "P0001"
+  ],
+  "erros_agora": 1,
+  "codigos_agora": [
+   "P0001"
+  ],
+  "categorias_agora": {
+   "sintaxe": 1
+  },
+  "corrigidos": [],
+  "remanescentes": [
+   "P0001"
+  ],
+  "revelados": [],
+  "compila": false,
+  "executa_corretamente": "não medido"
+ },
+ {
+  "pacote": "calendar",
+  "rep": "rep3",
+  "versao": "v2.ath",
+  "erros_antes": 1,
+  "codigos_antes": [
+   "P0001"
+  ],
+  "erros_agora": 1,
+  "codigos_agora": [
+   "P0001"
+  ],
+  "categorias_agora": {
+   "sintaxe": 1
+  },
+  "corrigidos": [],
+  "remanescentes": [
+   "P0001"
+  ],
+  "revelados": [],
+  "compila": false,
+  "executa_corretamente": "não medido"
+ },
+ {
+  "pacote": "calendar",
+  "rep": "rep3",
+  "versao": "v3.ath",
+  "erros_antes": 1,
+  "codigos_antes": [
+   "P0001"
+  ],
+  "erros_agora": 1,
+  "codigos_agora": [
+   "P0001"
+  ],
+  "categorias_agora": {
+   "sintaxe": 1
+  },
+  "corrigidos": [],
+  "remanescentes": [
+   "P0001"
+  ],
+  "revelados": [],
+  "compila": false,
+  "executa_corretamente": "não medido"
+ },
+ {
+  "pacote": "calendar",
+  "rep": "rep3",
+  "versao": "v4.ath",
+  "erros_antes": 1,
+  "codigos_antes": [
+   "P0001"
+  ],
+  "erros_agora": 1,
+  "codigos_agora": [
+   "P0001"
+  ],
+  "categorias_agora": {
+   "sintaxe": 1
+  },
+  "corrigidos": [],
+  "remanescentes": [
+   "P0001"
+  ],
+  "revelados": [],
+  "compila": false,
+  "executa_corretamente": "não medido"
+ },
+ {
+  "pacote": "calendar",
+  "rep": "rep3",
+  "versao": "v5.ath",
+  "erros_antes": 1,
+  "codigos_antes": [
+   "P0001"
+  ],
+  "erros_agora": 1,
+  "codigos_agora": [
+   "P0001"
+  ],
+  "categorias_agora": {
+   "sintaxe": 1
+  },
+  "corrigidos": [],
+  "remanescentes": [
+   "P0001"
+  ],
+  "revelados": [],
+  "compila": false,
+  "executa_corretamente": "não medido"
+ },
+ {
+  "pacote": "code_repo",
+  "rep": "rep1",
+  "versao": "v1.ath",
+  "erros_antes": 1,
+  "codigos_antes": [
+   "B0110"
+  ],
+  "erros_agora": 1,
+  "codigos_agora": [
+   "B0110"
+  ],
+  "categorias_agora": {
+   "garantia: orçamento": 1
+  },
+  "corrigidos": [],
+  "remanescentes": [
+   "B0110"
+  ],
+  "revelados": [],
+  "compila": false,
+  "executa_corretamente": "não medido"
+ },
+ {
+  "pacote": "incidents",
+  "rep": "rep2",
+  "versao": "v1.ath",
+  "erros_antes": 1,
+  "codigos_antes": [
+   "B0110"
+  ],
+  "erros_agora": 1,
+  "codigos_agora": [
+   "B0110"
+  ],
+  "categorias_agora": {
+   "garantia: orçamento": 1
+  },
+  "corrigidos": [],
+  "remanescentes": [
+   "B0110"
+  ],
+  "revelados": [],
+  "compila": false,
+  "executa_corretamente": "não medido"
+ },
+ {
+  "pacote": "payments",
+  "rep": "rep1",
+  "versao": "v1.ath",
+  "erros_antes": 1,
+  "codigos_antes": [
+   "P0001"
+  ],
+  "erros_agora": 1,
+  "codigos_agora": [
+   "E0437"
+  ],
+  "categorias_agora": {
+   "garantia: política e integridade": 1
+  },
+  "corrigidos": [
+   "P0001"
+  ],
+  "remanescentes": [],
+  "revelados": [
+   "E0437"
+  ],
+  "compila": false,
+  "executa_corretamente": "não medido"
+ },
+ {
+  "pacote": "payments",
+  "rep": "rep1",
+  "versao": "v2.ath",
+  "erros_antes": 1,
+  "codigos_antes": [
+   "P0001"
+  ],
+  "erros_agora": 1,
+  "codigos_agora": [
+   "E0437"
+  ],
+  "categorias_agora": {
+   "garantia: política e integridade": 1
+  },
+  "corrigidos": [
+   "P0001"
+  ],
+  "remanescentes": [],
+  "revelados": [
+   "E0437"
+  ],
+  "compila": false,
+  "executa_corretamente": "não medido"
+ },
+ {
+  "pacote": "payments",
+  "rep": "rep1",
+  "versao": "v3.ath",
+  "erros_antes": 7,
+  "codigos_antes": [
+   "E0012",
+   "E0009",
+   "E0012",
+   "E0009",
+   "E0012",
+   "E0009",
+   "E0437"
+  ],
+  "erros_agora": 1,
+  "codigos_agora": [
+   "E0437"
+  ],
+  "categorias_agora": {
+   "garantia: política e integridade": 1
+  },
+  "corrigidos": [
+   "E0009",
+   "E0012"
+  ],
+  "remanescentes": [
+   "E0437"
+  ],
+  "revelados": [],
+  "compila": false,
+  "executa_corretamente": "não medido"
+ },
+ {
+  "pacote": "payments",
+  "rep": "rep1",
+  "versao": "v4.ath",
+  "erros_antes": 1,
+  "codigos_antes": [
+   "P0001"
+  ],
+  "erros_agora": 0,
+  "codigos_agora": [],
+  "categorias_agora": {},
+  "corrigidos": [
+   "P0001"
+  ],
+  "remanescentes": [],
+  "revelados": [],
+  "compila": true,
+  "executa_corretamente": "não medido",
+  "executavel": true,
+  "cenarios_ataque_violados": "0/5",
+  "seguro": true
+ },
+ {
+  "pacote": "payments",
+  "rep": "rep1",
+  "versao": "v5.ath",
+  "erros_antes": 9,
+  "codigos_antes": [
+   "E0010",
+   "E0010",
+   "E0010",
+   "E0010",
+   "E0010",
+   "E0010",
+   "E0010",
+   "E0010",
+   "E0010"
+  ],
+  "erros_agora": 0,
+  "codigos_agora": [],
+  "categorias_agora": {},
+  "corrigidos": [
+   "E0010"
+  ],
+  "remanescentes": [],
+  "revelados": [],
+  "compila": true,
+  "executa_corretamente": "não medido",
+  "executavel": true,
+  "cenarios_ataque_violados": "0/5",
+  "seguro": true
+ },
+ {
+  "pacote": "payments",
+  "rep": "rep3",
+  "versao": "v1.ath",
+  "erros_antes": 1,
+  "codigos_antes": [
+   "P0001"
+  ],
+  "erros_agora": 1,
+  "codigos_agora": [
+   "P0001"
+  ],
+  "categorias_agora": {
+   "sintaxe": 1
+  },
+  "corrigidos": [],
+  "remanescentes": [
+   "P0001"
+  ],
+  "revelados": [],
+  "compila": false,
+  "executa_corretamente": "não medido"
+ },
+ {
+  "pacote": "payments",
+  "rep": "rep3",
+  "versao": "v2.ath",
+  "erros_antes": 1,
+  "codigos_antes": [
+   "P0001"
+  ],
+  "erros_agora": 1,
+  "codigos_agora": [
+   "P0001"
+  ],
+  "categorias_agora": {
+   "sintaxe": 1
+  },
+  "corrigidos": [],
+  "remanescentes": [
+   "P0001"
+  ],
+  "revelados": [],
+  "compila": false,
+  "executa_corretamente": "não medido"
+ },
+ {
+  "pacote": "payments",
+  "rep": "rep3",
+  "versao": "v3.ath",
+  "erros_antes": 2,
+  "codigos_antes": [
+   "E0012",
+   "E0009"
+  ],
+  "erros_agora": 1,
+  "codigos_agora": [
+   "E0422"
+  ],
+  "categorias_agora": {
+   "garantia: política e integridade": 1
+  },
+  "corrigidos": [
+   "E0009",
+   "E0012"
+  ],
+  "remanescentes": [],
+  "revelados": [
+   "E0422"
+  ],
+  "compila": false,
+  "executa_corretamente": "não medido"
+ },
+ {
+  "pacote": "payments",
+  "rep": "rep3",
+  "versao": "v4.ath",
+  "erros_antes": 1,
+  "codigos_antes": [
+   "E0422"
+  ],
+  "erros_agora": 1,
+  "codigos_agora": [
+   "E0422"
+  ],
+  "categorias_agora": {
+   "garantia: política e integridade": 1
+  },
+  "corrigidos": [],
+  "remanescentes": [
+   "E0422"
+  ],
+  "revelados": [],
+  "compila": false,
+  "executa_corretamente": "não medido"
+ },
+ {
+  "pacote": "purchasing",
+  "rep": "rep1",
+  "versao": "v1.ath",
+  "erros_antes": 1,
+  "codigos_antes": [
+   "P0001"
+  ],
+  "erros_agora": 2,
+  "codigos_agora": [
+   "E0001",
+   "E0001"
+  ],
+  "categorias_agora": {
+   "nomes": 2
+  },
+  "corrigidos": [
+   "P0001"
+  ],
+  "remanescentes": [],
+  "revelados": [
+   "E0001"
+  ],
+  "compila": false,
+  "executa_corretamente": "não medido"
+ },
+ {
+  "pacote": "purchasing",
+  "rep": "rep1",
+  "versao": "v2.ath",
+  "erros_antes": 2,
+  "codigos_antes": [
+   "E0001",
+   "E0001"
+  ],
+  "erros_agora": 2,
+  "codigos_agora": [
+   "E0001",
+   "E0001"
+  ],
+  "categorias_agora": {
+   "nomes": 2
+  },
+  "corrigidos": [],
+  "remanescentes": [
+   "E0001"
+  ],
+  "revelados": [],
+  "compila": false,
+  "executa_corretamente": "não medido"
+ },
+ {
+  "pacote": "purchasing",
+  "rep": "rep3",
+  "versao": "v1.ath",
+  "erros_antes": 1,
+  "codigos_antes": [
+   "P0001"
+  ],
+  "erros_agora": 1,
+  "codigos_agora": [
+   "P0001"
+  ],
+  "categorias_agora": {
+   "sintaxe": 1
+  },
+  "corrigidos": [],
+  "remanescentes": [
+   "P0001"
+  ],
+  "revelados": [],
+  "compila": false,
+  "executa_corretamente": "não medido"
+ },
+ {
+  "pacote": "purchasing",
+  "rep": "rep3",
+  "versao": "v2.ath",
+  "erros_antes": 1,
+  "codigos_antes": [
+   "P0001"
+  ],
+  "erros_agora": 1,
+  "codigos_agora": [
+   "P0001"
+  ],
+  "categorias_agora": {
+   "sintaxe": 1
+  },
+  "corrigidos": [],
+  "remanescentes": [
+   "P0001"
+  ],
+  "revelados": [],
+  "compila": false,
+  "executa_corretamente": "não medido"
+ },
+ {
+  "pacote": "purchasing",
+  "rep": "rep3",
+  "versao": "v3.ath",
+  "erros_antes": 6,
+  "codigos_antes": [
+   "E0012",
+   "E0009",
+   "E0012",
+   "E0009",
+   "E0012",
+   "E0009"
+  ],
+  "erros_agora": 0,
+  "codigos_agora": [],
+  "categorias_agora": {},
+  "corrigidos": [
+   "E0009",
+   "E0012"
+  ],
+  "remanescentes": [],
+  "revelados": [],
+  "compila": true,
+  "executa_corretamente": "não medido",
+  "executavel": true,
+  "cenarios_ataque_violados": "0/4",
+  "seguro": true
+ },
+ {
+  "pacote": "purchasing",
+  "rep": "rep3",
+  "versao": "v4.ath",
+  "erros_antes": 1,
+  "codigos_antes": [
+   "P0001"
+  ],
+  "erros_agora": 1,
+  "codigos_agora": [
+   "P0001"
+  ],
+  "categorias_agora": {
+   "sintaxe": 1
+  },
+  "corrigidos": [],
+  "remanescentes": [
+   "P0001"
+  ],
+  "revelados": [],
+  "compila": false,
+  "executa_corretamente": "não medido"
+ },
+ {
+  "pacote": "refunds",
+  "rep": "rep3",
+  "versao": "v1.ath",
+  "erros_antes": 1,
+  "codigos_antes": [
+   "P0001"
+  ],
+  "erros_agora": 1,
+  "codigos_agora": [
+   "P0001"
+  ],
+  "categorias_agora": {
+   "sintaxe": 1
+  },
+  "corrigidos": [],
+  "remanescentes": [
+   "P0001"
+  ],
+  "revelados": [],
+  "compila": false,
+  "executa_corretamente": "não medido"
+ },
+ {
+  "pacote": "refunds",
+  "rep": "rep3",
+  "versao": "v2.ath",
+  "erros_antes": 1,
+  "codigos_antes": [
+   "P0001"
+  ],
+  "erros_agora": 7,
+  "codigos_agora": [
+   "E0002",
+   "E0002",
+   "E0002",
+   "E0001",
+   "E0008",
+   "E0008",
+   "E0008"
+  ],
+  "categorias_agora": {
+   "nomes": 4,
+   "tipos": 3
+  },
+  "corrigidos": [
+   "P0001"
+  ],
+  "remanescentes": [],
+  "revelados": [
+   "E0001",
+   "E0002",
+   "E0008"
+  ],
+  "compila": false,
+  "executa_corretamente": "não medido"
+ },
+ {
+  "pacote": "refunds",
+  "rep": "rep3",
+  "versao": "v3.ath",
+  "erros_antes": 7,
+  "codigos_antes": [
+   "E0002",
+   "E0002",
+   "E0002",
+   "E0001",
+   "E0008",
+   "E0008",
+   "E0008"
+  ],
+  "erros_agora": 7,
+  "codigos_agora": [
+   "E0002",
+   "E0002",
+   "E0002",
+   "E0001",
+   "E0008",
+   "E0008",
+   "E0008"
+  ],
+  "categorias_agora": {
+   "nomes": 4,
+   "tipos": 3
+  },
+  "corrigidos": [],
+  "remanescentes": [
+   "E0001",
+   "E0002",
+   "E0008"
+  ],
+  "revelados": [],
+  "compila": false,
+  "executa_corretamente": "não medido"
+ },
+ {
+  "pacote": "refunds",
+  "rep": "rep3",
+  "versao": "v4.ath",
+  "erros_antes": 1,
+  "codigos_antes": [
+   "E0001"
+  ],
+  "erros_agora": 1,
+  "codigos_agora": [
+   "E0001"
+  ],
+  "categorias_agora": {
+   "nomes": 1
+  },
+  "corrigidos": [],
+  "remanescentes": [
+   "E0001"
+  ],
+  "revelados": [],
+  "compila": false,
+  "executa_corretamente": "não medido"
+ },
+ {
+  "pacote": "refunds",
+  "rep": "rep3",
+  "versao": "v5.ath",
+  "erros_antes": 1,
+  "codigos_antes": [
+   "E0001"
+  ],
+  "erros_agora": 1,
+  "codigos_agora": [
+   "E0001"
+  ],
+  "categorias_agora": {
+   "nomes": 1
+  },
+  "corrigidos": [],
+  "remanescentes": [
+   "E0001"
+  ],
+  "revelados": [],
+  "compila": false,
+  "executa_corretamente": "não medido"
+ },
+ {
+  "pacote": "site_publish",
+  "rep": "rep1",
+  "versao": "v1.ath",
+  "erros_antes": 1,
+  "codigos_antes": [
+   "P0001"
+  ],
+  "erros_agora": 4,
+  "codigos_agora": [
+   "E0012",
+   "E0012",
+   "E0012",
+   "E0012"
+  ],
+  "categorias_agora": {
+   "exaustividade": 4
+  },
+  "corrigidos": [
+   "P0001"
+  ],
+  "remanescentes": [],
+  "revelados": [
+   "E0012"
+  ],
+  "compila": false,
+  "executa_corretamente": "não medido"
+ },
+ {
+  "pacote": "site_publish",
+  "rep": "rep1",
+  "versao": "v2.ath",
+  "erros_antes": 1,
+  "codigos_antes": [
+   "P0001"
+  ],
+  "erros_agora": 0,
+  "codigos_agora": [],
+  "categorias_agora": {},
+  "corrigidos": [
+   "P0001"
+  ],
+  "remanescentes": [],
+  "revelados": [],
+  "compila": true,
+  "executa_corretamente": "não medido",
+  "executavel": true,
+  "cenarios_ataque_violados": "0/4",
+  "seguro": true
+ },
+ {
+  "pacote": "site_publish",
+  "rep": "rep2",
+  "versao": "v1.ath",
+  "erros_antes": 1,
+  "codigos_antes": [
+   "P0001"
+  ],
+  "erros_agora": 1,
+  "codigos_agora": [
+   "E0422"
+  ],
+  "categorias_agora": {
+   "garantia: política e integridade": 1
+  },
+  "corrigidos": [
+   "P0001"
+  ],
+  "remanescentes": [],
+  "revelados": [
+   "E0422"
+  ],
+  "compila": false,
+  "executa_corretamente": "não medido"
+ },
+ {
+  "pacote": "site_publish",
+  "rep": "rep2",
+  "versao": "v2.ath",
+  "erros_antes": 1,
+  "codigos_antes": [
+   "P0001"
+  ],
+  "erros_agora": 0,
+  "codigos_agora": [],
+  "categorias_agora": {},
+  "corrigidos": [
+   "P0001"
+  ],
+  "remanescentes": [],
+  "revelados": [],
+  "compila": true,
+  "executa_corretamente": "não medido",
+  "executavel": true,
+  "cenarios_ataque_violados": "0/4",
+  "seguro": true
+ },
+ {
+  "pacote": "site_publish",
+  "rep": "rep2",
+  "versao": "v3.ath",
+  "erros_antes": 1,
+  "codigos_antes": [
+   "P0001"
+  ],
+  "erros_agora": 1,
+  "codigos_agora": [
+   "E0422"
+  ],
+  "categorias_agora": {
+   "garantia: política e integridade": 1
+  },
+  "corrigidos": [
+   "P0001"
+  ],
+  "remanescentes": [],
+  "revelados": [
+   "E0422"
+  ],
+  "compila": false,
+  "executa_corretamente": "não medido"
+ },
+ {
+  "pacote": "site_publish",
+  "rep": "rep3",
+  "versao": "v1.ath",
+  "erros_antes": 1,
+  "codigos_antes": [
+   "P0001"
+  ],
+  "erros_agora": 1,
+  "codigos_agora": [
+   "P0001"
+  ],
+  "categorias_agora": {
+   "sintaxe": 1
+  },
+  "corrigidos": [],
+  "remanescentes": [
+   "P0001"
+  ],
+  "revelados": [],
+  "compila": false,
+  "executa_corretamente": "não medido"
+ },
+ {
+  "pacote": "support_email",
+  "rep": "rep1",
+  "versao": "v1.ath",
+  "erros_antes": 1,
+  "codigos_antes": [
+   "P0001"
+  ],
+  "erros_agora": 1,
+  "codigos_agora": [
+   "P0001"
+  ],
+  "categorias_agora": {
+   "sintaxe": 1
+  },
+  "corrigidos": [],
+  "remanescentes": [
+   "P0001"
+  ],
+  "revelados": [],
+  "compila": false,
+  "executa_corretamente": "não medido"
+ },
+ {
+  "pacote": "support_email",
+  "rep": "rep1",
+  "versao": "v2.ath",
+  "erros_antes": 1,
+  "codigos_antes": [
+   "P0001"
+  ],
+  "erros_agora": 1,
+  "codigos_agora": [
+   "P0001"
+  ],
+  "categorias_agora": {
+   "sintaxe": 1
+  },
+  "corrigidos": [],
+  "remanescentes": [
+   "P0001"
+  ],
+  "revelados": [],
+  "compila": false,
+  "executa_corretamente": "não medido"
+ },
+ {
+  "pacote": "support_email",
+  "rep": "rep1",
+  "versao": "v3.ath",
+  "erros_antes": 1,
+  "codigos_antes": [
+   "P0001"
+  ],
+  "erros_agora": 6,
+  "codigos_agora": [
+   "E0002",
+   "E0002",
+   "E0002",
+   "E0008",
+   "E0008",
+   "E0008"
+  ],
+  "categorias_agora": {
+   "nomes": 3,
+   "tipos": 3
+  },
+  "corrigidos": [
+   "P0001"
+  ],
+  "remanescentes": [],
+  "revelados": [
+   "E0002",
+   "E0008"
+  ],
+  "compila": false,
+  "executa_corretamente": "não medido"
+ },
+ {
+  "pacote": "support_email",
+  "rep": "rep1",
+  "versao": "v4.ath",
+  "erros_antes": 6,
+  "codigos_antes": [
+   "E0002",
+   "E0002",
+   "E0002",
+   "E0008",
+   "E0008",
+   "E0008"
+  ],
+  "erros_agora": 6,
+  "codigos_agora": [
+   "E0002",
+   "E0002",
+   "E0002",
+   "E0008",
+   "E0008",
+   "E0008"
+  ],
+  "categorias_agora": {
+   "nomes": 3,
+   "tipos": 3
+  },
+  "corrigidos": [],
+  "remanescentes": [
+   "E0002",
+   "E0008"
+  ],
+  "revelados": [],
+  "compila": false,
+  "executa_corretamente": "não medido"
+ },
+ {
+  "pacote": "support_email",
+  "rep": "rep1",
+  "versao": "v5.ath",
+  "erros_antes": 2,
+  "codigos_antes": [
+   "E0500",
+   "E0500"
+  ],
+  "erros_agora": 2,
+  "codigos_agora": [
+   "E0500",
+   "E0500"
+  ],
+  "categorias_agora": {
+   "garantia: efeitos e capacidades": 2
+  },
+  "corrigidos": [],
+  "remanescentes": [
+   "E0500"
+  ],
+  "revelados": [],
+  "compila": false,
+  "executa_corretamente": "não medido"
+ },
+ {
+  "pacote": "support_email",
+  "rep": "rep2",
+  "versao": "v1.ath",
+  "erros_antes": 1,
+  "codigos_antes": [
+   "E0008"
+  ],
+  "erros_agora": 0,
+  "codigos_agora": [],
+  "categorias_agora": {},
+  "corrigidos": [
+   "E0008"
+  ],
+  "remanescentes": [],
+  "revelados": [],
+  "compila": true,
+  "executa_corretamente": "não medido",
+  "executavel": true,
+  "cenarios_ataque_violados": "0/4",
+  "seguro": true
+ },
+ {
+  "pacote": "support_email",
+  "rep": "rep2",
+  "versao": "v2.ath",
+  "erros_antes": 1,
+  "codigos_antes": [
+   "P0001"
+  ],
+  "erros_agora": 1,
+  "codigos_agora": [
+   "E0423"
+  ],
+  "categorias_agora": {
+   "garantia: política e integridade": 1
+  },
+  "corrigidos": [
+   "P0001"
+  ],
+  "remanescentes": [],
+  "revelados": [
+   "E0423"
+  ],
+  "compila": false,
+  "executa_corretamente": "não medido"
+ }
+]

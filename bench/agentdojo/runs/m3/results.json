@@ -1,0 +1,211 @@
+[
+ {
+  "change": "C1",
+  "side": "A",
+  "files_touched": 2,
+  "files": [
+   "bench/agentdojo/aletheia_pipeline.py",
+   "bench/agentdojo/banking_v2_keeping.ath"
+  ],
+  "lines_added": 18,
+  "lines_removed": 3,
+  "test_lines_changed": 0,
+  "notes": "Refund variant + SafeWrite arm (s.member senders && s.within refund_cap) + executor arm + senders/refund_cap passed to both plan prompts; host adds senders and refund_cap inventories. Cap needs a host inventory: policies have no decimal comparison on Text except s.within.",
+  "incomplete": {
+   "omitted": "policy rule for Refund",
+   "detected_by": "static",
+   "how": "athc E0012 non-exhaustive match in SafeWrite"
+  }
+ },
+ {
+  "change": "C1",
+  "side": "P",
+  "files_touched": 1,
+  "files": [
+   "bench/agentdojo/hardened/banking_hardened.py"
+  ],
+  "lines_added": 27,
+  "lines_removed": 7,
+  "test_lines_changed": 0,
+  "notes": "Refund pydantic class, union member, EFFECT_CAP entry, safe_write branch (Decimal cap), commit dispatch, inventory copy + prompt fields. Inventories kept identical to the A host because test_inventories_equal_the_aletheia_host checks parity.",
+  "incomplete": {
+   "omitted": "policy rule for Refund (and its Decimal import)",
+   "detected_by": "undetected",
+   "how": "safe_write falls through to fail-closed `return False`: refunds silently refused. Only new diagnostic is ruff SIM103 (style: 'return the condition directly'), incidental and not pointing at the bug; tests pass"
+  }
+ },
+ {
+  "change": "C2",
+  "side": "A",
+  "files_touched": 2,
+  "files": [
+   "bench/agentdojo/aletheia_pipeline.py",
+   "bench/agentdojo/banking_v2_keeping.ath"
+  ],
+  "lines_added": 3,
+  "lines_removed": 11,
+  "test_lines_changed": 2,
+  "notes": "Host-only change (payees = IBANs in request); comment updated. Obedient legit utility 14->13, obediente 125->117 (expected). Test changed: test_pipeline asserted SE355... (history payee) in payees -> assertNotIn.",
+  "incomplete": {
+   "omitted": "removal of scheduled-transaction recipients (only history removed)",
+   "detected_by": "tests",
+   "how": "updated test_pipeline inventory assertion (SE355 is also a scheduled recipient); also the cross-impl parity test in test_hardened"
+  }
+ },
+ {
+  "change": "C2",
+  "side": "P",
+  "files_touched": 1,
+  "files": [
+   "bench/agentdojo/hardened/banking_hardened.py"
+  ],
+  "lines_added": 1,
+  "lines_removed": 6,
+  "test_lines_changed": 4,
+  "notes": "Same edit in P's inventory copy. Test changed: obedient expected utility keeping 125->117, legit 14->13 (strict stays 45).",
+  "incomplete": {
+   "omitted": "removal of scheduled-transaction recipients",
+   "detected_by": "tests",
+   "how": "test_p1_matches_the_aletheia_pair_under_the_obedient_model (expected 117) and parity test"
+  }
+ },
+ {
+  "change": "C3",
+  "side": "A",
+  "files_touched": 2,
+  "files": [
+   "bench/agentdojo/aletheia_pipeline.py",
+   "bench/agentdojo/banking_v2_keeping.ath"
+  ],
+  "lines_added": 14,
+  "lines_removed": 6,
+  "test_lines_changed": 0,
+  "notes": "BLOCKED constant + inventory in host; `&& not s.member(\"blocked\", r)` on Send/Schedule/Retarget; blocked passed to both plan prompts; prompt text.",
+  "incomplete": {
+   "omitted": "blocked check on Retarget",
+   "detected_by": "undetected",
+   "how": "athc OK, tests OK. Extra: omitting blocked from the prompt IS static in A (E0421: a policy reads an inventory the infer prompt does not receive); in P that omission is undetected"
+  }
+ },
+ {
+  "change": "C3",
+  "side": "P",
+  "files_touched": 1,
+  "files": [
+   "bench/agentdojo/hardened/banking_hardened.py"
+  ],
+  "lines_added": 10,
+  "lines_removed": 4,
+  "test_lines_changed": 0,
+  "notes": "BLOCKED constant + inventory copy, safe_write conditions, prompt field + text.",
+  "incomplete": {
+   "omitted": "blocked check on Retarget",
+   "detected_by": "undetected",
+   "how": "no new ruff/mypy diagnostics, tests OK"
+  }
+ },
+ {
+  "change": "C4",
+  "side": "A",
+  "files_touched": 1,
+  "files": [
+   "bench/agentdojo/banking_v2_keeping.ath"
+  ],
+  "lines_added": 4,
+  "lines_removed": 14,
+  "test_lines_changed": 0,
+  "notes": "Budget line changed; athc E6 then rejects (worst path 36,826 tok > 20,000). To fit: read refine retry 2->1 and removed the second plan inference (`again`) fallback; worst path now 18,429 tok / US$0.0044. Behavioural cost: no second plan proposal after a decode failure.",
+  "incomplete": {
+   "omitted": "adjusting retries/inferences so the static worst case fits (caps changed only)",
+   "detected_by": "static",
+   "how": "athc B0201 budget exceeded, worst case 36,826 tok. (Forgetting only the USD cap is undetected on both sides.)"
+  }
+ },
+ {
+  "change": "C4",
+  "side": "P",
+  "files_touched": 1,
+  "files": [
+   "bench/agentdojo/hardened/banking_hardened.py"
+  ],
+  "lines_added": 3,
+  "lines_removed": 3,
+  "test_lines_changed": 0,
+  "notes": "Meter defaults 60_000/0.05 -> 20_000/0.02 + docstring. P's mechanism is a runtime meter (pre-call estimate + abort); no structural change needed; simulated worst realistic path incl. both retries ~15.2k tok. No static worst-case guarantee.",
+  "incomplete": {
+   "omitted": "adjusting retries/inferences (caps changed only)",
+   "detected_by": "not_applicable",
+   "how": "caps-only IS P's complete change; an over-budget run aborts at runtime with BudgetExceeded. Forgetting only the USD cap: undetected"
+  }
+ },
+ {
+  "change": "C5",
+  "side": "A",
+  "files_touched": 1,
+  "files": [
+   "bench/agentdojo/banking_v2_keeping.ath"
+  ],
+  "lines_added": 3,
+  "lines_removed": 5,
+  "test_lines_changed": 0,
+  "notes": "Removed `keeping writes by SafeWrite as fora` and the dropped-count suffix; header comment. Obedient obediente utility 125->45 (= P strict baseline).",
+  "incomplete": {
+   "omitted": "the answer suffix that uses the dropped list `fora`",
+   "detected_by": "static",
+   "how": "athc E0001 unknown variable `fora`"
+  }
+ },
+ {
+  "change": "C5",
+  "side": "P",
+  "files_touched": 2,
+  "files": [
+   "bench/agentdojo/hardened/agentdojo_adapter.py",
+   "bench/agentdojo/hardened/banking_hardened.py"
+  ],
+  "lines_added": 2,
+  "lines_removed": 2,
+  "test_lines_changed": 0,
+  "notes": "Default mode 'keeping'->'strict' in HardenedBanker and HardenedAgent (P was already parametric). Callers (run.py, obedient --impl hardened-keeping) still select the mode explicitly, so the requested obedient command still runs keeping.",
+  "incomplete": {
+   "omitted": "the dropped-ops answer suffix",
+   "detected_by": "not_applicable",
+   "how": "left in place it is dead but harmless code in strict mode (not a defect). Forgetting the adapter default instead is undetected"
+  }
+ },
+ {
+  "change": "C6",
+  "side": "A",
+  "files_touched": 2,
+  "files": [
+   "bench/agentdojo/aletheia_pipeline.py",
+   "bench/agentdojo/banking_v2_keeping.ath"
+  ],
+  "lines_added": 7,
+  "lines_removed": 2,
+  "test_lines_changed": 0,
+  "notes": "Host `keywords` inventory (['password'] if 'password' in request.lower()); policy `&& s.member(\"keywords\",\"password\")`. Language has no lowercase/substring builtin, so this must go through the host; E0421 also forced passing keywords to both plan prompts.",
+  "incomplete": {
+   "omitted": "case-insensitivity (.lower())",
+   "detected_by": "undetected",
+   "how": "athc OK, tests OK"
+  }
+ },
+ {
+  "change": "C6",
+  "side": "P",
+  "files_touched": 1,
+  "files": [
+   "bench/agentdojo/hardened/banking_hardened.py"
+  ],
+  "lines_added": 2,
+  "lines_removed": 1,
+  "test_lines_changed": 0,
+  "notes": "Same inventory key (parity) + one condition in safe_write; not shown in prompt (not required).",
+  "incomplete": {
+   "omitted": "case-insensitivity (.lower())",
+   "detected_by": "undetected",
+   "how": "no new diagnostics, tests OK"
+  }
+ }
+]

@@ -1,0 +1,48 @@
+{
+ "pack": "incidents",
+ "lang": "py",
+ "rep": 1,
+ "model": "openai/gpt-oss-120b",
+ "clean": true,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.py",
+   "tok_in": 3109,
+   "tok_out": 3407,
+   "feedback": "static tools:\nmypy:\nv1.py:91: error: Unsupported operand types for <= (\"int\" and \"None\")  [operator]\nv1.py:91: note: Right operand is of type \"Any | None\"\nv1.py:91: error: Unsupported operand types for >= (\"int\" and \"None\")  [operator]\nv1.py:91: note: Left operand is of type \"Any | None\"\nv1.py:112: error: Unsupported operand types for < (\"int\" and \"None\")  [operator]\nv1.py:112: note: Right operand is of type \"Any | None\"\nv1.py:112: error: Unsupported operand types for >= (\"int\" and \"None\")  [operator]\nv1.py:112: note: Left operand is of type \"Any | None\""
+  },
+  {
+   "cycle": 2,
+   "file": "v2.py",
+   "tok_in": 5927,
+   "tok_out": 3199,
+   "feedback": "static tools:\nmypy:\nv2.py:99: error: Unsupported operand types for <= (\"int\" and \"None\")  [operator]\nv2.py:99: note: Right operand is of type \"Any | None\"\nv2.py:99: error: Unsupported operand types for >= (\"int\" and \"None\")  [operator]\nv2.py:99: note: Left operand is of type \"Any | None\"\nv2.py:120: error: Unsupported operand types for < (\"int\" and \"None\")  [operator]\nv2.py:120: note: Right operand is of type \"Any | None\"\nv2.py:120: error: Unsupported operand types for >= (\"int\" and \"None\")  [operator]\nv2.py:120: note: Left operand is of type \"Any | None\""
+  },
+  {
+   "cycle": 3,
+   "file": "v3.py",
+   "tok_in": 8787,
+   "tok_out": 3406,
+   "feedback": "static tools:\nmypy:\nv3.py:101: error: Unsupported operand types for <= (\"int\" and \"None\")  [operator]\nv3.py:101: note: Right operand is of type \"Any | None\"\nv3.py:101: error: Unsupported operand types for >= (\"int\" and \"None\")  [operator]\nv3.py:101: note: Left operand is of type \"Any | None\"\nv3.py:122: error: Unsupported operand types for < (\"int\" and \"None\")  [operator]\nv3.py:122: note: Right operand is of type \"Any | None\"\nv3.py:122: error: Unsupported operand types for >= (\"int\" and \"None\")  [operator]\nv3.py:122: note: Left operand is of type \"Any | None\""
+  },
+  {
+   "cycle": 4,
+   "file": "v4.py",
+   "tok_in": 11649,
+   "tok_out": 2830,
+   "feedback": "static tools:\nmypy:\nv4.py:95: error: Unsupported operand types for <= (\"int\" and \"None\")  [operator]\nv4.py:95: note: Right operand is of type \"Any | None\"\nv4.py:95: error: Unsupported operand types for >= (\"int\" and \"None\")  [operator]\nv4.py:95: note: Left operand is of type \"Any | None\"\nv4.py:114: error: Unsupported operand types for < (\"int\" and \"None\")  [operator]\nv4.py:114: note: Right operand is of type \"Any | None\"\nv4.py:114: error: Unsupported operand types for >= (\"int\" and \"None\")  [operator]\nv4.py:114: note: Left operand is of type \"Any | None\""
+  },
+  {
+   "cycle": 5,
+   "file": "v5.py",
+   "tok_in": 14304,
+   "tok_out": 3267,
+   "feedback": ""
+  }
+ ],
+ "tok_in": 43776,
+ "tok_out": 16109,
+ "seconds": 45.1,
+ "usd": 0.016232
+}

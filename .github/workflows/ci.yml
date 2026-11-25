@@ -45,6 +45,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # o compilador histórico (scripts/historico.sh) é construído de um commit anterior
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-python@v5
@@ -53,10 +55,122 @@ jobs:
       - name: athc e o pacote oficial
         run: |
           cargo build --release --bin athc
-          ./target/release/athc check bench/agentdojo/banking.ath
+          ./target/release/athc check bench/agentdojo/banking_v2_strict.ath
+          ./target/release/athc check bench/agentdojo/banking_v2_keeping.ath
+          ./target/release/athc check bench/agentdojo/banking_v3_keeping.ath
+          ./target/release/athc check bench/agentdojo/slack.ath
+          ./target/release/athc check bench/agentdojo/slack_v2.ath
           python3 -m pip install --quiet "agentdojo==0.1.35"
+      # Ciclo 1: os programas medidos antes das correções (D1) são verificados com o compilador
+      # com que foram medidos; o corrigido os recusa (E0421 transitiva), e isso também é conferido.
+      - name: compilador histórico (evidências anteriores ao ciclo 1)
+        run: |
+          ATHC_HIST=$(scripts/historico.sh replay)
+          echo "ATHC_HIST=$ATHC_HIST" >> "$GITHUB_ENV"
+          "$ATHC_HIST" check bench/agentdojo/banking.ath
+          if ./target/release/athc check bench/agentdojo/banking.ath > /tmp/d1.txt 2>&1; then
+            echo "o compilador corrigido deveria recusar banking.ath (D1)"; exit 1
+          fi
+          grep -q "E0421" /tmp/d1.txt
       - name: testes da ponte (suíte banking v1.2.2)
         run: python3 -m unittest discover -s bench/agentdojo/tests -v
+      - name: M10, executor comum e avaliador (offline)
+        run: |
+          python3 -m pip install --quiet "jsonschema>=4" "openai>=1.50" "ruff==0.8.4" "mypy==1.13.0"
+          python3 -m unittest discover -s bench/m10/tests -v
+          for p in bench/m10/packs_v2/*/; do python3 bench/m10/harness.py validate --pack "$p"; done
+      # Eixo II (Rev11): o oráculo comprometido, separado do benchmark oficial. Falha se uma
+      # ação proibida produzir efeito, se um controle legítimo for recusado ou se um resíduo
+      # documentado mudar de comportamento.
+      - name: matriz adversarial (oráculo comprometido, offline)
+        run: python3 bench/adversarial/harness.py --athc "$ATHC_HIST" --out /tmp/adversarial
+      # Rev12 (M4): os contratos `requires` contra o mesmo oráculo, com a política oficial e com
+      # a que aceita tudo (RS1). Falha se um efeito proibido acontecer ou um controle for recusado.
+      - name: contratos de autorização (oráculo comprometido, offline)
+        run: python3 bench/adversarial/harness.py --contracts --athc "$ATHC_HIST" --out /tmp/adversarial
+      # v1.0-RC1: autorização por concessão. Sugestão ≠ concessão (sem produto cartesiano),
+      # delegação ≠ endosso, uma concessão vale um efeito. Sem chamada paga.
+      - name: concessões (oráculo comprometido, offline)
+        run: python3 bench/adversarial/harness.py --grants --athc "$ATHC_HIST" --out /tmp/adversarial
+
+  rc-smoke:
+    # v1.0-RC1 ponta a ponta: o programa examples/rc1/treasury.ath contra o serviço local
+    # (SQLite), com SIGKILL real e `athc recover` em outro processo. Modelo roteirizado; nenhuma
+    # chamada paga, nenhum segredo.
+    name: v1.0-RC1 (ponta a ponta, SIGKILL e recuperação)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: scripts/rc-smoke.sh
+        run: NO_COLOR=1 scripts/rc-smoke.sh
+      # v1.0-RC2: a fronteira entre autorização, persistência e efeito. SIGKILL entre a
+      # autorização e a intenção, quatro processos disputando as mesmas concessões, um executor
+      # por WAL, e concessões / fotografia / pedido sem a assinatura da autoridade declarada.
+      - name: scripts/rc2-smoke.sh
+        run: NO_COLOR=1 scripts/rc2-smoke.sh
+      # v1.0-RC3: autoridade durável. Registro de consumo encadeado e ancorado (retrocesso,
+      # bifurcação e adulteração recusados, inclusive na recuperação), SIGKILL entre o consumo e
+      # a âncora, e fontes de autoridade com programa, execução e prazo.
+      - name: scripts/rc3-smoke.sh
+        run: NO_COLOR=1 scripts/rc3-smoke.sh
+      # v1.0-RC4: autoridade temporal e ciclo de vida verificado. Tempo autenticado (relógio
+      # local manipulado, repetição, retrocesso, atraso, congelamento), revalidação na fronteira,
+      # desfechos ancorados com recibo, liberação da operação provadamente não enviada, e o
+      # limite do provedor opaco preservado.
+      - name: scripts/rc4-smoke.sh
+        run: NO_COLOR=1 scripts/rc4-smoke.sh
+      # v1.0-RC5: o agente inteiro na linguagem. As ferramentas ligadas por `bind` a uma API
+      # REST com token (segredo por referência, fora de todo arquivo), o monitor de tipo na
+      # fronteira, e `athc resume` depois de SIGKILL (inclusive com a retomada morta de novo).
+      - name: scripts/rc5-smoke.sh
+        run: NO_COLOR=1 scripts/rc5-smoke.sh
+      # v1.0-RC7: execução parcial sob política (`keeping`), sem rede, contra a face /gh/issues
+      - name: scripts/rc7-smoke.sh
+        run: NO_COLOR=1 scripts/rc7-smoke.sh
+      # v1.0-RC8: o resumo composto pelo programa a partir do que foi feito, sem rede
+      - name: scripts/rc8-smoke.sh
+        run: NO_COLOR=1 scripts/rc8-smoke.sh
+      # v1.0-RC9: ferramentas de um servidor MCP (a face do ath-world, com os esquemas reais do
+      # servidor do GitHub e modos hostis), sem rede
+      - name: scripts/rc9-smoke.sh
+        run: NO_COLOR=1 scripts/rc9-smoke.sh
+      # v1.0-RC10: confidencialidade — o fluxo tóxico barrado por tipo, sem rede
+      - name: scripts/rc10-smoke.sh
+        run: NO_COLOR=1 scripts/rc10-smoke.sh
+
+  github-sandbox:
+    # v1.0-RC6: uma tarefa útil contra uma API independente. examples/rc6/triage.ath lê issues,
+    # comenta e abre um resumo no repositório de sandbox, pela API REST do GitHub (HTTPS), com
+    # SIGKILL e `athc resume`. O GitHub ignora Idempotency-Key: a chave viaja como marcador e a
+    # operação é achada por ele. O ÚNICO job com segredo: um token restrito às issues do
+    # sandbox. Sem ele (PR de um fork), o job é pulado. Modelo roteirizado; nenhuma chamada paga.
+    name: v1.0-RC6 (API independente, GitHub sandbox)
+    runs-on: ubuntu-latest
+    concurrency:
+      group: github-sandbox
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ secrets.SANDBOX_GITHUB_TOKEN }}
+      SANDBOX_REPO: ${{ github.repository_owner }}/aletheia-sandbox
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: scripts/rc6-github.sh
+        run: |
+          if [ -z "$GH_TOKEN" ]; then echo "sem SANDBOX_GITHUB_TOKEN: pulado"; exit 0; fi
+          NO_COLOR=1 scripts/rc6-github.sh
+      # v1.0-RC9: a mesma triagem pelo servidor MCP OFICIAL do GitHub (o binário publicado,
+      # versão fixada e soma conferida), por stdio. O download do servidor usa o token do
+      # workflow; o token do sandbox vai só para o ambiente do processo do servidor.
+      - name: scripts/rc9-github-mcp.sh
+        env:
+          GITHUB_TOKEN_DOWNLOAD: ${{ github.token }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then echo "sem SANDBOX_GITHUB_TOKEN: pulado"; exit 0; fi
+          NO_COLOR=1 scripts/rc9-github-mcp.sh
 
   lean:
     # O núcleo λ_Ath mecanizado: T1 (preservação e progresso, com capacidades lineares e
@@ -92,9 +206,11 @@ jobs:
 
   tripod:
     # O tripé diferencial: para programas gerados do núcleo λ_Ath (bem tipados e lineares, com
-    # e sem sagas) e para a injeção da Groq de Examples.lean, o avaliador do Lean (o `eval` dos
-    # teoremas), o ARX (Rust) e o aletheia_runtime (Python) produzem o mesmo journal do núcleo,
-    # byte a byte, inclusive as falhas de pós-condição, as compensações e as sondas.
+    # e sem sagas, com e sem chamadas com chave) e para a injeção da Groq de Examples.lean, o
+    # avaliador do Lean (o `eval` dos teoremas), o ARX (Rust) e o aletheia_runtime (Python)
+    # produzem o mesmo journal do núcleo, byte a byte, inclusive as falhas de pós-condição, as
+    # compensações e as sondas. Com chaves, Lean × ARX coincidem módulo a renomeação bijetiva
+    # das chaves, e os testes de mutação conferem que a normalização não esconde defeito.
     # Aqui a ausência do binário do Lean é falha (ATH_REQUIRE_LEAN).
     name: tripé diferencial (Lean × ARX × Python)
     runs-on: ubuntu-latest
@@ -114,7 +230,7 @@ jobs:
         run: |
           chmod +x lean-bin/ath-lean-eval
           ATH_LEAN_EVAL="$PWD/lean-bin/ath-lean-eval" ATH_REQUIRE_LEAN=1 ATH_TRIPOD_N=400 ATH_SAGA_N=400 \
-            cargo test -p athc --test differential -- --nocapture
+            ATH_KEYED_N=600 ATH_MUTANT_N=200 cargo test -p athc --test differential -- --nocapture
 
   m1:
     name: métrica M1 (injeção de prompt)

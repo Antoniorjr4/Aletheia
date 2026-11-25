@@ -1,0 +1,27 @@
+{
+ "pack": "purchasing",
+ "lang": "py",
+ "rep": 3,
+ "model": "openai/gpt-oss-120b",
+ "clean": true,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.py",
+   "tok_in": 3000,
+   "tok_out": 4455,
+   "feedback": "static tools:\nmypy:\nv1.py:78: error: Unsupported operand types for < (\"int\" and \"None\")  [operator]\nv1.py:78: note: Left operand is of type \"Any | None\"\nv1.py:102: error: Unsupported operand types for < (\"int\" and \"None\")  [operator]\nv1.py:102: note: Left operand is of type \"Any | None\""
+  },
+  {
+   "cycle": 2,
+   "file": "v2.py",
+   "tok_in": 5658,
+   "tok_out": 2995,
+   "feedback": ""
+  }
+ ],
+ "tok_in": 8658,
+ "tok_out": 7450,
+ "seconds": 19.4,
+ "usd": 0.005769
+}

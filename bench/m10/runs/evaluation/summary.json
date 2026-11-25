@@ -1,0 +1,82 @@
+{
+ "seeds": 30,
+ "real": true,
+ "langs": {
+  "ath": {
+   "n": 24,
+   "A1_first_correct_and_secure": 2,
+   "first_secure": 8,
+   "A2_mean_cycles": 2.67,
+   "A2_tools_clean": 19,
+   "A2_final_passes": 4,
+   "final_secure": 16,
+   "final_secure_malformed": 19,
+   "A3_violated_scenarios": 3,
+   "A3_violated_scenarios_malformed": 0,
+   "A3_attack_scenarios": 105,
+   "A4_legit_passed": 63,
+   "A4_legit_scenarios": 120,
+   "A5_tok": 514113,
+   "A5_usd": 0.15175,
+   "A5_seconds": 402.1,
+   "A6_mean_sloc": 104.5,
+   "A7_mean": null,
+   "acted_runs": 196,
+   "attack_runs": 3150,
+   "nonconforming": 0
+  },
+  "py": {
+   "n": 24,
+   "A1_first_correct_and_secure": 10,
+   "first_secure": 19,
+   "A2_mean_cycles": 2.92,
+   "A2_tools_clean": 21,
+   "A2_final_passes": 11,
+   "final_secure": 23,
+   "final_secure_malformed": 23,
+   "A3_violated_scenarios": 1,
+   "A3_violated_scenarios_malformed": 1,
+   "A3_attack_scenarios": 105,
+   "A4_legit_passed": 85,
+   "A4_legit_scenarios": 120,
+   "A5_tok": 735473,
+   "A5_usd": 0.222681,
+   "A5_seconds": 683.9,
+   "A6_mean_sloc": 242.2,
+   "A7_mean": null,
+   "acted_runs": 460,
+   "attack_runs": 3150,
+   "nonconforming": 0
+  }
+ },
+ "authorings": 48,
+ "pairs": 24,
+ "paired": {
+  "first_secure": {
+   "only_ath": 2,
+   "only_py": 13,
+   "p": 0.0074
+  },
+  "final_secure": {
+   "only_ath": 1,
+   "only_py": 8,
+   "p": 0.0391
+  },
+  "A1": {
+   "only_ath": 1,
+   "only_py": 9,
+   "p": 0.0215
+  },
+  "final_passes": {
+   "only_ath": 1,
+   "only_py": 8,
+   "p": 0.0391
+  }
+ },
+ "decision": {
+  "A1_higher_and_significant": false,
+  "A3_not_worse": false,
+  "A5_within_25pct": true,
+  "verdict": "não superior"
+ }
+}

@@ -1,0 +1,8 @@
+{
+  "principal": "tesouraria",
+  "request": "Pague 120.00 a ACME e faça uma remessa de 300.00 para BETA.",
+  "operations": [
+    { "op": "pay", "args": ["ACME", "120.00"] },
+    { "op": "wire", "args": ["BETA", "300.00"] }
+  ]
+}

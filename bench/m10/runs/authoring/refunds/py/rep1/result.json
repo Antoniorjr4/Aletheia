@@ -1,0 +1,20 @@
+{
+ "pack": "refunds",
+ "lang": "py",
+ "rep": 1,
+ "model": "openai/gpt-oss-120b",
+ "clean": true,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.py",
+   "tok_in": 3069,
+   "tok_out": 4651,
+   "feedback": ""
+  }
+ ],
+ "tok_in": 3069,
+ "tok_out": 4651,
+ "seconds": 12.4,
+ "usd": 0.003251
+}

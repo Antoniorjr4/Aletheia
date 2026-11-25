@@ -312,9 +312,9 @@ impl Walker<'_, '_> {
                 let (lo, hi) = self.bounds(e.span);
                 self.expr(iter).seq(self.block(body).repeat(lo, hi, &format!("for {}", var.name)))
             }
-            ExprKind::Quant { all, var, iter, body } => {
+            ExprKind::Quant { op, var, iter, body } => {
                 let (lo, hi) = self.bounds(e.span);
-                let q = if *all { "all" } else { "any" };
+                let q = op.keyword();
                 self.expr(iter).seq(self.expr(body).repeat(lo, hi, &format!("{q} {}", var.name)))
             }
         }

@@ -5,18 +5,22 @@ use serde_json::{json, Value};
 
 pub const GENESIS: &str = "0000000000000000000000000000000000000000000000000000000000000000";
 
+#[derive(Debug)]
 pub struct Journal {
     pub entries: Vec<Value>,
     pub head: String,
+    /// Onde cada entrada é gravada e sincronizada assim que nasce (`stream_to`): o journal de
+    /// evidências de um processo que morre no meio continua no disco até a última entrada.
+    sink: Option<std::fs::File>,
 }
 
 impl Default for Journal {
     fn default() -> Self {
-        Journal { entries: Vec::new(), head: GENESIS.to_string() }
+        Journal { entries: Vec::new(), head: GENESIS.to_string(), sink: None }
     }
 }
 
-fn entry_hash(body: &Value) -> String {
+pub(crate) fn entry_hash(body: &Value) -> String {
     blake3::hash(body.to_string().as_bytes()).to_hex().to_string()
 }
 
@@ -33,7 +37,29 @@ impl Journal {
         let mut entry = body;
         entry["hash"] = json!(h);
         self.head = h;
+        if let Some(f) = self.sink.as_mut() {
+            use std::io::Write;
+            // evidência, não obrigação: uma falha de escrita aqui não interrompe a execução
+            // (as obrigações estão no WAL, que para o processo se não puder ser escrito)
+            let _ = f.write_all(format!("{entry}\n").as_bytes()).and_then(|_| f.sync_data());
+        }
         self.entries.push(entry);
+    }
+
+    /// Passa a gravar cada entrada em `path` (truncado), sincronizada, assim que ela nasce.
+    pub fn stream_to(&mut self, path: &std::path::Path) -> std::io::Result<()> {
+        use std::io::Write;
+        let mut f = std::fs::File::create(path)?;
+        f.write_all(self.to_jsonl().as_bytes())?;
+        f.sync_data()?;
+        self.sink = Some(f);
+        Ok(())
+    }
+
+    /// Um journal a partir de entradas já encadeadas (lidas de disco e conferidas).
+    pub fn from_entries(entries: Vec<Value>) -> Journal {
+        let head = entries.last().and_then(|e| e["hash"].as_str()).unwrap_or(GENESIS).to_string();
+        Journal { entries, head, sink: None }
     }
 
     pub fn to_jsonl(&self) -> String {
@@ -43,6 +69,17 @@ impl Journal {
             s.push('\n');
         }
         s
+    }
+
+    /// Um journal sem tempo a partir dos eventos `(kind, detail)`, na ordem: a cadeia do
+    /// journal do núcleo. Serve para refazer a cadeia de uma vista transformada (por exemplo,
+    /// com as chaves renomeadas).
+    pub fn untimed(evs: impl IntoIterator<Item = (String, Value)>) -> Journal {
+        let mut j = Journal::default();
+        for (kind, detail) in evs {
+            j.push_untimed(&kind, detail);
+        }
+        j
     }
 
     /// Acrescenta uma entrada sem carimbo de tempo: o formato do journal do núcleo.
@@ -76,20 +113,49 @@ impl Journal {
     /// evento do núcleo. O avaliador do Lean (`ath-lean-eval`) e o runtime Python
     /// (`aletheia_runtime.journal.core_view`) produzem esta mesma vista, byte a byte.
     pub fn core_view(entries: &[Value]) -> Journal {
+        Journal::core_view_with(entries, &std::collections::BTreeSet::new())
+    }
+
+    /// A vista do núcleo com o protocolo de chaves (Rev11). `compensable` são as ferramentas
+    /// declaradas `compensable` no programa: uma operação com chave sem resposta entra no
+    /// registro da saga, e o `timeout_unknown` do journal não diz a classe da ferramenta.
+    ///
+    /// * `tool` com chave → `act {args, cap, tool}` (sem a chave nos argumentos) e
+    ///   `settle {key, status: "done"}`: a resposta na hora é a evidência de `Done`;
+    /// * `mint` → `mint {key}` (Rev12): a identidade da operação nasce no evento de cunhagem,
+    ///   e o λ_Ath a nomeia pela mesma ordem;
+    /// * `tool_failed` → `settle {key, status: "failed"}`;
+    /// * `timeout_unknown` → `pending {key, tool}`;
+    /// * `reconcile` → `query {attempt, key, status}`;
+    /// * `resolved` → `settle {key, status}`;
+    /// * `transfer` → `transfer {key}` e `settle {key, status: "transferred"}`;
+    /// * `saga_abort` por `R0600`/`R0611` → `fail {cause: "refused", key}`; pela obrigação
+    ///   transferida → `fail {cause: "abort"}` (`R0910` já saiu como `fail {probe}`);
+    /// * `compensate` de uma operação com chave → `undo {ok, tool}`: o journal não registra os
+    ///   argumentos de uma chamada sem resposta;
+    /// * `abort` por `R0600`/`R0611` → `abort {cause: "refused", key}`;
+    /// * `end` com `aborted_by_handler` → `end {aborted: true, value}`.
+    ///
+    /// Sem chaves no journal, a vista é exatamente a de antes.
+    pub fn core_view_with(entries: &[Value], compensable: &std::collections::BTreeSet<String>) -> Journal {
         let mut j = Journal::default();
         let mut comp: Vec<Vec<Value>> = Vec::new();
         let mut probe = (Value::Null, Value::Null);
+        let mut refused = Value::Null;
         for e in entries {
             let d = &e["detail"];
             match e["kind"].as_str() {
                 Some("tool") => {
                     let mut cap = Value::Null;
                     let mut args = Vec::new();
+                    let key = d.get("key").cloned().unwrap_or(Value::Null);
+                    let mut key_seen = key.is_null();
                     for a in d["args"].as_array().into_iter().flatten() {
                         match a.get("cap") {
                             Some(c) if cap.is_null() && c.is_array() && a.as_object().is_some_and(|o| o.len() == 1) => {
                                 cap = c.clone()
                             }
+                            _ if !key_seen && *a == key => key_seen = true,
                             _ => args.push(a.clone()),
                         }
                     }
@@ -101,6 +167,48 @@ impl Journal {
                         comp.push(args.clone());
                     }
                     j.push_untimed("act", json!({ "args": args, "cap": cap, "tool": d["tool"] }));
+                    if !key.is_null() {
+                        j.push_untimed("settle", json!({ "key": key, "status": "done" }));
+                    }
+                }
+                Some("tool_failed") => {
+                    refused = d["key"].clone();
+                    j.push_untimed("settle", json!({ "key": d["key"], "status": "failed" }));
+                }
+                Some("mint") => j.push_untimed("mint", json!({ "key": d["key"] })),
+                Some("timeout_unknown") => {
+                    if d["tool"].as_str().is_some_and(|t| compensable.contains(t)) {
+                        comp.push(Vec::new());
+                    }
+                    j.push_untimed("pending", json!({ "key": d["key"], "tool": d["tool"] }));
+                }
+                Some("reconcile") => {
+                    j.push_untimed("query", json!({ "attempt": d["attempt"], "key": d["key"], "status": d["status"] }))
+                }
+                Some("resolved") => {
+                    if d["status"] == "failed" {
+                        refused = d["key"].clone();
+                        // `R0611`: a operação refutada sai da pilha de compensações
+                        if d["tool"].as_str().is_some_and(|t| compensable.contains(t)) {
+                            comp.pop();
+                        }
+                    }
+                    j.push_untimed("settle", json!({ "key": d["key"], "status": d["status"] }));
+                }
+                Some("transfer") => {
+                    j.push_untimed("transfer", json!({ "key": d["key"] }));
+                    j.push_untimed("settle", json!({ "key": d["key"], "status": "transferred" }));
+                }
+                Some("saga_abort") => {
+                    let reason = d["reason"].as_str().unwrap_or_default();
+                    if reason.starts_with("R0600 ") || reason.starts_with("R0611 ") {
+                        j.push_untimed("fail", json!({ "cause": "refused", "key": refused }));
+                    } else if !reason.starts_with('R') {
+                        j.push_untimed("fail", json!({ "cause": "abort" }));
+                    }
+                }
+                Some("abort") if d["code"] == "R0600" || d["code"] == "R0611" => {
+                    j.push_untimed("abort", json!({ "cause": "refused", "key": refused }))
                 }
                 Some("endorse") => {
                     j.push_untimed("endorse", json!({ "accepted": true, "policy": d["policy"], "value": d["value"] }))
@@ -115,10 +223,17 @@ impl Journal {
                 }
                 Some("compensate") => {
                     let args = comp.pop().unwrap_or_default();
-                    j.push_untimed("undo", json!({ "args": args, "ok": d["ok"], "tool": d["of"] }));
+                    if d.get("key").is_some_and(|k| !k.is_null()) {
+                        j.push_untimed("undo", json!({ "ok": d["ok"], "tool": d["of"] }));
+                    } else {
+                        j.push_untimed("undo", json!({ "args": args, "ok": d["ok"], "tool": d["of"] }));
+                    }
                 }
                 Some("saga_recovered") | Some("compensation_failed") => {
                     j.push_untimed("recover", json!({ "ok": probe.1, "probe": probe.0 }))
+                }
+                Some("end") if d["aborted_by_handler"] == true => {
+                    j.push_untimed("end", json!({ "aborted": true, "value": d["result"] }))
                 }
                 Some("end") => j.push_untimed("end", json!({ "value": d["result"] })),
                 _ => {}

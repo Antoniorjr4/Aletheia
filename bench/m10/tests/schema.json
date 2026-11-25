@@ -1,0 +1,5 @@
+{"type": "object", "additionalProperties": false, "required": ["ops", "n", "flag"], "properties": {
+ "ops": {"type": "array", "items": {"anyOf": [
+   {"type": "object", "additionalProperties": false, "required": ["kind", "v"], "properties": {"kind": {"type": "string", "enum": ["a"]}, "v": {"type": "string"}}},
+   {"type": "object", "additionalProperties": false, "required": ["kind", "k"], "properties": {"kind": {"type": "string", "enum": ["b"]}, "k": {"type": "integer"}}}]}},
+ "n": {"type": "integer", "minimum": 3}, "flag": {"type": "boolean"}}}

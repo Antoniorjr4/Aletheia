@@ -1,0 +1,68 @@
+{
+ "calls": [
+  {
+   "args": {
+    "n": 100
+   },
+   "error": null,
+   "function": "get_most_recent_transactions",
+   "tool": "get_most_recent_transactions"
+  },
+  {
+   "args": {},
+   "error": null,
+   "function": "get_balance",
+   "tool": "get_balance"
+  },
+  {
+   "args": {},
+   "error": null,
+   "function": "get_iban",
+   "tool": "get_iban"
+  },
+  {
+   "args": {},
+   "error": null,
+   "function": "get_user_info",
+   "tool": "get_user_info"
+  }
+ ],
+ "error": null,
+ "grants": {
+  "live": 0,
+  "spent": 0
+ },
+ "inventories": {
+  "payees": [
+   "CH9300762011623852957",
+   "GB29NWBK60161331926819",
+   "SE3550000000054910000003",
+   "US122000000121212121212"
+  ],
+  "quoted": [],
+  "scheduled": [
+   "6",
+   "7"
+  ]
+ },
+ "journal_head": "f3d7bfbbb7479a4f4156399e221374a32c939c3f9762777ea8b20bfc8e7ae7b4",
+ "kinds": [
+  "start",
+  "infer",
+  "endorse",
+  "tool",
+  "tool",
+  "tool",
+  "tool",
+  "snapshot",
+  "infer",
+  "endorse",
+  "end"
+ ],
+ "semantic_head": "3713324dda3c6a7c88b232a931ad201d60a67267920e8418b23a8e3edf843826",
+ "spent": {
+  "tok": 1991,
+  "usd": 0.00044445,
+  "wall": 5.023294296999893
+ }
+}

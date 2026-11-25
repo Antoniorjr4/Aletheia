@@ -148,3 +148,471 @@ open Aletheia
 
 /-- info: 'Aletheia.T9_transferred_exhausted' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms T9_transferred_exhausted
+
+/-! ## Rev11: o tratador de `TimeoutUnknown` como expressão do núcleo -/
+
+/-- info: 'Aletheia.soundness_keyless' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms soundness_keyless
+
+/-- info: 'Aletheia.pure_handler' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms pure_handler
+
+/-- info: 'Aletheia.T2_keys' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms T2_keys
+
+/-- info: 'Aletheia.caps_exactly_once_ok' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms caps_exactly_once_ok
+
+/-- info: 'Aletheia.doCall_ni' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms doCall_ni
+
+/-- info: 'Aletheia.noninterference_saga_keys' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms noninterference_saga_keys
+
+/-- info: 'Aletheia.T9_outcome' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms T9_outcome
+
+/-- info: 'Aletheia.T9_transfer_explicit' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms T9_transfer_explicit
+
+/-- info: 'Aletheia.T9_honest' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms T9_honest
+
+/-- info: 'Aletheia.KeysExample.transferred_but_applied' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms KeysExample.transferred_but_applied
+
+/-! ## Rev12 -/
+
+/-- info: 'Aletheia.next_preserves' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms next_preserves
+
+/-- info: 'Aletheia.Lifecycle.pending_unique' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Lifecycle.pending_unique
+
+/-- info: 'Aletheia.Arx.recA_eq' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Arx.recA_eq
+
+/-- info: 'Aletheia.Arx.compA_sim' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Arx.compA_sim
+
+/-- info: 'Aletheia.Arx.sim' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Arx.sim
+
+/-- info: 'Aletheia.Arx.arx_refines' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Arx.arx_refines
+
+/-- info: 'Aletheia.Arx.arx_sound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Arx.arx_sound
+
+/-- info: 'Aletheia.Arx.Counter.comp_cost_breaks_budget' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Arx.Counter.comp_cost_breaks_budget
+
+/-- info: 'Aletheia.Arx.Counter.impure_handler_reorders' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Arx.Counter.impure_handler_reorders
+
+/-- info: 'Aletheia.Arx.Counter.top_level_await_differs' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Arx.Counter.top_level_await_differs
+
+/-- info: 'Aletheia.T6_keys' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms T6_keys
+
+/-- info: 'Aletheia.loggedK_preserves' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms loggedK_preserves
+
+/-- info: 'Aletheia.KeyedSagaExample.refuted_not_compensated' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms KeyedSagaExample.refuted_not_compensated
+
+/-- info: 'Aletheia.KeyedSagaExample.dishonest_refusal_strands' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms KeyedSagaExample.dishonest_refusal_strands
+
+/-- info: 'Aletheia.Arx.arx_budget_closed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Arx.arx_budget_closed
+
+/-- info: 'Aletheia.Arx.Counter.comp_cost_reserved' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Arx.Counter.comp_cost_reserved
+
+/-- info: 'Aletheia.Arx.call_refuted' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Arx.call_refuted
+
+/-- info: 'Aletheia.compensate_restoresK' depends on axioms: [propext] -/
+#guard_msgs in #print axioms compensate_restoresK
+
+/-- info: 'Aletheia.opsOf_keyless' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms opsOf_keyless
+
+/-- info: 'Aletheia.KeyedSagaExample.blind_compensator_corrupts' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms KeyedSagaExample.blind_compensator_corrupts
+
+/-- info: 'Aletheia.KeyedSagaExample.bound_compensator_restores' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms KeyedSagaExample.bound_compensator_restores
+
+/-- info: 'Aletheia.ContractsExample.amplified_typed' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms ContractsExample.amplified_typed
+
+/-- info: 'Aletheia.ContractsExample.policyOk_but_not_contract' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms ContractsExample.policyOk_but_not_contract
+
+/-- info: 'Aletheia.Wal.no_silent_loss' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Wal.no_silent_loss
+
+/-- info: 'Aletheia.Wal.evidence' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Wal.evidence
+
+/-- info: 'Aletheia.Wal.at_most_once' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Wal.at_most_once
+
+/-- info: 'Aletheia.Wal.opaque_escalates' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Wal.opaque_escalates
+
+/-- info: 'Aletheia.Wal.registry_after_recovery' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Wal.registry_after_recovery
+
+/-- info: 'Aletheia.Wal.opaque_not_exactly_once' does not depend on any axioms -/
+#guard_msgs in #print axioms Wal.opaque_not_exactly_once
+
+/-- info: 'Aletheia.Wal.idempotent_exactly_once' does not depend on any axioms -/
+#guard_msgs in #print axioms Wal.idempotent_exactly_once
+
+/-- info: 'Aletheia.Wal.resend_without_dedup_duplicates' does not depend on any axioms -/
+#guard_msgs in #print axioms Wal.resend_without_dedup_duplicates
+
+/-- info: 'Aletheia.Lifting.lifting_sound' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Lifting.lifting_sound
+
+/-- info: 'Aletheia.Lifting.amplified_not_discharged' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Lifting.amplified_not_discharged
+
+/-- info: 'Aletheia.Lifting.lifted_example' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Lifting.lifted_example
+
+/-- info: 'Aletheia.Grant.exec_sound' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Grant.exec_sound
+
+/-- info: 'Aletheia.Grant.exec_conserves' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Grant.exec_conserves
+
+/-- info: 'Aletheia.Grant.exec_linear' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Grant.exec_linear
+
+/-- info: 'Aletheia.Grant.other_run_refused' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Grant.other_run_refused
+
+/-- info: 'Aletheia.Grant.refused_leaves_store' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Grant.refused_leaves_store
+
+/-- info: 'Aletheia.Grant.cartesian_overgrants' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Grant.cartesian_overgrants
+
+/-- info: 'Aletheia.Grant.two_payees_two_amounts' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Grant.two_payees_two_amounts
+
+/-- info: 'Aletheia.Grant.relation_is_reusable' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Grant.relation_is_reusable
+
+-- v1.0-RC2: concessão e intenção, uma transação (`Aletheia/Txn.lean`)
+
+/-- info: 'Aletheia.Txn.spent_has_intent' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Txn.spent_has_intent
+
+/-- info: 'Aletheia.Txn.at_most_one_sender' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Txn.at_most_one_sender
+
+/-- info: 'Aletheia.Txn.unsent_never_left' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Txn.unsent_never_left
+
+/-- info: 'Aletheia.Txn.nothing_never_left' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Txn.nothing_never_left
+
+/-- info: 'Aletheia.Txn.consumed_is_recoverable' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Txn.consumed_is_recoverable
+
+/-- info: 'Aletheia.Txn.unsent_leaves_grant' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Txn.unsent_leaves_grant
+
+/-- info: 'Aletheia.Txn.crash_reachable' does not depend on any axioms -/
+#guard_msgs in #print axioms Txn.crash_reachable
+
+/-- info: 'Aletheia.Txn.expected_is_recover' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Txn.expected_is_recover
+
+/-- info: 'Aletheia.Txn.rc1_window' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Txn.rc1_window
+
+/-- info: 'Aletheia.Txn.rc1_race' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Txn.rc1_race
+
+-- v1.0-RC3: autoridade durável (`Aletheia/Anchor.lean`)
+
+/-- info: 'Aletheia.Anchor.anchor_monotone' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Anchor.anchor_monotone
+
+/-- info: 'Aletheia.Anchor.sent_anchored' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Anchor.sent_anchored
+
+/-- info: 'Aletheia.Anchor.accepted_keeps_spent' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Anchor.accepted_keeps_spent
+
+/-- info: 'Aletheia.Anchor.rollback_rejected' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Anchor.rollback_rejected
+
+/-- info: 'Aletheia.Anchor.fork_rejected' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Anchor.fork_rejected
+
+/-- info: 'Aletheia.Anchor.rc2_chain_accepts_rollback' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Anchor.rc2_chain_accepts_rollback
+
+/-- info: 'Aletheia.Anchor.rc3_rejects_that_rollback' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Anchor.rc3_rejects_that_rollback
+
+/-- info: 'Aletheia.Anchor.fresh_is_recent' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Anchor.fresh_is_recent
+
+/-- info: 'Aletheia.Anchor.fresh_is_scoped' does not depend on any axioms -/
+#guard_msgs in #print axioms Anchor.fresh_is_scoped
+
+/-- info: 'Aletheia.Anchor.other_run_is_stale' does not depend on any axioms -/
+#guard_msgs in #print axioms Anchor.other_run_is_stale
+
+/-- info: 'Aletheia.Anchor.expired_stays_expired' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Anchor.expired_stays_expired
+
+-- v1.0-RC4: o ciclo de vida verificado do efeito (`Aletheia/Lifecycle.lean`)
+
+/-- info: 'Aletheia.Lifecycle.window_brackets' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Lifecycle.window_brackets
+
+/-- info: 'Aletheia.Lifecycle.valid_at_now' does not depend on any axioms -/
+#guard_msgs in #print axioms Lifecycle.valid_at_now
+
+/-- info: 'Aletheia.Lifecycle.valid_implies_fresh' does not depend on any axioms -/
+#guard_msgs in #print axioms Lifecycle.valid_implies_fresh
+
+/-- info: 'Aletheia.Lifecycle.local_clock_irrelevant' does not depend on any axioms -/
+#guard_msgs in #print axioms Lifecycle.local_clock_irrelevant
+
+/-- info: 'Aletheia.Lifecycle.inv_of_reach' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Lifecycle.inv_of_reach
+
+/-- info: 'Aletheia.Lifecycle.no_expired_effect' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Lifecycle.no_expired_effect
+
+/-- info: 'Aletheia.Lifecycle.expired_never_revalidates' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Lifecycle.expired_never_revalidates
+
+/-- info: 'Aletheia.Lifecycle.sent_has_history' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Lifecycle.sent_has_history
+
+/-- info: 'Aletheia.Lifecycle.outcome_has_evidence' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Lifecycle.outcome_has_evidence
+
+/-- info: 'Aletheia.Lifecycle.no_rollback_reauthorizes' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Lifecycle.no_rollback_reauthorizes
+
+/-- info: 'Aletheia.Lifecycle.release_sound' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Lifecycle.release_sound
+
+/-- info: 'Aletheia.Lifecycle.one_effect_per_grant' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Lifecycle.one_effect_per_grant
+
+/-- info: 'Aletheia.Lifecycle.decide_ignores_local' does not depend on any axioms -/
+#guard_msgs in #print axioms Lifecycle.decide_ignores_local
+
+/-- info: 'Aletheia.Lifecycle.decide_sound' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Lifecycle.decide_sound
+
+/-- info: 'Aletheia.Lifecycle.opaque_ambiguity' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Lifecycle.opaque_ambiguity
+
+/-- info: 'Aletheia.Lifecycle.opaque_undecidable' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Lifecycle.opaque_undecidable
+
+/-- info: 'Aletheia.Lifecycle.expected_is_decide' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Lifecycle.expected_is_decide
+
+/-- info: 'Aletheia.Lifecycle.rc3_local_clock_counterexample' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Lifecycle.rc3_local_clock_counterexample
+
+-- v1.0-RC5: a retomada verificada e a fronteira nativa
+
+/-- info: 'Aletheia.Resume.replay_append' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Resume.replay_append
+
+/-- info: 'Aletheia.Resume.replay_fidelity' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Resume.replay_fidelity
+
+/-- info: 'Aletheia.Resume.crash_is_identity' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Resume.crash_is_identity
+
+/-- info: 'Aletheia.Resume.crash_refines' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Resume.crash_refines
+
+/-- info: 'Aletheia.Resume.at_most_once' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Resume.at_most_once
+
+/-- info: 'Aletheia.Resume.tape_is_evidence' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Resume.tape_is_evidence
+
+/-- info: 'Aletheia.Resume.budget_survives' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Resume.budget_survives
+
+/-- info: 'Aletheia.Resume.model_not_asked_again' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Resume.model_not_asked_again
+
+/-- info: 'Aletheia.Resume.divergence_stops' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Resume.divergence_stops
+
+/-- info: 'Aletheia.Boundary.check_sound' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Boundary.check_sound
+
+/-- info: 'Aletheia.Boundary.check_complete' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Boundary.check_complete
+
+/-- info: 'Aletheia.Boundary.boundary_sound' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Boundary.boundary_sound
+
+/-- info: 'Aletheia.Boundary.boundary_transparent' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Boundary.boundary_transparent
+
+/-- info: 'Aletheia.Boundary.blame_is_earned' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Boundary.blame_is_earned
+
+/-- info: 'Aletheia.Boundary.secret_noninterference' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Boundary.secret_noninterference
+
+/-- info: 'Aletheia.Boundary.without_scrub_it_leaks' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Boundary.without_scrub_it_leaks
+
+-- v1.0-RC5.1: a re-execução conferida pelo monitor
+
+/-- info: 'Aletheia.Resume.replayC_checked' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Resume.replayC_checked
+
+/-- info: 'Aletheia.Resume.replayC_agrees' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Resume.replayC_agrees
+
+-- v1.0-RC6: a consulta por chave (.find, .settle)
+
+/-- info: 'Aletheia.Find.found_iff' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Find.found_iff
+
+/-- info: 'Aletheia.Find.done_has_evidence' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Find.done_has_evidence
+
+/-- info: 'Aletheia.Find.not_applied_is_sound' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Find.not_applied_is_sound
+
+/-- info: 'Aletheia.Find.more_pages_never_not_applied' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Find.more_pages_never_not_applied
+
+/-- info: 'Aletheia.Find.resend_creates_exactly_one' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms Find.resend_creates_exactly_one
+
+/-- info: 'Aletheia.Find.without_settle_it_duplicates' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Find.without_settle_it_duplicates
+
+/-- info: 'Aletheia.Find.lag_beyond_settle_duplicates' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Find.lag_beyond_settle_duplicates
+
+/-- info: 'Aletheia.Find.in_flight_request_duplicates' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Find.in_flight_request_duplicates
+
+-- v1.0-RC7: execução parcial sob política (keeping)
+
+/-- info: 'Aletheia.Prune.keeping_sound' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Prune.keeping_sound
+
+/-- info: 'Aletheia.Prune.keeping_keeps_every_accepted' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Prune.keeping_keeps_every_accepted
+
+/-- info: 'Aletheia.Prune.keeping_extends_strict' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Prune.keeping_extends_strict
+
+/-- info: 'Aletheia.Prune.keeping_live' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Prune.keeping_live
+
+/-- info: 'Aletheia.Prune.strict_denies' does not depend on any axioms -/
+#guard_msgs in #print axioms Prune.strict_denies
+
+/-- info: 'Aletheia.Prune.checking_before_pruning_is_unsound' does not depend on any axioms -/
+#guard_msgs in #print axioms Prune.checking_before_pruning_is_unsound
+
+-- v1.0-RC8: o relatório é do que foi executado (keeping … as, join, ++)
+
+/-- info: 'Aletheia.Report.report_is_exact' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Report.report_is_exact
+
+/-- info: 'Aletheia.Report.report_cites_only_what_ran' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Report.report_cites_only_what_ran
+
+/-- info: 'Aletheia.Report.keeping_sees_only_the_accepted' does not depend on any axioms -/
+#guard_msgs in #print axioms Report.keeping_sees_only_the_accepted
+
+/-- info: 'Aletheia.Report.rejected_content_is_invisible' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Report.rejected_content_is_invisible
+
+/-- info: 'Aletheia.Report.dropped_exact' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Report.dropped_exact
+
+/-- info: 'Aletheia.Report.model_summary_can_misreport' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Report.model_summary_can_misreport
+
+/-- info: 'Aletheia.Report.append_length_le' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Report.append_length_le
+
+/-- info: 'Aletheia.Report.joinL_length_le' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms Report.joinL_length_le
+
+/-- info: 'Aletheia.Report.composed_with_dropped_is_not_low' does not depend on any axioms -/
+#guard_msgs in #print axioms Report.composed_with_dropped_is_not_low
+
+-- v1.0-RC9: a ligação a um servidor MCP (o que o servidor diz de si só restringe)
+
+/-- info: 'Aletheia.McpBind.description_is_inert' does not depend on any axioms -/
+#guard_msgs in #print axioms McpBind.description_is_inert
+
+/-- info: 'Aletheia.McpBind.promises_are_inert' depends on axioms: [propext] -/
+#guard_msgs in #print axioms McpBind.promises_are_inert
+
+/-- info: 'Aletheia.McpBind.hints_only_restrict' depends on axioms: [propext] -/
+#guard_msgs in #print axioms McpBind.hints_only_restrict
+
+/-- info: 'Aletheia.McpBind.writes_ignore_hints' depends on axioms: [propext] -/
+#guard_msgs in #print axioms McpBind.writes_ignore_hints
+
+/-- info: 'Aletheia.McpBind.refused_means_nothing' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms McpBind.refused_means_nothing
+
+/-- info: 'Aletheia.McpBind.server_label_never_raises' depends on axioms: [propext] -/
+#guard_msgs in #print axioms McpBind.server_label_never_raises
+
+/-- info: 'Aletheia.McpBind.untrusted_declared_always_enters' depends on axioms: [propext] -/
+#guard_msgs in #print axioms McpBind.untrusted_declared_always_enters
+
+/-- info: 'Aletheia.McpBind.refused_only_on_contradiction' depends on axioms: [propext] -/
+#guard_msgs in #print axioms McpBind.refused_only_on_contradiction
+
+/-- info: 'Aletheia.McpBind.server_reply_never_proves_absence' does not depend on any axioms -/
+#guard_msgs in #print axioms McpBind.server_reply_never_proves_absence
+
+/-- info: 'Aletheia.McpBind.unreachable_only_if_not_sent' depends on axioms: [propext] -/
+#guard_msgs in #print axioms McpBind.unreachable_only_if_not_sent
+
+-- v1.0-RC10: confidencialidade e a não-interferência do fluxo tóxico
+
+/-- info: 'Aletheia.Conf.join_le' does not depend on any axioms -/
+#guard_msgs in #print axioms Conf.join_le
+
+/-- info: 'Aletheia.Conf.public_flows_anywhere' does not depend on any axioms -/
+#guard_msgs in #print axioms Conf.public_flows_anywhere
+
+/-- info: 'Aletheia.Conf.public_channel_refuses_non_public' does not depend on any axioms -/
+#guard_msgs in #print axioms Conf.public_channel_refuses_non_public
+
+/-- info: 'Aletheia.Conf.Expr.label_bounds_dependence' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Conf.Expr.label_bounds_dependence
+
+/-- info: 'Aletheia.Conf.no_toxic_flow' depends on axioms: [propext] -/
+#guard_msgs in #print axioms Conf.no_toxic_flow
+
+/-- info: 'Aletheia.Conf.a_real_leak_is_rejected' does not depend on any axioms -/
+#guard_msgs in #print axioms Conf.a_real_leak_is_rejected

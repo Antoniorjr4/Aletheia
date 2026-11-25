@@ -38,6 +38,7 @@ from agentdojo.types import (  # noqa: E402
 )
 
 from aletheia_runtime.__main__ import load_program  # noqa: E402
+from aletheia_runtime.journal import core_view  # noqa: E402
 from aletheia_runtime.runtime import RtErr, Runtime  # noqa: E402
 from aletheia_runtime.values import Cap  # noqa: E402
 from aletheia_runtime.world import HostFailed  # noqa: E402
@@ -62,6 +63,19 @@ BINDINGS = {
         "retarget_scheduled": ("update_scheduled_transaction", ["id", "recipient", "amount"]),
         "update_password": ("update_password", ["password"]),
         "update_user_info": ("update_user_info", ["street", "city"]),
+    },
+    "slack": {
+        "get_channels": ("get_channels", []),
+        "read_channel_messages": ("read_channel_messages", ["channel"]),
+        "get_users_in_channel": ("get_users_in_channel", ["channel"]),
+        "read_inbox": ("read_inbox", ["user"]),
+        "get_webpage": ("get_webpage", ["url"]),
+        "send_direct_message": ("send_direct_message", ["recipient", "body"]),
+        "send_channel_message": ("send_channel_message", ["channel", "body"]),
+        "add_user_to_channel": ("add_user_to_channel", ["user", "channel"]),
+        "invite_user_to_slack": ("invite_user_to_slack", ["user", "user_email"]),
+        "remove_user_from_slack": ("remove_user_from_slack", ["user"]),
+        "post_webpage": ("post_webpage", ["url", "content"]),
     },
 }
 
@@ -97,7 +111,51 @@ def banking_inventories(request: str, env) -> dict:
     }
 
 
-INVENTORIES = {"banking": banking_inventories}
+# `slack`: nomes de canal só entram como identificadores; o nome de um canal é um vetor de
+# injeção da suíte (`prompt_injection_channel`), e um nome que não é identificador não é
+# endereçável.
+CHANNEL = re.compile(r"[A-Za-z0-9_-]{1,40}")
+URL = re.compile(r"\b(?:https?://)?www\.[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:/[a-z0-9_\-/]*)?")
+# Um nome próprio no meio de uma frase ("invite Dora to Slack"): maiúscula que não abre frase.
+MIDNAME = re.compile(r"(?<=[a-z,;:'\"()] )([A-Z][a-z]{1,19})\b")
+
+
+def _urls(text: str) -> set:
+    return {u.rstrip(".").split("://")[-1] for u in URL.findall(text)}
+
+
+def slack_inventories(request: str, env) -> dict:
+    """Os inventários da suíte `slack`.
+
+    Suposição de confiança A1 (o modelo de ameaça do AgentDojo `slack`): o atacante controla
+    páginas web e o nome de um canal; as mensagens do workspace são escritas pelos membros.
+
+    * `channels`: os canais do workspace cujo nome é um identificador;
+    * `people`: os membros do workspace, mais os nomes próprios do pedido e das mensagens
+      do workspace (A1);
+    * `invitable` / `named`: nomes próprios das mensagens e do pedido / só do pedido;
+    * `urls` (visitar): URLs do pedido e das mensagens do workspace (A1);
+    * `sites` (publicar): só URLs que o usuário escreveu no pedido.
+
+    O texto de páginas web nunca entra num inventário.
+    """
+    ws = env.slack
+    bodies = [m.body for msgs in ws.channel_inbox.values() for m in msgs]
+    bodies += [m.body for msgs in ws.user_inbox.values() for m in msgs]
+    named = set(MIDNAME.findall(request))
+    mentioned = set().union(*(MIDNAME.findall(b) for b in bodies)) if bodies else set()
+    members = set(ws.users)
+    return {
+        "channels": sorted(c for c in ws.channels if CHANNEL.fullmatch(c)),
+        "people": sorted(members | named | mentioned),
+        "invitable": sorted((named | mentioned) - members),
+        "named": sorted(named),
+        "urls": sorted(_urls(request).union(*(_urls(b) for b in bodies))),
+        "sites": sorted(_urls(request)),
+    }
+
+
+INVENTORIES = {"banking": banking_inventories, "slack": slack_inventories}
 
 
 class AgentDojoHost:
@@ -119,6 +177,11 @@ class AgentDojoHost:
         kwargs = dict(zip(params, values))
         error = None
         for k in MONEY & kwargs.keys():
+            if type(kwargs[k]) is int:
+                # v3 (ciclo 1, D10): o programa entrega centavos inteiros, já validados pelo tipo
+                # `Int[1..N]`; o host só muda a representação
+                kwargs[k] = kwargs[k] / 100
+                continue
             try:
                 kwargs[k] = float(str(kwargs[k]).replace(",", ""))
             except ValueError:
@@ -170,6 +233,9 @@ class AletheiaAgent(BasePipelineElement):
         # (tarefa do usuário, tarefa de injeção): o executor o define antes de cada tarefa
         self.current: tuple[str, str] = ("unknown", "none")
         self.last: dict = {}
+        # v1.0-RC1: as concessões da execução (`s.authorizes`): `(pedido, env) -> (execução, doc)`.
+        # Vêm de uma confirmação estruturada do principal; sem o gancho, não há concessão alguma.
+        self.grants_for = None
 
     def query(
         self,
@@ -183,6 +249,9 @@ class AletheiaAgent(BasePipelineElement):
         inventories = INVENTORIES[self.suite](query, env)
         host = AgentDojoHost(self.suite, runtime, env, inventories, messages)
         rt = Runtime(self.prog, host, self.provider_factory())
+        if self.grants_for is not None:
+            rt.run_id, doc = self.grants_for(query, env)
+            rt.load_grants(doc)
         error = None
         try:
             answer = rt.run(self.agent, self.event, [query])
@@ -199,10 +268,13 @@ class AletheiaAgent(BasePipelineElement):
         self.last = {
             "error": error,
             "journal_head": rt.journal.head,
+            "semantic_head": core_view(rt.journal.entries, {n for n, t in rt.p.tools.items()
+                                                             if t["class"] == "compensable"}).head,
             "spent": {"tok": rt.meter.tok, "usd": rt.meter.usd, "wall": rt.meter.wall},
             "calls": host.calls,
             "inventories": inventories,
             "kinds": [e["kind"] for e in rt.journal.entries],
+            "grants": {"live": len(rt.grants), "spent": len(rt.spent)},
         }
         if self.journal_dir is not None:
             user, inj = self.current

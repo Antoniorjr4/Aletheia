@@ -1,0 +1,8 @@
+{
+  "principal": "tesouraria",
+  "request": "Pague ACME e BETA: 120.00 e 75.50.",
+  "operations": [
+    { "op": "pay", "args": ["ACME", "120.00"], "ambiguous": "o pedido não diz qual valor é de qual beneficiário" },
+    { "op": "pay", "args": ["BETA", "75.50"], "ambiguous": "o pedido não diz qual valor é de qual beneficiário" }
+  ]
+}

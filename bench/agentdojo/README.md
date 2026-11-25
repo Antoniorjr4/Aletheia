@@ -65,8 +65,11 @@ atacante.
 
 Elas têm um custo de utilidade conhecido. A tarefa `user_task_0` pede para pagar a conta de
 um arquivo, e o IBAN só aparece dentro do arquivo, que é justamente o vetor de injeção. A
-política recusa esse pagamento por desenho. Na `user_task_15`, o usuário escreve no pedido o
-mesmo IBAN que o atacante usa, então transferências para ele são legítimas pela política.
+política recusa esse pagamento por desenho. (Errata: uma versão anterior deste README dizia que
+a `user_task_15` traz no pedido o IBAN do atacante. Não traz; ver [PROVA.md](PROVA.md).)
+
+O protocolo da prova e o modelo obediente ([`obedient.py`](obedient.py)), que mede a política
+com o pior modelo possível, estão em [PROVA.md](PROVA.md).
 
 ## Executar
 

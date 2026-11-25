@@ -1,0 +1,12 @@
+module money
+type Pay = | Pay { to: Text[..34], cents: Int[1..10000] }
+model m { price_in = 0.0  price_out = 0.0  ctx = 8192  max_out = 64  reasoning = 0  ttft = 1.0  per_tok = 0.01 }
+tool pay(c: Cap[Bank.Transfer], to: Text[..34] ^ Endorsed, cents: Int[1..10000] ^ Endorsed) -> Text ! { Bank.Transfer } irrevocable latency 1.0
+policy Safe(p: Pay) -> Bool = match p { Pay { to, cents } => s.member("payees", to) && cents <= 5000 }
+agent A(bank: Cap[Bank.Transfer]) budget [tok <= 10000, usd <= 1.0, wall <= 100.0] {
+  on go(req: Text[..200] ^ Trusted) -> Text ! { Infer, Bank.Transfer } {
+    let d = infer m -> Pay { request = req, payees = s.inventory("payees") }
+    let p = refine d by Safe else { return "recusado" }
+    match p { Pay { to, cents } => commit pay(bank, to, cents) }
+  }
+}

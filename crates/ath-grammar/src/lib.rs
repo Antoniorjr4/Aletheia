@@ -61,7 +61,9 @@ pub fn shape_of(m: &Module, ty: &TypeExpr) -> Result<Shape, String> {
 
 fn shape_rec(m: &Module, ty: &TypeExpr, stack: &mut Vec<String>) -> Result<Shape, String> {
     match ty {
-        TypeExpr::Labeled(inner, ..) | TypeExpr::Own(inner, _) => shape_rec(m, inner, stack),
+        TypeExpr::Labeled(inner, ..) | TypeExpr::ConfLabeled(inner, ..) | TypeExpr::Own(inner, _) => {
+            shape_rec(m, inner, stack)
+        }
         TypeExpr::Cap(..) => Err("capacidades não podem ser produzidas por um modelo".into()),
         TypeExpr::List { elem, lo, hi, .. } => {
             Ok(Shape::List { elem: Box::new(shape_rec(m, elem, stack)?), min: *lo, max: *hi })

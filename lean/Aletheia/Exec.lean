@@ -1,4 +1,5 @@
 import Lean.Data.Json
+import Aletheia.Arx
 import Aletheia.Eval
 import Aletheia.Blake3
 
@@ -28,6 +29,11 @@ pura do traço `Out.tr` e do valor `Out.v` que ela devolve.
   "exp":      ... }
 ```
 
+Uma ferramenta com chave declara `"keyed": true` e `"provider"` (`"idempotent"`, `"queryable"`
+ou `"opaque"`). O provedor é o roteiro `"replies": [{"key": id, "replies": ["done", "unknown",
+…]}]` (a tentativa 0 é a chamada; as seguintes, a reconciliação) e a verdade oculta
+`"applied": [id, …]`, as chaves cujo efeito existe no mundo.
+
 O mundo é `World := Nat → Int`, zerado no início. Uma ferramenta com `"cell": i` soma o
 argumento à célula `i`; com `"compensable": true` ela entra no registro da saga, e a
 compensação subtrai o argumento, ou é recusada se `"undo_fails": true`.
@@ -35,7 +41,8 @@ compensação subtrai o argumento, ou é recusada se `"undo_fails": true`.
 Expressões: `{"val": V}`, `{"var": k}`, `{"let": [e₁, e₂]}`, `{"ite": [c, t, f]}`,
 `{"prim": ["add"|"sub"|"le"|"eq", a, b]}`, `{"endorse": [p, e, d]}`, `{"act": [t, k, a]}`,
 `{"drop": k}`, `{"for": [n, xs, body]}`, `{"infer": [m, T, a]}`, `{"await": q}`,
-`{"atomic": [corpo, r, f, g]}`. Valores: `{"int": n}`,
+`{"atomic": [corpo, r, f, g]}`, `{"call": [t, k, a, n, e]}` (chamada com chave pela capacidade
+`k`, combustível `n` e tratador `e` de `TimeoutUnknown`), `{"transfer": p}`. Valores: `{"int": n}`,
 `{"bool": b}`, `"unit"`, `{"list": [V, ...]}`. Tipos: `"int"`, `"bool"`, `"unit"`,
 `{"list": [T, n]}`.
 
@@ -46,8 +53,16 @@ corpo serializado com chaves ordenadas e sem espaços, como o `serde_json` do AR
 
 * `act {args: [v], cap: [efeitos concedidos], tool}`;
 * `endorse {accepted: true, policy, value: v}` ou `{accepted: false, policy, value: null}`;
-* `fail {probe}`, `undo {args: [v], ok, tool}` e `recover {ok, probe}`, os eventos de saga;
-* `end {value}`.
+* `fail {probe}`, `fail {cause: "refused", key}` e `fail {cause: "abort"}`, `undo {args: [v],
+  ok, tool}` (`undo {ok, tool}` para uma ferramenta com chave) e `recover {ok, probe}`, os
+  eventos de saga;
+* `pending {key, tool}`, `query {attempt, key, status}` (`done`, `not_applied`, `unknown` ou
+  `opaque`), `settle {key, status}` (`done`, `failed` ou `transferred`) e `transfer {key}`, o
+  protocolo de chaves. A chave é nomeada pela capacidade que a carrega (`"c3"`); o ARX a nomeia
+  pela ordem de cunhagem (`"k0"`). O teste diferencial compara os journals módulo essa
+  renomeação bijetiva;
+* `end {value}`, `end {aborted: true, value}` (o tratador transferiu e encerrou o evento) ou
+  `abort {cause: "refused", key}` (a operação não foi aplicada e nenhuma saga capturou).
 -/
 
 namespace Aletheia.Exec
@@ -113,6 +128,15 @@ structure Tool where
   compensable : Bool := false
   /-- o provedor recusa a compensação -/
   undoFails : Bool := false
+  /-- a ferramenta recebe uma chave `own IdemKey` -/
+  keyed : Bool := false
+  /-- a classe do provedor -/
+  provider : Prov := .queryable
+  /-- o custo declarado da chamada, em unidades inteiras de US$ (o gerador usa 1/1024 US$, exato
+  em ponto flutuante) -/
+  usd : Nat := 0
+  /-- o custo declarado do compensador (`compensable by u`), na mesma unidade -/
+  cusd : Nat := 0
 
 /-- Sonda de célula: `lo ≤ w[cell] ≤ hi`. -/
 structure Probe where
@@ -135,6 +159,13 @@ structure Prog where
   oracle : Array Int
   exp : Exp
   probes : Array Probe := #[]
+  /-- o roteiro do provedor, por ferramenta: a resposta à tentativa `i` da operação da
+  ferramenta `t` (o provedor responde à operação, não ao nome da chave) -/
+  replies : List (Nat × Array Reply) := []
+  /-- as ferramentas cuja operação teve o efeito aplicado no mundo -/
+  applied : List Nat := []
+  /-- o limite do agente em US$, na unidade dos custos; sem ele, ilimitado -/
+  limit : Option Nat := none
 
 abbrev P := Except String
 
@@ -208,7 +239,26 @@ partial def exp (j : Json) : P Exp := do
   | "await" => return .await (← nat v)
   | "atomic" =>
     let a ← args v 4; return .atomic (← exp a[0]!) (← nat a[1]!) (← exp a[2]!) (← exp a[3]!)
+  | "call" =>
+    let a ← args v 6
+    return .call (← nat a[0]!) (← nat a[1]!) (← nat a[2]!) (← exp a[3]!) (← nat a[4]!) (← exp a[5]!)
+  | "mint" => return .mint (← exp v)
+  | "transfer" => return .transfer (← nat v)
   | _ => throw s!"expressão inválida: {k}"
+
+def reply (j : Json) : P Reply := do
+  match ← str j with
+  | "done" => pure .done
+  | "failed" => pure .failed
+  | "unknown" => pure .unknown
+  | r => throw s!"resposta inválida: {r}"
+
+def provider (j : Json) : P Prov := do
+  match ← str j with
+  | "idempotent" => pure .idempotent
+  | "queryable" => pure .queryable
+  | "opaque" => pure .opaque
+  | r => throw s!"provedor inválido: {r}"
 
 def prog (j : Json) : P Prog := do
   let effects ← (← arr (← field j "effects")).mapM str
@@ -220,9 +270,18 @@ def prog (j : Json) : P Prog := do
     let cell := match t.getObjVal? "cell" with
       | .ok c => (c.getNat?).toOption
       | .error _ => none
+    let prov ← match t.getObjVal? "provider" with
+      | .ok q => provider q
+      | .error _ => pure .queryable
+    let usd ← match t.getObjVal? "usd" with
+      | .ok u => nat u
+      | .error _ => pure 0
+    let cusd ← match t.getObjVal? "cusd" with
+      | .ok u => nat u
+      | .error _ => pure 0
     return { name := ← str (← field t "name"), effect := ← nat (← field t "effect"),
              arg := ← ty (← field t "arg"), cell, compensable := flag t "compensable",
-             undoFails := flag t "undo_fails" : Tool }
+             undoFails := flag t "undo_fails", keyed := flag t "keyed", provider := prov, usd, cusd : Tool }
   let probes ← match j.getObjVal? "probes" with
     | .ok ps => (← arr ps).mapM fun q => do
         return { name := ← str (← field q "name"), cell := ← nat (← field q "cell"),
@@ -233,15 +292,29 @@ def prog (j : Json) : P Prog := do
   let grants ← (← arr (← field j "grants")).mapM fun g => do return (← (← arr g).mapM nat).toList
   let env ← (← arr (← field j "env")).mapM val
   let oracle ← (← arr (← field j "oracle")).mapM int
+  let replies ← match j.getObjVal? "replies" with
+    | .ok rs => (← arr rs).toList.mapM fun r => do
+        return (← nat (← field r "tool"), ← (← arr (← field r "replies")).mapM reply)
+    | .error _ => pure []
+  let applied ← match j.getObjVal? "applied" with
+    | .ok xs => (← arr xs).toList.mapM nat
+    | .error _ => pure []
+  let limit ← match j.getObjVal? "limit" with
+    | .ok l => some <$> nat l
+    | .error _ => pure none
   return { effects, tools, policies, grants, env := env.toList, oracle, exp := ← exp (← field j "exp"),
-           probes }
+           probes, replies, applied, limit }
 
 /-! ## A assinatura, o oráculo e a configuração -/
 
-/-- A assinatura Δ do programa. Os custos são zero: o diferencial compara eventos e journal,
-não as unidades de orçamento, que o ARX mede em tokens, dólares e segundos. -/
+/-- O custo de uma ferramenta na dimensão US$, zero nas outras. -/
+def usdOnly (n : Nat) : Budget := fun d => match d with | .usd => n | _ => 0
+
+/-- A assinatura Δ do programa. Os custos ficam na dimensão US$ (as outras são zero): a da
+ferramenta e a do seu compensador, que o λ_Ath contabiliza na chamada e o ARX reserva. -/
 def Prog.sig (p : Prog) : Sig where
-  cost := fun _ => 0
+  cost := fun t => usdOnly ((p.tools[t]?.map (·.usd)).getD 0)
+  ccost := fun t => usdOnly ((p.tools[t]?.map (·.cusd)).getD 0)
   mcost := fun _ => 0
   arg := fun t => (p.tools[t]?.map (·.arg)).getD .unit
   effect := fun t => (p.tools[t]?.map (·.effect)).getD 0
@@ -267,6 +340,13 @@ def Prog.sig (p : Prog) : Sig where
     match p.probes[q]? with
     | some pr => decide (pr.lo ≤ w pr.cell ∧ w pr.cell ≤ pr.hi)
     | none => false
+  prov := fun t => (p.tools[t]?.map (·.provider)).getD .queryable
+  -- sem roteiro, o provedor aplica na hora; com roteiro, além dele não responde
+  reply := fun t _ i =>
+    match p.replies.find? (·.1 == t) with
+    | some (_, rs) => rs[i]?.getD .unknown
+    | none => .done
+  applied := fun t _ => p.applied.contains t
 
 /-- O oráculo roteirizado: a `i`-ésima chamada recebe a `i`-ésima resposta, no tipo pedido. -/
 def Prog.oracle' (p : Prog) : Oracle := fun i _ t _ =>
@@ -278,17 +358,22 @@ def Prog.oracle' (p : Prog) : Oracle := fun i _ t _ =>
 
 def Prog.cfg (p : Prog) : Cfg where
   oracle := p.oracle'
-  limit := 0
+  limit := usdOnly (p.limit.getD 1000000000000000)
   grants := fun id => p.grants[id]?.getD []
 
-def St.init : St := ⟨[], 0, 0, fun _ => 0, []⟩
+/-- A primeira chave: acima de toda capacidade do ambiente, como o `KF` do T1 exige (o contador
+de cunhagem nunca alcança uma identidade em uso). -/
+def Prog.keyBase (p : Prog) : Nat :=
+  p.env.foldl (fun m v => match v with | .cap id => max m (id + 1) | _ => m) 0
+
+def Prog.init (p : Prog) : St := ⟨[], 0, 0, fun _ => 0, [], p.keyBase, []⟩
 
 /-- A execução: exatamente o avaliador canônico. -/
-def Prog.run (p : Prog) : Except Err Out := eval p.sig p.cfg p.exp p.env St.init
+def Prog.run (p : Prog) : Except Err Out := eval p.sig p.cfg p.exp p.env p.init
 
 /-- Nenhuma camada entre o binário e a semântica: `run` é, por definição, o `eval` dos
 teoremas, na assinatura, na configuração e no ambiente que o programa declara. -/
-theorem Prog.run_eq (p : Prog) : p.run = eval p.sig p.cfg p.exp p.env St.init := rfl
+theorem Prog.run_eq (p : Prog) : p.run = eval p.sig p.cfg p.exp p.env p.init := rfl
 
 /-! ## O journal do núcleo -/
 
@@ -298,6 +383,7 @@ partial def valJson : Val → J
   | .unit => .null
   | .list vs => .arr (vs.map valJson)
   | .cap id => .obj [("cap", .int id)]
+  | .pend _ k => .obj [("pending", .int k)]
 
 def Prog.name (xs : Array String) (i : Nat) : J := .str (xs[i]?.getD s!"#{i}")
 
@@ -307,6 +393,13 @@ where
   insert (x : String) : List String → List String
     | [] => [x]
     | y :: ys => if x < y then x :: y :: ys else y :: insert x ys
+
+/-- O nome de uma chave: a `i`-ésima cunhada (a partir de 1) é `k{i}`, como o ARX e o runtime
+Python as cunham. A identidade é o valor do contador (`keyBase + i − 1`); o nome é uma função
+injetiva dela. Uma identidade abaixo de `keyBase` não foi cunhada (só um programa mal tipado a
+usa como chave) e conserva o nome da capacidade, `c{id}`. -/
+def Prog.keyName (p : Prog) (k : Nat) : J :=
+  if p.keyBase ≤ k then .str s!"k{k - p.keyBase + 1}" else .str s!"c{k}"
 
 /-- O detalhe de cada evento do traço. `cap` é o conjunto de efeitos que o runtime concede à
 capacidade usada, em ordem. -/
@@ -319,19 +412,26 @@ def Prog.event (p : Prog) : Ev → String × J
     ("endorse", .obj [("accepted", .bool o.isSome), ("policy", Prog.name (p.policies.map (·.name)) q),
       ("value", (o.map valJson).getD .null)])
   -- os eventos de saga, como a vista do núcleo do ARX os projeta
-  | .fail q => ("fail", .obj [("probe", Prog.name (p.probes.map (·.name)) q)])
+  | .fail (.probe q) => ("fail", .obj [("probe", Prog.name (p.probes.map (·.name)) q)])
+  | .fail (.refused k) => ("fail", .obj [("cause", .str "refused"), ("key", p.keyName k)])
+  | .fail (.abort _) => ("fail", .obj [("cause", .str "abort")])
   | .undo t v ok =>
-    ("undo", .obj [("args", .arr [valJson v]), ("ok", .bool ok), ("tool", Prog.name (p.tools.map (·.name)) t)])
+    if (p.tools[t]?.map (·.keyed)).getD false then
+      ("undo", .obj [("ok", .bool ok), ("tool", Prog.name (p.tools.map (·.name)) t)])
+    else
+      ("undo", .obj [("args", .arr [valJson v]), ("ok", .bool ok), ("tool", Prog.name (p.tools.map (·.name)) t)])
   | .recover r ok => ("recover", .obj [("ok", .bool ok), ("probe", Prog.name (p.probes.map (·.name)) r)])
-  -- o protocolo de chaves (ainda fora do tripé: o formato do programa não declara chaves)
-  | .pending t k v =>
-    ("pending", .obj [("args", .arr [valJson v]), ("key", .int k), ("tool", Prog.name (p.tools.map (·.name)) t)])
+  -- o protocolo de chaves
+  | .pending t k _ => ("pending", .obj [("key", p.keyName k), ("tool", Prog.name (p.tools.map (·.name)) t)])
   | .query k i r =>
-    ("query", .obj [("attempt", .int i), ("key", .int k), ("status", .str (match r with
-      | .done => "done" | .failed => "failed" | .unknown => "unknown"))])
+    ("query", .obj [("attempt", .int i), ("key", p.keyName k), ("status", .str (match r with
+      | some .done => "done" | some .failed => "not_applied" | some .unknown => "unknown"
+      | none => "opaque"))])
   | .settle k e =>
-    ("settle", .obj [("key", .int k), ("status", .str (match e with
+    ("settle", .obj [("key", p.keyName k), ("status", .str (match e with
       | .done => "done" | .failed => "failed" | .transferred => "transferred"))])
+  | .handoff k => ("transfer", .obj [("key", p.keyName k)])
+  | .mint k => ("mint", .obj [("key", p.keyName k)])
 
 def GENESIS : String := "".pushn '0' 64
 
@@ -349,5 +449,50 @@ def chain (evs : List (String × J)) : List String := Id.run do
 /-- O journal do núcleo de uma execução bem-sucedida. -/
 def Prog.journal (p : Prog) (o : Out) : List String :=
   chain (o.tr.map p.event ++ [("end", .obj [("value", valJson o.v)])])
+
+/-- O journal do núcleo de um desfecho: valor, encerramento pelo tratador (`abort`) ou
+recusa não capturada (`refused`). Os erros de programa (`stuck`, `noCap`, `reuse`, `budget`)
+não têm journal: o T1 os exclui dos programas bem tipados. -/
+def Prog.outcome (p : Prog) : Except Err Out → Option (List String)
+  | .ok o => some (p.journal o)
+  | .error (.timeout (.abort v) _ tr) =>
+    some (chain (tr.map p.event ++ [("end", .obj [("aborted", .bool true), ("value", valJson v)])]))
+  | .error (.timeout (.refused k) _ tr) =>
+    some (chain (tr.map p.event ++ [("abort", .obj [("cause", .str "refused"), ("key", p.keyName k)])]))
+  | .error (.timeout (.probe q) _ tr) =>
+    some (chain (tr.map p.event ++
+      [("abort", .obj [("cause", .str "probe"), ("probe", Prog.name (p.probes.map (·.name)) q)])]))
+  | .error _ => none
+
+/-- O modelo do ARX (`Arx.run`) no mesmo programa, e o journal da sua vista do núcleo
+(`Arx.cvRun`), no mesmo formato. É a quarta perna do tripé: o binário do ARX contra o modelo
+sobre o qual `Arx.sim` está provado. -/
+def Prog.arxOutcome (p : Prog) : Option (List String) :=
+  let r := Arx.run p.sig p.cfg p.sig.ccost p.exp p.env (Arx.AS.ofSt p.init)
+  let evs := ((Arx.cvRun p.sig r.2.jr).2).map p.event
+  match r.1 with
+  | .ok v => some (chain (evs ++ [("end", .obj [("value", valJson v)])]))
+  | .error (.abort v) => some (chain (evs ++ [("end", .obj [("aborted", .bool true), ("value", valJson v)])]))
+  | .error (.err (.refusedNow k)) | .error (.err (.refusedRec k)) =>
+    some (chain (evs ++ [("abort", .obj [("cause", .str "refused"), ("key", p.keyName k)])]))
+  | .error (.err (.probe q)) =>
+    some (chain (evs ++ [("abort", .obj [("cause", .str "probe"), ("probe", Prog.name (p.probes.map (·.name)) q)])]))
+  | .error (.err .other) => none
+
+/-- O medidor das duas semânticas: o gasto contabilizado pelo λ_Ath (quando ele termina com
+valor ou falha capturável) e o gasto e a reserva do modelo do ARX, com cada compensador cobrando
+exatamente o declarado. É o que o diferencial do M-IV compara com o medidor dos runtimes. -/
+def Prog.meter (p : Prog) : J :=
+  let r := Arx.run p.sig p.cfg p.sig.ccost p.exp p.env (Arx.AS.ofSt p.init)
+  let ev : J := match p.run with
+    | .ok o => .obj [("outcome", .str "ok"), ("spent", .int (o.st.spent .usd))]
+    | .error (.timeout _ s _) => .obj [("outcome", .str "timeout"), ("spent", .int (s.spent .usd))]
+    | .error .budget => .obj [("outcome", .str "budget")]
+    | .error _ => .obj [("outcome", .str "error")]
+  let ao : String := match r.1 with
+    | .ok _ => "ok" | .error (.abort _) => "abort" | .error (.err .other) => "other" | .error _ => "refused"
+  .obj [("arx", .obj [("outcome", .str ao), ("resv", .int (Arx.resv p.sig r.2.frames .usd)),
+      ("spent", .int (r.2.spent .usd))]),
+    ("eval", ev), ("limit", .int ((p.cfg.limit) .usd))]
 
 end Aletheia.Exec

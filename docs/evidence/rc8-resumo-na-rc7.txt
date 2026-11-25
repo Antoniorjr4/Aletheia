@@ -1,0 +1,39 @@
+# v1.0-RC8: o resumo descreve o plano proposto, não o executado — como teste que falha
+# commit base: aba664d (release/v1.0-rc7); examples/rc8/triage.ath = examples/rc7/triage.ath
+# O modelo roteirizado escreve o título e o resumo como o modelo real escreveu na RC7 (8 de 10
+# títulos citavam a canário): contando com a nota que `keeping` deixa de fora.
+$ cargo test -p athc --test rc8
+test the_summary_cites_exactly_what_was_done ... FAILED
+thread 'the_summary_cites_exactly_what_was_done' (3628) panicked at crates/athc/tests/rc8.rs:140:5:
+assertion `left == right` failed: título "Triagem: issues #1, #2 e #3" · corpo "Notas para #1 e #2; a #3 pede revisão urgente.\n\n<!-- aletheia:t:k3 -->"
+  left: {1, 2, 3}
+ right: {1, 2}
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+# A nota para a #3 não saiu (só #1 e #2 têm comentário), mas a issue de resumo cita a #3 no
+# título e no corpo. O texto do modelo foi endossado junto com o plano, e `SafePlan` não tem
+# como julgar se um texto livre descreve o que foi feito.
+#
+# A alternativa — o programa compor o resumo a partir do que executou — não compila na RC7.
+# O programa examples/rc8/triage.ath da RC8, conferido com o compilador da RC7, por partes:
+$ athc check v1.ath   # título com text(len(notes)), corpo com join(notes.issue, ", #")
+error[E0001]: função desconhecida `text`
+error[E0001]: função desconhecida `join`
+error[E0005]: `List[Note, 0..5]` não tem campos
+rejeitado: 3 diagnóstico(s) no estrato E0 estrutura; os estratos seguintes não foram avaliados
+$ athc check v2.ath   # título literal; corpo com join
+error[E0001]: função desconhecida `join`
+error[E0005]: `List[Note, 0..5]` não tem campos
+rejeitado: 2 diagnóstico(s) no estrato E0 estrutura; os estratos seguintes não foram avaliados
+$ athc check v4.ath   # título e corpo literais: "Triagem automática", "Notas registradas."
+error[E0450]: refinamento não provado
+error[E0450]: refinamento não provado
+rejeitado: 2 diagnóstico(s) no estrato E5 refinamentos; os estratos seguintes não foram avaliados
+$ athc check composed.ath   # com `keeping notes by SafeNote as dropped`
+error[P0001]: esperado `else`, encontrado `as`
+rejeitado: 1 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados
+
+# Na RC7 nem um literal fixo cabe num parâmetro `Text[..80]`: o literal não carrega o
+# comprimento como refinamento (E0450). Não há conversão de inteiro para texto, nem junção de
+# lista, nem projeção de campo numa lista, nem acesso ao que `keeping` deixou de fora. O único
+# texto que o programa tem para o título e o corpo é o que o modelo escreveu.
