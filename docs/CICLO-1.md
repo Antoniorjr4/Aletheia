@@ -241,3 +241,11 @@ Não há medição publicada que dependesse desses fluxos: nenhum benchmark usa 
 Variantes homônimas: aplicada só a opção A (E0002 diz o tipo e sugere nome e `sum`); resolução de
 nomes inalterada. O guia do M10 está congelado e não foi alterado; uma campanha futura precisa de
 guia novo, versionado à parte.
+
+**25/11 — P4: diagnóstico fechado** ([p4/DIAGNOSTICO.md](p4/DIAGNOSTICO.md)). As 3 falhas de regra do
+M10 foram omissões do autor em quatro classes: cumulativa (agora `sum`), unidade (aberta), fato por
+chave confiável (já havia `binds`), unicidade (`sum` aninhada). As três políticas corretas foram
+escritas e testadas nos dois runtimes: os ataques do M10 e 7 variantes hostis são recusados pela
+política; os legítimos passam. Corrigido no caminho: `(` em linha nova não é mais chamada da linha
+anterior. Em aberto: nada impede o autor de omitir a regra; unidades em tipos é a proposta de maior
+efeito e exige decisão.

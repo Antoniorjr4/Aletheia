@@ -1212,7 +1212,9 @@ impl Parser {
             }
             Tok::Ident(name) => {
                 let id = self.ident()?;
-                if *self.peek() == Tok::LParen {
+                // `(` numa linha nova abre outra expressão, não chama o nome da linha anterior:
+                // `let mine = order` seguido de `(sum … ) <= n` na linha de baixo são duas coisas.
+                if *self.peek() == Tok::LParen && !self.toks[self.pos].nl_before {
                     let args = self.args()?;
                     let span = start.to(self.prev_span());
                     return Ok(Expr { kind: ExprKind::Call { callee: id, args }, span });

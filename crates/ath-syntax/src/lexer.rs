@@ -140,6 +140,8 @@ fn symbol(t: &Tok) -> &'static str {
 pub struct Token {
     pub tok: Tok,
     pub span: Span,
+    /// Há quebra de linha entre o token anterior e este (espaços e comentários incluídos).
+    pub nl_before: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -202,7 +204,7 @@ pub fn lex(src: &str) -> Result<Vec<Token>, LexError> {
             }
             let word = &src[start..i];
             let tok = keyword(word).unwrap_or_else(|| Tok::Ident(word.to_string()));
-            out.push(Token { tok, span: Span::new(start, i) });
+            out.push(Token { tok, span: Span::new(start, i), nl_before: false });
             continue;
         }
         if c.is_ascii_digit() {
@@ -239,7 +241,7 @@ pub fn lex(src: &str) -> Result<Vec<Token>, LexError> {
             } else {
                 Tok::Int(text.parse().map_err(|_| LexError { msg: "inteiro fora do intervalo".into(), span })?)
             };
-            out.push(Token { tok, span });
+            out.push(Token { tok, span, nl_before: false });
             continue;
         }
         if c == b'"' {
@@ -273,7 +275,7 @@ pub fn lex(src: &str) -> Result<Vec<Token>, LexError> {
                 s.push(ch);
                 i += ch.len_utf8();
             }
-            out.push(Token { tok: Tok::Str(s), span: Span::new(start, i) });
+            out.push(Token { tok: Tok::Str(s), span: Span::new(start, i), nl_before: false });
             continue;
         }
         if !c.is_ascii() {
@@ -322,8 +324,14 @@ pub fn lex(src: &str) -> Result<Vec<Token>, LexError> {
             }
         };
         i += len;
-        out.push(Token { tok, span: Span::new(start, i) });
+        out.push(Token { tok, span: Span::new(start, i), nl_before: false });
     }
-    out.push(Token { tok: Tok::Eof, span: Span::new(src.len(), src.len()) });
+    out.push(Token { tok: Tok::Eof, span: Span::new(src.len(), src.len()), nl_before: false });
+    let mut prev = 0usize;
+    for t in &mut out {
+        let lo = t.span.lo as usize;
+        t.nl_before = src.as_bytes()[prev.min(lo)..lo].contains(&b'\n');
+        prev = t.span.hi as usize;
+    }
     Ok(out)
 }
