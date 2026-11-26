@@ -1,0 +1,18 @@
+{
+ "frozen_commit": "223fb5330d4ce0f29074d32954f8678a0a13539b",
+ "crates_tree": "2545c413ec67490ada7929d6fef9848ea310c708",
+ "python_runtime_tree": "1ee07482135afb001b27648ca22f9b1a0c27fa0d",
+ "files": {
+  "bench/m11/guides/aletheia.md": "10b303675b37fcabebb5f1ffd9c789aedd3f211e1d56dad8676d6d14098fc3bd",
+  "bench/m11/guides/python.md": "028157500f8266d32bc82103899d7e628e4324f1fee23ff6999642ec7eb301e9",
+  "bench/m11/PROTOCOLO.md": "5be0195fe1d1f52ca9281229819f415e35abb4903d511689fb7f1addb76dc73f",
+  "bench/m11/run.py": "7994256f44a0af06280d3121b472603d3e6cdcb04a2d5d302b9cd2079412ac83",
+  "bench/m10/harness.py": "15b9fd89ab85bd6e59e0ea1ea2c0ac03036eb583d086373c9bd6006c9058c9cb",
+  "bench/m10/author.py": "6d579e27c75c57afdfb625a0ba3c6a75031dd2c8fd7fef27abb6ab73e2142ace",
+  "bench/m10/evaluate_all.py": "a12a5ad0d81529995c84ca098cc813e55e7a45a9f6a94941f809e28c3361e757",
+  "bench/m10/FORMAT.md": "1a4e0db78915423ce6b08862b4b6f6bfc294e35427a84a341af11a9c62ace03c",
+  "bench/m10/dup_oracle.py": "9d98f50fa2e47f5f37081649e859cf317b85ecb19bbd0fa4272470674f8f24cf"
+ },
+ "date": "2026-11-26",
+ "note": "Implementação e guias congelados antes das especificações do M11 e dos pedidos do P3b."
+}
