@@ -290,3 +290,10 @@ aceitos e nenhum programa do repositório ou do M10 mudando de aceitação. `-0`
 nos dois runtimes. `pruneOrd_sound` documentado como teorema sobre a lista resultante. Auditoria de
 duplicação nos oráculos do M10: 13/40 verificadores legítimos aceitariam um efeito duplicado; nenhum
 cenário aprovado no M10 teve duplicação, então o resultado não muda; vira critério para o M11.
+
+**26/11 — P3b medido: critério 5 ATENDIDO nesta medição** ([bench/agentdojo/p3b/PROTOCOLO.md](../bench/agentdojo/p3b/PROTOCOLO.md)).
+Implementação e guias congelados (`bench/m11/FREEZE.json`, commit `223fb53`) antes dos pedidos. Seis
+pedidos novos de um autor cego, implementadores separados: Aletheia 83 linhas, P1 102 (0,81 × P1;
+margem 1,25). Tentativas 16 × 6. Uma regra (D5, conjunto de caracteres) foi para o host; D3 ficou no
+handler. O P3 (+56%, contra) continua registrado: são duas medições, uma de cada lado, e o relatório
+final traz as duas.

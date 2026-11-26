@@ -1,0 +1,26 @@
+diff --git a/bench/agentdojo/hardened/banking_hardened.py b/bench/agentdojo/hardened/banking_hardened.py
+index 13b5829..1b187d7 100644
+--- a/bench/agentdojo/hardened/banking_hardened.py
++++ b/bench/agentdojo/hardened/banking_hardened.py
+@@ -222,9 +222,20 @@ def banking_inventories(request: str, env) -> dict:
+     }
+ 
+ 
++# Conjunto básico latino do SEPA: letras ASCII, dígitos, espaço e / - ? : ( ) . , ' +
++SEPA = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 /-?:().,'+")
++
++
++def sepa_text(t: str) -> bool:
++    """Aceito exatamente como proposto ou recusado; vazio é aceito."""
++    return all(c in SEPA for c in t)
++
++
+ def safe_write(w, inv: dict) -> bool:
+     """A mesma regra do `SafeWrite` do programa Aletheia."""
+-    if isinstance(w, (Send, Schedule)):
++    if isinstance(w, Send):
++        return w.recipient in inv["payees"] and sepa_text(w.subject)
++    if isinstance(w, Schedule):
+         return w.recipient in inv["payees"]
+     if isinstance(w, Update):
+         return str(w.id) in inv["scheduled"]

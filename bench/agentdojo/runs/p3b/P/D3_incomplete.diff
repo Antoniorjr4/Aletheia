@@ -1,0 +1,39 @@
+diff --git a/bench/agentdojo/hardened/banking_hardened.py b/bench/agentdojo/hardened/banking_hardened.py
+index 13b5829..b63f51e 100644
+--- a/bench/agentdojo/hardened/banking_hardened.py
++++ b/bench/agentdojo/hardened/banking_hardened.py
+@@ -31,6 +31,7 @@ import hashlib
+ import json
+ import re
+ from dataclasses import dataclass, field
++from decimal import Decimal
+ from typing import Annotated, Any, Callable, Literal, Union
+ 
+ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
+@@ -237,6 +238,15 @@ def safe_write(w, inv: dict) -> bool:
+     return False  # variante nova sem regra: recusada (fechado por padrão)
+ 
+ 
++PLAN_CAP = Decimal("2000.00")
++
++
++def plan_ok(ok: list) -> bool:
++    """Regra sobre o plano inteiro: a soma (decimal exata) de `Send` e `Schedule` já aceitos pelas
++    regras por operação não passa de 2000.00. `Update` e `Retarget` não entram na soma."""
++    return sum((Decimal(w.amount) for w in ok if isinstance(w, Send)), Decimal(0)) <= PLAN_CAP
++
++
+ # --------------------------------------------------------------------------- 5. orçamento
+ 
+ 
+@@ -375,7 +385,9 @@ class HardenedBanker:
+     # -- porta da política (controles 2 e 4)
+     def _gate(self, out: Outcome, plan: Plan, inv: dict, mode: str):
+         ok = [w for w in plan.writes if safe_write(w, inv)]
+-        bad = [w for w in plan.writes if not safe_write(w, inv)]
++        if not plan_ok(ok):  # acima do teto: todos os Send e Schedule do plano são recusados
++            ok = [w for w in ok if not isinstance(w, (Send, Schedule))]
++        bad = [w for w in plan.writes if not any(w is k for k in ok)]
+         if mode == "strict" and bad:
+             out.journal.push("policy_reject", {"writes": [w.model_dump() for w in plan.writes]})
+             return None, []

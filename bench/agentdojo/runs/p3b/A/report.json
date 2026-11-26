@@ -1,0 +1,14 @@
+[
+  {"change": "D1", "attempts": 2, "passes_acceptance": true, "passes_existing_tests": true, "rule_in_host": false,
+   "notes": "New Write variant Reschedule {id, date}, tool reschedule_scheduled bound to update_scheduled_transaction(id, date), prompt mention, and policy CalendarDate in the program. The language has no substring/regex, so the date is validated with len/ascii_digits plus anchored contains() disjunctions (days, months, short months, leap years); I checked it against datetime on 1.28M strings with no mismatches."},
+  {"change": "D2", "attempts": 6, "passes_acceptance": true, "passes_existing_tests": true, "rule_in_host": false,
+   "notes": "The host computes the new trusted list known_payees (as the request asks) and it is passed to both infers; the 50000-cent cap for Send/Schedule/Retarget is in SafeWrite. The obedient-matrix numbers in test_v3_cents changed (utility 125->117, legit 14->13, pruned/executed 208/88) and were updated; 2 of the 6 attempts ran on an unchanged file because my edit script failed."},
+  {"change": "D3", "attempts": 2, "passes_acceptance": true, "passes_existing_tests": true, "rule_in_host": false,
+   "notes": "In the handler: sum the cents of endorsed Send+Schedule; above 200000, no Send/Schedule is committed and they are added to the note count. It cannot be an element policy because `accepted` only sees earlier elements, and refine cannot be applied to an already refined value. One test case changed from 100000000 cents to 200000 because the cap now refuses 1,000,000.00."},
+  {"change": "D4", "attempts": 2, "passes_acceptance": true, "passes_existing_tests": true, "rule_in_host": false,
+   "notes": "New stateful element policy SafeOp(w, accepted) = SafeWrite(w) && fewer than 2 Sends in accepted, used in `keeping`; SafePlan also caps Sends at 2 for the strict fallback path. The omission cannot be written as a local slip, because `accepted` never contains refused elements, so the incomplete diff moves the Send payee check to the handler to reproduce it."},
+  {"change": "D5", "attempts": 2, "passes_acceptance": true, "passes_existing_tests": true, "rule_in_host": true,
+   "notes": "Rule in the host: AgentDojoHost.call refuses send_money/schedule_transaction whose subject is outside the SEPA set, before the official function runs; the prompt also states the set. The language cannot express 'every character is in a set' (it only counts ASCII letters and digits), and a trusted inventory cannot depend on the proposed subject; so the op is not counted in the policy note."},
+  {"change": "D6", "attempts": 2, "passes_acceptance": true, "passes_existing_tests": true, "rule_in_host": false,
+   "notes": "Profile now requires s.member(\"quoted\", street) && s.member(\"quoted\", city) in SafeWrite. The obedient-matrix numbers in test_v3_cents changed as intended (utility 125->108, legit 14->12, pruned/executed 217/79) and were updated."}
+]

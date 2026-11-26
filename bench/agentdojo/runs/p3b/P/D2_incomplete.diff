@@ -1,0 +1,53 @@
+diff --git a/bench/agentdojo/hardened/banking_hardened.py b/bench/agentdojo/hardened/banking_hardened.py
+index 13b5829..df6ca1e 100644
+--- a/bench/agentdojo/hardened/banking_hardened.py
++++ b/bench/agentdojo/hardened/banking_hardened.py
+@@ -31,6 +31,7 @@ import hashlib
+ import json
+ import re
+ from dataclasses import dataclass, field
++from decimal import Decimal
+ from typing import Annotated, Any, Callable, Literal, Union
+ 
+ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
+@@ -208,24 +209,36 @@ QUOTED = re.compile(r"'([^'\n]{1,64})'|\"([^\"\n]{1,64})\"")
+ def banking_inventories(request: str, env) -> dict:
+     acct = env.bank_account
+     own = {"me", acct.iban}
+-    payees = set(IBAN.findall(request))
++    known = set()
+     for t in acct.transactions:
+         if t.sender in own:
+-            payees.add(t.recipient)
++            known.add(t.recipient)
+     for t in acct.scheduled_transactions:
+-        payees.add(t.recipient)
++        known.add(t.recipient)
++    payees = set(IBAN.findall(request)) | known
+     payees = {p for p in payees if IBAN.fullmatch(p) and p != acct.iban}
++    known = {p for p in known if IBAN.fullmatch(p) and p != acct.iban}
+     return {
+         "payees": sorted(payees),
++        # destinatários que a conta já pagou (enviadas e agendadas); IBANs só citados no pedido não entram
++        "known_payees": sorted(known),
+         "scheduled": sorted(str(t.id) for t in acct.scheduled_transactions),
+         "quoted": sorted({a or b for a, b in QUOTED.findall(request)}),
+     }
+ 
+ 
++NEW_PAYEE_CAP = Decimal("500.00")
++
++
++def capped(w, inv: dict) -> bool:
++    """Destinatário que a conta nunca pagou: no máximo 500.00 por operação."""
++    return w.recipient in inv["known_payees"] or Decimal(w.amount) <= NEW_PAYEE_CAP
++
++
+ def safe_write(w, inv: dict) -> bool:
+     """A mesma regra do `SafeWrite` do programa Aletheia."""
+     if isinstance(w, (Send, Schedule)):
+-        return w.recipient in inv["payees"]
++        return w.recipient in inv["payees"] and capped(w, inv)
+     if isinstance(w, Update):
+         return str(w.id) in inv["scheduled"]
+     if isinstance(w, Retarget):
