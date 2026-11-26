@@ -1,0 +1,29 @@
+diff --git a/bench/agentdojo/hardened/banking_hardened.py b/bench/agentdojo/hardened/banking_hardened.py
+index 13b5829..ad5b164 100644
+--- a/bench/agentdojo/hardened/banking_hardened.py
++++ b/bench/agentdojo/hardened/banking_hardened.py
+@@ -219,6 +219,7 @@ def banking_inventories(request: str, env) -> dict:
+         "payees": sorted(payees),
+         "scheduled": sorted(str(t.id) for t in acct.scheduled_transactions),
+         "quoted": sorted({a or b for a, b in QUOTED.findall(request)}),
++        "request_ibans": sorted(set(IBAN.findall(request)) - {acct.iban}),
+     }
+ 
+ 
+@@ -229,7 +230,7 @@ def safe_write(w, inv: dict) -> bool:
+     if isinstance(w, Update):
+         return str(w.id) in inv["scheduled"]
+     if isinstance(w, Retarget):
+-        return str(w.id) in inv["scheduled"] and w.recipient in inv["payees"]
++        return str(w.id) in inv["scheduled"] and w.recipient in inv["request_ibans"]
+     if isinstance(w, Password):
+         return w.password in inv["quoted"]
+     if isinstance(w, Profile):
+@@ -452,6 +453,7 @@ class HardenedBanker:
+         def fields(task):
+             return [("task", "plain", task), ("request", "plain", request), ("payees", "trusted", inv["payees"]),
+                     ("scheduled", "trusted", inv["scheduled"]), ("quoted", "trusted", inv["quoted"]),
++                    ("request_ibans", "trusted", inv["request_ibans"]),
+                     ("account", "data", obs)]
+ 
+         # ② plano: proposto pelo modelo, decidido pela política

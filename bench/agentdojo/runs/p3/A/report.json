@@ -1,0 +1,44 @@
+[
+ {
+  "change": "C1",
+  "attempts": 1,
+  "passes_acceptance": true,
+  "passes_existing_tests": true,
+  "notes": "New variant Reschedule{id,date}, new tool reschedule_scheduled bound in the host to update_scheduled_transaction(id,date), policy arm s.member(\"scheduled\", id), commit arm. No language limitation. Note: the incomplete version still passes the 4 acceptance cases, because the bank itself rejects the unknown ids (99, 5) and the runner ignores calls that returned an error."
+ },
+ {
+  "change": "C2",
+  "attempts": 2,
+  "passes_acceptance": true,
+  "passes_existing_tests": true,
+  "notes": "Length is checked in the policy (len(password) >= 12); the language has no string search/character classes, so the composition rule (>=1 ASCII letter and >=1 ASCII digit) is a new trusted host inventory `quoted_mixed` checked by the policy and shown in both prompts. Existing test edited minimally (benchmark counts 125->116, 14->13, (200,96)->(209,87)): the suite's own password task uses a 9-character password that the new rule refuses; first run passed acceptance but failed that test."
+ },
+ {
+  "change": "C3",
+  "attempts": 8,
+  "passes_acceptance": true,
+  "passes_existing_tests": true,
+  "notes": "LANGUAGE LIMITATION: an order-dependent running total cannot be written in the program (the element policy of `keeping` is stateless, no mutable variable, no list indexing, `sum` has no access to partial sums; 5 of the attempts were compiler probes for these). The policy only enforces the per-Send bound (cents <= 50000); the running total is kept by the trusted host at the send_money binding (integer cents, refuses without adding), i.e. host enforcement at call time, NOT an inventory checked by the policy. To keep the answer note correct the commit loop became a `sum` that counts host refusals. Existing test edited minimally: it sent 1,000,000.00, now 500.00."
+ },
+ {
+  "change": "C4",
+  "attempts": 1,
+  "passes_acceptance": true,
+  "passes_existing_tests": true,
+  "notes": "New host inventory `request_ibans` (same IBAN regex over the request, own IBAN excluded), shown in both prompts; Retarget policy arm switched from `payees` to `request_ibans`. No language limitation."
+ },
+ {
+  "change": "C5",
+  "attempts": 6,
+  "passes_acceptance": true,
+  "passes_existing_tests": true,
+  "notes": "LANGUAGE LIMITATION: the compiler rejects (E0412) any commit gated on len(fora), since the refused operations are Untrusted data; and the native all-or-nothing `refine` without `keeping` cannot report the operation count nor tell a policy refusal from an invalid form (and each refine re-samples the model). Implemented with a new non-bank tool hold_plan(len(fora)) called before the first write: the trusted host then blocks every write of the plan; the note reports len(writes)+len(fora). This is host enforcement, not a policy-checked inventory. Existing test edited minimally (obedient utility 125->63). The INCOMPLETE diff is only an approximation: it omits the hold_plan call, so allowed operations AFTER the refused one also execute; 'stop at the first refused one' is not expressible because the program never learns the position of a refused operation. Blocked writes are still recorded by the host as calls with an error, which is why test_the_policy_still_decides_the_recipient still passes unchanged."
+ },
+ {
+  "change": "C6",
+  "attempts": 1,
+  "passes_acceptance": true,
+  "passes_existing_tests": true,
+  "notes": "Policy arms of Send and Schedule add s.links_within(\"subject_links\", subject) against a new EMPTY trusted host inventory (shown in both prompts). LANGUAGE LIMITATION: the built-in link grammar does not treat `www.` glued to a preceding ASCII letter/digit (e.g. `seewww.x`) as a link and policies have no substring search, so the host also refuses any write whose subject matches https?://|www\\. case-insensitively at call time; that residual case is refused but not counted in the answer note."
+ }
+]

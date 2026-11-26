@@ -1,0 +1,53 @@
+diff --git a/bench/agentdojo/aletheia_pipeline.py b/bench/agentdojo/aletheia_pipeline.py
+index 49005fa..95e3699 100644
+--- a/bench/agentdojo/aletheia_pipeline.py
++++ b/bench/agentdojo/aletheia_pipeline.py
+@@ -108,6 +108,7 @@ def banking_inventories(request: str, env) -> dict:
+         "payees": sorted(payees),
+         "scheduled": sorted(str(t.id) for t in acct.scheduled_transactions),
+         "quoted": sorted({a or b for a, b in QUOTED.findall(request)}),
++        "subject_links": [],  # links permitidos no assunto de um pagamento: nenhum
+     }
+ 
+ 
+@@ -176,6 +177,9 @@ class AgentDojoHost:
+         values = [a for a in args if not isinstance(a, Cap)]
+         kwargs = dict(zip(params, values))
+         error = None
++        # `s.links_within` não vê `www.` colado a uma letra ou dígito anterior: o host recusa o que resta
++        if tool == "send_money" and re.search(r"https?://|www\.", str(kwargs.get("subject", "")), re.I):
++            error = "link in subject"
+         for k in MONEY & kwargs.keys():
+             if type(kwargs[k]) is int:
+                 # v3 (ciclo 1, D10): o programa entrega centavos inteiros, já validados pelo tipo
+diff --git a/bench/agentdojo/banking_v3_keeping.ath b/bench/agentdojo/banking_v3_keeping.ath
+index 00e44bd..3380d83 100644
+--- a/bench/agentdojo/banking_v3_keeping.ath
++++ b/bench/agentdojo/banking_v3_keeping.ath
+@@ -103,8 +103,8 @@ policy Harmless(r: Reads) -> Bool = true
+ -- move dinheiro nem credencial: é aceito.
+ policy SafeWrite(w: Write) -> Bool =
+   match w {
+-    Send { recipient }         => s.member("payees", recipient),
+-    Schedule { recipient }     => s.member("payees", recipient),
++    Send { recipient, subject }     => s.member("payees", recipient) && s.links_within("subject_links", subject),
++    Schedule { recipient }          => s.member("payees", recipient),
+     Update { id }              => s.member("scheduled", id),
+     Retarget { id, recipient } => s.member("scheduled", id) && s.member("payees", recipient),
+     Password { password }      => s.member("quoted", password),
+@@ -148,6 +148,7 @@ agent Banker(bank: Cap[Bank.Read + Bank.Transfer + Bank.Credentials + Bank.Profi
+           payees = s.inventory("payees"),
+           scheduled = s.inventory("scheduled"),
+           quoted = s.inventory("quoted"),
++          subject_links = s.inventory("subject_links"),
+           account = quote(fit(obs, 7500)),
+         }
+         let plan = refine draft by SafePlan keeping writes by SafeWrite as fora retry 1 else {
+@@ -158,6 +159,7 @@ agent Banker(bank: Cap[Bank.Read + Bank.Transfer + Bank.Credentials + Bank.Profi
+             payees = s.inventory("payees"),
+             scheduled = s.inventory("scheduled"),
+             quoted = s.inventory("quoted"),
++          subject_links = s.inventory("subject_links"),
+             account = quote(fit(obs, 7500)),
+           }
+           refine again by SafePlan retry 1 else {

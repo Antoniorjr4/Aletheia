@@ -1,0 +1,28 @@
+diff --git a/bench/agentdojo/hardened/banking_hardened.py b/bench/agentdojo/hardened/banking_hardened.py
+index 13b5829..d3e4988 100644
+--- a/bench/agentdojo/hardened/banking_hardened.py
++++ b/bench/agentdojo/hardened/banking_hardened.py
+@@ -31,6 +31,7 @@ import hashlib
+ import json
+ import re
+ from dataclasses import dataclass, field
++from decimal import Decimal
+ from typing import Annotated, Any, Callable, Literal, Union
+ 
+ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
+@@ -222,9 +223,14 @@ def banking_inventories(request: str, env) -> dict:
+     }
+ 
+ 
++SEND_CAP = Decimal("500.00")
++
++
+ def safe_write(w, inv: dict) -> bool:
+     """A mesma regra do `SafeWrite` do programa Aletheia."""
+-    if isinstance(w, (Send, Schedule)):
++    if isinstance(w, Send):
++        return w.recipient in inv["payees"] and Decimal(w.amount) <= SEND_CAP
++    if isinstance(w, Schedule):
+         return w.recipient in inv["payees"]
+     if isinstance(w, Update):
+         return str(w.id) in inv["scheduled"]

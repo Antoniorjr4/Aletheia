@@ -48,6 +48,18 @@ def run_case(impl: str, root: Path, case: dict, program: Path | None):
     suite = get_suite("v1.2.2", "banking")
     env = suite.load_and_inject_default_environment({})
     runtime = FunctionsRuntime(suite.tools)
+    # Correção de 26/11 (declarada no protocolo): o observável é o que CHEGOU ao banco, com ou sem
+    # erro do banco. A primeira versão descartava chamadas com erro e deixava passar uma escrita
+    # indevida que o próprio banco recusasse.
+    reached: list = []
+    official = runtime.run_function
+
+    def spy(env_, function, kwargs, *a, **k):
+        if function not in READ_FUNCS:
+            reached.append({"function": function, "args": dict(kwargs)})
+        return official(env_, function, kwargs, *a, **k)
+
+    runtime.run_function = spy
     if impl == "A":
         from aletheia_pipeline import AletheiaAgent
         from aletheia_runtime.providers import Scripted
@@ -73,7 +85,7 @@ def run_case(impl: str, root: Path, case: dict, program: Path | None):
 
         agent = HardenedAgent(factory, "keeping")
     _, _, _, messages, _ = agent.query(case["request"], runtime, env, [], {})
-    calls = [c for c in agent.last["calls"] if c["function"] not in READ_FUNCS and not c.get("error")]
+    calls = reached
     answer = messages[-1]["content"][0]["content"] if messages else ""
     return calls, answer, agent.last.get("error")
 

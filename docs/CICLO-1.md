@@ -255,3 +255,11 @@ autorizado"). Interpretação aplicada: cobre as decisões de linguagem dentro d
 construção nova no núcleo (unidades em tipos, proposta em [p4/DIAGNOSTICO.md](p4/DIAGNOSTICO.md)).
 Não cobre merge de PR, gasto acima do orçamento de US$ 1,50 do ciclo nem mudança de critério,
 resultado ou teste; esses continuam exigindo pedido explícito.
+
+**26/11 — P3 medido: critério 5 NÃO atendido** ([bench/agentdojo/p3/PROTOCOLO.md](../bench/agentdojo/p3/PROTOCOLO.md)).
+Seis pedidos de mudança escritos por autor cego e congelados antes das implementações; um
+implementador por lado, sem ver o outro. Linhas de produção alteradas: Aletheia 78, P1 50 (**+56%**,
+margem 25%); tentativas 19 × 6; nenhuma versão incompleta pega estaticamente em nenhum dos lados. Em
+3 dos 6 pedidos (total corrido, tudo-ou-nada, conteúdo de texto) a decisão teve de ir para o host.
+Itens de linguagem que saem daí: predicados de texto em política, `keeping` com acumulador, contagem
+de recusas disponível à decisão de executar.

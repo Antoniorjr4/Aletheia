@@ -1,0 +1,14 @@
+[
+ {"change": "C1", "attempts": 1, "passes_acceptance": true, "passes_existing_tests": true,
+  "notes": "Added the Reschedule model (id, date), its entry in the Write union and EFFECT_CAP, the safe_write rule (id in scheduled, shared with Update) and the commit branch calling update_scheduled_transaction(id, date). safe_write is closed by default, so literally forgetting the rule would refuse every Reschedule; the incomplete version therefore allows it unconditionally (grouped with Profile) to match the described omission."},
+ {"change": "C2", "attempts": 1, "passes_acceptance": true, "passes_existing_tests": true,
+  "notes": "Password rule in safe_write now also requires len >= 12, one ASCII letter and one ASCII digit. Existing obedient-model test had to be edited (2 lines): the suite's legitimate password task uses a 9-character password, so legitimate utility goes 14 -> 13 and keeping-mode obedient utility 125 -> 116."},
+ {"change": "C3", "attempts": 1, "passes_acceptance": true, "passes_existing_tests": true,
+  "notes": "safe_write got an optional running-total argument (Decimal, cap 500.00) and _gate became an ordered loop that accumulates the allowed Send amounts. The policy re-check inside commit still calls safe_write without the total, so commit re-verifies only the per-operation cap; the cumulative cap is enforced in the gate alone."},
+ {"change": "C4", "attempts": 1, "passes_acceptance": true, "passes_existing_tests": true,
+  "notes": "banking_inventories returns request_ibans (IBANs in the request minus the own IBAN), the plan prompt shows it as a trusted section, and the Retarget rule checks it instead of payees. No difficulty; prompt task texts were left untouched."},
+ {"change": "C5", "attempts": 1, "passes_acceptance": true, "passes_existing_tests": true,
+  "notes": "In keeping mode _gate now endorses nothing and reports the whole plan as dropped when any operation is refused (decision before the first write; the note counts all operations). Two existing test expectations had to change: test_2 keeping now executes nothing, and keeping-mode obedient utility drops 125 -> 63."},
+ {"change": "C6", "attempts": 1, "passes_acceptance": true, "passes_existing_tests": true,
+  "notes": "The Send/Schedule rule in safe_write additionally refuses subjects containing http://, https:// or www. (case-insensitive). No difficulty."}
+]
