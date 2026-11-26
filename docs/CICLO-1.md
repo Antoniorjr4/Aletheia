@@ -302,3 +302,61 @@ final traz as duas.
 corrigidos em `packs_v2`, iguais para os dois lados. A autoria parou no teto de US$ 0,42, nas
 repetições 1–2. **Gasto do ciclo: US$ 1,1504.** Ainda não houve avaliação; a decisão sobre a terceira
 repetição fica com o Antonio e é tomada antes de ver os resultados.
+
+**26/11 — gasto adicional autorizado: US$ 0,00.** Antonio, 13:32: limite de US$ 1,00 no acumulado,
+já passado (US$ 1,1504), então nenhuma chamada paga. Os jobs pagos do `agentdojo.yml` agora falham
+antes de qualquer requisição se o pedido passar de `bench/orcamento/AUTORIZACAO.json` (hoje 0).
+
+**26/11 — M11: avaliação adversarial local** ([bench/m11/AVALIACAO-LOCAL.md](../bench/m11/AVALIACAO-LOCAL.md)).
+M11 interrompido por orçamento após 32 de 48 autorias. Avaliação adversarial local realizada;
+utilidade com modelo real e critério principal de superioridade não avaliados. Resultado local contra
+a Aletheia: a 1ª versão roda em 0/16 (Python 13/16), a final roda em 9/16 (Python 15/16), a final é
+segura em 6/16 (Python 13/16). Causa dominante: renomeação de campo no padrão, tentada em 15 das 16
+autorias, sem diagnóstico que diga a alternativa. Achados: um defeito no texto do E0422 (cita a
+suíte bancária) e uma limitação de vocabulário (faixa numérica numa linha confiável).
+
+**26/11 — reserva de saldo antes de cada requisição** ([bench/orcamento/reserva.py](../bench/orcamento/reserva.py)).
+O livro do M10 confere o teto antes e debita depois, e as tentativas internas do cliente não passam
+por ele; daí US$ 0,4210 contra um teto de 0,42. O módulo novo calcula o pior caso (entrada por cota em
+bytes, saída por `max_completion_tokens`), recusa sem enviar se não cabe, grava a reserva antes,
+liquida pelo uso informado ou pelo pior caso, desliga as tentativas internas e faz cada tentativa
+passar pela reserva. Onze testes offline, inclusive o histórico real do M11 reaplicado (para antes de
+0,42). Fica separado dos artefatos congelados: `bench/m10/author.py` não foi tocado. Qualquer campanha
+futura precisa ligá-lo ao executor e ao avaliador, e isso depende de autorização de gasto.
+
+## Parecer do checkpoint (01/12/2026), escrito em 26/11
+
+Resultados medidos, todos mantidos, os contrários inclusive:
+
+| frente | resultado | leitura |
+| --- | --- | --- |
+| capacidades pós-P3 (texto na política, `keeping` com estado, `keeping all`, E0451, D15, D16) | implementadas, com prova Lean de `pruneOrd`/`pruneAll`, revisão independente e reproduções dirigidas recusadas | [docs/p3/CAPACIDADES.md](p3/CAPACIDADES.md) |
+| decisões retiradas do host | reaplicação C2/C3/C5/C6 só no programa: 78 → 38 linhas | diagnóstico, não medição cega |
+| manutenção P3 | 78 × 50, critério **não** atendido | contra |
+| manutenção P3b (pedidos cegos novos, versão congelada) | 83 × 102 (0,81), critério **atendido**; tentativas 16 × 6; D3 no handler; D5 depende do host | a favor nas linhas, com custo em tentativas e uma regra fora da linguagem |
+| autoria e segurança M11 (local) | 1ª versão roda 0/16 × 13/16; final segura 6/16 × 13/16 | contra |
+| utilidade M11 com modelo real | não avaliada | sem orçamento |
+| critério principal de superioridade | não avaliado | sem orçamento |
+
+**Parecer.** Até aqui, o ciclo não demonstra superioridade da Aletheia sobre um Python competente.
+Ele demonstra três coisas menores. Primeiro, com as capacidades novas, as regras do P3 cabem no
+programa e a manutenção ficou mais curta numa medição cega (P3b), ao custo de mais tentativas.
+Segundo, as garantias seguraram: nenhuma violação passou por fora da política escrita, e saída
+malformada nunca foi aceita. Terceiro, a autoria por modelo piorou com os guias v2, e a causa
+principal é estreita e identificável.
+
+Bloqueios, em ordem de efeito medido:
+
+1. **Renomeação de campo no padrão** (`Use { item: k }`). É limitação da linguagem, e a mensagem de
+   erro não diz a alternativa. Pesou em 15 das 16 autorias.
+2. **Texto do E0422.** Defeito de implementação: local errado e ajuda de outra suíte.
+3. **Faixa numérica numa linha confiável** (`chave|mín|máx`). Limitação de vocabulário; causou a
+   única violação exclusiva da Aletheia que não foi omissão do autor.
+4. **Conjunto de caracteres na política** (D5 do P3b). Limitação; levou a regra para o host.
+5. **Palavras reservadas sem aviso** (`authority`, `policy`). Diagnóstico insuficiente.
+
+Corrigir 1, 2 e 5 não exige gasto e não muda a semântica das garantias. Mesmo assim, qualquer
+correção vira uma versão nova: a medição do M11 continua presa a `223fb53`, e um efeito sobre a
+autoria só pode ser medido com nova autorização de gasto. Sem ela, o que cabe até 08/12 é mostrar por
+reaplicação local, declarada como diagnóstico, que as 32 autorias existentes passariam a compilar ou
+não. A decisão final de 08/12 terá de dizer que o critério principal não foi avaliado.

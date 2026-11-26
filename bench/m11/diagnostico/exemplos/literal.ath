@@ -1,0 +1,15 @@
+module ex.literal
+type Op = | Move { opp: Text[..20], stage: Text[..20] }
+type Plan = | Plan { ops: List[Op, 0..4], answer: Text[..200] }
+model m { id = "x" provider = "groq" version = "1" price_in = 0.15 price_out = 0.60 ctx = 131072 max_out = 2000 reasoning = 0 overhead = 0 ttft = 1.0 per_tok = 0.05 }
+policy Ok(o: Op) -> Bool = match o { Move { opp, stage } => s.binds("next_stages", opp, stage) && stage != "closed_won" }
+policy P(p: Plan) -> Bool = true
+agent A(c: Cap[Crm.Read])
+  budget [tok <= 50000, usd <= 0.10, wall <= 100.0]
+{
+  on task(request: Text[..200] ^ Trusted) -> Text ! { Infer } {
+    let d = infer m -> Plan { task = "x", request = request, stages = s.inventory("next_stages") }
+    let plan = refine d by P keeping ops by Ok as left retry 1 else { Plan { ops: [], answer: "no" } }
+    match plan { Plan { answer } => answer }
+  }
+}

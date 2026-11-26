@@ -90,3 +90,11 @@ o dono do projeto é avisado; nenhum teto sobe sem autorização expressa.
   ~US$ 0,21, e somado à avaliação (≤ 0,18) o ciclo passaria de US$ 1,50. A escolha entre avaliar só as
   2 repetições (desvio declarado: 2 em vez de 3) e pedir autorização para a terceira é feita **antes**
   de ver qualquer resultado, para que olhar os números não decida quando parar.
+- **26/11 — orçamento encerrado; avaliação local.** O Antonio recusou as duas opções (avaliar com o
+  modelo real e fazer a 3ª repetição) e fixou em US$ 0,00 a autorização de gasto adicional. Não existe
+  decisão automática por falta de resposta. Avaliação adversarial local das 32 autorias, sem
+  credenciais, gasto US$ 0,00: [AVALIACAO-LOCAL.md](AVALIACAO-LOCAL.md). Registro:
+  **M11 interrompido por orçamento após 32 de 48 autorias. Avaliação adversarial local realizada;
+  utilidade com modelo real e critério principal de superioridade não avaliados.** A1 e A4 ficam sem
+  resultado. A 3ª repetição ausente não é falha dos agentes. Nenhuma tarefa ou versão foi escolhida
+  depois de ver resultados.

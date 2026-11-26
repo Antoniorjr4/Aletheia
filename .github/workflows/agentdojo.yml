@@ -76,6 +76,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # ciclo 1: o compilador histórico é construído de um commit anterior
+      - name: autorização de gasto (antes de qualquer requisição)
+        run: python3 bench/orcamento/autorizacao.py --pedido "${{ inputs.max_usd_total }}"
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -151,6 +153,8 @@ jobs:
       TERM: dumb
     steps:
       - uses: actions/checkout@v4
+      - name: autorização de gasto (antes de qualquer requisição)
+        run: python3 bench/orcamento/autorizacao.py --pedido "${{ startsWith(inputs.task, 'm10-eval') && inputs.max_usd || startsWith(inputs.task, 'm11-eval') && inputs.max_usd || inputs.max_usd_total }}"
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
