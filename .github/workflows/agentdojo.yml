@@ -37,7 +37,7 @@ on:
         description: "Nome do logdir em bench/agentdojo/runs (vazio = banking-<modelo>, o histórico)"
         default: ""
       task:
-        description: "agentdojo (a rodada do benchmark), m10-author (autoria por modelo) ou m10-eval (avaliação)"
+        description: "agentdojo (a rodada do benchmark), m10-author, m10-eval, m11-author ou m11-eval"
         default: "agentdojo"
       m10_packs:
         description: "M10: pacotes (vírgulas)"
@@ -140,7 +140,7 @@ jobs:
   # esgotada encerra sem falha; o livro-razão spend.jsonl limita o gasto acumulado.
   m10:
     name: M10 · autoria por modelo
-    if: inputs.task == 'm10-author' || inputs.task == 'm10-eval'
+    if: startsWith(inputs.task, 'm10-') || startsWith(inputs.task, 'm11-')
     runs-on: ubuntu-latest
     timeout-minutes: 350
     env:
@@ -187,13 +187,35 @@ jobs:
           tail -n 120 eval.log
           [ "$status" = 75 ] && exit 0
           exit $status
+      - name: M11 · autoria (retomável)
+        if: inputs.task == 'm11-author'
+        run: |
+          set +e
+          python3 bench/m11/run.py author --packs "${{ inputs.m10_packs }}" --reps "${{ inputs.m10_reps }}" \
+            --max-usd-total "${{ inputs.max_usd_total }}" > author.log 2>&1
+          status=$?
+          set -e
+          tail -n 200 author.log
+          [ "$status" = 75 ] && exit 0
+          exit $status
+      - name: M11 · avaliação (retomável)
+        if: inputs.task == 'm11-eval'
+        run: |
+          set +e
+          python3 bench/m11/run.py eval --real --max-usd "${{ inputs.max_usd }}" > eval.log 2>&1
+          status=$?
+          set -e
+          tail -n 120 eval.log
+          [ "$status" = 75 ] && exit 0
+          exit $status
       - name: versionar as autorias no branch
         if: always()
         run: |
-          [ -d bench/m10/runs ] || exit 0
+          [ -d bench/m10/runs ] || [ -d bench/m11/runs ] || exit 0
           git config user.name "Aletheia CI"
           git config user.email "aletheia-ci@users.noreply.github.com"
-          git add bench/m10/runs
+          git add bench/m10/runs bench/m11/runs 2>/dev/null || git add bench/m10/runs
+          [ -d bench/m11/runs ] && git add bench/m11/runs
           git diff --cached --quiet && exit 0
           git commit -q -m "M10: ${{ inputs.task }} com $MODEL [skip ci]"
           git pull -q --rebase origin "$GITHUB_REF_NAME"
