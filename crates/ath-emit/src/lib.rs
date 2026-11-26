@@ -861,6 +861,15 @@ impl<'m> Gen<'m> {
                 let a = self.expr(&args[0])?;
                 return Ok(self.assign("t", format!("R.text_({a})")));
             }
+            "contains" => {
+                let a = self.expr(&args[0])?;
+                let b = self.expr(&args[1])?;
+                return Ok(self.assign("t", format!("R.contains({a}, {b})")));
+            }
+            name @ ("lower" | "ascii_letters" | "ascii_digits") => {
+                let a = self.expr(&args[0])?;
+                return Ok(self.assign("t", format!("R.{name}({a})")));
+            }
             "join" => {
                 let a = self.expr(&args[0])?;
                 let b = self.expr(&args[1])?;

@@ -640,7 +640,7 @@ impl Canon<'_> {
             ExprKind::Call { callee, args } => {
                 self.w("(call ");
                 match callee.name.as_str() {
-                    "fit" | "sample" | "text" | "join" => {
+                    "fit" | "sample" | "text" | "join" | "contains" | "lower" | "ascii_letters" | "ascii_digits" => {
                         let _ = write!(self.out, "prim:{}", callee.name);
                     }
                     n => self.reference(n),

@@ -618,6 +618,28 @@ class Runtime:
             raise RtErr("R0103", "`len` sobre valor que não é lista nem texto")
         return len(v)
 
+    # Ciclo 1 (P3): propriedades de texto. Só ASCII muda de caixa ou conta como letra/dígito, para
+    # que os dois runtimes decidam igual (`str.lower` e `str.isdigit` do Python são Unicode).
+    def contains(self, t, p) -> bool:
+        if not isinstance(t, str) or not isinstance(p, str):
+            raise RtErr("R0103", "`contains` sobre valor não textual")
+        return p in t
+
+    def lower(self, t) -> str:
+        if not isinstance(t, str):
+            raise RtErr("R0103", "`lower` sobre valor não textual")
+        return "".join(chr(ord(c) + 32) if "A" <= c <= "Z" else c for c in t)
+
+    def ascii_letters(self, t) -> int:
+        if not isinstance(t, str):
+            raise RtErr("R0103", "`ascii_letters` sobre valor não textual")
+        return sum(1 for c in t if "a" <= c <= "z" or "A" <= c <= "Z")
+
+    def ascii_digits(self, t) -> int:
+        if not isinstance(t, str):
+            raise RtErr("R0103", "`ascii_digits` sobre valor não textual")
+        return sum(1 for c in t if "0" <= c <= "9")
+
     def sum_body(self, v):
         if not is_int(v):
             raise RtErr("R0103", "corpo de `sum` não inteiro")

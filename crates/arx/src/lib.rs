@@ -2086,6 +2086,22 @@ impl<'m> Arx<'m> {
                 }
                 return Ok(Value::Text(parts.join(&sep)));
             }
+            "contains" => {
+                let (Value::Text(t), Value::Text(p)) = (self.eval(&args[0])?, self.eval(&args[1])?) else {
+                    return Err(rt("R0103", "`contains` sobre valor não textual").into());
+                };
+                return Ok(Value::Bool(t.contains(p.as_str())));
+            }
+            "lower" | "ascii_letters" | "ascii_digits" => {
+                let Value::Text(t) = self.eval(&args[0])? else {
+                    return Err(rt("R0103", format!("`{}` sobre valor não textual", callee.name)).into());
+                };
+                return Ok(match callee.name.as_str() {
+                    "lower" => Value::Text(t.to_ascii_lowercase()),
+                    "ascii_letters" => Value::Int(t.chars().filter(char::is_ascii_alphabetic).count() as i64),
+                    _ => Value::Int(t.chars().filter(char::is_ascii_digit).count() as i64),
+                });
+            }
             "len" => {
                 return match self.eval(&args[0])? {
                     Value::List(items) => Ok(Value::Int(items.len() as i64)),

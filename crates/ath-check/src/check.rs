@@ -175,7 +175,8 @@ pub const MODEL_PROPS: [&str; 6] = ["price_in", "price_out", "ctx", "max_out", "
 pub const MODEL_OPTIONAL: [&str; 2] = ["reasoning", "overhead"];
 /// Identidade versionada do contrato Δ.
 pub const MODEL_META: [&str; 3] = ["id", "provider", "version"];
-const BUILTINS: [&str; 5] = ["fit", "sample", "len", "text", "join"];
+const BUILTINS: [&str; 9] =
+    ["fit", "sample", "len", "text", "join", "contains", "lower", "ascii_letters", "ascii_digits"];
 
 pub struct Ctx<'m> {
     pub m: &'m Module,
@@ -2357,6 +2358,68 @@ impl<'m> Ctx<'m> {
                     out.tok = None;
                 }
                 return out;
+            }
+            // **Ciclo 1 (P3): propriedades de texto.** Funções puras e totais sobre `Text`, para a
+            // política decidir sobre conteúdo sem passar a regra ao host. O resultado herda os
+            // rótulos dos argumentos: inspecionar um texto não o endossa nem o torna público.
+            //   contains(t, p)    Bool  `p` ocorre em `t` (pontos de código, exato; "" ocorre sempre)
+            //   lower(t)          Text  só A–Z viram a–z; todo o resto fica como está
+            //   ascii_letters(t)  Int   quantos caracteres em A–Z ou a–z
+            //   ascii_digits(t)   Int   quantos caracteres em 0–9
+            "contains" => {
+                if args.len() != 2 {
+                    self.push(Diag::new(
+                        E0,
+                        "E0007",
+                        "`contains(texto, trecho)` recebe 2 argumentos",
+                        e.span,
+                        "aridade",
+                    ));
+                    return LTy::never();
+                }
+                let t = self.expr(&args[0]);
+                let p = self.expr(&args[1]);
+                for (a, x) in [(&args[0], &t), (&args[1], &p)] {
+                    if !assignable(&x.ty, &Ty::Text) {
+                        self.mismatch(a.span, &Ty::Text, &x.ty);
+                    }
+                }
+                let mut out = LTy::trusted(Ty::Bool);
+                out.meet_from(&t);
+                out.meet_from(&p);
+                out.join_conf_from(&t);
+                out.join_conf_from(&p);
+                return out;
+            }
+            "lower" | "ascii_letters" | "ascii_digits" => {
+                let name = callee.name.as_str();
+                if args.len() != 1 {
+                    self.push(Diag::new(E0, "E0007", format!("`{name}(texto)` recebe 1 argumento"), e.span, "aridade"));
+                    return LTy::never();
+                }
+                let t = self.expr(&args[0]);
+                if !assignable(&t.ty, &Ty::Text) {
+                    self.mismatch(args[0].span, &Ty::Text, &t.ty);
+                    return LTy::never();
+                }
+                if name == "lower" {
+                    // mesmo número de caracteres e de tokens: os limites do argumento valem
+                    return LTy { ty: Ty::Text, lab: t.lab, conf: t.conf, tok: t.tok, origin: t.origin, refn: t.refn };
+                }
+                return LTy {
+                    ty: Ty::Int,
+                    lab: t.lab,
+                    conf: t.conf,
+                    tok: None,
+                    origin: t.origin.clone(),
+                    refn: Some(Refn::Int {
+                        lo: Some(0),
+                        hi: match t.refn {
+                            Some(Refn::Text { max }) => Some(max as i64),
+                            _ => None,
+                        },
+                    }),
+                };
             }
             "len" => {
                 if args.len() != 1 {
