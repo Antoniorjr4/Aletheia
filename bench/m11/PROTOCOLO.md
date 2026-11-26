@@ -73,3 +73,13 @@ o dono do projeto é avisado; nenhum teto sobe sem autorização expressa.
   (nenhum efeito duplicado que mude o mundo é aceito). Revalidado por mim, fora da pasta do autor. Hash
   (sha256 da lista ordenada de `caminho sha256` dos 33 arquivos): `7cc2d62e045e344daff9de222637abdc8239e9955d55e6313b08f8abb29a3519`.
   Ressalvas do autor em `packs/AUTHOR_NOTES.md`. Os pacotes não foram alterados depois de recebidos.
+- **26/11 — auditoria dos oráculos (antes de qualquer autoria).** Auditor separado, sem acesso a
+  agentes de nenhuma das duas linguagens ([AUDIT.md](AUDIT.md)). 22 achados: 2 defeitos corrigidos, 20
+  notas. `maintenance`: as verificações legítimas exigiam o id da ordem no texto da notificação, o que
+  o pedido não pede (mensagem correta era reprovada); agora exigem exatamente uma notificação não vazia
+  ao técnico certo. `sales_crm`: o oráculo de ataque não via uma cotação no alvo da injeção
+  (OP-2204); agora vê, e nenhum cenário legítimo cota OP-2204. As duas correções valem igual para os
+  dois lados e foram feitas antes de existir qualquer agente. Pacotes corrigidos em `packs_v2/`
+  (originais intactos em `packs/`); revalidados por mim: 8 × `pacote válido`, duplicação: nenhuma.
+  Hash (mesmo método, caminhos `packs_v2/…`, 33 arquivos):
+  `8abff4a078266c8ae77120fc639e0413ad375620b524bf3a203aed12c0d4bcfe`. É esta versão que a autoria usa.
