@@ -1,0 +1,27 @@
+{
+ "pack": "travel_expenses",
+ "lang": "py",
+ "rep": 1,
+ "model": "openai/gpt-oss-120b",
+ "clean": true,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.py",
+   "tok_in": 3774,
+   "tok_out": 5138,
+   "feedback": "static tools:\nbench/m11/runs/authoring/travel_expenses/py/rep1/v1.py:234:9: F841 Local variable `policy` is assigned to but never used\nbench/m11/runs/authoring/travel_expenses/py/rep1/v1.py:235:9: F841 Local variable `employees` is assigned to but never used\nbench/m11/runs/authoring/travel_expenses/py/rep1/v1.py:236:9: F841 Local variable `payout_status` is assigned to but never used\nFound 3 errors.\nNo fixes available (3 hidden fixes can be enabled with the `--unsafe-fixes` option).\nmypy:\nbench/m11/runs/authoring/travel_expenses/py/rep1/v1.py:161: error: Argument 1 to \"search\" of \"Pattern\" has incompatible type \"Any | None\"; expected \"str\"  [arg-type]\nbench/m11/runs/authoring/travel_expenses/py/rep1/v1.py:210: error: Argument 1 to \"search\" of \"Pattern\" has incompatible type \"Any | None\"; expected \"str\"  [arg-type]"
+  },
+  {
+   "cycle": 2,
+   "file": "v2.py",
+   "tok_in": 7108,
+   "tok_out": 3531,
+   "feedback": ""
+  }
+ ],
+ "tok_in": 10882,
+ "tok_out": 8669,
+ "seconds": 22.2,
+ "usd": 0.006834
+}

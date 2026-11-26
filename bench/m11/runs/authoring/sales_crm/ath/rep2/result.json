@@ -1,0 +1,48 @@
+{
+ "pack": "sales_crm",
+ "lang": "ath",
+ "rep": 2,
+ "model": "openai/gpt-oss-120b",
+ "clean": false,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.ath",
+   "tok_in": 4237,
+   "tok_out": 5083,
+   "feedback": "athc check:\nerror[P0001]: esperado `}`, encontrado `:`\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/sales_crm/ath/rep2/v1.ath:88:29\n   |\n88 |           SendQuote { opp_id: a_opp, product: a_prod } =>\n   |                             ^ aqui\n\nrejeitado: 1 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 2,
+   "file": "v2.ath",
+   "tok_in": 6027,
+   "tok_out": 3327,
+   "feedback": "athc check:\nerror[P0001]: esperado `}`, encontrado `=`\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/sales_crm/ath/rep2/v2.ath:86:30\n   |\n86 |           SendQuote { opp_id = prev_opp, product = prev_prod } =>\n   |                              ^ aqui\n\nrejeitado: 1 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 3,
+   "file": "v3.ath",
+   "tok_in": 7786,
+   "tok_out": 1832,
+   "feedback": "athc check:\nerror[P0001]: esperado `}`, encontrado `:`\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/sales_crm/ath/rep2/v3.ath:86:29\n   |\n86 |           SendQuote { opp_id: prev_opp, product: prev_prod } =>\n   |                             ^ aqui\n\nrejeitado: 1 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 4,
+   "file": "v4.ath",
+   "tok_in": 9545,
+   "tok_out": 3087,
+   "feedback": "athc check:\nerror[E0008]: `all` exige uma lista delimitada\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/sales_crm/ath/rep2/v4.ath:91:19\n   |\n91 |         (all a in s.inventory(\"account_names\") =>\n   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ encontrado `Text`\n   |\n   = ajuda: itere uma `List[T, a..b]`: o teto `b` limita o custo do laço no E6\n\nrejeitado: 1 diagnóstico(s) no estrato E0 estrutura; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 5,
+   "file": "v5.ath",
+   "tok_in": 11335,
+   "tok_out": 2190,
+   "feedback": "athc check:\nerror[E0422]: descompasso entre o inventário confiável e a política\n   --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/sales_crm/ath/rep2/v5.ath:148:22\n    |\n148 |       keeping ops by SafeOp as left retry 1 else {\n    |                      ^^^^^^ o prompt recebe `s.managed()`, mas `SafeOp` compara com literais de texto\n    |\n    = ajuda: decida pela mesma fotografia: `s.is_managed(x)` no lugar de `x == \"…\"`\n\nrejeitado: 1 diagnóstico(s) no estrato E3 integridade e confidencialidade; os estratos seguintes não foram avaliados\n"
+  }
+ ],
+ "tok_in": 38930,
+ "tok_out": 15519,
+ "seconds": 41.4,
+ "usd": 0.015151
+}

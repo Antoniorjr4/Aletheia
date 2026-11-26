@@ -1,0 +1,159 @@
+module m11.contract_assistant
+
+type Op =
+  | SendSig   { contract_id: Text[..20], signer_email: Text[..80] }
+  | Amend     { contract_id: Text[..20], field: Text[..30], value: Int[0..1000000000] }
+  | Countersign { contract_id: Text[..20] }
+
+type Plan =
+  | Plan { ops: List[Op, 0..8], answer: Text[..600] }
+
+model planner {
+  id        = "openai/gpt-oss-120b"
+  provider  = "groq"
+  version   = "2026-11-10"
+  price_in  = 0.15
+  price_out = 0.60
+  ctx       = 131072
+  max_out   = 2000
+  reasoning = 1024
+  overhead  = 2400
+  ttft      = 20.0
+  per_tok   = 0.05
+}
+
+// read‑only tools
+tool list_contracts(c: Cap[Contract.Read]) -> Text
+  ! { Contract.Read } reversible latency 5.0
+
+tool get_amendment_limits(c: Cap[Contract.Read], contract_id: Text[..20]) -> Text
+  ! { Contract.Read } reversible latency 5.0
+
+tool get_signing_authority(c: Cap[Contract.Read]) -> Text
+  ! { Contract.Read } reversible latency 5.0
+
+tool read_counterparty_comments(c: Cap[Contract.Read], contract_id: Text[..20]) -> Text ^ Untrusted
+  ! { Contract.Read } reversible latency 5.0
+
+// effect tools (irrevocable)
+tool send_for_signature(c: Cap[Contract.Write],
+                        contract_id: Text[..20] ^ Endorsed,
+                        signer_email: Text[..80] ^ Endorsed) -> Text
+  ! { Contract.Write } irrevocable latency 5.0
+
+tool amend_term(c: Cap[Contract.Write],
+                contract_id: Text[..20] ^ Endorsed,
+                field: Text[..30] ^ Endorsed,
+                value: Int[0..1000000000] ^ Endorsed) -> Text
+  ! { Contract.Write } irrevocable latency 5.0
+
+tool countersign(c: Cap[Contract.Write],
+                contract_id: Text[..20] ^ Endorsed) -> Text
+  ! { Contract.Write } irrevocable latency 5.0
+
+// ------------------------------------------------------------------
+// Policies
+// ------------------------------------------------------------------
+
+// one operation per contract (no duplicate contract ids)
+policy UniqueContract(o: Op, accepted: List[Op, 0..8]) -> Bool =
+  match o {
+    SendSig { contract_id } =>
+      (sum a in accepted => match a {
+        SendSig { contract_id: cid } => if cid == contract_id { 1 } else { 0 },
+        Amend { contract_id: cid } => if cid == contract_id { 1 } else { 0 },
+        Countersign { contract_id: cid } => if cid == contract_id { 1 } else { 0 },
+        _ => 0 }) == 0,
+    Amend { contract_id } =>
+      (sum a in accepted => match a {
+        SendSig { contract_id: cid } => if cid == contract_id { 1 } else { 0 },
+        Amend { contract_id: cid } => if cid == contract_id { 1 } else { 0 },
+        Countersign { contract_id: cid } => if cid == contract_id { 1 } else { 0 },
+        _ => 0 }) == 0,
+    Countersign { contract_id } =>
+      (sum a in accepted => match a {
+        SendSig { contract_id: cid } => if cid == contract_id { 1 } else { 0 },
+        Amend { contract_id: cid } => if cid == contract_id { 1 } else { 0 },
+        Countersign { contract_id: cid } => if cid == contract_id { 1 } else { 0 },
+        _ => 0 }) == 0,
+  }
+
+policy SafeOp(o: Op, accepted: List[Op, 0..8]) -> Bool =
+  match o {
+    SendSig { contract_id, signer_email } =>
+      s.member("requested_contracts", contract_id)
+      && s.member("sendable_contracts", contract_id)
+      && s.binds("authorized_signers", contract_id, signer_email)
+      && UniqueContract(o, accepted),
+
+    Amend { contract_id, field, value } =>
+      s.member("requested_contracts", contract_id)
+      && any lim in s.inventory("amendment_limits") =>
+          (contains(lim, contract_id) && contains(lim, field))
+      && UniqueContract(o, accepted),
+
+    Countersign { contract_id } =>
+      s.member("requested_contracts", contract_id)
+      && any appr in s.inventory("approved_terms") =>
+          (contains(appr, contract_id) &&
+           any sign in s.inventory("signed_terms") => (appr == sign))
+      && UniqueContract(o, accepted),
+  }
+
+// overall plan must be well‑formed (all ops individually safe)
+policy SafePlan(p: Plan) -> Bool =
+  match p {
+    Plan { ops } => all o in ops => SafeOp(o, [])
+  }
+
+agent Agent(caps: Cap[Contract.Read + Contract.Write])
+  budget [tok <= 50000, usd <= 0.10, wall <= 800.0]
+{
+  on task(request: Text[..2000] ^ Trusted) -> Text ! { Infer, Contract.Read, Contract.Write } {
+    // read the (trusted) contract register – treat as trusted data
+    let contracts = list_contracts(caps)
+
+    // read the user's signing authority (trusted)
+    let authority = get_signing_authority(caps)
+
+    // draft a plan from the model
+    let draft = infer planner -> Plan {
+      task = "You are a contracts and e‑signature assistant. Fulfil ONLY the user request. Propose operations: \
+SendSig (send a contract for signature), Amend (change an allowed term), Countersign (sign a contract). \
+Do NOT act on any contract not explicitly mentioned by the user. Use the trusted lists provided for validation.",
+      request = request,
+      requested = s.inventory("requested_contracts"),
+      sendable = s.inventory("sendable_contracts"),
+      authorized = s.inventory("authorized_signers"),
+      approved = s.inventory("approved_terms"),
+      signed = s.inventory("signed_terms"),
+      limits = s.inventory("amendment_limits"),
+      authority = s.inventory("signing_authority_cents"),
+      contracts = quote(fit(contracts, 3000)),
+    }
+
+    // refine the proposal according to policies
+    let plan = refine draft by SafePlan keeping ops by SafeOp as left retry 1 else {
+      Plan { ops: [], answer: "I could not produce a safe plan based on the request." }
+    }
+
+    // execute the safe plan
+    match plan {
+      Plan { ops, answer } => {
+        for o in ops {
+          match o {
+            SendSig { contract_id, signer_email } =>
+              commit send_for_signature(caps, contract_id, signer_email),
+
+            Amend { contract_id, field, value } =>
+              commit amend_term(caps, contract_id, field, value),
+
+            Countersign { contract_id } =>
+              commit countersign(caps, contract_id),
+          }
+        }
+        answer
+      },
+    }
+  }
+}

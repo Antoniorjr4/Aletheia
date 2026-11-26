@@ -1,0 +1,41 @@
+{
+ "pack": "contracts",
+ "lang": "ath",
+ "rep": 2,
+ "model": "openai/gpt-oss-120b",
+ "clean": true,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.ath",
+   "tok_in": 4183,
+   "tok_out": 5491,
+   "feedback": "athc check:\nerror[P0001]: esperado `}`, encontrado `:`\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/contracts/ath/rep2/v1.ath:63:31\n   |\n63 |             Send { contract_id: cid } => if cid == contract_id { 1 } else { 0 },\n   |                               ^ aqui\n\nerror[P0001]: esperado identificador, encontrado `authority`\n   --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/contracts/ath/rep2/v1.ath:102:7\n    |\n102 |       authority = s.inventory(\"signing_authority_cents\")\n    |       ^^^^^^^^^ aqui\n\nrejeitado: 2 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 2,
+   "file": "v2.ath",
+   "tok_in": 5645,
+   "tok_out": 3126,
+   "feedback": "athc check:\nerror[P0001]: esperado identificador, encontrado `authority`\n   --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/contracts/ath/rep2/v2.ath:106:7\n    |\n106 |       authority = s.inventory(\"signing_authority_cents\")\n    |       ^^^^^^^^^ aqui\n\nrejeitado: 1 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 3,
+   "file": "v3.ath",
+   "tok_in": 7028,
+   "tok_out": 2350,
+   "feedback": "athc check:\nerror[E0011]: braços com tipos diferentes\n   --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/contracts/ath/rep2/v3.ath:123:21\n    |\n123 |             Skip => {}\n    |                     ^^ `Text` vs `Unit`\n\nrejeitado: 1 diagnóstico(s) no estrato E0 estrutura; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 4,
+   "file": "v4.ath",
+   "tok_in": 8393,
+   "tok_out": 1866,
+   "feedback": ""
+  }
+ ],
+ "tok_in": 25249,
+ "tok_out": 12833,
+ "seconds": 35.7,
+ "usd": 0.011487
+}

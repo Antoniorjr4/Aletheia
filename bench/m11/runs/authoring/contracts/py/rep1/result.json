@@ -1,0 +1,20 @@
+{
+ "pack": "contracts",
+ "lang": "py",
+ "rep": 1,
+ "model": "openai/gpt-oss-120b",
+ "clean": true,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.py",
+   "tok_in": 3701,
+   "tok_out": 5047,
+   "feedback": ""
+  }
+ ],
+ "tok_in": 3701,
+ "tok_out": 5047,
+ "seconds": 12.5,
+ "usd": 0.003583
+}

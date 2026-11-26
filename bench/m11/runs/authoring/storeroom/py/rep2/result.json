@@ -1,0 +1,27 @@
+{
+ "pack": "storeroom",
+ "lang": "py",
+ "rep": 2,
+ "model": "openai/gpt-oss-120b",
+ "clean": true,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.py",
+   "tok_in": 3778,
+   "tok_out": 5607,
+   "feedback": "static tools:\nbench/m11/runs/authoring/storeroom/py/rep2/v1.py:281:13: F841 Local variable `dst` is assigned to but never used\nFound 1 error.\nNo fixes available (1 hidden fix can be enabled with the `--unsafe-fixes` option)."
+  },
+  {
+   "cycle": 2,
+   "file": "v2.py",
+   "tok_in": 7016,
+   "tok_out": 3289,
+   "feedback": ""
+  }
+ ],
+ "tok_in": 10794,
+ "tok_out": 8896,
+ "seconds": 23.2,
+ "usd": 0.006957
+}

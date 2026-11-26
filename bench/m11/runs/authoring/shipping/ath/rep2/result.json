@@ -1,0 +1,48 @@
+{
+ "pack": "shipping",
+ "lang": "ath",
+ "rep": 2,
+ "model": "openai/gpt-oss-120b",
+ "clean": true,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.ath",
+   "tok_in": 4347,
+   "tok_out": 6375,
+   "feedback": "athc check:\nerror[P0001]: esperado `}`, encontrado `:`\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/shipping/ath/rep2/v1.ath:76:28\n   |\n76 |           Create { order_id: oid } => if oid == order_id { 1 } else { 0 },\n   |                            ^ aqui\n\nrejeitado: 1 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 2,
+   "file": "v2.ath",
+   "tok_in": 6247,
+   "tok_out": 3608,
+   "feedback": "athc check:\nerror[E0011]: braços com tipos diferentes\n   --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/shipping/ath/rep2/v2.ath:181:21\n    |\n181 |             Skip => {}\n    |                     ^^ `Text` vs `Unit`\n\nrejeitado: 1 diagnóstico(s) no estrato E0 estrutura; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 3,
+   "file": "v3.ath",
+   "tok_in": 8160,
+   "tok_out": 2133,
+   "feedback": "athc check:\nerror[P0001]: esperada uma expressão, encontrado `)`\n   --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/shipping/ath/rep2/v3.ath:174:77\n    |\n174 |               { let _ = commit create_shipment(log, order_id, address_id); () },\n    |                                                                             ^ aqui\n\nrejeitado: 1 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 4,
+   "file": "v4.ath",
+   "tok_in": 10109,
+   "tok_out": 2229,
+   "feedback": "athc check:\nerror[P0001]: esperada uma expressão, encontrado `)`\n   --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/shipping/ath/rep2/v4.ath:177:22\n    |\n177 |             Skip => ()\n    |                      ^ aqui\n\nrejeitado: 1 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 5,
+   "file": "v5.ath",
+   "tok_in": 12015,
+   "tok_out": 2071,
+   "feedback": ""
+  }
+ ],
+ "tok_in": 40878,
+ "tok_out": 16416,
+ "seconds": 42.5,
+ "usd": 0.015981
+}

@@ -1,0 +1,41 @@
+{
+ "pack": "shipping",
+ "lang": "py",
+ "rep": 2,
+ "model": "openai/gpt-oss-120b",
+ "clean": true,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.py",
+   "tok_in": 3865,
+   "tok_out": 6530,
+   "feedback": "static tools:\nbench/m11/runs/authoring/shipping/py/rep2/v1.py:49:9: F841 Local variable `budget_raw` is assigned to but never used\nbench/m11/runs/authoring/shipping/py/rep2/v1.py:61:5: F841 Local variable `shipments` is assigned to but never used\nFound 2 errors.\nNo fixes available (2 hidden fixes can be enabled with the `--unsafe-fixes` option).\nmypy:\nbench/m11/runs/authoring/shipping/py/rep2/v1.py:18: error: Incompatible default for argument \"allowed\" (default has type \"tuple[()]\", argument has type \"list[str]\")  [assignment]"
+  },
+  {
+   "cycle": 2,
+   "file": "v2.py",
+   "tok_in": 7068,
+   "tok_out": 3191,
+   "feedback": "static tools:\nbench/m11/runs/authoring/shipping/py/rep2/v2.py:2:37: F401 [*] `typing.Tuple` imported but unused\nbench/m11/runs/authoring/shipping/py/rep2/v2.py:62:5: F841 Local variable `shipments` is assigned to but never used\nFound 2 errors.\n[*] 1 fixable with the `--fix` option (1 hidden fix can be enabled with the `--unsafe-fixes` option)."
+  },
+  {
+   "cycle": 3,
+   "file": "v3.py",
+   "tok_in": 10173,
+   "tok_out": 3086,
+   "feedback": "static tools:\nbench/m11/runs/authoring/shipping/py/rep2/v3.py:62:5: F841 Local variable `shipment_dict` is assigned to but never used\nFound 1 error.\nNo fixes available (1 hidden fix can be enabled with the `--unsafe-fixes` option)."
+  },
+  {
+   "cycle": 4,
+   "file": "v4.py",
+   "tok_in": 13238,
+   "tok_out": 2996,
+   "feedback": ""
+  }
+ ],
+ "tok_in": 34344,
+ "tok_out": 15803,
+ "seconds": 46.8,
+ "usd": 0.014633
+}

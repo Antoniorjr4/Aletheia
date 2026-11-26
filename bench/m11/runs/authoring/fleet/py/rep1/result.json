@@ -1,0 +1,27 @@
+{
+ "pack": "fleet",
+ "lang": "py",
+ "rep": 1,
+ "model": "openai/gpt-oss-120b",
+ "clean": true,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.py",
+   "tok_in": 3887,
+   "tok_out": 6621,
+   "feedback": "static tools:\nbench/m11/runs/authoring/fleet/py/rep1/v1.py:203:17: E714 [*] Test for object identity should be `is not`\nFound 1 error.\n[*] 1 fixable with the `--fix` option."
+  },
+  {
+   "cycle": 2,
+   "file": "v2.py",
+   "tok_in": 7428,
+   "tok_out": 5211,
+   "feedback": ""
+  }
+ ],
+ "tok_in": 11315,
+ "tok_out": 11832,
+ "seconds": 34.6,
+ "usd": 0.008796
+}

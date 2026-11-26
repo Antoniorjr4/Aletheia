@@ -1,0 +1,48 @@
+{
+ "pack": "travel_expenses",
+ "lang": "ath",
+ "rep": 2,
+ "model": "openai/gpt-oss-120b",
+ "clean": false,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.ath",
+   "tok_in": 4256,
+   "tok_out": 5567,
+   "feedback": "athc check:\nerror[P0001]: esperada uma expressão, encontrado `let`\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/travel_expenses/ath/rep2/v1.ath:70:8\n   |\n70 |       (let emp_ok = s.binds(\"claim_employees\", claim_id, emp) &&\n   |        ^^^ aqui\n\nerror[P0001]: esperado identificador, encontrado `policy`\n   --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/travel_expenses/ath/rep2/v1.ath:117:7\n    |\n117 |       policy                  = quote(fit(policy_data, 2000)),\n    |       ^^^^^^ aqui\n\nrejeitado: 2 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 2,
+   "file": "v2.ath",
+   "tok_in": 6125,
+   "tok_out": 2818,
+   "feedback": "athc check:\nerror[P0001]: esperado `}`, encontrado `:`\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/travel_expenses/ath/rep2/v2.ath:76:36\n   |\n76 |           RequestReceipt { claim_id: cid } => if cid == claim_id { 1 } else { 0 },\n   |                                    ^ aqui\n\nerror[P0001]: esperada uma expressão, encontrado `)`\n   --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/travel_expenses/ath/rep2/v2.ath:141:22\n    |\n141 |             Skip => ()\n    |                      ^ aqui\n\nrejeitado: 2 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 3,
+   "file": "v3.ath",
+   "tok_in": 7961,
+   "tok_out": 2005,
+   "feedback": "athc check:\nerror[P0001]: esperado `}`, encontrado `:`\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/travel_expenses/ath/rep2/v3.ath:76:36\n   |\n76 |           RequestReceipt { claim_id: cid } => if cid == claim_id { 1 } else { 0 },\n   |                                    ^ aqui\n\nerror[P0001]: esperada uma expressão, encontrado `)`\n   --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/travel_expenses/ath/rep2/v3.ath:141:22\n    |\n141 |             Skip => ()\n    |                      ^ aqui\n\nrejeitado: 2 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 4,
+   "file": "v4.ath",
+   "tok_in": 9797,
+   "tok_out": 2058,
+   "feedback": "athc check:\nerror[P0001]: esperado `}`, encontrado `:`\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/travel_expenses/ath/rep2/v4.ath:76:36\n   |\n76 |           RequestReceipt { claim_id: cid } => if cid == claim_id { 1 } else { 0 },\n   |                                    ^ aqui\n\nerror[P0001]: esperada uma expressão, encontrado `)`\n   --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/travel_expenses/ath/rep2/v4.ath:141:22\n    |\n141 |             Skip => ()\n    |                      ^ aqui\n\nrejeitado: 2 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 5,
+   "file": "v5.ath",
+   "tok_in": 11633,
+   "tok_out": 2393,
+   "feedback": "athc check:\nerror[P0001]: esperada uma expressão, encontrado `)`\n   --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/travel_expenses/ath/rep2/v5.ath:136:22\n    |\n136 |             Skip => ()\n    |                      ^ aqui\n\nrejeitado: 1 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  }
+ ],
+ "tok_in": 39772,
+ "tok_out": 14841,
+ "seconds": 37.1,
+ "usd": 0.01487
+}

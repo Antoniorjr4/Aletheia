@@ -1,0 +1,34 @@
+{
+ "pack": "shipping",
+ "lang": "py",
+ "rep": 1,
+ "model": "openai/gpt-oss-120b",
+ "clean": true,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.py",
+   "tok_in": 3865,
+   "tok_out": 5567,
+   "feedback": "static tools:\nbench/m11/runs/authoring/shipping/py/rep1/v1.py:27:44: E741 Ambiguous variable name: `l`\nbench/m11/runs/authoring/shipping/py/rep1/v1.py:315:5: F841 Local variable `orders` is assigned to but never used\nbench/m11/runs/authoring/shipping/py/rep1/v1.py:316:5: F841 Local variable `shipments` is assigned to but never used\nbench/m11/runs/authoring/shipping/py/rep1/v1.py:317:5: F841 Local variable `carrier_rates` is assigned to but never used\nbench/m11/runs/authoring/shipping/py/rep1/v1.py:318:5: F841 Local variable `budget_info` is assigned to but never used\nFound 5 errors.\nNo fixes available (4 hidden fixes can be enabled with the `--unsafe-fixes` option).\nmypy:\nbench/m11/runs/authoring/shipping/py/rep1/v1.py:149: error: Need type annotation for \"cust_verified\" (hint: \"cust_verified: dict[<type>, <type>] = ...\")  [var-annotated]\nbench/m11/runs/authoring/shipping/py/rep1/v1.py:178: error: \"Callable[[dict[Any, Any], list[dict[Any, Any]], dict[str, list[str]]], bool]\" has no attribute \"_cache\"  [attr-defined]\nbench/m11/runs/authoring/shipping/py/rep1/v1.py:188: error: \"Callable[[dict[Any, Any], list[dict[Any, Any]], dict[str, list[str]]], bool]\" has no attribute \"_cache\"  [attr-defined]\nbench/m11/runs/authoring/shipping/py/rep1/v1.py:299: error: Argument 1 to \"links_ok\" has incompatible type \"Any | None\"; expected \"str\"  [arg-type]\nbench/m11/runs/authoring/shipping/py/rep1/v1.py:442: error: Incompatible return value type (got \"Sequence[Any]\", expected \"str\")  [return-value]"
+  },
+  {
+   "cycle": 2,
+   "file": "v2.py",
+   "tok_in": 8185,
+   "tok_out": 4234,
+   "feedback": "static tools:\nmypy:\nbench/m11/runs/authoring/shipping/py/rep1/v2.py:263: error: Argument 1 to \"get\" of \"dict\" has incompatible type \"Any | None\"; expected \"str\"  [arg-type]\nbench/m11/runs/authoring/shipping/py/rep1/v2.py:265: error: Argument 1 to \"links_ok\" has incompatible type \"Any | None\"; expected \"str\"  [arg-type]"
+  },
+  {
+   "cycle": 3,
+   "file": "v3.py",
+   "tok_in": 11530,
+   "tok_out": 3718,
+   "feedback": ""
+  }
+ ],
+ "tok_in": 23580,
+ "tok_out": 13519,
+ "seconds": 34.9,
+ "usd": 0.011648
+}

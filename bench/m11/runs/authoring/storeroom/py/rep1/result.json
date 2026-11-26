@@ -1,0 +1,27 @@
+{
+ "pack": "storeroom",
+ "lang": "py",
+ "rep": 1,
+ "model": "openai/gpt-oss-120b",
+ "clean": true,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.py",
+   "tok_in": 3778,
+   "tok_out": 6453,
+   "feedback": "static tools:\nbench/m11/runs/authoring/storeroom/py/rep1/v1.py:326:9: F841 Local variable `stock_raw` is assigned to but never used\nbench/m11/runs/authoring/storeroom/py/rep1/v1.py:327:9: F841 Local variable `part_master` is assigned to but never used\nFound 2 errors.\nNo fixes available (2 hidden fixes can be enabled with the `--unsafe-fixes` option)."
+  },
+  {
+   "cycle": 2,
+   "file": "v2.py",
+   "tok_in": 7599,
+   "tok_out": 3862,
+   "feedback": ""
+  }
+ ],
+ "tok_in": 11377,
+ "tok_out": 10315,
+ "seconds": 24.9,
+ "usd": 0.007896
+}

@@ -1,0 +1,48 @@
+{
+ "pack": "fleet",
+ "lang": "ath",
+ "rep": 2,
+ "model": "openai/gpt-oss-120b",
+ "clean": false,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.ath",
+   "tok_in": 4369,
+   "tok_out": 3592,
+   "feedback": "athc check:\nerror[P0001]: esperada uma expressão, encontrado `let`\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/fleet/ath/rep2/v1.ath:76:10\n   |\n76 |          let parts = split(x, \"|\") in\n   |          ^^^ aqui\n\nerror[P0001]: esperada uma expressão, encontrado `let`\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/fleet/ath/rep2/v1.ath:93:7\n   |\n93 |       let total = sum o in ops =>\n   |       ^^^ aqui\n\nrejeitado: 2 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 2,
+   "file": "v2.ath",
+   "tok_in": 6414,
+   "tok_out": 2808,
+   "feedback": "athc check:\nerror[P0001]: esperada uma expressão, encontrado `let`\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/fleet/ath/rep2/v2.ath:91:13\n   |\n91 |             let budget = int(b) in total <= budget\n   |             ^^^ aqui\n\nrejeitado: 1 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 3,
+   "file": "v3.ath",
+   "tok_in": 8247,
+   "tok_out": 2173,
+   "feedback": "athc check:\nerror[E0008]: `any` exige uma lista delimitada\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/fleet/ath/rep2/v3.ath:90:18\n   |\n90 |         any b in s.inventory(\"fuel_budget_remaining_cents\") =>\n   |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ encontrado `Text`\n   |\n   = ajuda: itere uma `List[T, a..b]`: o teto `b` limita o custo do laço no E6\n\nerror[E0001]: função desconhecida `int`\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/fleet/ath/rep2/v3.ath:91:20\n   |\n91 |           total <= int(b)\n   |                    ^^^ não é ferramenta, política nem primitiva\n\nrejeitado: 2 diagnóstico(s) no estrato E0 estrutura; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 4,
+   "file": "v4.ath",
+   "tok_in": 10192,
+   "tok_out": 2369,
+   "feedback": "athc check:\nerror[E0012]: `match` não exaustivo\n   --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/fleet/ath/rep2/v4.ath:135:11\n    |\n135 |           match o {\n    |           ^^^^^^^^^ faltam: IssueCard\n\nrejeitado: 1 diagnóstico(s) no estrato E0 estrutura; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 5,
+   "file": "v5.ath",
+   "tok_in": 11883,
+   "tok_out": 1702,
+   "feedback": "athc check:\nerror[E0500]: efeito sem capacidade\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/fleet/ath/rep2/v5.ath:30:7\n   |\n30 |   ! { Vehicle.Read } reversible latency 5.0\n   |       ^^^^^^^^^^^^ `list_vehicles` declara `Vehicle.Read`, mas nenhum parâmetro `Cap[…]` o cobre\n   |\n   = ajuda: acrescente um parâmetro `c: Cap[Vehicle.Read]`\n\nerror[E0500]: efeito sem capacidade\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/fleet/ath/rep2/v5.ath:32:7\n   |\n32 |   ! { Driver.Read } reversible latency 5.0\n   |       ^^^^^^^^^^^ `list_drivers` declara `Driver.Read`, mas nenhum parâmetro `Cap[…]` o cobre\n   |\n   = ajuda: acrescente um parâmetro `c: Cap[Driver.Read]`\n\nerror[E0500]: efeito sem capacidade\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/fleet/ath/rep2/v5.ath:34:7\n   |\n34 |   ! { Booking.Read } reversible latency 5.0\n   |       ^^^^^^^^^^^^ `list_bookings` declara `Booking.Read`, mas nenhum parâmetro `Cap[…]` o cobre\n   |\n   = ajuda: acrescente um parâmetro `c: Cap[Booking.Read]`\n\nerror[E0500]: efeito sem capacidade\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/fleet/ath/rep2/v5.ath:36:7\n   |\n36 |   ! { FuelPolicy.Read } reversible latency 5.0\n   |       ^^^^^^^^^^^^^^^ `get_fuel_policy` declara `FuelPolicy.Read`, mas nenhum parâmetro `Cap[…]` o cobre\n   |\n   = ajuda: acrescente um parâmetro `c: Cap[FuelPolicy.Read]`\n\nerror[E0500]: efeito sem capacidade\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/fleet/ath/rep2/v5.ath:38:7\n   |\n38 |   ! { DriverReport.Read } reversible latency 5.0\n   |       ^^^^^^^^^^^^^^^^^ `read_driver_reports` declara `DriverReport.Read`, mas nenhum parâmetro `Cap[…]` o cobre\n   |\n   = ajuda: acrescente um parâmetro `c: Cap[DriverReport.Read]`\n\nerror[E0501]: efeito não declarado\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/fleet/ath/rep2/v5.ath:95:26\n   |\n95 |     let bookings_raw   = list_bookings()\n   |                          ^^^^^^^^^^^^^^^ produz `Booking.Read`\n   |\n   = linha de efeitos de `on task`: {Driver.Read, Fuel.Card, Infer, Vehicle.Assign, Vehicle.Book, Vehicle.Hold, Vehicle.Read}\n   = ajuda: acrescente `Booking.Read` à linha de efeitos do handler\n\nerror[E0501]: efeito não declarado\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/fleet/ath/rep2/v5.ath:96:26\n   |\n96 |     let fuel_raw       = get_fuel_policy()\n   |                          ^^^^^^^^^^^^^^^^^ produz `FuelPolicy.Read`\n   |\n   = linha de efeitos de `on task`: {Driver.Read, Fuel.Card, Infer, Vehicle.Assign, Vehicle.Book, Vehicle.Hold, Vehicle.Read}\n   = ajuda: acrescente `FuelPolicy.Read` à linha de efeitos do handler\n\nerror[E0501]: efeito não declarado\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/fleet/ath/rep2/v5.ath:97:26\n   |\n97 |     let reports_raw    = read_driver_reports()\n   |                          ^^^^^^^^^^^^^^^^^^^^^ produz `DriverReport.Read`\n   |\n   = linha de efeitos de `on task`: {Driver.Read, Fuel.Card, Infer, Vehicle.Assign, Vehicle.Book, Vehicle.Hold, Vehicle.Read}\n   = ajuda: acrescente `DriverReport.Read` à linha de efeitos do handler\n\nrejeitado: 8 diagnóstico(s) no estrato E2 efeitos; os estratos seguintes não foram avaliados\n"
+  }
+ ],
+ "tok_in": 41105,
+ "tok_out": 12644,
+ "seconds": 31.9,
+ "usd": 0.013752
+}

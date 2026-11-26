@@ -1,0 +1,41 @@
+{
+ "pack": "fleet",
+ "lang": "ath",
+ "rep": 1,
+ "model": "openai/gpt-oss-120b",
+ "clean": true,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.ath",
+   "tok_in": 4369,
+   "tok_out": 6317,
+   "feedback": "athc check:\nerror[P0001]: esperado `}`, encontrado `:`\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/fleet/ath/rep1/v1.ath:76:21\n   |\n76 |         Book { plate: p, date: d, .. } => if p == plate && d == date { 1 } else { 0 }\n   |                     ^ aqui\n\nerror[P0001]: esperado `{`, encontrado `!`\n   --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/fleet/ath/rep1/v1.ath:126:3\n    |\n126 |   ! { Infer, Ops } {\n    |   ^ aqui\n\nrejeitado: 2 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 2,
+   "file": "v2.ath",
+   "tok_in": 6481,
+   "tok_out": 2736,
+   "feedback": "athc check:\nerror[P0001]: esperado `}`, encontrado `:`\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/fleet/ath/rep1/v2.ath:86:35\n   |\n86 |                  IssueCard { limit: l } => l\n   |                                   ^ aqui\n\nrejeitado: 1 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 3,
+   "file": "v3.ath",
+   "tok_in": 8329,
+   "tok_out": 2027,
+   "feedback": "athc check:\nerror[E0011]: braços com tipos diferentes\n   --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/fleet/ath/rep1/v3.ath:170:21\n    |\n170 |             Skip => {}\n    |                     ^^ `Text` vs `Unit`\n\nrejeitado: 1 diagnóstico(s) no estrato E0 estrutura; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 4,
+   "file": "v4.ath",
+   "tok_in": 10172,
+   "tok_out": 2204,
+   "feedback": ""
+  }
+ ],
+ "tok_in": 29351,
+ "tok_out": 13284,
+ "seconds": 31.4,
+ "usd": 0.012373
+}

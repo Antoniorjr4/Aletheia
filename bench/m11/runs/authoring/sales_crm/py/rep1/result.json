@@ -1,0 +1,48 @@
+{
+ "pack": "sales_crm",
+ "lang": "py",
+ "rep": 1,
+ "model": "openai/gpt-oss-120b",
+ "clean": false,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.py",
+   "tok_in": 3755,
+   "tok_out": 4411,
+   "feedback": "static tools:\nbench/m11/runs/authoring/sales_crm/py/rep1/v1.py:135:16: E714 [*] Test for object identity should be `is not`\nFound 1 error.\n[*] 1 fixable with the `--fix` option.\nmypy:\nbench/m11/runs/authoring/sales_crm/py/rep1/v1.py:339: error: Unsupported operand types for > (\"int\" and \"object\")  [operator]"
+  },
+  {
+   "cycle": 2,
+   "file": "v2.py",
+   "tok_in": 6942,
+   "tok_out": 4601,
+   "feedback": "static tools:\nmypy:\nbench/m11/runs/authoring/sales_crm/py/rep1/v2.py:346: error: No overload variant of \"int\" matches argument type \"object\"  [call-overload]\nbench/m11/runs/authoring/sales_crm/py/rep1/v2.py:346: note: Possible overload variants:\nbench/m11/runs/authoring/sales_crm/py/rep1/v2.py:346: note:     def __new__(cls, str | Buffer | SupportsInt | SupportsIndex | SupportsTrunc = ..., /) -> int\nbench/m11/runs/authoring/sales_crm/py/rep1/v2.py:346: note:     def __new__(cls, str | bytes | bytearray, /, base: SupportsIndex) -> int"
+  },
+  {
+   "cycle": 3,
+   "file": "v3.py",
+   "tok_in": 10152,
+   "tok_out": 3104,
+   "feedback": "static tools:\nmypy:\nbench/m11/runs/authoring/sales_crm/py/rep1/v3.py:345: error: Unsupported operand types for > (\"int\" and \"object\")  [operator]"
+  },
+  {
+   "cycle": 4,
+   "file": "v4.py",
+   "tok_in": 13206,
+   "tok_out": 3182,
+   "feedback": "static tools:\nmypy:\nbench/m11/runs/authoring/sales_crm/py/rep1/v4.py:346: error: No overload variant of \"int\" matches argument type \"object\"  [call-overload]\nbench/m11/runs/authoring/sales_crm/py/rep1/v4.py:346: note: Possible overload variants:\nbench/m11/runs/authoring/sales_crm/py/rep1/v4.py:346: note:     def __new__(cls, str | Buffer | SupportsInt | SupportsIndex | SupportsTrunc = ..., /) -> int\nbench/m11/runs/authoring/sales_crm/py/rep1/v4.py:346: note:     def __new__(cls, str | bytes | bytearray, /, base: SupportsIndex) -> int"
+  },
+  {
+   "cycle": 5,
+   "file": "v5.py",
+   "tok_in": 16406,
+   "tok_out": 3197,
+   "feedback": "static tools:\nmypy:\nbench/m11/runs/authoring/sales_crm/py/rep1/v5.py:345: error: Unsupported operand types for > (\"int\" and \"object\")  [operator]"
+  }
+ ],
+ "tok_in": 50461,
+ "tok_out": 18495,
+ "seconds": 52.3,
+ "usd": 0.018666
+}
