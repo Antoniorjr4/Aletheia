@@ -3453,15 +3453,46 @@ impl<'m> Ctx<'m> {
         if let Some(ispan) = infer_span {
             self.anchor_check(p, &k.policy, ispan);
         }
-        if p.params.len() != 1 {
-            self.push(Diag::new(
-                E0,
-                "E0437",
-                "a política de `keeping` recebe exatamente um elemento",
-                k.policy.span,
-                "aridade",
-            ));
+        if p.params.len() != 1 && p.params.len() != 2 {
+            self.push(
+                Diag::new(
+                    E0,
+                    "E0437",
+                    "a política de `keeping` recebe o elemento, ou o elemento e a lista dos já aceitos",
+                    k.policy.span,
+                    "aridade",
+                )
+                .help("`policy Q(x: T) -> Bool` ou `policy Q(x: T, aceitos: List[T, 0..n]) -> Bool`"),
+            );
             return None;
+        }
+        // **Ciclo 1 (P3, C3): avaliação ordenada.** Com um segundo parâmetro, `Q` decide cada
+        // elemento, na ordem proposta, vendo a lista dos que ela mesma já aceitou neste plano.
+        // O estado é essa lista: limitada pelo tipo, sem efeito, refeita a cada `refine`.
+        if let Some(acc) = p.params.get(1) {
+            let (at, _) = self.resolve(&acc.ty);
+            let (et0, _) = self.resolve(&elem);
+            let ok = match &at {
+                Ty::List(inner, _, lo, h) => *lo == 0 && *h >= hi && assignable(&et0, inner),
+                _ => false,
+            };
+            if !ok {
+                self.push(
+                    Diag::new(
+                        E0,
+                        "E0437",
+                        "o segundo parâmetro da política de `keeping` é a lista dos elementos já aceitos",
+                        acc.name.span,
+                        format!("encontrado `{}`", at.show()),
+                    )
+                    .help(format!(
+                        "declare `{}: List[{}, 0..{hi}]`: começa vazia e pode chegar ao tamanho máximo de `{field}`",
+                        acc.name.name,
+                        et0.show()
+                    )),
+                );
+                return None;
+            }
         }
         let (et, _) = self.resolve(&elem);
         let (pt, _) = self.resolve(&p.params[0].ty);

@@ -263,3 +263,11 @@ margem 25%); tentativas 19 × 6; nenhuma versão incompleta pega estaticamente e
 3 dos 6 pedidos (total corrido, tudo-ou-nada, conteúdo de texto) a decisão teve de ir para o host.
 Itens de linguagem que saem daí: predicados de texto em política, `keeping` com acumulador, contagem
 de recusas disponível à decisão de executar.
+
+**26/11 — pós-P3: as três lacunas fechadas na linguagem** ([p3/CAPACIDADES.md](p3/CAPACIDADES.md)).
+Diretiva do dono do projeto autorizando a implementação. Texto na política (`contains`, `lower`,
+`ascii_letters`, `ascii_digits`); `keeping` com a lista dos já aceitos (avaliação ordenada, C3);
+`keeping all` (autorização integral, C5). Modelo Lean estendido (`pruneOrd_sound`, `pruneAll_sound`,
+`pruneOrd_stateless`). Reaplicação dos quatro pedidos que tinham ido para o host: 67 → 27 linhas, host
+intacto, 19/19 casos; total dos seis 78 → 38 (P1: 50). **Diagnóstico sobre casos conhecidos; o
+resultado do P3 não muda.** Núcleo: +215/−16 linhas.

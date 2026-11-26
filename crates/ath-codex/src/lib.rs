@@ -740,6 +740,10 @@ impl Canon<'_> {
                 if let Some(k) = keep {
                     let _ = write!(self.out, " (keep {:?} ", k.field.name);
                     self.reference(&k.policy.name);
+                    // Ciclo 1: só aparece quando declarado (as raízes anteriores não mudam)
+                    if k.all {
+                        self.w(" all");
+                    }
                     if k.bind.is_some() {
                         self.w(" as");
                     }

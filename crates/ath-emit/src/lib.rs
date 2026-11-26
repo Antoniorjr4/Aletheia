@@ -664,8 +664,22 @@ impl<'m> Gen<'m> {
                                 }
                             }
                         }
+                        // Ciclo 1: os dois últimos só aparecem quando usados (o código emitido para
+                        // os programas anteriores não muda)
+                        let stateful = self.m.items.iter().any(
+                            |i| matches!(i, Item::Policy(p) if p.name.name == k.policy.name && p.params.len() == 2),
+                        );
+                        let modes = if stateful || k.all {
+                            format!(
+                                ", {}, {}",
+                                if stateful { "True" } else { "False" },
+                                if k.all { "True" } else { "False" }
+                            )
+                        } else {
+                            String::new()
+                        };
                         format!(
-                            ", keep=({}, policy_{}, {}, {{{}}})",
+                            ", keep=({}, policy_{}, {}, {{{}}}{modes})",
                             py_str(&k.field.name),
                             ident(&k.policy.name),
                             py_str(&k.policy.name),

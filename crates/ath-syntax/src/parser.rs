@@ -1374,6 +1374,13 @@ impl Parser {
                 let mut keep = None;
                 if matches!(self.peek(), Tok::Ident(w) if w == "keeping") {
                     self.bump();
+                    // `all` só é o modo quando outro nome o segue: `keeping all by Q` ainda é o
+                    // campo chamado `all`.
+                    let all = matches!(self.peek(), Tok::Ident(w) if w == "all")
+                        && matches!(self.toks[self.pos + 1].tok, Tok::Ident(_));
+                    if all {
+                        self.bump();
+                    }
                     let field = self.ident()?;
                     self.expect(Tok::By)?;
                     let policy = self.ident()?;
@@ -1384,7 +1391,7 @@ impl Parser {
                     } else {
                         None
                     };
-                    keep = Some(Keep { field, policy, bind });
+                    keep = Some(Keep { field, policy, all, bind });
                 }
                 let mut retry = 1;
                 if self.eat(&Tok::Retry) {

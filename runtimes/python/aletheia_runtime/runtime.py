@@ -658,6 +658,12 @@ class Runtime:
     def call_policy(self, fn, args: list) -> bool:
         return self._policy(fn, args[0] if args else None)
 
+    def _policy2(self, fn, arg, accepted) -> bool:
+        v = fn(self, arg, accepted)
+        if type(v) is not bool:
+            raise RtErr("R0109", "política não devolveu Bool")
+        return v
+
     def _policy(self, fn, arg) -> bool:
         v = fn(self, arg)
         if type(v) is not bool:
@@ -1176,7 +1182,8 @@ class Runtime:
     def _prune(self, v, keep, attempt: int):
         """v1.0-RC7, `keeping`: deixa de fora, da lista `campo`, o que a política do elemento
         recusa. Devolve o plano que resta, ou _MISSING se a lista ficaria abaixo do mínimo."""
-        field, q, qname, mins = keep
+        field, q, qname, mins = keep[:4]
+        stateful, whole = (keep[4], keep[5]) if len(keep) > 4 else (False, False)
         if not isinstance(v, Adt):
             return v
         pos = next((i for i, (n, x) in enumerate(v.fields) if n == field and isinstance(x, list)), None)
@@ -1184,7 +1191,11 @@ class Runtime:
             return v
         kept, dropped = [], []
         for x in v.fields[pos][1]:
-            (kept if self._policy(q, x) else dropped).append(x)
+            # em ordem; com estado, a política vê a lista dos que já aceitou neste plano
+            ok = self._policy2(q, x, list(kept)) if stateful else self._policy(q, x)
+            (kept if ok else dropped).append(x)
+        if whole and dropped:  # `keeping all`: uma recusa basta para nada ficar
+            kept, dropped = [], list(v.fields[pos][1])
         if dropped:
             self.journal.push(self.clock, "prune", {"policy": qname, "field": field, "attempt": attempt,
                                                      "kept": len(kept), "dropped": [to_json(x) for x in dropped]})

@@ -2138,8 +2138,17 @@ impl<'m> Arx<'m> {
     }
 
     fn eval_policy(&mut self, p: &'m PolicyDecl, arg: Value) -> R<bool> {
+        self.eval_policy_with(p, arg, None)
+    }
+
+    /// A política de `keeping` com estado: o segundo argumento é a lista dos já aceitos.
+    fn eval_policy_with(&mut self, p: &'m PolicyDecl, arg: Value, accepted: Option<Value>) -> R<bool> {
         let saved = std::mem::take(&mut self.scopes);
-        self.scopes = vec![vec![(p.params[0].name.name.clone(), arg)]];
+        let mut frame = vec![(p.params[0].name.name.clone(), arg)];
+        if let (Some(acc), Some(param)) = (accepted, p.params.get(1)) {
+            frame.push((param.name.name.clone(), acc));
+        }
+        self.scopes = vec![frame];
         let r = self.eval(&p.body);
         self.scopes = saved;
         match r? {
@@ -2426,12 +2435,21 @@ impl<'m> Arx<'m> {
         };
         let Value::List(items) = std::mem::replace(&mut fields[pos].1, Value::Unit) else { unreachable!() };
         let (mut kept, mut dropped) = (Vec::new(), Vec::new());
+        let stateful = q.params.len() == 2;
+        let proposed = if k.all { items.clone() } else { Vec::new() };
         for x in items {
-            if self.eval_policy(q, x.clone())? {
+            // Em ordem. Um erro ao avaliar a política aborta o `refine`: nunca vira aceitação.
+            let acc = stateful.then(|| Value::List(kept.clone()));
+            if self.eval_policy_with(q, x.clone(), acc)? {
                 kept.push(x);
             } else {
                 dropped.push(x);
             }
+        }
+        // `keeping all`: uma recusa basta para nada ficar; o que sai é a proposta inteira.
+        if k.all && !dropped.is_empty() {
+            kept.clear();
+            dropped = proposed;
         }
         let min = self
             .m

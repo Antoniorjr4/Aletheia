@@ -127,4 +127,103 @@ theorem checking_before_pruning_is_unsound :
       keepingBefore P Q pl = some out ∧ P out = false ∧ keeping P Q 0 pl = none :=
   ⟨fun pl => pl.1.length == 2, inCadastro, ([1, 3], ()), ([1], ()), by decide, by decide, by decide⟩
 
+/-! ## Ciclo 1: avaliação ordenada e autorização integral
+
+`keeping campo by Q` em que `Q` recebe também a lista dos elementos que já aceitou neste plano
+(`pruneOrd`), e `keeping all campo by Q` (`pruneAll`). O modelo é o do `prune` do `arx` e do
+`_prune` do runtime Python: uma passada, na ordem proposta; aceitar acrescenta o elemento ao fim
+da lista de aceitos; recusar não muda a lista e não interrompe a passada. -/
+
+/-- A passada. `accR` são os aceitos até aqui, do mais recente para o mais antigo (a política
+os vê na ordem de aceitação, `accR.reverse`). -/
+def pruneOrdAux (Q : α → List α → Bool) : List α → List α → List α
+  | accR, [] => accR.reverse
+  | accR, x :: xs => if Q x accR.reverse then pruneOrdAux Q (x :: accR) xs else pruneOrdAux Q accR xs
+
+/-- A poda ordenada: começa sem nenhum aceito. -/
+def pruneOrd (Q : α → List α → Bool) (xs : List α) : List α := pruneOrdAux Q [] xs
+
+/-- Sobre a lista invertida: cada elemento foi aceito por `Q` diante dos que vieram antes dele. -/
+def JustifiedR (Q : α → List α → Bool) : List α → Prop
+  | [] => True
+  | x :: rest => Q x rest.reverse = true ∧ JustifiedR Q rest
+
+/-- Cada elemento de `l` foi aceito por `Q` diante exatamente dos que o precedem em `l`. -/
+def Justified (Q : α → List α → Bool) (l : List α) : Prop := JustifiedR Q l.reverse
+
+theorem pruneOrdAux_spec (Q : α → List α → Bool) (xs accR : List α) (h : JustifiedR Q accR) :
+    Justified Q (pruneOrdAux Q accR xs) ∧ ∃ r, pruneOrdAux Q accR xs = accR.reverse ++ r ∧ r.Sublist xs := by
+  induction xs generalizing accR with
+  | nil =>
+    refine ⟨?_, [], ?_, List.Sublist.refl _⟩
+    · simpa [Justified, pruneOrdAux] using h
+    · simp [pruneOrdAux]
+  | cons x xs ih =>
+    unfold pruneOrdAux
+    by_cases q : Q x accR.reverse = true
+    · simp only [q, if_true]
+      obtain ⟨j, r, e, s⟩ := ih (x :: accR) ⟨q, h⟩
+      refine ⟨j, x :: r, ?_, s.cons₂ x⟩
+      rw [e]
+      simp [List.reverse_cons, List.append_assoc]
+    · simp only [q]
+      obtain ⟨j, r, e, s⟩ := ih accR h
+      exact ⟨j, r, e, s.cons x⟩
+
+/-- **A poda ordenada é sólida.** O que fica é uma subsequência da proposta (nada inventado, a
+ordem é a mesma), e cada elemento que fica foi aceito pela política diante dos aceitos antes
+dele: o estado que a política viu é exatamente o que será executado antes daquele elemento. -/
+theorem pruneOrd_sound (Q : α → List α → Bool) (xs : List α) :
+    (pruneOrd Q xs).Sublist xs ∧ Justified Q (pruneOrd Q xs) := by
+  obtain ⟨j, r, e, s⟩ := pruneOrdAux_spec Q xs [] trivial
+  refine ⟨?_, j⟩
+  unfold pruneOrd
+  rw [e]
+  simpa using s
+
+/-- **Sem estado, é a poda de antes.** Uma política que ignora os aceitos dá o filtro da RC7:
+os programas anteriores não mudam de significado. -/
+theorem pruneOrdAux_stateless (Q : α → Bool) (xs accR : List α) :
+    pruneOrdAux (fun x _ => Q x) accR xs = accR.reverse ++ xs.filter Q := by
+  induction xs generalizing accR with
+  | nil => simp [pruneOrdAux]
+  | cons x xs ih =>
+    unfold pruneOrdAux
+    by_cases q : Q x = true
+    · simp [q, ih, List.filter_cons, List.reverse_cons, List.append_assoc]
+    · simp [q, ih, List.filter_cons]
+
+theorem pruneOrd_stateless (Q : α → Bool) (xs : List α) : pruneOrd (fun x _ => Q x) xs = xs.filter Q := by
+  simp [pruneOrd, pruneOrdAux_stateless]
+
+/-- `keeping all`: uma recusa basta para nada ficar. -/
+def pruneAll (Q : α → List α → Bool) (xs : List α) : List α :=
+  if (pruneOrd Q xs).length = xs.length then xs else []
+
+/-- **A autorização integral é tudo ou nada.** O resultado é a proposta inteira ou a lista vazia;
+quando é a proposta inteira, nenhum elemento foi recusado: ela é o que a poda ordenada manteria,
+e portanto cada elemento foi aceito diante dos anteriores. -/
+theorem pruneAll_sound (Q : α → List α → Bool) (xs : List α) :
+    (pruneAll Q xs = [] ∨ pruneAll Q xs = xs) ∧ (pruneAll Q xs ≠ [] → Justified Q (pruneAll Q xs)) := by
+  unfold pruneAll
+  by_cases h : (pruneOrd Q xs).length = xs.length
+  · rw [if_pos h]
+    refine ⟨Or.inr rfl, fun _ => ?_⟩
+    obtain ⟨s, j⟩ := pruneOrd_sound Q xs
+    have e : pruneOrd Q xs = xs := s.eq_of_length h
+    rw [e] at j
+    exact j
+  · rw [if_neg h]
+    exact ⟨Or.inl rfl, fun c => absurd rfl c⟩
+
+/-- O exemplo do teto corrido: cada número é aceito se a soma dos aceitos com ele não passa de 500. -/
+def cap500 (x : Nat) (acc : List Nat) : Bool := acc.sum + x ≤ 500
+
+/-- A ordem decide, a recusada não entra no total, e a seguinte ainda é julgada. -/
+theorem ordered_cap_examples :
+    pruneOrd cap500 [300, 301, 200] = [300, 200] ∧ pruneOrd cap500 [301, 300, 200] = [301]
+      ∧ pruneOrd cap500 [600, 100] = [100] ∧ pruneAll cap500 [300, 200, 1] = []
+      ∧ pruneAll cap500 [300, 200] = [300, 200] := by
+  decide
+
 end Aletheia.Prune

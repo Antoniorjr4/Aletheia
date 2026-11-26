@@ -460,6 +460,10 @@ pub fn loopback_url(url: &str) -> bool {
 pub struct Keep {
     pub field: Ident,
     pub policy: Ident,
+    /// `keeping all campo by Q` (Ciclo 1): autorização integral. Se `Q` recusa qualquer elemento,
+    /// nenhum fica: a lista mantida é vazia e todos os elementos propostos contam como deixados
+    /// de fora. A decisão é tomada sobre a lista inteira antes de o plano existir para o programa.
+    pub all: bool,
     /// `… as nome` (v1.0-RC8): liga, depois do `let`, a lista do que foi deixado de fora, com o
     /// rótulo `Untrusted` (são dados do modelo que a política recusou)
     pub bind: Option<Ident>,
