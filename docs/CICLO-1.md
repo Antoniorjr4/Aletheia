@@ -271,3 +271,13 @@ Diretiva do dono do projeto autorizando a implementação. Texto na política (`
 `pruneOrd_stateless`). Reaplicação dos quatro pedidos que tinham ido para o host: 67 → 27 linhas, host
 intacto, 19/19 casos; total dos seis 78 → 38 (P1: 50). **Diagnóstico sobre casos conhecidos; o
 resultado do P3 não muda.** Núcleo: +215/−16 linhas.
+
+**26/11 — revisão independente das capacidades pós-P3; D15 e D16 fechados.** Revisor sem
+participação nas mudanças: nenhum caminho novo para dado não confiável ou secreto chegar a efeito,
+nenhuma divergência entre runtimes nas entradas aceitas. Achados corrigidos, cada um com teste
+(`crates/athc/tests/ciclo1_revisao.rs`): **D15** (efeito irrevogável sem parâmetro rotulado podia ser
+decidido por dado não confiável; anterior ao ciclo), **D16** (valor de ramo `Secret` saía público de
+`if`/`match`; anterior ao ciclo), veredito de política sobre segredo, estouro em conta de política
+(agora E0451 estático, com aritmética de intervalos), E0422 contornável por `contains`, e quatro
+formas mal conferidas. Nenhum programa do repositório nem do M10 muda de aceitação. Em aberto: `-0`
+aceito só pelo runtime Python. Tabela de garantias corrigida onde afirmava mais que o provado.

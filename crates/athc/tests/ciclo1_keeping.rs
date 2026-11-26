@@ -240,3 +240,23 @@ fn a_contagem_de_recusas_nao_autoriza_efeito() {
     let c = codes(&src);
     assert!(c.contains(&"E0412".to_string()), "{c:?}");
 }
+
+/// Revisão independente, achado 1: uma política com estado chamada por outra recebia só o primeiro
+/// argumento (ARX: variável não vinculada; Python: `TypeError` sem relatório).
+#[test]
+fn politica_com_estado_pode_ser_chamada_por_outra() {
+    let q = CAP.replace("policy Q(", "policy Inner(")
+        + "\npolicy Q(o: Op, aceitos: List[Op, 0..4]) -> Bool = Inner(o, aceitos)";
+    check(
+        &prog(&q, ""),
+        "deleg",
+        &[
+            (
+                "300, 301, 200",
+                json!([pay("ana", 300), pay("ana", 301), pay("ana", 200)]),
+                "2 mantidas, soma 500, 1 fora",
+            ),
+            ("estranho", json!([pay("eva", 1)]), "0 mantidas, soma 0, 1 fora"),
+        ],
+    );
+}

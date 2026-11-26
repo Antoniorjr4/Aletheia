@@ -426,10 +426,21 @@ fn a_delete_cannot_even_be_emitted() {
 
 #[test]
 fn refinement_without_proof_is_rejected() {
+    // `to` é `Int[2..64]`; `to + 1` pode ser 65 e não cabe no parâmetro `Int[2..64]`.
+    // (Até 26/11/2026 este teste usava `1 + 1`, recusado porque a aritmética não tinha intervalo.
+    // Com a aritmética de intervalos, `1 + 1` é 2 e está provado: a expectativa antiga deixou de
+    // valer porque o provador mudou, não o requisito. O caso abaixo continua exigindo a prova.)
     let src = read("remediate.ath")
-        .replace("scale(cluster, deploy, to, keys.mint())", "scale(cluster, deploy, 1 + 1, keys.mint())");
+        .replace("scale(cluster, deploy, to, keys.mint())", "scale(cluster, deploy, to + 1, keys.mint())");
     let d = &compile(&src).err().unwrap()[0];
     assert_eq!((d.code.as_str(), d.stratum), ("E0450", Stratum::E5));
+    let src = read("remediate.ath")
+        .replace("scale(cluster, deploy, to, keys.mint())", "scale(cluster, deploy, 1 + 0, keys.mint())");
+    let d = &compile(&src).err().unwrap()[0];
+    assert_eq!((d.code.as_str(), d.stratum), ("E0450", Stratum::E5));
+    let src = read("remediate.ath")
+        .replace("scale(cluster, deploy, to, keys.mint())", "scale(cluster, deploy, 1 + 1, keys.mint())");
+    assert!(compile(&src).is_ok());
 }
 
 #[test]

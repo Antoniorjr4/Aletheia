@@ -2131,8 +2131,9 @@ impl<'m> Arx<'m> {
             for a in args {
                 vals.push(self.eval(a)?);
             }
-            let arg = vals.into_iter().next().unwrap_or(Value::Unit);
-            return Ok(Value::Bool(self.eval_policy(p, arg)?));
+            let mut it = vals.into_iter();
+            let arg = it.next().unwrap_or(Value::Unit);
+            return Ok(Value::Bool(self.eval_policy_with(p, arg, it.next())?));
         }
         Err(rt("R0108", format!("função `{}` desconhecida", callee.name)).into())
     }

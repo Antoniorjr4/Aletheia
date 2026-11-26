@@ -46,10 +46,12 @@ policy WithinCap(w: Write, accepted: List[Write, 0..4]) -> Bool =
   (`List[T, 0..n]`, com `n` ≥ o máximo do campo, conferido na compilação, E0437).
 - **Aceitar** acrescenta o elemento ao fim da lista. **Recusar** não muda a lista e **não interrompe**:
   o elemento seguinte é julgado.
-- **Erros:** valor fora do tipo é recusado na decodificação, antes da política. Um erro ao avaliar
-  `Q` aborta o `refine`; nunca vira aceitação. A soma usa a aritmética inteira de 64 bits da
-  linguagem; os limites dos tipos (`Int[a..b]`, tamanho da lista) é que mantêm o total longe do
-  estouro, e isso é responsabilidade de quem declara os tipos.
+- **Erros:** valor fora do tipo é recusado na decodificação, antes da política. Um erro de execução
+  ao avaliar `Q` aborta a execução inteira (não só o `refine`); nunca vira aceitação.
+- **Estouro:** a aritmética da linguagem é de 64 bits com volta. Numa política, toda conta
+  (`+ - * /`, `sum`, `-x`) precisa ter o resultado limitado pelos tipos dos operandos, e o divisor
+  provado diferente de zero; sem isso o programa não compila (**E0451**). Uma volta não vira
+  aceitação porque o programa que poderia dar a volta é recusado.
 - **Alcance:** um `refine`. É um limite por plano. Não é uma cota entre execuções, entre tarefas
   ou entre as duas propostas de um mesmo handler.
 - Sem o segundo parâmetro, `keeping` é exatamente o de antes.
@@ -61,24 +63,50 @@ policy WithinCap(w: Write, accepted: List[Write, 0..4]) -> Bool =
 o estado do item 2.
 
 `fora` continua `Untrusted`: pode compor a resposta (`text(len(fora))`), não pode decidir um efeito
-(E0412, inalterado). A decisão de não executar é da política, no ponto de endosso, não de um `if`
+irrevogável (E0412; ver D15 abaixo). Para o programa receber `fora` no modo `all`, o mínimo da lista
+tem de ser 0 e a política do plano tem de aceitar a lista vazia; senão a amostra é recusada e o
+fluxo vai para a retentativa ou o `else`, onde `fora` é vazia. A decisão de não executar é da política, no ponto de endosso, não de um `if`
 do programa nem do host.
 
 **O que isto é:** decisão sobre o plano inteiro antes do primeiro efeito. **O que não é:**
 transação. Se a terceira chamada externa falhar, as duas primeiras já aconteceram; desfazer é
 assunto de `atomic`/compensação, que não mudou.
 
+## Revisão independente (26/11)
+
+Um revisor que não escreveu as mudanças as atacou; relatório resumido nos testes
+`crates/athc/tests/ciclo1_revisao.rs`. Nenhum caminho novo para dado não confiável ou secreto chegar a
+um efeito, e nenhuma divergência entre os runtimes nas entradas aceitas (160 planos aleatórios com
+journal idêntico byte a byte). Corrigido a partir dos achados:
+
+- **D15 (anterior ao ciclo).** Um efeito irrevogável cuja ferramenta não tem parâmetro rotulado podia
+  ser decidido por dado não confiável. Agora E0412. O `else` de um `refine` não conta: é o veredito
+  de uma política auditada.
+- **D16 (anterior ao ciclo).** O valor de um ramo `Secret` saía de `if`/`match` como público.
+- O veredito de uma política sobre um segredo saía público.
+- Estouro em conta de política podia virar aceitação: agora E0451, estático.
+- `contains("ana bia", nome)` contornava E0422.
+- Política com estado chamada por outra recebia um argumento só; elemento da lista de aceitos sem
+  conferência de limites; campo de `keeping` com tipos diferentes por variante; parâmetro repetido.
+
+Em aberto, registrado: modelo que emite `-0` para um `Int` é aceito pelo runtime Python e recusado
+pelo ARX (anterior ao ciclo; não muda decisão de política, muda quem aceita a amostra).
+
 ## Garantias, por nível
 
 | propriedade | como é sustentada |
 | --- | --- |
-| Só é executado o que `Q` aceitou, na ordem proposta, e cada elemento foi aceito diante exatamente dos que o precedem | provado no modelo (`Prune.pruneOrd_sound`, Lean); exercitado nos dois runtimes |
-| `keeping all` devolve tudo ou nada | provado no modelo (`Prune.pruneAll_sound`); exercitado |
-| Política sem estado tem o significado de antes | provado no modelo (`Prune.pruneOrd_stateless`); journals dos programas anteriores inalterados (testes existentes) |
+| A lista mantida é subsequência da proposta e cada elemento foi aceito diante exatamente dos que o precedem | provado **sobre a função de poda do modelo** (`Prune.pruneOrd_sound`, Lean); exercitado nos dois runtimes |
+| `keeping all` devolve a proposta inteira ou nada | provado sobre a função do modelo (`Prune.pruneAll_sound`); exercitado |
+| Política sem estado tem o significado de antes | provado no modelo (`Prune.pruneOrd_stateless`); código emitido e raízes Codex dos programas anteriores idênticos |
+| Nada aceitável é perdido na poda ordenada | **não provado** (não há análogo de `keeping_keeps_every_accepted`); exercitado |
+| O handler executa exatamente a lista mantida, uma vez | **não é garantia da linguagem**: o handler pode percorrer a lista duas vezes ou só parte dela |
+| Poda ordenada composta com a política do plano, o mínimo e a retentativa | não modelado em Lean; exercitado (journals idênticos) |
 | A forma do estado (lista do elemento, de 0 até o máximo do campo) | estática (E0437) |
-| Recusas não autorizam efeito | estática (E0412, teste novo) |
-| Texto inspecionado não é endossado nem publicado | estática (rótulos; testes com E0440) |
-| ARX e Python decidem igual | testes com esperado derivado à mão da regra: 13 vetores de texto, 20 planos |
+| Conta de política não estoura nem divide por zero | estática (E0451) |
+| Efeito irrevogável não é decidido por dado não confiável | estática (E0412; D15) |
+| Texto ou veredito sobre segredo não é publicado | estática (rótulos; E0440; D16) |
+| ARX e Python decidem igual | testes com esperado derivado à mão: 13 vetores de texto, 22 planos; 160 planos aleatórios do revisor |
 | O modelo Lean corresponde ao código dos runtimes | **não provado**: correspondência por leitura e por testes |
 | Reversão de efeitos externos, cota persistente | fora do alcance |
 
@@ -107,6 +135,7 @@ cd bench/agentdojo && python3 p3/aceite.py --impl A --dir . --cases p3/pedidos.j
 
 ## Custo
 
-Núcleo (compilador e os dois runtimes, `crates/*/src` e `runtimes/python`): +215 / −16 linhas.
+Núcleo (compilador e os dois runtimes, `crates/*/src` e `runtimes/python`): 390 insertions(+), 21 deletions(-) linhas, das
+quais +215 / −16 são as três capacidades e o resto são as correções da revisão.
 Mecanismos novos para o autor: 4 funções de texto, 1 forma de política (segundo parâmetro), 1
 palavra (`all` depois de `keeping`). Nenhuma construção nova de controle. Código de adaptação novo: 0.

@@ -656,6 +656,8 @@ class Runtime:
         return v
 
     def call_policy(self, fn, args: list) -> bool:
+        if len(args) == 2:  # política com estado chamada por outra política
+            return self._policy2(fn, args[0], args[1])
         return self._policy(fn, args[0] if args else None)
 
     def _policy2(self, fn, arg, accepted) -> bool:
