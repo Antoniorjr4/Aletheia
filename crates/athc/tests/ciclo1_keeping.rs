@@ -260,3 +260,52 @@ fn politica_com_estado_pode_ser_chamada_por_outra() {
         ],
     );
 }
+
+/// Revisão independente, achado 12: o modelo emite `-0` num campo `Int`. O ARX (serde_json) lê
+/// `-0` como o ponto flutuante `-0.0` e recusa a amostra; o runtime Python lia o inteiro 0 e a
+/// aceitava. Agora os dois leem como o serde_json e recusam (a amostra sai do tipo).
+#[test]
+fn menos_zero_e_recusado_igual_nos_dois_runtimes() {
+    // o intervalo inclui 0: com a leitura antiga, o Python aceitava `-0` como 0
+    let src = prog(PLAIN, "").replace("cents: Int[1..100000]", "cents: Int[0..100000]");
+    assert!(src.contains("Int[0..100000]"));
+    let c = compile(&src).unwrap();
+    let text = r#"{"planner": [{"kind": "Plan", "ops": [{"kind": "Pay", "to": "ana", "cents": -0}]}]}"#;
+    let world = json!({ "inventories": { "people": ["ana", "bia"] } });
+    let mut arx = Arx::new(
+        &c.module,
+        Box::new(SimWorld::from_json(&world).unwrap()),
+        Box::new(Scripted::from_json(&serde_json::from_str(text).unwrap()).unwrap()),
+    );
+    arx.contracts = athc::contract_hashes(&c);
+    let a = arx.run("A", "go", vec![Value::Text("x".into())]).unwrap().to_json();
+    let dir = std::env::temp_dir().join(format!("ciclo1-menos-zero-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let py = ath_emit::python(&c.module, &c.check, &c.codex, "k.ath").expect("emissão");
+    let (prog_p, w, m, j, r) =
+        (dir.join("k.py"), dir.join("w.json"), dir.join("m.json"), dir.join("j.jsonl"), dir.join("r.json"));
+    std::fs::write(&prog_p, py).unwrap();
+    std::fs::write(&w, world.to_string()).unwrap();
+    std::fs::write(&m, text).unwrap();
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let st = std::process::Command::new("python3")
+        .env("PYTHONPATH", root.join("runtimes/python"))
+        .args(["-m", "aletheia_runtime", "run"])
+        .arg(&prog_p)
+        .arg("--world")
+        .arg(&w)
+        .arg("--models")
+        .arg(&m)
+        .args(["--provider", "scripted", "--agent", "A", "--on", "go", "--arg-json"])
+        .arg(json!("x").to_string())
+        .arg("--journal")
+        .arg(&j)
+        .arg("--report")
+        .arg(&r)
+        .output()
+        .expect("python3");
+    assert!(r.exists(), "{}", String::from_utf8_lossy(&st.stderr));
+    let report: J = serde_json::from_str(&std::fs::read_to_string(&r).unwrap()).unwrap();
+    assert_eq!(a, json!("sem plano"), "ARX");
+    assert_eq!(report["result"], json!("sem plano"), "Python");
+}

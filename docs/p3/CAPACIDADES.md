@@ -89,8 +89,44 @@ journal idêntico byte a byte). Corrigido a partir dos achados:
 - Política com estado chamada por outra recebia um argumento só; elemento da lista de aceitos sem
   conferência de limites; campo de `keeping` com tipos diferentes por variante; parâmetro repetido.
 
-Em aberto, registrado: modelo que emite `-0` para um `Int` é aceito pelo runtime Python e recusado
-pelo ARX (anterior ao ciclo; não muda decisão de política, muda quem aceita a amostra).
+`-0` aceito só pelo runtime Python: corrigido (ver abaixo).
+
+## Reproduções dirigidas (26/11, pedidas pelo dono do projeto)
+
+Três casos encontrados por leitura do verificador. Os três **compilavam** em `cbc3e52`; agora são
+recusados, com teste em `crates/athc/tests/ciclo1_revisao.rs`:
+
+| caso | antes | agora |
+| --- | --- | --- |
+| 1. `if web == "stop" { return … }` e, depois do `if`, `commit` irrevogável (também com parâmetro `^ Endorsed`) | aceito | E0412 |
+| 2. o mesmo com condição sobre dado `Secret`, depois publicação em canal `^ Public` | aceito | E0440 |
+| 3. ferramenta irrevogável com parâmetro `^ Untrusted`, chamada num ramo decidido por dado não confiável | aceito | E0412 |
+
+Correção: (a) um `return` num ramo decidido por dado baixa o contexto do resto do handler, na
+integridade e na confidencialidade (o `else` de um `refine`, que é veredito de política, não baixa);
+(b) a autoridade para um efeito irrevogável **acontecer** passou a ser conferida separadamente do
+rótulo de conteúdo dos parâmetros: `^ Untrusted` libera o conteúdo, não a decisão. Controles seguros
+que continuam aceitos: `return` decidido pelo pedido; `if` sobre dado sem `return` seguido de efeito;
+conteúdo não confiável em parâmetro `^ Untrusted` com o efeito decidido pelo pedido; efeito antes do
+`return` condicional. Nenhum programa do repositório nem do M10 muda de aceitação.
+
+`-0` (achado 12): o runtime Python passou a ler o literal `-0` como o serde_json lê (ponto
+flutuante), então os dois recusam a amostra num campo `Int`; teste com intervalo que inclui 0 (o teste
+falha com a leitura antiga).
+
+## O que o teto protege
+
+O teto de C3 (e qualquer regra de `keeping`) protege **o plano autorizado**: a lista que sai do
+`refine`. Não é uma garantia sobre o que o handler faz depois com ela; um handler que percorra a lista
+duas vezes executa o dobro. Por isso a avaliação mede os **efeitos executados**, não o plano: o
+executor de aceitação do P3 compara a lista exata de chamadas que chegaram ao banco (duplicatas
+contam), e os oráculos dos pacotes M10/M11 olham o estado do mundo depois das chamadas.
+
+Auditoria dos oráculos do M10 quanto a duplicação (`bench/m10/dup_oracle.py`, resultado em
+`bench/m10/runs/evaluation/duplicacao.txt`): aplicadas duas vezes as chamadas de referência, 13 dos 40
+verificadores legítimos aceitam um efeito duplicado que muda o mundo. Nenhum cenário legítimo aprovado
+no M10, em nenhuma das duas linguagens, executou chamada duplicada: o resultado do M10 não muda. Para
+o M11 isto vira critério de auditoria do oráculo.
 
 ## Garantias, por nível
 
@@ -104,11 +140,12 @@ pelo ARX (anterior ao ciclo; não muda decisão de política, muda quem aceita a
 | Poda ordenada composta com a política do plano, o mínimo e a retentativa | não modelado em Lean; exercitado (journals idênticos) |
 | A forma do estado (lista do elemento, de 0 até o máximo do campo) | estática (E0437) |
 | Conta de política não estoura nem divide por zero | estática (E0451) |
-| Efeito irrevogável não é decidido por dado não confiável | estática (E0412; D15) |
-| Texto ou veredito sobre segredo não é publicado | estática (rótulos; E0440; D16) |
+| Efeito irrevogável não é decidido por dado não confiável, inclusive depois de `return` condicional e com parâmetro `^ Untrusted` | estática (E0412; D15) |
+| Texto, veredito ou `return` condicional sobre segredo não é publicado | estática (rótulos; E0440; D16) |
 | ARX e Python decidem igual | testes com esperado derivado à mão: 13 vetores de texto, 22 planos; 160 planos aleatórios do revisor |
 | O modelo Lean corresponde ao código dos runtimes | **não provado**: correspondência por leitura e por testes |
 | Reversão de efeitos externos, cota persistente | fora do alcance |
+| Canais de término (abortar por erro, tempo) | fora do alcance |
 
 ## Reaplicação dos pedidos conhecidos (diagnóstico, não evidência)
 

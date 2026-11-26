@@ -170,9 +170,12 @@ theorem pruneOrdAux_spec (Q : α → List α → Bool) (xs accR : List α) (h : 
       obtain ⟨j, r, e, s⟩ := ih accR h
       exact ⟨j, r, e, s.cons x⟩
 
-/-- **A poda ordenada é sólida.** O que fica é uma subsequência da proposta (nada inventado, a
-ordem é a mesma), e cada elemento que fica foi aceito pela política diante dos aceitos antes
-dele: o estado que a política viu é exatamente o que será executado antes daquele elemento. -/
+/-- **A poda ordenada é sólida, sobre a lista que ela devolve.** A lista resultante é uma
+subsequência da proposta (nada inventado, a ordem é a mesma), e cada elemento dela foi aceito
+pela política diante exatamente dos elementos que o precedem **nessa lista**. O teorema não fala
+da execução: que o handler execute essa lista, uma vez e inteira, não é provado aqui (o programa
+pode percorrê-la de novo ou só em parte); o teto que a política impõe vale para o plano
+autorizado, não para o que um handler escolha fazer com ele. -/
 theorem pruneOrd_sound (Q : α → List α → Bool) (xs : List α) :
     (pruneOrd Q xs).Sublist xs ∧ Justified Q (pruneOrd Q xs) := by
   obtain ⟨j, r, e, s⟩ := pruneOrdAux_spec Q xs [] trivial

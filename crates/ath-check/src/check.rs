@@ -247,6 +247,12 @@ pub struct Ctx<'m> {
     /// D15: como `pc`, mas só rebaixado por `if`/`match`/`for` sobre dado; o `else` de um
     /// `refine` é o veredito de uma política auditada e não o rebaixa.
     pc_data: Label,
+    /// Ciclo 1 (reproduções de 26/11): o piso do contexto depois de um `return` condicional.
+    /// O código que vem depois de `if dado { return … }` só roda se a condição foi falsa: depende
+    /// dela como se estivesse no ramo. Acumula até o fim do handler; `refine` não o baixa.
+    exit_data: Label,
+    exit_conf: Conf,
+    exit_span: Option<Span>,
     /// dentro de um contrato `requires` (onde `s.authorizes` é permitido)
     in_requires: bool,
     commit_ok: bool,
@@ -289,6 +295,9 @@ impl<'m> Ctx<'m> {
             ret_refn: None,
             in_policy: false,
             pc_data: Label::Trusted,
+            exit_data: Label::Trusted,
+            exit_conf: Conf::Public,
+            exit_span: None,
             in_requires: false,
             commit_ok: false,
             atomic_stack: Vec::new(),
@@ -402,6 +411,20 @@ impl<'m> Ctx<'m> {
     fn bind(&mut self, name: &str, t: LTy) {
         if let Some(s) = self.scopes.last_mut() {
             s.push((name.to_string(), t));
+        }
+    }
+
+    /// Depois de um `if`/`match`/`for`, o contexto não volta acima do piso dos `return`
+    /// condicionais já vistos neste handler.
+    fn apply_exit_floor(&mut self) {
+        if self.exit_data < self.pc {
+            self.pc = self.exit_data;
+            self.pc_span = self.exit_span;
+        }
+        self.pc_data = self.pc_data.meet(self.exit_data);
+        if self.exit_conf > self.pc_conf {
+            self.pc_conf = self.exit_conf;
+            self.pc_conf_span = self.exit_span;
         }
     }
 
@@ -1271,6 +1294,9 @@ impl<'m> Ctx<'m> {
         self.scopes = vec![vec![]];
         self.pc = Label::Trusted;
         self.pc_data = Label::Trusted;
+        self.exit_data = Label::Trusted;
+        self.exit_conf = Conf::Public;
+        self.exit_span = None;
         self.pc_span = None;
         self.used.clear();
         self.ret = None;
@@ -1360,6 +1386,9 @@ impl<'m> Ctx<'m> {
         self.scopes = vec![vec![]];
         self.pc = Label::Trusted;
         self.pc_data = Label::Trusted;
+        self.exit_data = Label::Trusted;
+        self.exit_conf = Conf::Public;
+        self.exit_span = None;
         self.pc_span = None;
         self.used.clear();
         self.ret = None;
@@ -1402,6 +1431,9 @@ impl<'m> Ctx<'m> {
         self.scopes = vec![vec![]];
         self.pc = Label::Trusted;
         self.pc_data = Label::Trusted;
+        self.exit_data = Label::Trusted;
+        self.exit_conf = Conf::Public;
+        self.exit_span = None;
         self.pc_span = None;
         self.used.clear();
         self.in_policy = false;
@@ -1732,6 +1764,12 @@ impl<'m> Ctx<'m> {
                 if self.in_policy {
                     self.impure(e.span, "`return`");
                 }
+                // Um `return` num ramo decidido por dado torna o resto do handler dependente dele.
+                if self.pc_data < self.exit_data || self.pc_conf > self.exit_conf {
+                    self.exit_span = self.pc_span.or(self.pc_conf_span).or(Some(e.span));
+                }
+                self.exit_data = self.exit_data.meet(self.pc_data);
+                self.exit_conf = self.exit_conf.join(self.pc_conf);
                 if !self.atomic_stack.is_empty() {
                     self.push(
                         Diag::new(E2, "E0602", "`return` dentro de `atomic`", e.span, "a saga precisa confirmar ou falhar")
@@ -1829,6 +1867,7 @@ impl<'m> Ctx<'m> {
                 self.scopes.pop();
                 (self.pc, self.pc_span, self.pc_conf, self.pc_conf_span) = saved;
                 self.pc_data = saved_data;
+                self.apply_exit_floor();
                 LTy::trusted(Ty::Unit)
             }
             ExprKind::Quant { op, var, iter, body } => {
@@ -2724,6 +2763,10 @@ impl<'m> Ctx<'m> {
             }
             return LTy::never();
         }
+        // **D15.** Autoridade para o efeito acontecer é separada do conteúdo que ele aceita: um
+        // efeito irrevogável só ocorre em contexto confiável ou endossado, qualquer que seja o
+        // rótulo dos parâmetros (inclusive `^ Untrusted`, que só libera o conteúdo).
+        let occurrence_denied = tool.class == EffClass::Irrevocable && self.pc_data < Label::Endorsed;
         let mut taint = LTy::trusted(Ty::Unit);
         for (p, a) in tool.params.iter().zip(args) {
             let at = self.expr(a);
@@ -2756,7 +2799,8 @@ impl<'m> Ctx<'m> {
             if let Some(req) = req {
                 self.facts.integrity_checks += 1;
                 let eff = at.lab.meet(self.pc);
-                if eff < req {
+                // a falha só de contexto já sai, uma vez, pelo diagnóstico de ocorrência abaixo
+                if eff < req && !(at.lab >= req && occurrence_denied) {
                     let implicit = at.lab >= req;
                     let mut d = Diag::new(
                         E3,
@@ -2823,13 +2867,10 @@ impl<'m> Ctx<'m> {
                 self.push(d);
             }
         }
-        // **D15 (Ciclo 1).** Um efeito irrevogável não pode ser decidido por dado não confiável,
-        // tenha ou não a ferramenta um parâmetro `^ Endorsed`: antes, o `pc` só era conferido
-        // junto com um parâmetro rotulado, e `if web == "x" { commit wipe(c) }` compilava.
-        if tool.class == EffClass::Irrevocable
-            && self.pc_data < Label::Endorsed
-            && !tool.params.iter().any(|p| self.resolve(&p.ty).1.is_some())
-        {
+        // **D15 (Ciclo 1).** Um efeito irrevogável não pode ser decidido por dado não confiável.
+        // Antes, o `pc` só era conferido junto com um parâmetro rotulado `^ Endorsed`, e
+        // `if web == "x" { commit wipe(c) }` compilava.
+        if occurrence_denied {
             let mut d = Diag::new(
                 E3,
                 "E0412",
@@ -2840,11 +2881,12 @@ impl<'m> Ctx<'m> {
             .note(format!(
                 "`{}` é irrevocable e a chamada ocorre num ramo decidido por dado {}",
                 callee.name,
-                self.pc.name()
+                self.pc_data.name()
             ))
+            .note("o rótulo de um parâmetro diz que conteúdo a ferramenta aceita; decidir se o efeito acontece exige contexto confiável ou endossado")
             .help("decida o ramo com dado confiável ou endossado (`refine … by <policy>`)");
             if let Some(ps) = self.pc_span {
-                d = d.secondary(ps, format!("ramo decidido por dado {}", self.pc.name()));
+                d = d.secondary(ps, format!("ramo decidido por dado {}", self.pc_data.name()));
             }
             self.push(d);
         }
@@ -3035,6 +3077,7 @@ impl<'m> Ctx<'m> {
         };
         (self.pc, self.pc_span, self.pc_conf, self.pc_conf_span) = saved;
         self.pc_data = saved_data;
+        self.apply_exit_floor();
         out.meet_from(&c);
         out.join_conf_from(&c);
         out
@@ -3136,6 +3179,7 @@ impl<'m> Ctx<'m> {
         }
         (self.pc, self.pc_span, self.pc_conf, self.pc_conf_span) = saved;
         self.pc_data = saved_data;
+        self.apply_exit_floor();
         let missing: Vec<String> =
             decl.variants.iter().filter(|v| !seen.contains(&v.name.name)).map(|v| v.name.name.clone()).collect();
         if !missing.is_empty() {

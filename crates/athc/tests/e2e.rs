@@ -163,7 +163,12 @@ fn implicit_flow_points_at_the_untrusted_condition() {
 fn injection_diagnostic_traces_the_origin() {
     // o prompt cita o evento (`alerta = quote(service)`) e os logs, ambos Untrusted: a cadeia
     // de origem parte do primeiro deles e atravessa o `infer` e a amostra crua
-    let d = &compile(&read("errors/e0412_injection.ath")).err().unwrap()[0];
+    // Desde 26/11 (D15) o mesmo `commit` também recebe o diagnóstico de ocorrência (efeito
+    // irrevogável num ramo decidido por dado), que vem antes pela posição; a exigência deste teste,
+    // a cadeia de origem do argumento, é a mesma.
+    let all = compile(&read("errors/e0412_injection.ath")).err().unwrap();
+    let d =
+        all.iter().find(|d| d.notes.first().is_some_and(|n| n.starts_with("origem:"))).expect("diagnóstico com origem");
     assert!(d.notes[0].starts_with("origem: evento `alert(service)` ^ Untrusted"), "{:?}", d.notes);
     assert!(d.notes[0].ends_with("→ infer planner → sample(…)"), "{:?}", d.notes);
 }

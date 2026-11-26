@@ -281,3 +281,12 @@ decidido por dado não confiável; anterior ao ciclo), **D16** (valor de ramo `S
 (agora E0451 estático, com aritmética de intervalos), E0422 contornável por `contains`, e quatro
 formas mal conferidas. Nenhum programa do repositório nem do M10 muda de aceitação. Em aberto: `-0`
 aceito só pelo runtime Python. Tabela de garantias corrigida onde afirmava mais que o provado.
+
+**26/11 — reproduções dirigidas de D15/D16 confirmadas e corrigidas; `-0` alinhado.** Os três casos
+pedidos pelo dono do projeto compilavam: `return` condicional sobre dado não confiável seguido de efeito
+irrevogável (inclusive com parâmetro `^ Endorsed`), o mesmo com dado `Secret` e canal público, e
+parâmetro `^ Untrusted` liberando a decisão do efeito. Agora E0412/E0440, com controles seguros
+aceitos e nenhum programa do repositório ou do M10 mudando de aceitação. `-0` lido como no serde_json
+nos dois runtimes. `pruneOrd_sound` documentado como teorema sobre a lista resultante. Auditoria de
+duplicação nos oráculos do M10: 13/40 verificadores legítimos aceitariam um efeito duplicado; nenhum
+cenário aprovado no M10 teve duplicação, então o resultado não muda; vira critério para o M11.

@@ -177,3 +177,57 @@ agent A() budget [tok <= 1000, usd <= 1.0, wall <= 100.0] {{
     // 11: parâmetro repetido
     assert!(codes("module p\npolicy Q(x: Int[1..9], x: Int[1..9]) -> Bool = true\n").contains(&"E0002".to_string()));
 }
+
+/// **Reproduções dirigidas de 26/11 (pedidas pelo dono do projeto, encontradas por leitura).**
+/// As três compilavam no commit `cbc3e52`; agora são recusadas, e os controles seguros passam.
+#[test]
+fn reproducoes_dirigidas_return_condicional_e_parametro_untrusted() {
+    let src = |body: &str| {
+        format!(
+            r#"module t
+tool read_web(c: Cap[Repo.Read], k: Text[..8]) -> Text[..40] ^ Untrusted ! {{ Repo.Read }} reversible latency 1.0
+tool read_private(c: Cap[Repo.Read], k: Text[..8]) -> Text[..40] ^ Secret ! {{ Repo.Read }} reversible latency 1.0
+tool wipe(c: Cap[Repo.Write]) -> Text ! {{ Repo.Write }} irrevocable latency 1.0
+tool wipe_e(c: Cap[Repo.Write], why: Text[..40] ^ Endorsed) -> Text ! {{ Repo.Write }} irrevocable latency 1.0
+tool note(c: Cap[Repo.Write], body: Text[..40] ^ Untrusted) -> Text ! {{ Repo.Write }} irrevocable latency 1.0
+tool post_public(c: Cap[Repo.Write], body: Text ^ Public) -> Text ! {{ Repo.Write }} irrevocable latency 1.0
+agent A(r: Cap[Repo.Read], w: Cap[Repo.Write]) budget [tok <= 100, usd <= 1.0, wall <= 100.0] {{
+  on go(n: Text[..8] ^ Trusted) -> Text ! {{ Repo.Read, Repo.Write }} {{
+{body}
+  }}
+}}
+"#
+        )
+    };
+    let refused: &[(&str, &str)] = &[
+        // 1. `return` num ramo decidido por dado Untrusted; o efeito depois do `if` depende da condição
+        ("    if read_web(r, n) == \"stop\" { return \"parou\" } else { \"\" }\n    commit wipe(w)", "E0412"),
+        ("    if read_web(r, n) == \"stop\" { return \"parou\" } else { \"\" }\n    commit wipe_e(w, \"x\")", "E0412"),
+        // o mesmo, mais fundo: o `return` está num `match` dentro do `if`, e o efeito vem depois de outro `if`
+        ("    if read_web(r, n) == \"a\" { return \"a\" } else { \"\" }\n    if n == \"b\" { \"b\" } else { \"c\" }\n    commit wipe(w)", "E0412"),
+        // 2. o mesmo com dado Secret, seguido de publicação em canal Public
+        ("    if read_private(r, n) == \"a\" { return \"parou\" } else { \"\" }\n    commit post_public(w, \"ping\")", "E0440"),
+        // 3. parâmetro `^ Untrusted` libera o conteúdo, não a decisão de o efeito acontecer
+        ("    if read_web(r, n) == \"x\" { commit note(w, \"y\") } else { \"\" }", "E0412"),
+        ("    let t = read_web(r, n)\n    if t == \"x\" { commit note(w, t) } else { \"\" }", "E0412"),
+    ];
+    for (b, code) in refused {
+        let c = codes(&src(b));
+        assert!(c.contains(&code.to_string()), "{b}\n{c:?}");
+    }
+    // controles seguros: não pode haver propagação indiscriminada
+    for b in [
+        // `return` decidido pelo pedido confiável
+        "    if n == \"stop\" { return \"parou\" } else { \"\" }\n    commit wipe(w)",
+        // `if` sobre dado sem `return`: o efeito depois dele não depende da condição
+        "    if read_web(r, n) == \"stop\" { \"a\" } else { \"b\" }\n    commit wipe(w)",
+        // conteúdo não confiável num parâmetro `^ Untrusted`, efeito decidido pelo pedido
+        "    let t = read_web(r, n)\n    commit note(w, t)",
+        // segredo inspecionado, mas o que vem depois não depende dele
+        "    let s = read_private(r, n)\n    commit post_public(w, \"ping\")",
+        // efeito ANTES do `return` condicional não depende dele
+        "    commit wipe(w)\n    if read_web(r, n) == \"stop\" { return \"parou\" } else { \"\" }\n    \"fim\"",
+    ] {
+        assert!(codes(&src(b)).is_empty(), "{b}\n{:?}", codes(&src(b)));
+    }
+}

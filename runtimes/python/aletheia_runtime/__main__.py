@@ -29,7 +29,7 @@ import importlib.util
 import json
 import sys
 
-from .canon import dumps
+from .canon import dumps, loads
 from .cassette import Cassette, first_divergence
 from .journal import core_view
 from .providers import Masked, OpenAiCompat, Recorder, Replay, Scripted
@@ -94,7 +94,7 @@ def crash(argv: list) -> int:
     opts = {rest[i].lstrip("-"): rest[i + 1] for i in range(0, len(rest), 2)}
     prog = load_program(path)
     world = SimWorld(json.load(open(opts["world"], encoding="utf-8")) if "world" in opts else {})
-    models = json.load(open(opts["models"], encoding="utf-8")) if "models" in opts else {}
+    models = loads(open(opts["models"], encoding="utf-8").read()) if "models" in opts else {}
     point, nth = opts["at"].split(":")
     rt = Runtime(prog, world, Scripted(models))
     rt.wal = Wal()
@@ -142,7 +142,7 @@ def main(argv: list) -> int:
     one = lambda k, d=None: opts.get(k, [d])[-1]
     prog = load_program(path)
     world = SimWorld(json.load(open(one("world"), encoding="utf-8")) if one("world") else {})
-    models = json.load(open(one("models"), encoding="utf-8")) if one("models") else {}
+    models = loads(open(one("models"), encoding="utf-8").read()) if one("models") else {}
     recorder = None
     if one("replay"):
         cas = Cassette.load(one("replay"))

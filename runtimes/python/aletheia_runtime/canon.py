@@ -96,10 +96,16 @@ def _reject_constant(name: str):
 
 
 def loads(s: str):
-    """`serde_json::from_str`: rejeita NaN/Infinity, como o Rust."""
+    """`serde_json::from_str`: rejeita NaN/Infinity, como o Rust, e lê o literal `-0` como o
+    número de ponto flutuante `-0.0`, como o Rust (Ciclo 1: o Python o lia como o inteiro 0 e
+    aceitava num campo `Int` uma saída que o ARX recusa)."""
     import json
 
-    return json.loads(s, parse_constant=_reject_constant)
+    return json.loads(s, parse_constant=_reject_constant, parse_int=_parse_int)
+
+
+def _parse_int(s: str):
+    return -0.0 if s == "-0" else int(s)
 
 
 def f64_round(x: float) -> float:
