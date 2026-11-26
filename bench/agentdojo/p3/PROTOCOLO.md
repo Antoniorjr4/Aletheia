@@ -76,8 +76,8 @@ o executor corrigido (27/27 de cada lado) e nos testes do lado.
 | C6 sem links no assunto | 8/2 | 2/1 | 1 / 1 | política (`links_within`) + **resguardo no host** |
 | **total** | **78** | **50** | **19 / 6** | |
 
-Secundárias: sem comentário nem branco, 68 × 45 (+51%); linhas de teste editadas, 10 × 8; arquivos de
-produção tocados por pedido, Aletheia 1–2, P1 sempre 1.
+Secundárias: sem comentário nem branco, 70 × 46 (+52%); linhas de teste editadas, 10 × 8; arquivos de
+produção tocados por pedido, Aletheia sempre 2 (programa e host), P1 sempre 1.
 
 Versão incompleta (mesma omissão dos dois lados): nenhuma das 12 é pega estaticamente, em nenhum dos
 lados. C5 é pega pelos testes do lado nos dois; as outras cinco, só pelos casos de aceitação, nos
