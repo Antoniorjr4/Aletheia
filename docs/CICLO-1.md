@@ -342,8 +342,9 @@ Resultados medidos, todos mantidos, os contrários inclusive:
 Ele demonstra três coisas menores. Primeiro, com as capacidades novas, as regras do P3 cabem no
 programa e a manutenção ficou mais curta numa medição cega (P3b), ao custo de mais tentativas.
 Segundo, as garantias seguraram: nenhuma violação passou por fora da política escrita, e saída
-malformada nunca foi aceita. Terceiro, a autoria por modelo piorou com os guias v2, e a causa
-principal é estreita e identificável.
+malformada nunca foi aceita. Terceiro, a autoria por modelo foi pior no M11 que no M10, com guias v2
+e pacotes novos ao mesmo tempo (a causa não pode ser atribuída exclusivamente aos guias), e a causa
+principal das recusas é estreita e identificável.
 
 Bloqueios, em ordem de efeito medido:
 
@@ -360,3 +361,16 @@ correção vira uma versão nova: a medição do M11 continua presa a `223fb53`,
 autoria só pode ser medido com nova autorização de gasto. Sem ela, o que cabe até 08/12 é mostrar por
 reaplicação local, declarada como diagnóstico, que as 32 autorias existentes passariam a compilar ou
 não. A decisão final de 08/12 terá de dizer que o critério principal não foi avaliado.
+
+**26/11 — pós-M11: renomeação em padrão, E0422 e palavra reservada** ([docs/POS-M11.md](POS-M11.md)).
+Versão posterior à congelada; a medição do M11 continua presa a `223fb53` e não muda. O padrão
+`Use { item: k }` liga o campo `item` ao nome local `k`, que recebe o tipo, os limites, os rótulos e
+a origem do campo. Campo repetido e nome ligado duas vezes dão E0014. O E0422 aponta a comparação
+responsável e orienta pelas listas do programa, e a palavra reservada usada como nome é dita como
+tal. Corpus versionado (130 programas) idêntico: aceitação, códigos, raiz do Codex e Python emitido.
+Reanálise das 71 versões arquivadas, como diagnóstico: as primeiras que compilam passam de 0 para
+1, as finais ficam em 9; em 22 versões o erro seguinte ficou visível. Avaliação adversarial local
+com a versão nova: finais iguais às da congelada (3 violam, 6 sem violação observada, 7 não
+executam). Revisão independente: três achados da mudança corrigidos (hash do nome local, `campo: _`,
+texto da palavra reservada); dois defeitos anteriores na análise de obrigações (B1, B2) registrados
+como pendência, fechados em runtime por R0631. Gasto US$ 0,00.

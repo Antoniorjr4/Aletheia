@@ -1044,7 +1044,10 @@ impl<'m> Arx<'m> {
                 let scope = arm
                     .binds
                     .iter()
-                    .filter_map(|b| fields.iter().find(|(k, _)| *k == b.name).map(|(k, v)| (k.clone(), v.clone())))
+                    .zip(&arm.fields)
+                    .filter_map(|(b, f)| {
+                        fields.iter().find(|(k, _)| *k == f.name).map(|(_, v)| (b.name.clone(), v.clone()))
+                    })
                     .collect();
                 self.scopes.push(scope);
                 let r = self.eval(&arm.body);

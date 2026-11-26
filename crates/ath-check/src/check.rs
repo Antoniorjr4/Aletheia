@@ -100,18 +100,27 @@ fn reads_snapshot(e: &Expr) -> bool {
 }
 
 /// A política compara texto com um literal (`deploy == "api"`): um inventário escrito à mão.
-fn compares_text_literal(e: &Expr) -> bool {
-    expr_any(e, &|x| match &x.kind {
-        ExprKind::Binary(BinOp::Eq | BinOp::Ne, l, r) => {
-            matches!(l.kind, ExprKind::Str(_)) || matches!(r.kind, ExprKind::Str(_))
+/// Devolve a primeira dessas comparações, para o diagnóstico apontar a expressão responsável.
+fn text_literal_comparison(e: &Expr) -> Option<Span> {
+    let hit = std::cell::Cell::new(None);
+    expr_any(e, &|x| {
+        let found = match &x.kind {
+            ExprKind::Binary(BinOp::Eq | BinOp::Ne, l, r) => {
+                matches!(l.kind, ExprKind::Str(_)) || matches!(r.kind, ExprKind::Str(_))
+            }
+            // `contains("ana bia", nome)`: o mesmo inventário escrito à mão, com outra função.
+            // (Literal no segundo argumento é um padrão procurado no valor, não um inventário.)
+            ExprKind::Call { callee, args } if callee.name == "contains" => {
+                matches!(args.first().map(|a| &a.kind), Some(ExprKind::Str(_)))
+            }
+            _ => false,
+        };
+        if found {
+            hit.set(Some(x.span));
         }
-        // `contains("ana bia", nome)`: o mesmo inventário escrito à mão, com outra função.
-        // (Literal no segundo argumento é um padrão procurado no valor, não um inventário.)
-        ExprKind::Call { callee, args } if callee.name == "contains" => {
-            matches!(args.first().map(|a| &a.kind), Some(ExprKind::Str(_)))
-        }
-        _ => false,
-    })
+        found
+    });
+    hit.get()
 }
 
 /// Os inventários confiáveis em que a política decide: `s.is_managed`/`s.scale_justified`
@@ -3130,9 +3139,57 @@ impl<'m> Ctx<'m> {
                 self.push(Diag::new(E0, "E0013", "braço duplicado", arm.variant.span, "variante já tratada"));
             }
             self.scopes.push(Vec::new());
-            for b in &arm.binds {
-                match v.fields.iter().find(|f| f.name.name == b.name) {
+            let mut seen_fields: HashMap<&str, Span> = HashMap::new();
+            let mut seen_names: HashMap<&str, Span> = HashMap::new();
+            // `campo: _` não liga nada, mas o campo tem de existir e conta para a repetição
+            for f in &arm.ignored {
+                if let Some(first) = seen_fields.insert(&f.name, f.span) {
+                    self.push(
+                        Diag::new(E0, "E0014", format!("campo `{}` repetido no padrão", f.name), f.span, "segunda vez")
+                            .secondary(first, "primeira vez"),
+                    );
+                }
+                if !v.fields.iter().any(|fd| fd.name.name == f.name) {
+                    self.push(Diag::new(
+                        E0,
+                        "E0010",
+                        format!("`{}` não tem campo `{}`", v.name.name, f.name),
+                        f.span,
+                        "campo inexistente",
+                    ));
+                }
+            }
+            for (b, fname) in arm.binds.iter().zip(&arm.fields) {
+                // cada campo aparece uma vez; cada nome é ligado uma vez (`Use { a: k, b: k }` e
+                // `Use { item: k, k }` são recusados: o corpo não saberia qual valor `k` é)
+                if let Some(first) = seen_fields.insert(&fname.name, fname.span) {
+                    self.push(
+                        Diag::new(
+                            E0,
+                            "E0014",
+                            format!("campo `{}` repetido no padrão", fname.name),
+                            fname.span,
+                            "segunda vez",
+                        )
+                        .secondary(first, "primeira vez"),
+                    );
+                }
+                if let Some(first) = seen_names.insert(&b.name, b.span) {
+                    self.push(
+                        Diag::new(
+                            E0,
+                            "E0014",
+                            format!("o padrão liga `{}` duas vezes", b.name),
+                            b.span,
+                            "segunda ligação",
+                        )
+                        .secondary(first, "primeira ligação")
+                        .help("dê um nome diferente a cada campo: `Campo { a: x, b: y }`"),
+                    );
+                }
+                match v.fields.iter().find(|f| f.name.name == fname.name) {
                     Some(fd) => {
+                        // o nome local recebe tudo o que o campo tem: tipo, limites, rótulos e origem
                         let (ft, _) = self.resolve(&fd.ty);
                         let refn = self.refn_of(&fd.ty);
                         self.bind(&b.name, LTy::declared(ft, s.lab, refn, s.origin.clone()).with_conf(s.conf));
@@ -3141,8 +3198,8 @@ impl<'m> Ctx<'m> {
                         self.push(Diag::new(
                             E0,
                             "E0010",
-                            format!("`{}` não tem campo `{}`", v.name.name, b.name),
-                            b.span,
+                            format!("`{}` não tem campo `{}`", v.name.name, fname.name),
+                            fname.span,
                             "campo inexistente",
                         ));
                         self.bind(&b.name, LTy::never());
@@ -3532,7 +3589,7 @@ impl<'m> Ctx<'m> {
         let bodies = self.policy_closure(p);
         let read: BTreeSet<String> = bodies.iter().flat_map(|b| policy_inventories(b)).collect();
         let reads = bodies.iter().any(|b| reads_snapshot(b));
-        let literal = bodies.iter().any(|b| compares_text_literal(b));
+        let literal = bodies.iter().find_map(|b| text_literal_comparison(b));
         let missing: Vec<String> = read.difference(&given).cloned().collect();
         if reads && (!anchored || !missing.is_empty()) {
             let want = missing
@@ -3553,16 +3610,33 @@ impl<'m> Ctx<'m> {
                     .help(format!("passe o inventário ao modelo como `campo = {want}`: nunca copiado de literal, log ou resposta de modelo")),
                 );
         }
-        if anchored && literal {
+        if let (true, Some(at)) = (anchored, literal) {
+            // A orientação cita o que este programa entrega ao modelo, não uma suíte específica.
+            let shown: Vec<String> = given
+                .iter()
+                .map(|k| if k == "managed" { "`s.managed()`".to_string() } else { format!("`s.inventory(\"{k}\")`") })
+                .collect();
+            let help = match given.iter().find(|k| *k != "managed") {
+                Some(k) => format!(
+                    "decida pela lista confiável no lugar do literal: `s.member(\"{k}\", x)` ou \
+                     `s.binds(\"{k}\", chave, x)`; se essa lista já garante a regra, apague a comparação"
+                ),
+                None => "decida pela fotografia: `s.is_managed(x)` no lugar de `x == \"…\"`".to_string(),
+            };
             self.push(
                 Diag::new(
                     E3,
                     "E0422",
                     "descompasso entre o inventário confiável e a política",
-                    policy.span,
-                    format!("o prompt recebe `s.managed()`, mas `{}` compara com literais de texto", policy.name),
+                    at,
+                    "compara texto com um literal escrito no programa",
                 )
-                .help("decida pela mesma fotografia: `s.is_managed(x)` no lugar de `x == \"…\"`"),
+                .secondary(policy.span, format!("`{}` decide este rascunho", policy.name))
+                .note(format!(
+                    "o prompt recebe {}; a política tem de decidir pelas mesmas listas, não por valores escritos à mão",
+                    shown.join(", ")
+                ))
+                .help(help),
             );
         }
     }

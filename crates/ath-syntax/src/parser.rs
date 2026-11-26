@@ -135,7 +135,14 @@ impl Parser {
                 let span = self.bump().span;
                 Ok(Ident { name, span })
             }
-            other => Err(self.err(format!("esperado identificador, encontrado {}", other.describe()))),
+            other => match other.reserved_word() {
+                // a mesma mensagem serve aos dois casos: o nome faltou, ou o nome escolhido é reservado
+                Some(w) => Err(self.err(format!(
+                    "esperado um nome, encontrado `{w}`: `{w}` é palavra reservada e não pode ser usada como nome; \
+                     se era o nome, escolha outro (por exemplo `{w}_value`)"
+                ))),
+                None => Err(self.err(format!("esperado identificador, encontrado {}", other.describe()))),
+            },
         }
     }
 
@@ -1273,6 +1280,8 @@ impl Parser {
                     }
                     let variant = self.ident()?;
                     let mut binds = Vec::new();
+                    let mut fields = Vec::new();
+                    let mut ignored = Vec::new();
                     if self.eat(&Tok::LBrace) {
                         while *self.peek() != Tok::RBrace {
                             // `..` (os demais campos) e `_` (campo ignorado) não ligam nada:
@@ -1281,9 +1290,33 @@ impl Parser {
                                 self.bump();
                                 self.expect(Tok::Dot)?;
                             } else {
-                                let b = self.ident()?;
+                                let f = self.ident()?;
+                                // `campo: nome` liga o valor do campo a outro nome, no corpo do braço
+                                let b = if self.eat(&Tok::Colon) {
+                                    self.ident()?
+                                } else if *self.peek() == Tok::Assign {
+                                    return Err(ParseError {
+                                        msg: format!(
+                                            "num padrão, o campo se renomeia com `:`: escreva `{0}: nome`, \
+                                             não `{0} = nome`",
+                                            f.name
+                                        ),
+                                        span: self.span(),
+                                    });
+                                } else {
+                                    f.clone()
+                                };
+                                if f.name == "_" && b.name != "_" {
+                                    return Err(ParseError {
+                                        msg: "`_` não é campo: use `_` sozinho para ignorar".into(),
+                                        span: f.span,
+                                    });
+                                }
                                 if b.name != "_" {
                                     binds.push(b);
+                                    fields.push(f);
+                                } else if f.name != "_" {
+                                    ignored.push(f);
                                 }
                             }
                             if !self.eat(&Tok::Comma) {
@@ -1296,12 +1329,12 @@ impl Parser {
                     let body = self.expr()?;
                     let span = variant.span.to(body.span);
                     if variant.name == "_" {
-                        if !binds.is_empty() {
+                        if !binds.is_empty() || !ignored.is_empty() {
                             return Err(ParseError { msg: "o curinga `_` não tem campos".into(), span: variant.span });
                         }
-                        wildcard = Some(Arm { variant, binds, body, span });
+                        wildcard = Some(Arm { variant, binds, fields, ignored, body, span });
                     } else {
-                        arms.push(Arm { variant, binds, body, span });
+                        arms.push(Arm { variant, binds, fields, ignored, body, span });
                     }
                     // A vírgula entre braços é opcional: o próximo braço começa por um nome.
                     self.eat(&Tok::Comma);
@@ -1325,6 +1358,8 @@ impl Parser {
                                     arms.push(Arm {
                                         variant: Ident { name: v.clone(), span: w.variant.span },
                                         binds: Vec::new(),
+                                        fields: Vec::new(),
+                                        ignored: Vec::new(),
                                         body: w.body.clone(),
                                         span: w.span,
                                     });

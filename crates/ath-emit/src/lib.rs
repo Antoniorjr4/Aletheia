@@ -581,9 +581,9 @@ impl<'m> Gen<'m> {
                     self.line(format!("{kw} {v} == {}:", py_str(&arm.variant.name)));
                     self.indented(|g| {
                         g.env.push(Vec::new());
-                        for b in &arm.binds {
+                        for (b, f) in arm.binds.iter().zip(&arm.fields) {
                             let p = g.bind(&b.name);
-                            g.line(format!("{p} = R.bind({s}, {})", py_str(&b.name)));
+                            g.line(format!("{p} = R.bind({s}, {})", py_str(&f.name)));
                         }
                         let a = g.expr(&arm.body);
                         g.env.pop();

@@ -1021,7 +1021,15 @@ pub enum ExprKind {
 #[derive(Clone, Debug)]
 pub struct Arm {
     pub variant: Ident,
+    /// Os nomes ligados no corpo do braço, na ordem do padrão.
     pub binds: Vec<Ident>,
+    /// O campo de onde vem cada nome de `binds` (mesmo comprimento). Na forma abreviada
+    /// (`Use { item }`) o campo e o nome coincidem; na renomeação (`Use { item: k }`) o campo é
+    /// `item` e o nome ligado é `k`.
+    pub fields: Vec<Ident>,
+    /// Campos citados e ignorados (`Use { item: _ }`): não ligam nada, mas o verificador confere
+    /// que existem e que não se repetem.
+    pub ignored: Vec<Ident>,
     pub body: Expr,
     pub span: Span,
 }

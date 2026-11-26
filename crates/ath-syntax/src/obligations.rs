@@ -203,8 +203,8 @@ impl<'m> An<'m> {
                 let mut r = Vec::new();
                 for a in arms {
                     let n = env.len();
-                    for b in &a.binds {
-                        env.push((b.name.clone(), extend(&s, &Step::Field(a.variant.name.clone(), b.name.clone()))));
+                    for (b, f) in a.binds.iter().zip(&a.fields) {
+                        env.push((b.name.clone(), extend(&s, &Step::Field(a.variant.name.clone(), f.name.clone()))));
                     }
                     r.extend(self.expr(&a.body, env));
                     env.truncate(n);

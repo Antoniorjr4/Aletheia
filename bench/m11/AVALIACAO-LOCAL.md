@@ -62,7 +62,8 @@ Ressalvas de medição, todas já presentes no M10 e mantidas para não mudar o 
 - **Comparação com o M10, mesmas métricas locais (1ª versão segura; versão final segura):**
   Aletheia 8/24 e 16/24 no M10, 0/16 e 6/16 aqui. Python 19/24 e 23/24 no M10, 11/16 e 13/16 aqui.
   A 1ª versão Aletheia rodava em 10/24 no M10 e roda em 0/16 aqui. Ciclos médios da Aletheia: 2,67 no
-  M10, 4,44 aqui. **A autoria Aletheia piorou com os guias v2 e os pacotes novos.**
+  M10, 4,44 aqui. **O M11 apresentou resultados piores, com guias v2 e pacotes novos; a causa não pode ser atribuída
+  exclusivamente aos guias.** As duas coisas mudaram juntas, e os pacotes são outros.
 
 ## Por pacote e repetição
 

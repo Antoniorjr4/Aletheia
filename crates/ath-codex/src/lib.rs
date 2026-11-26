@@ -700,7 +700,9 @@ impl Canon<'_> {
                         self.out,
                         " (arm {} ({})",
                         a.variant.name,
-                        a.binds.iter().map(|b| b.name.as_str()).collect::<Vec<_>>().join(" ")
+                        // só os campos: o nome local é posição (#i), como em `let` e `for`, e não
+                        // entra no hash. Na forma abreviada campo = nome: as raízes antigas não mudam.
+                        a.fields.iter().map(|f| f.name.as_str()).collect::<Vec<_>>().join(" ")
                     );
                     let depth = self.locals.len();
                     for b in &a.binds {
