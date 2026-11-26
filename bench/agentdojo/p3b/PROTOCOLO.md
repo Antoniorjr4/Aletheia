@@ -32,3 +32,11 @@ inventários do P1 com o host da Aletheia sai da cópia do lado P.
 Primário: linhas de produção alteradas somadas nos 6 pedidos, Aletheia ≤ 1,25 × P1. O resultado é
 registrado como sair; o critério não é reescrito. Limites: os do P3, mais o fato de as capacidades
 novas terem sido desenhadas a partir dos pedidos do P3 (por isso os pedidos aqui são novos).
+
+## Registro
+
+- 26/11: pedidos congelados, `pedidos.json` sha256 `a6fc9506c4d810732ab093a4f9214989855c4db2571fd3f02dbc2e8e93906fc4`.
+  Nenhum descartado. Nas bases sem mudança, 12 dos 27 casos já passam nos dois lados (os de
+  "tudo permitido"); os outros 15 exigem a mudança.
+- **Coincidência declarada:** D1 (`Reschedule`) tem o mesmo tema de C1 do P3, com regra diferente
+  (validação de data de calendário). O autor cego é outro e não viu o P3.
