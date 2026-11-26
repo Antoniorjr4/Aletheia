@@ -297,3 +297,8 @@ pedidos novos de um autor cego, implementadores separados: Aletheia 83 linhas, P
 margem 1,25). Tentativas 16 × 6. Uma regra (D5, conjunto de caracteres) foi para o host; D3 ficou no
 handler. O P3 (+56%, contra) continua registrado: são duas medições, uma de cada lado, e o relatório
 final traz as duas.
+
+**26/11 — M11: autoria parada no teto, 32/48.** Auditoria dos oráculos antes da autoria: 2 defeitos
+corrigidos em `packs_v2`, iguais para os dois lados. A autoria parou no teto de US$ 0,42, nas
+repetições 1–2. **Gasto do ciclo: US$ 1,1504.** Ainda não houve avaliação; a decisão sobre a terceira
+repetição fica com o Antonio e é tomada antes de ver os resultados.

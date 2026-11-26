@@ -83,3 +83,10 @@ o dono do projeto é avisado; nenhum teto sobe sem autorização expressa.
   (originais intactos em `packs/`); revalidados por mim: 8 × `pacote válido`, duplicação: nenhuma.
   Hash (mesmo método, caminhos `packs_v2/…`, 33 arquivos):
   `8abff4a078266c8ae77120fc639e0413ad375620b524bf3a203aed12c0d4bcfe`. É esta versão que a autoria usa.
+- **26/11 — etapa 3 interrompida pelo teto.** A autoria parou no teto de US$ 0,42 com **32 das 48**
+  autorias feitas (repetições 1 e 2 dos 8 pacotes, nas duas linguagens); a repetição 3 não foi gerada.
+  Gasto da autoria: US$ 0,4210. O teto é conferido depois de cada autoria, por isso passou US$ 0,001.
+  Gasto do ciclo: US$ 1,1504 de 1,50. Ainda não houve avaliação. Fechar a repetição 3 custaria
+  ~US$ 0,21, e somado à avaliação (≤ 0,18) o ciclo passaria de US$ 1,50. A escolha entre avaliar só as
+  2 repetições (desvio declarado: 2 em vez de 3) e pedir autorização para a terceira é feita **antes**
+  de ver qualquer resultado, para que olhar os números não decida quando parar.
