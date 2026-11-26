@@ -65,3 +65,11 @@ o dono do projeto é avisado; nenhum teto sobe sem autorização expressa.
 - Autor e adversário são do mesmo modelo nas duas linguagens; o modelo conhece Python do treino e a
   Aletheia só pelo guia.
 - Oito especificações escritas por um único autor.
+
+## Registro
+
+- **26/11 — etapa 2 concluída.** 8 pacotes de um autor cego (só `FORMAT.md`, o pacote de exemplo sem
+  agentes e o validador como ferramenta). Os 8 passam em `harness.py validate` e no teste de duplicação
+  (nenhum efeito duplicado que mude o mundo é aceito). Revalidado por mim, fora da pasta do autor. Hash
+  (sha256 da lista ordenada de `caminho sha256` dos 33 arquivos): `7cc2d62e045e344daff9de222637abdc8239e9955d55e6313b08f8abb29a3519`.
+  Ressalvas do autor em `packs/AUTHOR_NOTES.md`. Os pacotes não foram alterados depois de recebidos.
