@@ -1,0 +1,272 @@
+[
+ {
+  "programa": "correto",
+  "allowed": [
+   "GB29NWBK60161331926819|10.00",
+   "CH9300762011623852957|25.00"
+  ],
+  "plano": [
+   {
+    "kind": "Send",
+    "recipient": "GB29NWBK60161331926819",
+    "amount": "10.00"
+   },
+   {
+    "kind": "Send",
+    "recipient": "CH9300762011623852957",
+    "amount": "25.00"
+   }
+  ],
+  "mostra": "plano correto, pares permitidos: executa",
+  "compilador_afirma": [
+   "L17 send_money               descarregada  levantada para o refine em L15",
+   "refine L15 ⇐ send_money (Send em [\"Plan.writes\",\"[*]\"])"
+  ],
+  "arx": {
+   "recebido_pela_ferramenta": [
+    {
+     "tool": "send_money",
+     "args": [
+      "GB29NWBK60161331926819",
+      "10.00"
+     ]
+    },
+    {
+     "tool": "send_money",
+     "args": [
+      "CH9300762011623852957",
+      "25.00"
+     ]
+    }
+   ],
+   "fim": "◀ resultado: \"ok\"",
+   "recusas": [],
+   "contrato_vale_em_todas": true,
+   "todas_correspondem_ao_plano": true
+  },
+  "python": {
+   "recebido_pela_ferramenta": [
+    {
+     "tool": "send_money",
+     "args": [
+      "GB29NWBK60161331926819",
+      "10.00"
+     ]
+    },
+    {
+     "tool": "send_money",
+     "args": [
+      "CH9300762011623852957",
+      "25.00"
+     ]
+    }
+   ],
+   "fim": "ok",
+   "recusas": [],
+   "contrato_vale_em_todas": true,
+   "todas_correspondem_ao_plano": true
+  },
+  "runtimes_concordam": true
+ },
+ {
+  "programa": "correto",
+  "allowed": [
+   "GB29NWBK60161331926819|10.00",
+   "CH9300762011623852957|25.00"
+  ],
+  "plano": [
+   {
+    "kind": "Send",
+    "recipient": "GB29NWBK60161331926819",
+    "amount": "10.00"
+   },
+   {
+    "kind": "Send",
+    "recipient": "CH9300762011623852957",
+    "amount": "30.00"
+   }
+  ],
+  "mostra": "plano com um par fora da lista: recusado no refine (obrigação demonstrada)",
+  "compilador_afirma": [
+   "L17 send_money               descarregada  levantada para o refine em L15",
+   "refine L15 ⇐ send_money (Send em [\"Plan.writes\",\"[*]\"])"
+  ],
+  "arx": {
+   "recebido_pela_ferramenta": [],
+   "fim": "◀ resultado: \"none\"",
+   "recusas": [
+    "obligation_reject"
+   ],
+   "contrato_vale_em_todas": true,
+   "todas_correspondem_ao_plano": true
+  },
+  "python": {
+   "recebido_pela_ferramenta": [],
+   "fim": "none",
+   "recusas": [
+    "obligation_reject"
+   ],
+   "contrato_vale_em_todas": true,
+   "todas_correspondem_ao_plano": true
+  },
+  "runtimes_concordam": true
+ },
+ {
+  "programa": "misturado",
+  "allowed": [
+   "GB29NWBK60161331926819|10.00",
+   "CH9300762011623852957|25.00"
+  ],
+  "plano": [
+   {
+    "kind": "Send",
+    "recipient": "GB29NWBK60161331926819",
+    "amount": "10.00"
+   },
+   {
+    "kind": "Send",
+    "recipient": "CH9300762011623852957",
+    "amount": "25.00"
+   }
+  ],
+  "mostra": "X2 com lista estrita: a combinação inválida é recusada na fronteira do efeito",
+  "compilador_afirma": [
+   "L19 send_money               dinâmica      `amount` vem de outro elemento do valor endossado"
+  ],
+  "arx": {
+   "recebido_pela_ferramenta": [
+    {
+     "tool": "send_money",
+     "args": [
+      "GB29NWBK60161331926819",
+      "10.00"
+     ]
+    }
+   ],
+   "fim": "✗ abortado: R0630 o contrato `requires` de `send_money` recusou os argumentos",
+   "recusas": [
+    "contract_refused",
+    "abort"
+   ],
+   "contrato_vale_em_todas": true,
+   "todas_correspondem_ao_plano": true
+  },
+  "python": {
+   "recebido_pela_ferramenta": [
+    {
+     "tool": "send_money",
+     "args": [
+      "GB29NWBK60161331926819",
+      "10.00"
+     ]
+    }
+   ],
+   "fim": "abortado: R0630 o contrato `requires` de `send_money` recusou os argumentos",
+   "recusas": [
+    "contract_refused",
+    "abort"
+   ],
+   "contrato_vale_em_todas": true,
+   "todas_correspondem_ao_plano": true
+  },
+  "runtimes_concordam": true
+ },
+ {
+  "programa": "misturado",
+  "allowed": [
+   "GB29NWBK60161331926819|10.00",
+   "GB29NWBK60161331926819|25.00",
+   "CH9300762011623852957|10.00",
+   "CH9300762011623852957|25.00"
+  ],
+  "plano": [
+   {
+    "kind": "Send",
+    "recipient": "GB29NWBK60161331926819",
+    "amount": "10.00"
+   },
+   {
+    "kind": "Send",
+    "recipient": "CH9300762011623852957",
+    "amount": "25.00"
+   }
+  ],
+  "mostra": "X2 com lista que permite as quatro combinações: o contrato passa, a correspondência não",
+  "compilador_afirma": [
+   "L19 send_money               dinâmica      `amount` vem de outro elemento do valor endossado"
+  ],
+  "arx": {
+   "recebido_pela_ferramenta": [
+    {
+     "tool": "send_money",
+     "args": [
+      "GB29NWBK60161331926819",
+      "10.00"
+     ]
+    },
+    {
+     "tool": "send_money",
+     "args": [
+      "GB29NWBK60161331926819",
+      "25.00"
+     ]
+    },
+    {
+     "tool": "send_money",
+     "args": [
+      "CH9300762011623852957",
+      "10.00"
+     ]
+    },
+    {
+     "tool": "send_money",
+     "args": [
+      "CH9300762011623852957",
+      "25.00"
+     ]
+    }
+   ],
+   "fim": "◀ resultado: \"ok\"",
+   "recusas": [],
+   "contrato_vale_em_todas": true,
+   "todas_correspondem_ao_plano": false
+  },
+  "python": {
+   "recebido_pela_ferramenta": [
+    {
+     "tool": "send_money",
+     "args": [
+      "GB29NWBK60161331926819",
+      "10.00"
+     ]
+    },
+    {
+     "tool": "send_money",
+     "args": [
+      "GB29NWBK60161331926819",
+      "25.00"
+     ]
+    },
+    {
+     "tool": "send_money",
+     "args": [
+      "CH9300762011623852957",
+      "10.00"
+     ]
+    },
+    {
+     "tool": "send_money",
+     "args": [
+      "CH9300762011623852957",
+      "25.00"
+     ]
+    }
+   ],
+   "fim": "ok",
+   "recusas": [],
+   "contrato_vale_em_todas": true,
+   "todas_correspondem_ao_plano": false
+  },
+  "runtimes_concordam": true
+ }
+]
