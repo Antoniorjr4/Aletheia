@@ -1,9 +1,29 @@
 {
- "programas": 210,
+ "programas": 252,
  "mudaram": [
   "bench/obrigacoes/casos/b1_cruzado.ath",
   "bench/obrigacoes/casos/b2_as_recusado_valido.ath",
-  "bench/obrigacoes/casos/b2_as_sombreia.ath"
+  "bench/obrigacoes/casos/b2_as_sombreia.ath",
+  "bench/obrigacoes/casos/f1_requires_if.ath",
+  "bench/obrigacoes/casos/f2_dois_refines.ath",
+  "bench/obrigacoes/revisao/c/a1_dois_refines_if.ath",
+  "bench/obrigacoes/revisao/c/a2_dois_refines_registro.ath",
+  "bench/obrigacoes/revisao/c/f1_requires_if.ath",
+  "bench/obrigacoes/revisao/c/f2_lit_if.ath",
+  "bench/obrigacoes/revisao/c/f3_lit_block.ath",
+  "bench/obrigacoes/revisao/c/f4_lit_quant.ath",
+  "bench/obrigacoes/revisao/c/f5_lit_match.ath",
+  "bench/obrigacoes/revisao/d/x_alias_let_laco.ath",
+  "bench/obrigacoes/revisao/d/x_aninhado_cruzado.ath",
+  "bench/obrigacoes/revisao/d/x_aninhado_mesma_linha.ath",
+  "bench/obrigacoes/revisao/d/x_bloco_sombra.ath",
+  "bench/obrigacoes/revisao/d/x_ctor_cruzado.ath",
+  "bench/obrigacoes/revisao/d/x_if_campos.ath",
+  "bench/obrigacoes/revisao/d/x_lista_cruzada.ath",
+  "bench/obrigacoes/revisao/d/x_lista_de_listas.ath",
+  "bench/obrigacoes/revisao/e/b2_bloco_dentro.ath",
+  "bench/obrigacoes/revisao/e/b2_braco.ath",
+  "bench/obrigacoes/revisao/e/b2_for_sombra.ath"
  ],
  "linhas": [
   {
@@ -2892,6 +2912,499 @@
     "refine L12 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
    ],
    "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/casos/c3_if_mesmo_laco.ath",
+   "antes": [
+    "L16 pay                      descarregada  levantada para o refine em L12",
+    "refine L12 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+   ],
+   "depois": [
+    "L16 pay                      descarregada  levantada para o refine em L12",
+    "refine L12 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+   ],
+   "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/casos/c3_lista_dois.ath",
+   "antes": [
+    "L15 pay                      descarregada  levantada para o refine em L12",
+    "refine L12 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+   ],
+   "depois": [
+    "L15 pay                      descarregada  levantada para o refine em L12",
+    "refine L12 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+   ],
+   "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/casos/f1_requires_if.ath",
+   "antes": [
+    "L10 pay                      descarregada  levantada para o refine em"
+   ],
+   "depois": [
+    "L10 pay                      dinâmica      `to`: um valor calculado"
+   ],
+   "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/casos/f1_requires_parcial.ath",
+   "antes": [
+    "L12 pay                      descarregada  levantada para o refine em L11",
+    "refine L11 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+   ],
+   "depois": [
+    "L12 pay                      descarregada  levantada para o refine em L11",
+    "refine L11 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+   ],
+   "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/casos/f2_dois_refines.ath",
+   "antes": [
+    "L14 pay                      descarregada  levantada para o refine em L9, L10",
+    "refine L9 ⇐ pay (Pay em [])",
+    "refine L10 ⇐ pay (Pay em [])"
+   ],
+   "depois": [
+    "L14 pay                      dinâmica      `memo` vem de outro elemento do valor endossado"
+   ],
+   "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/revisao/c/a1_dois_refines_if.ath",
+   "antes": [
+    "L19 pay                      descarregada  levantada para o refine em L11, L13",
+    "refine L11 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])",
+    "refine L13 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+   ],
+   "depois": [
+    "L19 pay                      dinâmica      `memo` vem de outro elemento do valor endossado"
+   ],
+   "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/revisao/c/a2_dois_refines_registro.ath",
+   "antes": [
+    "L14 pay                      descarregada  levantada para o refine em L9, L10",
+    "refine L9 ⇐ pay (Pay em [])",
+    "refine L10 ⇐ pay (Pay em [])"
+   ],
+   "depois": [
+    "L14 pay                      dinâmica      `memo` vem de outro elemento do valor endossado"
+   ],
+   "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/revisao/c/f1_requires_if.ath",
+   "antes": [
+    "L12 pay                      descarregada  levantada para o refine em"
+   ],
+   "depois": [
+    "L12 pay                      descarregada  levantada para o refine em L11",
+    "refine L11 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+   ],
+   "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/revisao/c/f2_lit_if.ath",
+   "antes": [
+    "L10 pay                      descarregada  levantada para o refine em"
+   ],
+   "depois": [
+    "L10 pay                      dinâmica      `to`: um valor calculado"
+   ],
+   "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/revisao/c/f3_lit_block.ath",
+   "antes": [
+    "L10 pay                      descarregada  levantada para o refine em"
+   ],
+   "depois": [
+    "L10 pay                      dinâmica      `to`: um valor calculado"
+   ],
+   "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/revisao/c/f4_lit_quant.ath",
+   "antes": [
+    "L10 pay                      descarregada  levantada para o refine em"
+   ],
+   "depois": [
+    "L10 pay                      dinâmica      `ts` vem de um literal"
+   ],
+   "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/revisao/c/f5_lit_match.ath",
+   "antes": [
+    "L10 pay                      descarregada  levantada para o refine em"
+   ],
+   "depois": [
+    "L10 pay                      dinâmica      `to`: um valor calculado"
+   ],
+   "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/revisao/c/f6_parcial.ath",
+   "antes": [
+    "L12 pay                      descarregada  levantada para o refine em L11",
+    "refine L11 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+   ],
+   "depois": [
+    "L12 pay                      descarregada  levantada para o refine em L11",
+    "refine L11 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+   ],
+   "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/revisao/d/k_alias_lista.ath",
+   "antes": [
+    "L16 pay                      descarregada  levantada para o refine em L12",
+    "refine L12 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+   ],
+   "depois": [
+    "L16 pay                      descarregada  levantada para o refine em L12",
+    "refine L12 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+   ],
+   "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/revisao/d/k_aninhado.ath",
+   "antes": [
+    "L15 pay                      descarregada  levantada para o refine em L12",
+    "refine L12 ⇐ pay (Pay em [\"Plan.rows\",\"[*]\",\"Row.ops\",\"[*]\"])"
+   ],
+   "depois": [
+    "L15 pay                      descarregada  levantada para o refine em L12",
+    "refine L12 ⇐ pay (Pay em [\"Plan.rows\",\"[*]\",\"Row.ops\",\"[*]\"])"
+   ],
+   "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/revisao/d/k_campo_ponto.ath",
+   "antes": [
+    "L15 pay                      dinâmica      `to`: um valor calculado"
+   ],
+   "depois": [
+    "L15 pay                      dinâmica      `to`: um valor calculado"
+   ],
+   "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/revisao/d/k_else_outro_refine.ath",
+   "antes": [
+    "L16 pay                      descarregada  levantada para o refine em L12, L13",
+    "refine L12 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])",
+    "refine L13 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+   ],
+   "depois": [
+    "L16 pay                      descarregada  levantada para o refine em L12, L13",
+    "refine L12 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])",
+    "refine L13 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+   ],
+   "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/revisao/d/k_if_campos_mesmo.ath",
+   "antes": [
+    "L16 pay                      descarregada  levantada para o refine em L12",
+    "refine L12 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+   ],
+   "depois": [
+    "L16 pay                      descarregada  levantada para o refine em L12",
+    "refine L12 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+   ],
+   "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/revisao/d/k_if_dois_refines_mesmo_o.ath",
+   "antes": [
+    "L17 pay                      descarregada  levantada para o refine em L12",
+    "refine L12 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+   ],
+   "depois": [
+    "L17 pay                      descarregada  levantada para o refine em L12",
+    "refine L12 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+   ],
+   "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/revisao/d/k_if_mesmo_laco.ath",
+   "antes": [
+    "L16 pay                      descarregada  levantada para o refine em L12",
+    "refine L12 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+   ],
+   "depois": [
+    "L16 pay                      descarregada  levantada para o refine em L12",
+    "refine L12 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+   ],
+   "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/revisao/d/k_lista_dois.ath",
+   "antes": [
+    "L15 pay                      descarregada  levantada para o refine em L12",
+    "refine L12 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+   ],
+   "depois": [
+    "L15 pay                      descarregada  levantada para o refine em L12",
+    "refine L12 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+   ],
+   "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/revisao/d/k_lista_um.ath",
+   "antes": [
+    "L15 pay                      descarregada  levantada para o refine em L12",
+    "refine L12 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+   ],
+   "depois": [
+    "L15 pay                      descarregada  levantada para o refine em L12",
+    "refine L12 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+   ],
+   "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/revisao/d/k_match_duas_vezes.ath",
+   "antes": [
+    "L15 pay                      descarregada  levantada para o refine em L12",
+    "refine L12 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+   ],
+   "depois": [
+    "L15 pay                      descarregada  levantada para o refine em L12",
+    "refine L12 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+   ],
+   "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/revisao/d/k_reconstroi.ath",
+   "antes": [
+    "L16 pay                      descarregada  levantada para o refine em L12",
+    "refine L12 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+   ],
+   "depois": [
+    "L16 pay                      descarregada  levantada para o refine em L12",
+    "refine L12 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+   ],
+   "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/revisao/d/k_sombra_laco.ath",
+   "antes": [
+    "L15 pay                      descarregada  levantada para o refine em L12",
+    "refine L12 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+   ],
+   "depois": [
+    "L15 pay                      descarregada  levantada para o refine em L12",
+    "refine L12 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+   ],
+   "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/revisao/d/k_troca.ath",
+   "antes": [
+    "L15 pay                      descarregada  levantada para o refine em L12",
+    "refine L12 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+   ],
+   "depois": [
+    "L15 pay                      descarregada  levantada para o refine em L12",
+    "refine L12 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+   ],
+   "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/revisao/d/x_alias_let_laco.ath",
+   "antes": [
+    "L17 pay                      descarregada  levantada para o refine em L12",
+    "refine L12 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+   ],
+   "depois": [
+    "L17 pay                      dinâmica      `memo` vem de outro elemento do valor endossado"
+   ],
+   "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/revisao/d/x_aninhado_cruzado.ath",
+   "antes": [
+    "L15 pay                      descarregada  levantada para o refine em L12",
+    "refine L12 ⇐ pay (Pay em [\"Plan.rows\",\"[*]\",\"Row.ops\",\"[*]\"])"
+   ],
+   "depois": [
+    "L15 pay                      dinâmica      `memo` vem de outro elemento do valor endossado"
+   ],
+   "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/revisao/d/x_aninhado_mesma_linha.ath",
+   "antes": [
+    "L15 pay                      descarregada  levantada para o refine em L12",
+    "refine L12 ⇐ pay (Pay em [\"Plan.rows\",\"[*]\",\"Row.ops\",\"[*]\"])"
+   ],
+   "depois": [
+    "L15 pay                      dinâmica      `memo` vem de outro elemento do valor endossado"
+   ],
+   "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/revisao/d/x_bloco_sombra.ath",
+   "antes": [
+    "L18 pay                      descarregada  levantada para o refine em L12",
+    "refine L12 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+   ],
+   "depois": [
+    "L18 pay                      dinâmica      `memo` vem de outro elemento do valor endossado"
+   ],
+   "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/revisao/d/x_ctor_cruzado.ath",
+   "antes": [
+    "L16 pay                      descarregada  levantada para o refine em L12",
+    "refine L12 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+   ],
+   "depois": [
+    "L16 pay                      dinâmica      `memo` vem de outro elemento do valor endossado"
+   ],
+   "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/revisao/d/x_else_literal.ath",
+   "antes": [
+    "L15 pay                      dinâmica      `to`: um valor calculado"
+   ],
+   "depois": [
+    "L15 pay                      dinâmica      `to`: um valor calculado"
+   ],
+   "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/revisao/d/x_if_campos.ath",
+   "antes": [
+    "L17 pay                      descarregada  levantada para o refine em L12",
+    "refine L12 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+   ],
+   "depois": [
+    "L17 pay                      dinâmica      `memo` vem de outro elemento do valor endossado"
+   ],
+   "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/revisao/d/x_lista_cruzada.ath",
+   "antes": [
+    "L15 pay                      descarregada  levantada para o refine em L12",
+    "refine L12 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+   ],
+   "depois": [
+    "L15 pay                      dinâmica      `memo` vem de outro elemento do valor endossado"
+   ],
+   "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/revisao/d/x_lista_de_listas.ath",
+   "antes": [
+    "L15 pay                      descarregada  levantada para o refine em L12",
+    "refine L12 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+   ],
+   "depois": [
+    "L15 pay                      dinâmica      `memo` vem de outro elemento do valor endossado"
+   ],
+   "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/revisao/e/b2_bloco_dentro.ath",
+   "antes": [
+    "L15 pay                      descarregada  levantada para o refine em L12",
+    "refine L12 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+   ],
+   "depois": [
+    "L15 pay                      dinâmica      `to`: `fora` é o que a política recusou no `refine`"
+   ],
+   "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/revisao/e/b2_bloco_depois.ath",
+   "antes": [
+    "L16 pay                      descarregada  levantada para o refine em L12",
+    "refine L12 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+   ],
+   "depois": [
+    "L16 pay                      descarregada  levantada para o refine em L12",
+    "refine L12 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+   ],
+   "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/revisao/e/b2_braco.ath",
+   "antes": [
+    "L15 pay                      descarregada  levantada para o refine em L12",
+    "refine L12 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+   ],
+   "depois": [
+    "L15 pay                      dinâmica      `to`: `fora` é o que a política recusou no `refine`"
+   ],
+   "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/revisao/e/b2_braco_sombra.ath",
+   "antes": [
+    "--> /home/claude/aletheia/bench/obrigacoes/revisao/e/b2_braco_sombra.ath:15:18",
+    "|",
+    "|                  ^ aqui"
+   ],
+   "depois": [
+    "--> /home/claude/aletheia/bench/obrigacoes/revisao/e/b2_braco_sombra.ath:15:18",
+    "|",
+    "|                  ^ aqui"
+   ],
+   "com_requires": false
+  },
+  {
+   "arquivo": "bench/obrigacoes/revisao/e/b2_cauda_bloco.ath",
+   "antes": [
+    "--> /home/claude/aletheia/bench/obrigacoes/revisao/e/b2_cauda_bloco.ath:14:49",
+    "|",
+    "|                                                 ^^^^ fora de `let x = refine …`",
+    "|",
+    "= ajuda: escreva `let plano = refine … keeping campo by Q as recusados else { … }`"
+   ],
+   "depois": [
+    "--> /home/claude/aletheia/bench/obrigacoes/revisao/e/b2_cauda_bloco.ath:14:49",
+    "|",
+    "|                                                 ^^^^ fora de `let x = refine …`",
+    "|",
+    "= ajuda: escreva `let plano = refine … keeping campo by Q as recusados else { … }`"
+   ],
+   "com_requires": false
+  },
+  {
+   "arquivo": "bench/obrigacoes/revisao/e/b2_for_sombra.ath",
+   "antes": [
+    "L15 pay                      dinâmica      `to`: `recus` não vem de um valor endossado"
+   ],
+   "depois": [
+    "L15 pay                      dinâmica      `to`: `recus` é o que a política recusou no `refine`"
+   ],
+   "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/revisao/e/b2_if.ath",
+   "antes": [
+    "--> /home/claude/aletheia/bench/obrigacoes/revisao/e/b2_if.ath:14:57",
+    "|",
+    "|                                                         ^^^^ fora de `let x = refine …`",
+    "|",
+    "= ajuda: escreva `let plano = refine … keeping campo by Q as recusados else { … }`"
+   ],
+   "depois": [
+    "--> /home/claude/aletheia/bench/obrigacoes/revisao/e/b2_if.ath:14:57",
+    "|",
+    "|                                                         ^^^^ fora de `let x = refine …`",
+    "|",
+    "= ajuda: escreva `let plano = refine … keeping campo by Q as recusados else { … }`"
+   ],
+   "com_requires": false
   },
   {
    "arquivo": "bench/replay/2026-11-09-groq-gpt-oss-120b-rev6/rollout-120b.ath",

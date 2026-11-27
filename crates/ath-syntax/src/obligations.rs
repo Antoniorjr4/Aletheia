@@ -30,9 +30,11 @@ pub enum Step {
 /// De onde vem um valor.
 #[derive(Clone, Debug, PartialEq)]
 enum Src {
-    /// do valor devolvido pelo `refine` do sítio, no caminho. O terceiro campo identifica, para
-    /// cada passo `Elem` do caminho, o laço que escolheu o elemento (o span da variável do `for`):
-    /// dois valores com o mesmo caminho só vêm do mesmo elemento se vieram do mesmo laço (B1).
+    /// do valor devolvido pelo `refine` do sítio, no caminho. O terceiro campo são os pontos de
+    /// escolha pelos quais o valor passou, em ordem: o laço que escolheu um elemento (o span da
+    /// variável do `for`, B1) e cada `if`/`match` que juntou valores de origens diferentes (o span
+    /// da expressão, F2). Dois valores vêm do mesmo elemento, na mesma execução, se têm o mesmo
+    /// caminho e o mesmo **último** ponto de escolha: esse ponto produz um valor só de cada vez.
     Refine(Span, Vec<Step>, Vec<(u32, u32)>),
     /// de um literal de construtor: a variante e as fontes de cada campo
     Lit(String, Vec<(String, Vec<Src>)>),
@@ -44,6 +46,26 @@ enum Src {
 
 fn extend(srcs: &[Src], step: &Step) -> Vec<Src> {
     extend_at(srcs, step, None)
+}
+
+/// Um `if` ou `match` cujo valor vem de mais de uma origem é um ponto de escolha: o valor que sai
+/// dele é um só, mas não se sabe estaticamente qual. Marca as origens endossadas com o span.
+fn join(srcs: Vec<Src>, at: Span) -> Vec<Src> {
+    // origens idênticas (`if c { to } else { to }`) não são escolha: o valor é o mesmo
+    let mut srcs = srcs.into_iter().fold(Vec::new(), |mut acc: Vec<Src>, s| {
+        if !acc.contains(&s) {
+            acc.push(s);
+        }
+        acc
+    });
+    if srcs.len() > 1 {
+        for s in &mut srcs {
+            if let Src::Refine(_, _, ids) = s {
+                ids.push((at.lo, at.hi));
+            }
+        }
+    }
+    srcs
 }
 
 /// Como `extend`; num passo `Elem`, `elem` é o laço que escolhe o elemento.
@@ -69,8 +91,19 @@ fn extend_at(srcs: &[Src], step: &Step, elem: Option<(u32, u32)>) -> Vec<Src> {
                 // outra variante: o braço não casa com este literal; nenhum valor chega
             }
             (Src::List(items), Step::Elem) => {
+                // o laço escolhe um item da lista literal de cada vez: os itens endossados recebem o
+                // ponto de escolha do laço, como um elemento de lista endossada (`for x in [a, b]`)
                 for it in items {
-                    out.extend(it.iter().cloned());
+                    for src in it {
+                        match (src, elem) {
+                            (Src::Refine(sp, p, ids), Some(id)) => {
+                                let mut ids = ids.clone();
+                                ids.push(id);
+                                out.push(Src::Refine(*sp, p.clone(), ids));
+                            }
+                            _ => out.push(src.clone()),
+                        }
+                    }
                 }
             }
             (Src::Unknown(r), _) => out.push(Src::Unknown(r.clone())),
@@ -124,30 +157,54 @@ impl Obligations {
     }
 }
 
-/// Os nomes livres de uma expressão (as variáveis que ela lê).
-fn free_vars(e: &Expr, out: &mut BTreeSet<String>) {
+/// Os nomes que uma expressão lê, sobre-aproximados: todo `Var` em qualquer subexpressão, inclusive
+/// dentro de `if`, `match`, blocos e quantificadores (F1, revisão de 27/11: a versão anterior não
+/// descia nessas formas, e um parâmetro lido só ali ficava fora da obrigação). Devolve `false` se
+/// encontrar uma forma que não sabe percorrer; quem chama trata então todos os parâmetros como lidos
+/// (por isso parar no primeiro `false` não perde nada).
+fn free_vars(e: &Expr, out: &mut BTreeSet<String>) -> bool {
     match &e.kind {
+        ExprKind::Int(_) | ExprKind::Bool(_) | ExprKind::Str(_) => true,
         ExprKind::Var(x) => {
             out.insert(x.clone());
+            true
         }
         ExprKind::Field(r, _)
         | ExprKind::Unary(_, r)
         | ExprKind::Quote(r)
         | ExprKind::Commit(r)
         | ExprKind::Return(r) => free_vars(r, out),
-        ExprKind::Call { args, .. } => args.iter().for_each(|a| free_vars(a, out)),
-        ExprKind::Method { recv, args, .. } => {
-            free_vars(recv, out);
-            args.iter().for_each(|a| free_vars(a, out));
+        ExprKind::Call { args, .. } => args.iter().all(|a| free_vars(a, out)),
+        ExprKind::Method { recv, args, .. } => free_vars(recv, out) && args.iter().all(|a| free_vars(a, out)),
+        ExprKind::Binary(_, a, b) => free_vars(a, out) & free_vars(b, out),
+        ExprKind::List(xs) => xs.iter().all(|a| free_vars(a, out)),
+        ExprKind::Ctor { fields, .. } => fields.iter().all(|(_, a)| free_vars(a, out)),
+        ExprKind::If { cond, then, els } => {
+            let mut ok = free_vars(cond, out) & block_vars(then, out);
+            if let Some(b) = els {
+                ok &= block_vars(b, out);
+            }
+            ok
         }
-        ExprKind::Binary(_, a, b) => {
-            free_vars(a, out);
-            free_vars(b, out);
-        }
-        ExprKind::List(xs) => xs.iter().for_each(|a| free_vars(a, out)),
-        ExprKind::Ctor { fields, .. } => fields.iter().for_each(|(_, a)| free_vars(a, out)),
-        _ => {}
+        ExprKind::Match { scrut, arms } => free_vars(scrut, out) && arms.iter().all(|a| free_vars(&a.body, out)),
+        ExprKind::Block(b) => block_vars(b, out),
+        ExprKind::Quant { iter, body, .. } => free_vars(iter, out) & free_vars(body, out),
+        _ => false,
     }
+}
+
+fn block_vars(b: &Block, out: &mut BTreeSet<String>) -> bool {
+    let mut ok = true;
+    for s in &b.stmts {
+        ok &= match s {
+            Stmt::Let { value, .. } => free_vars(value, out),
+            Stmt::Expr(e) => free_vars(e, out),
+        };
+    }
+    if let Some(t) = &b.tail {
+        ok &= free_vars(t, out);
+    }
+    ok
 }
 
 struct An<'m> {
@@ -217,7 +274,7 @@ impl<'m> An<'m> {
                     Some(b) => r.extend(self.block(b, env)),
                     None => r.push(Src::Unknown("`if` sem `else`".into())),
                 }
-                r
+                join(r, e.span)
             }
             ExprKind::Match { scrut, arms } => {
                 let s = self.expr(scrut, env);
@@ -230,7 +287,7 @@ impl<'m> An<'m> {
                     r.extend(self.expr(&a.body, env));
                     env.truncate(n);
                 }
-                r
+                join(r, e.span)
             }
             ExprKind::For { var, iter, body } => {
                 let s = self.expr(iter, env);
@@ -305,13 +362,14 @@ impl<'m> An<'m> {
     /// valor endossado (em cada `refine` que alcança o sítio)? Então levanta.
     fn site(&mut self, t: &ToolDecl, req: &Expr, args: &[Vec<Src>]) -> Status {
         let mut used = BTreeSet::new();
-        free_vars(req, &mut used);
+        // forma que a análise não sabe percorrer: todos os parâmetros contam como lidos (F1)
+        let complete = free_vars(req, &mut used);
         let params: Vec<(usize, &str)> = t
             .params
             .iter()
             .enumerate()
             .map(|(i, p)| (i, p.name.name.as_str()))
-            .filter(|(_, n)| used.contains(*n))
+            .filter(|(_, n)| !complete || used.contains(*n))
             .collect();
         // por sítio de `refine`: (prefixo, variante) → parâmetro ← campo
         let mut per: BTreeMap<(u32, u32), Lift> = BTreeMap::new();
@@ -331,9 +389,10 @@ impl<'m> An<'m> {
                                     Some((prefix.to_vec(), ids.clone(), v.clone(), vec![(name.to_string(), f.clone())]))
                             }
                             Some((p0, ids0, v0, b)) => {
-                                // mesmo caminho não basta: o elemento tem de ser escolhido pelo mesmo
-                                // laço, senão são elementos diferentes da mesma lista (B1)
-                                if p0.as_slice() != prefix || ids0 != ids || v0 != v {
+                                // mesmo caminho não basta: o último ponto de escolha tem de ser o mesmo,
+                                // senão são elementos diferentes da mesma lista (B1) ou valores de
+                                // propostas diferentes juntados por `if`/`match` (F2)
+                                if p0.as_slice() != prefix || ids0.last() != ids.last() || v0 != v {
                                     return Status::Dynamic {
                                         reason: format!("`{name}` vem de outro elemento do valor endossado"),
                                     };
@@ -356,6 +415,18 @@ impl<'m> An<'m> {
             let Some((_, _, _, b)) = e else { continue };
             if b.len() != params.len() {
                 return Status::Dynamic { reason: "parte dos argumentos não vem do mesmo endosso".into() };
+            }
+        }
+        // mais de um `refine` alcança o sítio: na execução, os argumentos só vêm do mesmo valor se
+        // todos passaram pelo mesmo ponto de escolha, que decide de qual `refine` o valor vem (F2)
+        if per.len() > 1 {
+            let lasts: BTreeSet<Option<(u32, u32)>> =
+                per.values().flatten().map(|(_, ids, _, _)| ids.last().copied()).collect();
+            if lasts.len() != 1 || lasts.contains(&None) {
+                return Status::Dynamic {
+                    reason: "os argumentos podem vir de propostas diferentes (mais de um `refine` alcança a chamada)"
+                        .into(),
+                };
             }
         }
         let mut refines = Vec::new();

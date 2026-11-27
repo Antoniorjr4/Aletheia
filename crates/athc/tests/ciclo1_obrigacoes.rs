@@ -47,6 +47,11 @@ fn sitios(nome: &str) -> Vec<Result<usize, String>> {
 
 /// As chamadas que chegaram à ferramenta (sem a capacidade) e o código de aborto, nos dois runtimes.
 fn executa(nome: &str, mundo: &str, roteiro: &str) -> [(Vec<J>, Option<String>); 2] {
+    executa_com(nome, mundo, roteiro, &[json!("x")])
+}
+
+/// Como `executa`, com os argumentos do evento (texto ou booleano).
+fn executa_com(nome: &str, mundo: &str, roteiro: &str, args: &[J]) -> [(Vec<J>, Option<String>); 2] {
     let c = compile(&src(nome)).unwrap();
     let world: J =
         serde_json::from_str(&std::fs::read_to_string(casos().join(format!("{mundo}.json"))).unwrap()).unwrap();
@@ -71,7 +76,15 @@ fn executa(nome: &str, mundo: &str, roteiro: &str) -> [(Vec<J>, Option<String>);
         Box::new(Scripted::from_json(&models).unwrap()),
     );
     arx.contracts = athc::contract_hashes(&c);
-    let _ = arx.run("A", "go", vec![Value::Text("x".into())]);
+    let vals = args
+        .iter()
+        .map(|a| match a {
+            J::Bool(b) => Value::Bool(*b),
+            J::String(t) => Value::Text(t.clone()),
+            other => panic!("argumento {other}"),
+        })
+        .collect();
+    let _ = arx.run("A", "go", vals);
     let a = calls(&arx.journal.to_jsonl());
 
     let dir = std::env::temp_dir().join(format!("ciclo1-obrig-{}-{nome}-{roteiro}", std::process::id()));
@@ -91,7 +104,9 @@ fn executa(nome: &str, mundo: &str, roteiro: &str) -> [(Vec<J>, Option<String>);
         .arg(&w)
         .arg("--models")
         .arg(&m)
-        .args(["--provider", "scripted", "--agent", "A", "--on", "go", "--arg-json", "\"x\"", "--journal"])
+        .args(["--provider", "scripted", "--agent", "A", "--on", "go"])
+        .args(args.iter().flat_map(|a| ["--arg-json".to_string(), a.to_string()]))
+        .arg("--journal")
         .arg(&j)
         .arg("--report")
         .arg(&r)
@@ -157,5 +172,54 @@ fn b2_controle_sem_sombra_continua_descarregado() {
     for (calls, abort) in executa("c2_sem_sombra", "mundo_payees", "roteiro_sem_sombra") {
         assert_eq!(calls, vec![json!(["alice", "ok"])]);
         assert_eq!(abort, None);
+    }
+}
+
+// ---- achados da revisão independente do reparo (27/11), corrigidos no mesmo lote
+
+#[test]
+fn f1_requires_com_if_ou_match_le_todos_os_parametros() {
+    // antes: `descarregada`, sem refine nenhum, com argumentos literais
+    let s = sitios("f1_requires_if");
+    assert!(matches!(&s[..], [Err(_)]), "{s:?}");
+    for (calls, abort) in executa("f1_requires_if", "mundo_payees", "roteiro_vazio") {
+        assert!(calls.is_empty());
+        assert_eq!(abort.as_deref(), Some("R0630"));
+    }
+    // parâmetro lido só dentro de `if`: agora entra na obrigação levantada, e os dois runtimes
+    // concordam (antes, o ARX abortava com R0100 e o Python passava `None`)
+    assert_eq!(sitios("f1_requires_parcial"), vec![Ok(1)]);
+    for (calls, abort) in executa("f1_requires_parcial", "mundo_payees", "roteiro_parcial_ok") {
+        assert_eq!(calls, vec![json!(["alice", "ok"])]);
+        assert_eq!(abort, None);
+    }
+    for (calls, abort) in executa("f1_requires_parcial", "mundo_payees", "roteiro_parcial_evil") {
+        assert!(calls.is_empty(), "recusado no refine, antes de qualquer efeito");
+        assert_eq!(abort, None);
+    }
+}
+
+#[test]
+fn f2_um_campo_de_cada_proposta_nao_descarrega() {
+    let s = sitios("f2_dois_refines");
+    assert!(matches!(&s[..], [Err(_)]), "{s:?}");
+    for (calls, abort) in executa_com("f2_dois_refines", "mundo_pairs", "roteiro_duas_ops", &[json!("x"), json!(true)])
+    {
+        assert!(calls.is_empty());
+        assert_eq!(abort.as_deref(), Some("R0630"));
+    }
+}
+
+#[test]
+fn f3_escolha_entre_elementos_do_mesmo_laco_continua_descarregada() {
+    // o valor é um elemento ou outro, e os dois campos vêm desse mesmo valor: origem comum comprovável
+    for nome in ["c3_if_mesmo_laco", "c3_lista_dois"] {
+        assert_eq!(sitios(nome), vec![Ok(1)], "{nome}");
+        for (calls, abort) in
+            executa_com(nome, "mundo_pairs_sim", "roteiro_rows_um_invalido", &[json!("x"), json!(true)])
+        {
+            assert!(calls.is_empty(), "{nome}: o elemento que viola faz o refine recusar o plano");
+            assert_eq!(abort, None);
+        }
     }
 }

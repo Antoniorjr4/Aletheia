@@ -1,0 +1,767 @@
+[
+ {
+  "caso": "b1_cruzado",
+  "mundo": "mundo_pairs",
+  "roteiro": "roteiro_dois_validos",
+  "mostra": "B1: destinatário e memo de elementos diferentes",
+  "compilador_afirma": [
+   "L14 pay                      dinâmica      `memo` vem de outro elemento do valor endossado"
+  ],
+  "arx": {
+   "chamadas_na_ferramenta": [
+    [
+     "alice",
+     "100"
+    ]
+   ],
+   "contrato_recusado_no_efeito": [
+    {
+     "tool": "pay"
+    }
+   ],
+   "aborto": [
+    "R0630"
+   ],
+   "obrigacao_recusada_no_refine": 0,
+   "resultado": "✗ abortado: R0630 o contrato `requires` de `pay` recusou os argumentos",
+   "eventos": [
+    "abort",
+    "authorized",
+    "contract_refused",
+    "endorse",
+    "infer",
+    "snapshot",
+    "start",
+    "tool"
+   ]
+  },
+  "python": {
+   "chamadas_na_ferramenta": [
+    [
+     "alice",
+     "100"
+    ]
+   ],
+   "contrato_recusado_no_efeito": [
+    {
+     "tool": "pay"
+    }
+   ],
+   "aborto": [
+    "R0630"
+   ],
+   "obrigacao_recusada_no_refine": 0,
+   "resultado": {
+    "code": "R0630",
+    "msg": "o contrato `requires` de `pay` recusou os argumentos"
+   },
+   "eventos": [
+    "abort",
+    "authorized",
+    "contract_refused",
+    "endorse",
+    "infer",
+    "snapshot",
+    "start",
+    "tool"
+   ]
+  },
+  "runtimes_concordam": true,
+  "journals_identicos": true
+ },
+ {
+  "caso": "c1_mesmo_elemento",
+  "mundo": "mundo_pairs",
+  "roteiro": "roteiro_dois_validos",
+  "mostra": "controle B1: mesmo elemento, plano válido",
+  "compilador_afirma": [
+   "L13 pay                      descarregada  levantada para o refine em L11",
+   "refine L11 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+  ],
+  "arx": {
+   "chamadas_na_ferramenta": [
+    [
+     "alice",
+     "100"
+    ],
+    [
+     "bob",
+     "5"
+    ]
+   ],
+   "contrato_recusado_no_efeito": [],
+   "aborto": [],
+   "obrigacao_recusada_no_refine": 0,
+   "resultado": "◀ resultado: \"ok\"",
+   "eventos": [
+    "authorized",
+    "end",
+    "endorse",
+    "infer",
+    "snapshot",
+    "start",
+    "tool"
+   ]
+  },
+  "python": {
+   "chamadas_na_ferramenta": [
+    [
+     "alice",
+     "100"
+    ],
+    [
+     "bob",
+     "5"
+    ]
+   ],
+   "contrato_recusado_no_efeito": [],
+   "aborto": [],
+   "obrigacao_recusada_no_refine": 0,
+   "resultado": "ok",
+   "eventos": [
+    "authorized",
+    "end",
+    "endorse",
+    "infer",
+    "snapshot",
+    "start",
+    "tool"
+   ]
+  },
+  "runtimes_concordam": true,
+  "journals_identicos": true
+ },
+ {
+  "caso": "c1_mesmo_elemento",
+  "mundo": "mundo_pairs",
+  "roteiro": "roteiro_um_invalido",
+  "mostra": "controle B1: mesmo elemento, um elemento viola",
+  "compilador_afirma": [
+   "L13 pay                      descarregada  levantada para o refine em L11",
+   "refine L11 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+  ],
+  "arx": {
+   "chamadas_na_ferramenta": [],
+   "contrato_recusado_no_efeito": [],
+   "aborto": [],
+   "obrigacao_recusada_no_refine": 1,
+   "resultado": "◀ resultado: \"none\"",
+   "eventos": [
+    "end",
+    "infer",
+    "obligation_reject",
+    "refine_exhausted",
+    "snapshot",
+    "start"
+   ]
+  },
+  "python": {
+   "chamadas_na_ferramenta": [],
+   "contrato_recusado_no_efeito": [],
+   "aborto": [],
+   "obrigacao_recusada_no_refine": 1,
+   "resultado": "none",
+   "eventos": [
+    "end",
+    "infer",
+    "obligation_reject",
+    "refine_exhausted",
+    "snapshot",
+    "start"
+   ]
+  },
+  "runtimes_concordam": true,
+  "journals_identicos": true
+ },
+ {
+  "caso": "c1_alias",
+  "mundo": "mundo_pairs",
+  "roteiro": "roteiro_dois_validos",
+  "mostra": "controle B1: mesmo elemento por `let x = o`",
+  "compilador_afirma": [
+   "L14 pay                      descarregada  levantada para o refine em L11",
+   "refine L11 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+  ],
+  "arx": {
+   "chamadas_na_ferramenta": [
+    [
+     "alice",
+     "100"
+    ],
+    [
+     "bob",
+     "5"
+    ]
+   ],
+   "contrato_recusado_no_efeito": [],
+   "aborto": [],
+   "obrigacao_recusada_no_refine": 0,
+   "resultado": "◀ resultado: \"ok\"",
+   "eventos": [
+    "authorized",
+    "end",
+    "endorse",
+    "infer",
+    "snapshot",
+    "start",
+    "tool"
+   ]
+  },
+  "python": {
+   "chamadas_na_ferramenta": [
+    [
+     "alice",
+     "100"
+    ],
+    [
+     "bob",
+     "5"
+    ]
+   ],
+   "contrato_recusado_no_efeito": [],
+   "aborto": [],
+   "obrigacao_recusada_no_refine": 0,
+   "resultado": "ok",
+   "eventos": [
+    "authorized",
+    "end",
+    "endorse",
+    "infer",
+    "snapshot",
+    "start",
+    "tool"
+   ]
+  },
+  "runtimes_concordam": true,
+  "journals_identicos": true
+ },
+ {
+  "caso": "c1_laco_interno_sem_uso",
+  "mundo": "mundo_pairs",
+  "roteiro": "roteiro_dois_validos",
+  "mostra": "controle B1: laço interno sem uso",
+  "compilador_afirma": [
+   "L13 pay                      descarregada  levantada para o refine em L11",
+   "refine L11 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+  ],
+  "arx": {
+   "chamadas_na_ferramenta": [
+    [
+     "alice",
+     "100"
+    ],
+    [
+     "alice",
+     "100"
+    ],
+    [
+     "bob",
+     "5"
+    ],
+    [
+     "bob",
+     "5"
+    ]
+   ],
+   "contrato_recusado_no_efeito": [],
+   "aborto": [],
+   "obrigacao_recusada_no_refine": 0,
+   "resultado": "◀ resultado: \"ok\"",
+   "eventos": [
+    "authorized",
+    "end",
+    "endorse",
+    "infer",
+    "snapshot",
+    "start",
+    "tool"
+   ]
+  },
+  "python": {
+   "chamadas_na_ferramenta": [
+    [
+     "alice",
+     "100"
+    ],
+    [
+     "alice",
+     "100"
+    ],
+    [
+     "bob",
+     "5"
+    ],
+    [
+     "bob",
+     "5"
+    ]
+   ],
+   "contrato_recusado_no_efeito": [],
+   "aborto": [],
+   "obrigacao_recusada_no_refine": 0,
+   "resultado": "ok",
+   "eventos": [
+    "authorized",
+    "end",
+    "endorse",
+    "infer",
+    "snapshot",
+    "start",
+    "tool"
+   ]
+  },
+  "runtimes_concordam": true,
+  "journals_identicos": true
+ },
+ {
+  "caso": "b2_as_sombreia",
+  "mundo": "mundo_payees",
+  "roteiro": "roteiro_sombra",
+  "mostra": "B2: `as fora` sombreia uma lista endossada",
+  "compilador_afirma": [
+   "L16 pay                      dinâmica      `to`: `fora` é o que a política recusou no `refine`"
+  ],
+  "arx": {
+   "chamadas_na_ferramenta": [],
+   "contrato_recusado_no_efeito": [
+    {
+     "tool": "pay"
+    }
+   ],
+   "aborto": [
+    "R0630"
+   ],
+   "obrigacao_recusada_no_refine": 0,
+   "resultado": "✗ abortado: R0630 o contrato `requires` de `pay` recusou os argumentos",
+   "eventos": [
+    "abort",
+    "contract_refused",
+    "endorse",
+    "infer",
+    "prune",
+    "snapshot",
+    "start"
+   ]
+  },
+  "python": {
+   "chamadas_na_ferramenta": [],
+   "contrato_recusado_no_efeito": [
+    {
+     "tool": "pay"
+    }
+   ],
+   "aborto": [
+    "R0630"
+   ],
+   "obrigacao_recusada_no_refine": 0,
+   "resultado": {
+    "code": "R0630",
+    "msg": "o contrato `requires` de `pay` recusou os argumentos"
+   },
+   "eventos": [
+    "abort",
+    "contract_refused",
+    "endorse",
+    "infer",
+    "prune",
+    "snapshot",
+    "start"
+   ]
+  },
+  "runtimes_concordam": true,
+  "journals_identicos": true
+ },
+ {
+  "caso": "b2_as_recusado_valido",
+  "mundo": "mundo_payees",
+  "roteiro": "roteiro_sombra_recusado_valido",
+  "mostra": "B2: o recusado satisfaz o `requires`",
+  "compilador_afirma": [
+   "L15 pay                      dinâmica      `to`: `fora` é o que a política recusou no `refine`"
+  ],
+  "arx": {
+   "chamadas_na_ferramenta": [
+    [
+     "alice",
+     "outro"
+    ]
+   ],
+   "contrato_recusado_no_efeito": [],
+   "aborto": [],
+   "obrigacao_recusada_no_refine": 0,
+   "resultado": "◀ resultado: \"ok\"",
+   "eventos": [
+    "end",
+    "endorse",
+    "infer",
+    "prune",
+    "snapshot",
+    "start",
+    "tool"
+   ]
+  },
+  "python": {
+   "chamadas_na_ferramenta": [
+    [
+     "alice",
+     "outro"
+    ]
+   ],
+   "contrato_recusado_no_efeito": [],
+   "aborto": [],
+   "obrigacao_recusada_no_refine": 0,
+   "resultado": "ok",
+   "eventos": [
+    "end",
+    "endorse",
+    "infer",
+    "prune",
+    "snapshot",
+    "start",
+    "tool"
+   ]
+  },
+  "runtimes_concordam": true,
+  "journals_identicos": true
+ },
+ {
+  "caso": "c2_sem_sombra",
+  "mundo": "mundo_payees",
+  "roteiro": "roteiro_sem_sombra",
+  "mostra": "controle B2: plano mantido, sem sombra",
+  "compilador_afirma": [
+   "L13 pay                      descarregada  levantada para o refine em L12",
+   "refine L12 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+  ],
+  "arx": {
+   "chamadas_na_ferramenta": [
+    [
+     "alice",
+     "ok"
+    ]
+   ],
+   "contrato_recusado_no_efeito": [],
+   "aborto": [],
+   "obrigacao_recusada_no_refine": 0,
+   "resultado": "◀ resultado: \"ok 1\"",
+   "eventos": [
+    "end",
+    "endorse",
+    "infer",
+    "prune",
+    "snapshot",
+    "start",
+    "tool"
+   ]
+  },
+  "python": {
+   "chamadas_na_ferramenta": [
+    [
+     "alice",
+     "ok"
+    ]
+   ],
+   "contrato_recusado_no_efeito": [],
+   "aborto": [],
+   "obrigacao_recusada_no_refine": 0,
+   "resultado": "ok 1",
+   "eventos": [
+    "end",
+    "endorse",
+    "infer",
+    "prune",
+    "snapshot",
+    "start",
+    "tool"
+   ]
+  },
+  "runtimes_concordam": true,
+  "journals_identicos": true
+ },
+ {
+  "caso": "f1_requires_if",
+  "mundo": "mundo_payees",
+  "roteiro": "roteiro_vazio",
+  "mostra": "F1: `requires` com `if`, argumentos literais",
+  "compilador_afirma": [
+   "L10 pay                      dinâmica      `to`: um valor calculado"
+  ],
+  "arx": {
+   "chamadas_na_ferramenta": [],
+   "contrato_recusado_no_efeito": [
+    {
+     "tool": "pay"
+    }
+   ],
+   "aborto": [
+    "R0630"
+   ],
+   "obrigacao_recusada_no_refine": 0,
+   "resultado": "✗ abortado: R0630 o contrato `requires` de `pay` recusou os argumentos",
+   "eventos": [
+    "abort",
+    "contract_refused",
+    "snapshot",
+    "start"
+   ]
+  },
+  "python": {
+   "chamadas_na_ferramenta": [],
+   "contrato_recusado_no_efeito": [
+    {
+     "tool": "pay"
+    }
+   ],
+   "aborto": [
+    "R0630"
+   ],
+   "obrigacao_recusada_no_refine": 0,
+   "resultado": {
+    "code": "R0630",
+    "msg": "o contrato `requires` de `pay` recusou os argumentos"
+   },
+   "eventos": [
+    "abort",
+    "contract_refused",
+    "snapshot",
+    "start"
+   ]
+  },
+  "runtimes_concordam": true,
+  "journals_identicos": true
+ },
+ {
+  "caso": "f1_requires_parcial",
+  "mundo": "mundo_payees",
+  "roteiro": "roteiro_parcial_ok",
+  "mostra": "F1: parâmetro lido só dentro de `if`, plano válido",
+  "compilador_afirma": [
+   "L12 pay                      descarregada  levantada para o refine em L11",
+   "refine L11 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+  ],
+  "arx": {
+   "chamadas_na_ferramenta": [
+    [
+     "alice",
+     "ok"
+    ]
+   ],
+   "contrato_recusado_no_efeito": [],
+   "aborto": [],
+   "obrigacao_recusada_no_refine": 0,
+   "resultado": "◀ resultado: \"ok\"",
+   "eventos": [
+    "end",
+    "endorse",
+    "infer",
+    "snapshot",
+    "start",
+    "tool"
+   ]
+  },
+  "python": {
+   "chamadas_na_ferramenta": [
+    [
+     "alice",
+     "ok"
+    ]
+   ],
+   "contrato_recusado_no_efeito": [],
+   "aborto": [],
+   "obrigacao_recusada_no_refine": 0,
+   "resultado": "ok",
+   "eventos": [
+    "end",
+    "endorse",
+    "infer",
+    "snapshot",
+    "start",
+    "tool"
+   ]
+  },
+  "runtimes_concordam": true,
+  "journals_identicos": true
+ },
+ {
+  "caso": "f1_requires_parcial",
+  "mundo": "mundo_payees",
+  "roteiro": "roteiro_parcial_evil",
+  "mostra": "F1: parâmetro lido só dentro de `if`, plano inválido",
+  "compilador_afirma": [
+   "L12 pay                      descarregada  levantada para o refine em L11",
+   "refine L11 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+  ],
+  "arx": {
+   "chamadas_na_ferramenta": [],
+   "contrato_recusado_no_efeito": [],
+   "aborto": [],
+   "obrigacao_recusada_no_refine": 1,
+   "resultado": "◀ resultado: \"none\"",
+   "eventos": [
+    "end",
+    "infer",
+    "obligation_reject",
+    "refine_exhausted",
+    "snapshot",
+    "start"
+   ]
+  },
+  "python": {
+   "chamadas_na_ferramenta": [],
+   "contrato_recusado_no_efeito": [],
+   "aborto": [],
+   "obrigacao_recusada_no_refine": 1,
+   "resultado": "none",
+   "eventos": [
+    "end",
+    "infer",
+    "obligation_reject",
+    "refine_exhausted",
+    "snapshot",
+    "start"
+   ]
+  },
+  "runtimes_concordam": true,
+  "journals_identicos": true
+ },
+ {
+  "caso": "f2_dois_refines",
+  "mundo": "mundo_pairs",
+  "roteiro": "roteiro_duas_ops",
+  "mostra": "F2: um campo de cada proposta, por `if`",
+  "compilador_afirma": [
+   "L14 pay                      dinâmica      `memo` vem de outro elemento do valor endossado"
+  ],
+  "arx": {
+   "chamadas_na_ferramenta": [],
+   "contrato_recusado_no_efeito": [
+    {
+     "tool": "pay"
+    }
+   ],
+   "aborto": [
+    "R0630"
+   ],
+   "obrigacao_recusada_no_refine": 0,
+   "resultado": "✗ abortado: R0630 o contrato `requires` de `pay` recusou os argumentos",
+   "eventos": [
+    "abort",
+    "contract_refused",
+    "endorse",
+    "infer",
+    "snapshot",
+    "start"
+   ]
+  },
+  "python": {
+   "chamadas_na_ferramenta": [],
+   "contrato_recusado_no_efeito": [
+    {
+     "tool": "pay"
+    }
+   ],
+   "aborto": [
+    "R0630"
+   ],
+   "obrigacao_recusada_no_refine": 0,
+   "resultado": {
+    "code": "R0630",
+    "msg": "o contrato `requires` de `pay` recusou os argumentos"
+   },
+   "eventos": [
+    "abort",
+    "contract_refused",
+    "endorse",
+    "infer",
+    "snapshot",
+    "start"
+   ]
+  },
+  "runtimes_concordam": true,
+  "journals_identicos": true
+ },
+ {
+  "caso": "c3_if_mesmo_laco",
+  "mundo": "mundo_pairs_sim",
+  "roteiro": "roteiro_rows_um_invalido",
+  "mostra": "controle F3: `let o = if c { a } else { b }`, um elemento viola",
+  "compilador_afirma": [
+   "L16 pay                      descarregada  levantada para o refine em L12",
+   "refine L12 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+  ],
+  "arx": {
+   "chamadas_na_ferramenta": [],
+   "contrato_recusado_no_efeito": [],
+   "aborto": [],
+   "obrigacao_recusada_no_refine": 1,
+   "resultado": "◀ resultado: \"none\"",
+   "eventos": [
+    "end",
+    "infer",
+    "obligation_reject",
+    "refine_exhausted",
+    "snapshot",
+    "start"
+   ]
+  },
+  "python": {
+   "chamadas_na_ferramenta": [],
+   "contrato_recusado_no_efeito": [],
+   "aborto": [],
+   "obrigacao_recusada_no_refine": 1,
+   "resultado": "none",
+   "eventos": [
+    "end",
+    "infer",
+    "obligation_reject",
+    "refine_exhausted",
+    "snapshot",
+    "start"
+   ]
+  },
+  "runtimes_concordam": true,
+  "journals_identicos": true
+ },
+ {
+  "caso": "c3_lista_dois",
+  "mundo": "mundo_pairs_sim",
+  "roteiro": "roteiro_rows_um_invalido",
+  "mostra": "controle F3: `for x in [a, b]`, um elemento viola",
+  "compilador_afirma": [
+   "L15 pay                      descarregada  levantada para o refine em L12",
+   "refine L12 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+  ],
+  "arx": {
+   "chamadas_na_ferramenta": [],
+   "contrato_recusado_no_efeito": [],
+   "aborto": [],
+   "obrigacao_recusada_no_refine": 1,
+   "resultado": "◀ resultado: \"none\"",
+   "eventos": [
+    "end",
+    "infer",
+    "obligation_reject",
+    "refine_exhausted",
+    "snapshot",
+    "start"
+   ]
+  },
+  "python": {
+   "chamadas_na_ferramenta": [],
+   "contrato_recusado_no_efeito": [],
+   "aborto": [],
+   "obrigacao_recusada_no_refine": 1,
+   "resultado": "none",
+   "eventos": [
+    "end",
+    "infer",
+    "obligation_reject",
+    "refine_exhausted",
+    "snapshot",
+    "start"
+   ]
+  },
+  "runtimes_concordam": true,
+  "journals_identicos": true
+ }
+]

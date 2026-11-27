@@ -40,6 +40,14 @@ CASOS = [
      "controle F3: `let o = if c { a } else { b }`, um elemento viola", ['"x"', "true"]),
     ("c3_lista_dois", "mundo_pairs_sim", "roteiro_rows_um_invalido",
      "controle F3: `for x in [a, b]`, um elemento viola", ['"x"', "true"]),
+    # achados da segunda revisão (27/11), versionados antes do terceiro ajuste
+    ("g1_campo_if", "mundo_rev2", "roteiro_um_op", "G1: um parâmetro, dois campos do mesmo elemento", ['"x"', "false"]),
+    ("g1_campo_dois_elem", "mundo_rev2", "roteiro_ops_validos", "G1: um parâmetro, campos de elementos diferentes",
+     ['"x"', "false"]),
+    ("g2_else_fallback", "mundo_rev2", "roteiro_fallback", "controle G2: `refine … else { a }`, a 2ª proposta viola",
+     ['"x"', "true"]),
+    ("g3_match_um_braco", "mundo_rev2", "roteiro_ops_um_invalido", "controle G3: campos por `match` de um braço",
+     ['"x"', "true"]),
 ]
 
 

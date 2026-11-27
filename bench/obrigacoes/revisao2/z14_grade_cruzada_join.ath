@@ -1,0 +1,23 @@
+module t
+type Op = | Pay { to: Text[..16], memo: Text[..16] }
+type Row = | Row { ops: List[Op, 0..3] }
+type Pair = | Pair { a: Op, b: Op }
+type Plan = | Plan { ops: List[Op, 0..3], rows: List[Row, 0..2], grid: List[List[Op, 0..2], 0..2] }
+model planner { price_in = 0.0  price_out = 0.0  ctx = 8192  max_out = 4000  reasoning = 0  ttft = 1.0  per_tok = 0.01 }
+tool pay(c: Cap[Bank.Pay], to: Text ^ Endorsed, memo: Text ^ Endorsed) -> Unit ! { Bank.Pay } reversible latency 1.0
+  requires s.binds("pairs", to, memo)
+tool one(c: Cap[Bank.Pay], to: Text ^ Endorsed) -> Unit ! { Bank.Pay } reversible latency 1.0
+  requires s.member("payees", to)
+policy P(p: Plan) -> Bool = true
+agent A(bank: Cap[Bank.Pay]) budget [tok <= 10000, usd <= 1.0, wall <= 100.0] {
+  on go(req: Text[..200] ^ Trusted, c: Bool ^ Trusted) -> Text ! { Infer, Bank.Pay } {
+    let d = infer planner -> Plan { request = req }
+    let p = refine d by P else { return "none" }
+    let ops = match p { Plan { ops } => ops }
+    let rows = match p { Plan { rows } => rows }
+    let grid = match p { Plan { grid } => grid }
+    for l in grid { for l2 in grid { let m = if c { l } else { l2 }
+ for a in m { match a { Pay { to } => for b in l { match b { Pay { memo } => pay(bank, to, memo) } } } } } }
+    "ok"
+  }
+}
