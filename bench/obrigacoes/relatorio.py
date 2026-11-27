@@ -48,6 +48,9 @@ CASOS = [
      ['"x"', "true"]),
     ("g3_match_um_braco", "mundo_rev2", "roteiro_ops_um_invalido", "controle G3: campos por `match` de um braço",
      ['"x"', "true"]),
+    # achado da terceira revisão (27/11), versionado antes do ajuste
+    ("h1_requires_sem_parametro", "mundo_fechado", "roteiro_um_plano",
+     "H1: `requires` que não lê parâmetro (só a fotografia `s`)"),
 ]
 
 
