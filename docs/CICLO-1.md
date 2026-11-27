@@ -386,3 +386,11 @@ contribuição dela não foi isolada da contribuição da linguagem, do guia e d
 - **M11:** utilidade com modelo real e critério principal completo não avaliados.
 - **Correções posteriores** ([POS-M11.md](POS-M11.md)): diagnóstico sobre os programas arquivados.
   Não se infere economia de tentativas nem de tokens, porque ela não foi medida.
+
+**27/11 — checkpoint de 01/12 escrito** ([CHECKPOINT-01-12.md](CHECKPOINT-01-12.md)). B1 e B2 foram
+reproduzidos, corrigidos e revisados em três rodadas. As revisões acharam outros casos do mesmo
+defeito (F1, F2, G1, H1), anteriores ao ciclo, e eles foram corrigidos com reprodução e teste.
+Também acharam excesso de cautela (F3, G2, G3), corrigido. H2 e H3 ficam abertos. Na varredura,
+R0631 caiu de 258 para 0 e a divergência entre os runtimes de 27 para 0; o corpus real ficou
+inalterado. A regressão do M4 saiu idêntica a 17/11. A extensão M4-ext: no X1, a Aletheia pegou na
+compilação e o P1 e o Pysa não; no X2, nenhum dos dois pegou. Gasto adicional: US$ 0,00.
