@@ -374,3 +374,15 @@ com a versão nova: finais iguais às da congelada (3 violam, 6 sem violação o
 executam). Revisão independente: três achados da mudança corrigidos (hash do nome local, `campo: _`,
 texto da palavra reservada); dois defeitos anteriores na análise de obrigações (B1, B2) registrados
 como pendência, fechados em runtime por R0631. Gasto US$ 0,00.
+
+**27/11 — estado das avaliações, registrado separadamente** (diretiva do Antonio, 27/11 15:44).
+A autoria por modelo faz parte expressa da tese registrada no M10, no M11 e no plano do ciclo.
+Familiaridade do modelo com Python é explicação plausível para parte das dificuldades, mas a
+contribuição dela não foi isolada da contribuição da linguagem, do guia e dos diagnósticos.
+
+- **M10:** avaliação concluída; resultado não superior.
+- **M11:** 32 autorias realizadas e avaliação adversarial local concluída; resultado local
+  desfavorável.
+- **M11:** utilidade com modelo real e critério principal completo não avaliados.
+- **Correções posteriores** ([POS-M11.md](POS-M11.md)): diagnóstico sobre os programas arquivados.
+  Não se infere economia de tentativas nem de tokens, porque ela não foi medida.
