@@ -1,0 +1,137 @@
+{
+ "baseline_issues": [],
+ "defects": [
+  {
+   "id": "M01b",
+   "title": "executar o plano proposto sem passar pela política (corrigido pós-auditoria)",
+   "issues": [],
+   "detected": false
+  },
+  {
+   "id": "M02",
+   "title": "dado de ferramenta como argumento de um efeito (assunto da transferência)",
+   "issues": [
+    {
+     "code": 6001,
+     "callable": "banking_hardened.HardenedBanker.run",
+     "line": 484
+    }
+   ],
+   "detected": true
+  },
+  {
+   "id": "M03",
+   "title": "dado de ferramenta no prompt sem delimitação",
+   "issues": [],
+   "detected": false
+  },
+  {
+   "id": "M04",
+   "title": "o prompt não recebe o inventário `payees` em que a política decide",
+   "issues": [],
+   "detected": false
+  },
+  {
+   "id": "M05",
+   "title": "o prompt não recebe o inventário `quoted` (o caso do D1)",
+   "issues": [],
+   "detected": false
+  },
+  {
+   "id": "M06",
+   "title": "a política decide por literal escrito à mão, não pelo inventário",
+   "issues": [],
+   "detected": false
+  },
+  {
+   "id": "M07b",
+   "title": "operação nova no plano e no executor, sem regra na política (corrigido pós-auditoria)",
+   "issues": [],
+   "detected": false
+  },
+  {
+   "id": "M08b",
+   "title": "operação nova aceita pela política, esquecida no executor (corrigido pós-auditoria)",
+   "issues": [],
+   "detected": false
+  },
+  {
+   "id": "M09",
+   "title": "efeito sem a capacidade correspondente (credenciais)",
+   "issues": [],
+   "detected": false
+  },
+  {
+   "id": "M10",
+   "title": "efeito irrevogável fora do ponto único de commit",
+   "issues": [],
+   "detected": false
+  },
+  {
+   "id": "M11",
+   "title": "teto de orçamento declarado abaixo do pior caso do agente",
+   "issues": [],
+   "detected": false
+  },
+  {
+   "id": "M12",
+   "title": "limite do campo do plano diverge do contrato da ferramenta",
+   "issues": [],
+   "detected": false
+  },
+  {
+   "id": "M13",
+   "title": "decisão de executar um efeito condicionada a dado não confiável",
+   "issues": [],
+   "detected": false
+  },
+  {
+   "id": "M14",
+   "title": "executar também as operações que a política deixou de fora",
+   "issues": [],
+   "detected": false
+  },
+  {
+   "id": "M15",
+   "title": "argumento de leitura sensível escolhido por dado não confiável (caminho do arquivo)",
+   "issues": [],
+   "detected": false
+  },
+  {
+   "id": "M16",
+   "title": "política de transferência enfraquecida (aceita qualquer destinatário)",
+   "issues": [],
+   "detected": false
+  },
+  {
+   "id": "M17",
+   "title": "política de redirecionamento esquece de checar o id agendado",
+   "issues": [],
+   "detected": false
+  },
+  {
+   "id": "M18",
+   "title": "inventário confiável substituído por dado de ferramenta",
+   "issues": [],
+   "detected": false
+  },
+  {
+   "id": "M19b",
+   "title": "no caminho de nova tentativa, executar a proposta sem a política (corrigido pós-auditoria)",
+   "issues": [],
+   "detected": false
+  },
+  {
+   "id": "M20",
+   "title": "o mesmo efeito executado duas vezes",
+   "issues": [],
+   "detected": false
+  },
+  {
+   "id": "M21",
+   "title": "efeito de depuração esquecido no código (transferência fixa)",
+   "issues": [],
+   "detected": false
+  }
+ ]
+}
