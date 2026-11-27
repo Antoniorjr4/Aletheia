@@ -261,3 +261,17 @@ fn g3_campos_lidos_por_match_de_um_braco_continuam_descarregados() {
         assert_eq!(abort, None);
     }
 }
+
+// ---- achado da terceira revisão (27/11)
+
+#[test]
+fn h1_requires_que_nao_le_parametro_e_conferido_no_efeito() {
+    // `requires s.member("flags", "payments_open")`: só a fotografia decide, nenhum `refine` confere.
+    // Antes: "descarregada" sem refine, e R0631 quando a bandeira está fechada.
+    let s = sitios("h1_requires_sem_parametro");
+    assert!(matches!(&s[..], [Err(r)] if r.contains("não lê parâmetro")), "{s:?}");
+    for (calls, abort) in executa("h1_requires_sem_parametro", "mundo_fechado", "roteiro_um_plano") {
+        assert!(calls.is_empty());
+        assert_eq!(abort.as_deref(), Some("R0630"));
+    }
+}

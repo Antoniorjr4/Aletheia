@@ -1,5 +1,5 @@
 {
- "programas": 297,
+ "programas": 307,
  "mudaram": [
   "bench/obrigacoes/casos/b1_cruzado.ath",
   "bench/obrigacoes/casos/b2_as_recusado_valido.ath",
@@ -8,6 +8,7 @@
   "bench/obrigacoes/casos/f2_dois_refines.ath",
   "bench/obrigacoes/casos/g1_campo_dois_elem.ath",
   "bench/obrigacoes/casos/g1_campo_if.ath",
+  "bench/obrigacoes/casos/h1_requires_sem_parametro.ath",
   "bench/obrigacoes/revisao/c/a1_dois_refines_if.ath",
   "bench/obrigacoes/revisao/c/a2_dois_refines_registro.ath",
   "bench/obrigacoes/revisao/c/f1_requires_if.ath",
@@ -46,7 +47,10 @@
   "bench/obrigacoes/revisao2/z5_lista_de_listas.ath",
   "bench/obrigacoes/revisao2/z6_lista_lit_listas.ath",
   "bench/obrigacoes/revisao2/z7_pair_join.ath",
-  "bench/obrigacoes/revisao2/z9_sombra_join.ath"
+  "bench/obrigacoes/revisao2/z9_sombra_join.ath",
+  "bench/obrigacoes/revisao3/z/z01_sem_params.ath",
+  "bench/obrigacoes/revisao3/z/z03_sem_params_refine.ath",
+  "bench/obrigacoes/revisao3/z/z04_registro_inteiro.ath"
  ],
  "linhas": [
   {
@@ -3043,6 +3047,16 @@
    "com_requires": true
   },
   {
+   "arquivo": "bench/obrigacoes/casos/h1_requires_sem_parametro.ath",
+   "antes": [
+    "L12 pay                      descarregada  levantada para o refine em"
+   ],
+   "depois": [
+    "L12 pay                      dinâmica      o contrato não lê parâmetro algum: nenhum `refine` o confere"
+   ],
+   "com_requires": true
+  },
+  {
    "arquivo": "bench/obrigacoes/revisao/c/a1_dois_refines_if.ath",
    "antes": [
     "L19 pay                      descarregada  levantada para o refine em L11, L13",
@@ -3962,6 +3976,110 @@
    ],
    "depois": [
     "L22 pay                      dinâmica      `memo` vem de outro elemento do valor endossado"
+   ],
+   "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/revisao3/g/g01_guarda_member.ath",
+   "antes": [
+    "L18 one                      descarregada  levantada para o refine em L15",
+    "refine L15 ⇐ one (Pay em [\"Plan.ops\",\"[*]\"])"
+   ],
+   "depois": [
+    "L18 one                      descarregada  levantada para o refine em L15",
+    "refine L15 ⇐ one (Pay em [\"Plan.ops\",\"[*]\"])"
+   ],
+   "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/revisao3/g/g01d_guarda_dinamica.ath",
+   "antes": [
+    "L18 one                      dinâmica      `to`: um valor calculado"
+   ],
+   "depois": [
+    "L18 one                      dinâmica      `to`: um valor calculado"
+   ],
+   "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/revisao3/g/g02_dois_destinos.ath",
+   "antes": [
+    "L18 one                      descarregada  levantada para o refine em L15",
+    "L18 pay                      descarregada  levantada para o refine em L15",
+    "refine L15 ⇐ one (Pay em [\"Plan.ops\",\"[*]\"])",
+    "refine L15 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+   ],
+   "depois": [
+    "L18 one                      descarregada  levantada para o refine em L15",
+    "L18 pay                      descarregada  levantada para o refine em L15",
+    "refine L15 ⇐ one (Pay em [\"Plan.ops\",\"[*]\"])",
+    "refine L15 ⇐ pay (Pay em [\"Plan.ops\",\"[*]\"])"
+   ],
+   "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/revisao3/g/g02d_dois_destinos_dinamica.ath",
+   "antes": [
+    "L18 one                      dinâmica      `to`: um valor calculado",
+    "L18 pay                      dinâmica      `to`: um valor calculado"
+   ],
+   "depois": [
+    "L18 one                      dinâmica      `to`: um valor calculado",
+    "L18 pay                      dinâmica      `to`: um valor calculado"
+   ],
+   "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/revisao3/z/z01_sem_params.ath",
+   "antes": [
+    "L10 ping                     descarregada  levantada para o refine em"
+   ],
+   "depois": [
+    "L10 ping                     dinâmica      o contrato não lê parâmetro algum: nenhum `refine` o confere"
+   ],
+   "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/revisao3/z/z02_ctor_sem_campo.ath",
+   "antes": [
+    "--> /home/claude/aletheia/bench/obrigacoes/revisao3/z/z02_ctor_sem_campo.ath:10:13",
+    "|",
+    "|             ^^^^^^^^^^^^^^^^^ campo obrigatório"
+   ],
+   "depois": [
+    "--> /home/claude/aletheia/bench/obrigacoes/revisao3/z/z02_ctor_sem_campo.ath:10:13",
+    "|",
+    "|             ^^^^^^^^^^^^^^^^^ campo obrigatório"
+   ],
+   "com_requires": false
+  },
+  {
+   "arquivo": "bench/obrigacoes/revisao3/z/z03_sem_params_refine.ath",
+   "antes": [
+    "L12 pay                      descarregada  levantada para o refine em"
+   ],
+   "depois": [
+    "L12 pay                      dinâmica      o contrato não lê parâmetro algum: nenhum `refine` o confere"
+   ],
+   "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/revisao3/z/z04_registro_inteiro.ath",
+   "antes": [
+    "L12 send                     descarregada  levantada para o refine em"
+   ],
+   "depois": [
+    "L12 send                     dinâmica      `o` é o valor endossado inteiro, não um campo"
+   ],
+   "com_requires": true
+  },
+  {
+   "arquivo": "bench/obrigacoes/revisao3/z/z05_campo_ponto.ath",
+   "antes": [
+    "L12 one                      dinâmica      `to`: um valor calculado"
+   ],
+   "depois": [
+    "L12 one                      dinâmica      `to`: um valor calculado"
    ],
    "com_requires": true
   },

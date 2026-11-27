@@ -375,6 +375,13 @@ impl<'m> An<'m> {
             .map(|(i, p)| (i, p.name.name.as_str()))
             .filter(|(_, n)| !complete || used.contains(*n))
             .collect();
+        // `φ` não lê parâmetro nenhum: nenhum valor endossado a carrega, e nada a confere antes do
+        // efeito (só a fotografia `s` decide) — o monitor do efeito é quem confere
+        if params.is_empty() {
+            return Status::Dynamic {
+                reason: "o contrato não lê parâmetro algum: nenhum `refine` o confere".into()
+            };
+        }
         // por sítio de `refine`: (prefixo, variante) → parâmetro ← campo
         let mut per: BTreeMap<(u32, u32), Lift> = BTreeMap::new();
         for (i, name) in &params {

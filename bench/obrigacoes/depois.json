@@ -976,5 +976,61 @@
   },
   "runtimes_concordam": true,
   "journals_identicos": true
+ },
+ {
+  "caso": "h1_requires_sem_parametro",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_plano",
+  "mostra": "H1: `requires` que não lê parâmetro (só a fotografia `s`)",
+  "compilador_afirma": [
+   "L12 pay                      dinâmica      o contrato não lê parâmetro algum: nenhum `refine` o confere"
+  ],
+  "arx": {
+   "chamadas_na_ferramenta": [],
+   "contrato_recusado_no_efeito": [
+    {
+     "tool": "pay"
+    }
+   ],
+   "aborto": [
+    "R0630"
+   ],
+   "obrigacao_recusada_no_refine": 0,
+   "resultado": "✗ abortado: R0630 o contrato `requires` de `pay` recusou os argumentos",
+   "eventos": [
+    "abort",
+    "contract_refused",
+    "endorse",
+    "infer",
+    "snapshot",
+    "start"
+   ]
+  },
+  "python": {
+   "chamadas_na_ferramenta": [],
+   "contrato_recusado_no_efeito": [
+    {
+     "tool": "pay"
+    }
+   ],
+   "aborto": [
+    "R0630"
+   ],
+   "obrigacao_recusada_no_refine": 0,
+   "resultado": {
+    "code": "R0630",
+    "msg": "o contrato `requires` de `pay` recusou os argumentos"
+   },
+   "eventos": [
+    "abort",
+    "contract_refused",
+    "endorse",
+    "infer",
+    "snapshot",
+    "start"
+   ]
+  },
+  "runtimes_concordam": true,
+  "journals_identicos": true
  }
 ]

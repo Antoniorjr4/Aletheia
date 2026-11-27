@@ -42,6 +42,16 @@
  {
   "caso": "casos/b1_cruzado",
   "mundo": "mundo_rev2",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b1_cruzado",
+  "mundo": "mundo_rev2",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\""
@@ -192,6 +202,16 @@
  {
   "caso": "casos/b1_cruzado",
   "mundo": "mundo_payees",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b1_cruzado",
+  "mundo": "mundo_payees",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\""
@@ -301,6 +321,166 @@
  },
  {
   "caso": "casos/b1_cruzado",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_duas_ops",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b1_cruzado",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sem_sombra",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b1_cruzado",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_validos",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b1_cruzado",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_validos",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b1_cruzado",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b1_cruzado",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_ok",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b1_cruzado",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_dois_validos",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b1_cruzado",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_um_invalido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b1_cruzado",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_evil",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b1_cruzado",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sombra_recusado_valido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b1_cruzado",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_op",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b1_cruzado",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_fallback",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b1_cruzado",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_invalido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b1_cruzado",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_vazio",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b1_cruzado",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_um_invalido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b1_cruzado",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sombra",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b1_cruzado",
   "mundo": "mundo_pairs_sim",
   "roteiro": "roteiro_duas_ops",
   "args": [
@@ -342,6 +522,16 @@
  {
   "caso": "casos/b1_cruzado",
   "mundo": "mundo_pairs_sim",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b1_cruzado",
+  "mundo": "mundo_pairs_sim",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\""
@@ -492,6 +682,16 @@
  {
   "caso": "casos/b1_cruzado",
   "mundo": "mundo_pairs",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b1_cruzado",
+  "mundo": "mundo_pairs",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\""
@@ -642,6 +842,16 @@
  {
   "caso": "casos/b2_as_recusado_valido",
   "mundo": "mundo_rev2",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b2_as_recusado_valido",
+  "mundo": "mundo_rev2",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\""
@@ -792,6 +1002,16 @@
  {
   "caso": "casos/b2_as_recusado_valido",
   "mundo": "mundo_payees",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b2_as_recusado_valido",
+  "mundo": "mundo_payees",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\""
@@ -901,6 +1121,166 @@
  },
  {
   "caso": "casos/b2_as_recusado_valido",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_duas_ops",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b2_as_recusado_valido",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sem_sombra",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b2_as_recusado_valido",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_validos",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b2_as_recusado_valido",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_validos",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b2_as_recusado_valido",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b2_as_recusado_valido",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_ok",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b2_as_recusado_valido",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_dois_validos",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b2_as_recusado_valido",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_um_invalido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b2_as_recusado_valido",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_evil",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b2_as_recusado_valido",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sombra_recusado_valido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b2_as_recusado_valido",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_op",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b2_as_recusado_valido",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_fallback",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b2_as_recusado_valido",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_invalido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b2_as_recusado_valido",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_vazio",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b2_as_recusado_valido",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_um_invalido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b2_as_recusado_valido",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sombra",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b2_as_recusado_valido",
   "mundo": "mundo_pairs_sim",
   "roteiro": "roteiro_duas_ops",
   "args": [
@@ -942,6 +1322,16 @@
  {
   "caso": "casos/b2_as_recusado_valido",
   "mundo": "mundo_pairs_sim",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b2_as_recusado_valido",
+  "mundo": "mundo_pairs_sim",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\""
@@ -1092,6 +1482,16 @@
  {
   "caso": "casos/b2_as_recusado_valido",
   "mundo": "mundo_pairs",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b2_as_recusado_valido",
+  "mundo": "mundo_pairs",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\""
@@ -1242,6 +1642,16 @@
  {
   "caso": "casos/b2_as_sombreia",
   "mundo": "mundo_rev2",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b2_as_sombreia",
+  "mundo": "mundo_rev2",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\""
@@ -1392,6 +1802,16 @@
  {
   "caso": "casos/b2_as_sombreia",
   "mundo": "mundo_payees",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b2_as_sombreia",
+  "mundo": "mundo_payees",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\""
@@ -1501,6 +1921,166 @@
  },
  {
   "caso": "casos/b2_as_sombreia",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_duas_ops",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b2_as_sombreia",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sem_sombra",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b2_as_sombreia",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_validos",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b2_as_sombreia",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_validos",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b2_as_sombreia",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b2_as_sombreia",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_ok",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b2_as_sombreia",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_dois_validos",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b2_as_sombreia",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_um_invalido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b2_as_sombreia",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_evil",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b2_as_sombreia",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sombra_recusado_valido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b2_as_sombreia",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_op",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b2_as_sombreia",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_fallback",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b2_as_sombreia",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_invalido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b2_as_sombreia",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_vazio",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b2_as_sombreia",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_um_invalido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b2_as_sombreia",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sombra",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b2_as_sombreia",
   "mundo": "mundo_pairs_sim",
   "roteiro": "roteiro_duas_ops",
   "args": [
@@ -1542,6 +2122,16 @@
  {
   "caso": "casos/b2_as_sombreia",
   "mundo": "mundo_pairs_sim",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b2_as_sombreia",
+  "mundo": "mundo_pairs_sim",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\""
@@ -1692,6 +2282,16 @@
  {
   "caso": "casos/b2_as_sombreia",
   "mundo": "mundo_pairs",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/b2_as_sombreia",
+  "mundo": "mundo_pairs",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\""
@@ -1842,6 +2442,16 @@
  {
   "caso": "casos/c1_alias",
   "mundo": "mundo_rev2",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_alias",
+  "mundo": "mundo_rev2",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\""
@@ -1992,6 +2602,16 @@
  {
   "caso": "casos/c1_alias",
   "mundo": "mundo_payees",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_alias",
+  "mundo": "mundo_payees",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\""
@@ -2101,6 +2721,166 @@
  },
  {
   "caso": "casos/c1_alias",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_duas_ops",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_alias",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sem_sombra",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_alias",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_validos",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_alias",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_validos",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_alias",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_alias",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_ok",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_alias",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_dois_validos",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_alias",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_um_invalido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_alias",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_evil",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_alias",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sombra_recusado_valido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_alias",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_op",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_alias",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_fallback",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_alias",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_invalido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_alias",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_vazio",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_alias",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_um_invalido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_alias",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sombra",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_alias",
   "mundo": "mundo_pairs_sim",
   "roteiro": "roteiro_duas_ops",
   "args": [
@@ -2142,6 +2922,16 @@
  {
   "caso": "casos/c1_alias",
   "mundo": "mundo_pairs_sim",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_alias",
+  "mundo": "mundo_pairs_sim",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\""
@@ -2292,6 +3082,16 @@
  {
   "caso": "casos/c1_alias",
   "mundo": "mundo_pairs",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_alias",
+  "mundo": "mundo_pairs",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\""
@@ -2442,6 +3242,16 @@
  {
   "caso": "casos/c1_laco_interno_sem_uso",
   "mundo": "mundo_rev2",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_laco_interno_sem_uso",
+  "mundo": "mundo_rev2",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\""
@@ -2592,6 +3402,16 @@
  {
   "caso": "casos/c1_laco_interno_sem_uso",
   "mundo": "mundo_payees",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_laco_interno_sem_uso",
+  "mundo": "mundo_payees",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\""
@@ -2701,6 +3521,166 @@
  },
  {
   "caso": "casos/c1_laco_interno_sem_uso",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_duas_ops",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_laco_interno_sem_uso",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sem_sombra",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_laco_interno_sem_uso",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_validos",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_laco_interno_sem_uso",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_validos",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_laco_interno_sem_uso",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_laco_interno_sem_uso",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_ok",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_laco_interno_sem_uso",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_dois_validos",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_laco_interno_sem_uso",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_um_invalido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_laco_interno_sem_uso",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_evil",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_laco_interno_sem_uso",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sombra_recusado_valido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_laco_interno_sem_uso",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_op",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_laco_interno_sem_uso",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_fallback",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_laco_interno_sem_uso",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_invalido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_laco_interno_sem_uso",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_vazio",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_laco_interno_sem_uso",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_um_invalido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_laco_interno_sem_uso",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sombra",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_laco_interno_sem_uso",
   "mundo": "mundo_pairs_sim",
   "roteiro": "roteiro_duas_ops",
   "args": [
@@ -2742,6 +3722,16 @@
  {
   "caso": "casos/c1_laco_interno_sem_uso",
   "mundo": "mundo_pairs_sim",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_laco_interno_sem_uso",
+  "mundo": "mundo_pairs_sim",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\""
@@ -2892,6 +3882,16 @@
  {
   "caso": "casos/c1_laco_interno_sem_uso",
   "mundo": "mundo_pairs",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_laco_interno_sem_uso",
+  "mundo": "mundo_pairs",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\""
@@ -3042,6 +4042,16 @@
  {
   "caso": "casos/c1_mesmo_elemento",
   "mundo": "mundo_rev2",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_mesmo_elemento",
+  "mundo": "mundo_rev2",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\""
@@ -3192,6 +4202,16 @@
  {
   "caso": "casos/c1_mesmo_elemento",
   "mundo": "mundo_payees",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_mesmo_elemento",
+  "mundo": "mundo_payees",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\""
@@ -3301,6 +4321,166 @@
  },
  {
   "caso": "casos/c1_mesmo_elemento",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_duas_ops",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_mesmo_elemento",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sem_sombra",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_mesmo_elemento",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_validos",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_mesmo_elemento",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_validos",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_mesmo_elemento",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_mesmo_elemento",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_ok",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_mesmo_elemento",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_dois_validos",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_mesmo_elemento",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_um_invalido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_mesmo_elemento",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_evil",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_mesmo_elemento",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sombra_recusado_valido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_mesmo_elemento",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_op",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_mesmo_elemento",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_fallback",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_mesmo_elemento",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_invalido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_mesmo_elemento",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_vazio",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_mesmo_elemento",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_um_invalido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_mesmo_elemento",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sombra",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_mesmo_elemento",
   "mundo": "mundo_pairs_sim",
   "roteiro": "roteiro_duas_ops",
   "args": [
@@ -3342,6 +4522,16 @@
  {
   "caso": "casos/c1_mesmo_elemento",
   "mundo": "mundo_pairs_sim",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_mesmo_elemento",
+  "mundo": "mundo_pairs_sim",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\""
@@ -3492,6 +4682,16 @@
  {
   "caso": "casos/c1_mesmo_elemento",
   "mundo": "mundo_pairs",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c1_mesmo_elemento",
+  "mundo": "mundo_pairs",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\""
@@ -3642,6 +4842,16 @@
  {
   "caso": "casos/c2_sem_sombra",
   "mundo": "mundo_rev2",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c2_sem_sombra",
+  "mundo": "mundo_rev2",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\""
@@ -3792,6 +5002,16 @@
  {
   "caso": "casos/c2_sem_sombra",
   "mundo": "mundo_payees",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c2_sem_sombra",
+  "mundo": "mundo_payees",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\""
@@ -3901,6 +5121,166 @@
  },
  {
   "caso": "casos/c2_sem_sombra",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_duas_ops",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c2_sem_sombra",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sem_sombra",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c2_sem_sombra",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_validos",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c2_sem_sombra",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_validos",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c2_sem_sombra",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c2_sem_sombra",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_ok",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c2_sem_sombra",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_dois_validos",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c2_sem_sombra",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_um_invalido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c2_sem_sombra",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_evil",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c2_sem_sombra",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sombra_recusado_valido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c2_sem_sombra",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_op",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c2_sem_sombra",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_fallback",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c2_sem_sombra",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_invalido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c2_sem_sombra",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_vazio",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c2_sem_sombra",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_um_invalido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c2_sem_sombra",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sombra",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c2_sem_sombra",
   "mundo": "mundo_pairs_sim",
   "roteiro": "roteiro_duas_ops",
   "args": [
@@ -3942,6 +5322,16 @@
  {
   "caso": "casos/c2_sem_sombra",
   "mundo": "mundo_pairs_sim",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c2_sem_sombra",
+  "mundo": "mundo_pairs_sim",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\""
@@ -4092,6 +5482,16 @@
  {
   "caso": "casos/c2_sem_sombra",
   "mundo": "mundo_pairs",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c2_sem_sombra",
+  "mundo": "mundo_pairs",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\""
@@ -4290,6 +5690,28 @@
  {
   "caso": "casos/c3_if_mesmo_laco",
   "mundo": "mundo_rev2",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_if_mesmo_laco",
+  "mundo": "mundo_rev2",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_if_mesmo_laco",
+  "mundo": "mundo_rev2",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\"",
@@ -4620,6 +6042,28 @@
  {
   "caso": "casos/c3_if_mesmo_laco",
   "mundo": "mundo_payees",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_if_mesmo_laco",
+  "mundo": "mundo_payees",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_if_mesmo_laco",
+  "mundo": "mundo_payees",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\"",
@@ -4861,6 +6305,358 @@
  },
  {
   "caso": "casos/c3_if_mesmo_laco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_duas_ops",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_if_mesmo_laco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_duas_ops",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_if_mesmo_laco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sem_sombra",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_if_mesmo_laco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sem_sombra",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_if_mesmo_laco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_validos",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_if_mesmo_laco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_validos",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_if_mesmo_laco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_validos",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_if_mesmo_laco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_validos",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_if_mesmo_laco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_if_mesmo_laco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_if_mesmo_laco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_ok",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_if_mesmo_laco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_ok",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_if_mesmo_laco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_dois_validos",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_if_mesmo_laco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_dois_validos",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_if_mesmo_laco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_um_invalido",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_if_mesmo_laco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_um_invalido",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_if_mesmo_laco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_evil",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_if_mesmo_laco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_evil",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_if_mesmo_laco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sombra_recusado_valido",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_if_mesmo_laco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sombra_recusado_valido",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_if_mesmo_laco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_op",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_if_mesmo_laco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_op",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_if_mesmo_laco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_fallback",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_if_mesmo_laco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_fallback",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_if_mesmo_laco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_invalido",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_if_mesmo_laco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_invalido",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_if_mesmo_laco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_vazio",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_if_mesmo_laco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_vazio",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_if_mesmo_laco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_um_invalido",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_if_mesmo_laco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_um_invalido",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_if_mesmo_laco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sombra",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_if_mesmo_laco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sombra",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_if_mesmo_laco",
   "mundo": "mundo_pairs_sim",
   "roteiro": "roteiro_duas_ops",
   "args": [
@@ -4940,6 +6736,28 @@
   "caso": "casos/c3_if_mesmo_laco",
   "mundo": "mundo_pairs_sim",
   "roteiro": "roteiro_ops_validos",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_if_mesmo_laco",
+  "mundo": "mundo_pairs_sim",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_if_mesmo_laco",
+  "mundo": "mundo_pairs_sim",
+  "roteiro": "roteiro_um_plano",
   "args": [
    "\"x\"",
    "false"
@@ -5280,6 +7098,28 @@
  {
   "caso": "casos/c3_if_mesmo_laco",
   "mundo": "mundo_pairs",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_if_mesmo_laco",
+  "mundo": "mundo_pairs",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_if_mesmo_laco",
+  "mundo": "mundo_pairs",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\"",
@@ -5610,6 +7450,28 @@
  {
   "caso": "casos/c3_lista_dois",
   "mundo": "mundo_rev2",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_lista_dois",
+  "mundo": "mundo_rev2",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_lista_dois",
+  "mundo": "mundo_rev2",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\"",
@@ -5940,6 +7802,28 @@
  {
   "caso": "casos/c3_lista_dois",
   "mundo": "mundo_payees",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_lista_dois",
+  "mundo": "mundo_payees",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_lista_dois",
+  "mundo": "mundo_payees",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\"",
@@ -6181,6 +8065,358 @@
  },
  {
   "caso": "casos/c3_lista_dois",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_duas_ops",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_lista_dois",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_duas_ops",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_lista_dois",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sem_sombra",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_lista_dois",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sem_sombra",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_lista_dois",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_validos",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_lista_dois",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_validos",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_lista_dois",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_validos",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_lista_dois",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_validos",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_lista_dois",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_lista_dois",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_lista_dois",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_ok",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_lista_dois",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_ok",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_lista_dois",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_dois_validos",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_lista_dois",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_dois_validos",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_lista_dois",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_um_invalido",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_lista_dois",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_um_invalido",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_lista_dois",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_evil",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_lista_dois",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_evil",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_lista_dois",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sombra_recusado_valido",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_lista_dois",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sombra_recusado_valido",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_lista_dois",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_op",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_lista_dois",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_op",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_lista_dois",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_fallback",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_lista_dois",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_fallback",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_lista_dois",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_invalido",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_lista_dois",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_invalido",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_lista_dois",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_vazio",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_lista_dois",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_vazio",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_lista_dois",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_um_invalido",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_lista_dois",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_um_invalido",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_lista_dois",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sombra",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_lista_dois",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sombra",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_lista_dois",
   "mundo": "mundo_pairs_sim",
   "roteiro": "roteiro_duas_ops",
   "args": [
@@ -6260,6 +8496,28 @@
   "caso": "casos/c3_lista_dois",
   "mundo": "mundo_pairs_sim",
   "roteiro": "roteiro_ops_validos",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_lista_dois",
+  "mundo": "mundo_pairs_sim",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_lista_dois",
+  "mundo": "mundo_pairs_sim",
+  "roteiro": "roteiro_um_plano",
   "args": [
    "\"x\"",
    "false"
@@ -6590,6 +8848,28 @@
   "caso": "casos/c3_lista_dois",
   "mundo": "mundo_pairs",
   "roteiro": "roteiro_ops_validos",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_lista_dois",
+  "mundo": "mundo_pairs",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/c3_lista_dois",
+  "mundo": "mundo_pairs",
+  "roteiro": "roteiro_um_plano",
   "args": [
    "\"x\"",
    "false"
@@ -6882,6 +9162,16 @@
  {
   "caso": "casos/f1_requires_if",
   "mundo": "mundo_rev2",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f1_requires_if",
+  "mundo": "mundo_rev2",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\""
@@ -7032,6 +9322,16 @@
  {
   "caso": "casos/f1_requires_if",
   "mundo": "mundo_payees",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f1_requires_if",
+  "mundo": "mundo_payees",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\""
@@ -7141,6 +9441,166 @@
  },
  {
   "caso": "casos/f1_requires_if",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_duas_ops",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f1_requires_if",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sem_sombra",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f1_requires_if",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_validos",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f1_requires_if",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_validos",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f1_requires_if",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f1_requires_if",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_ok",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f1_requires_if",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_dois_validos",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f1_requires_if",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_um_invalido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f1_requires_if",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_evil",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f1_requires_if",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sombra_recusado_valido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f1_requires_if",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_op",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f1_requires_if",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_fallback",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f1_requires_if",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_invalido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f1_requires_if",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_vazio",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f1_requires_if",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_um_invalido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f1_requires_if",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sombra",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f1_requires_if",
   "mundo": "mundo_pairs_sim",
   "roteiro": "roteiro_duas_ops",
   "args": [
@@ -7182,6 +9642,16 @@
  {
   "caso": "casos/f1_requires_if",
   "mundo": "mundo_pairs_sim",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f1_requires_if",
+  "mundo": "mundo_pairs_sim",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\""
@@ -7332,6 +9802,16 @@
  {
   "caso": "casos/f1_requires_if",
   "mundo": "mundo_pairs",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f1_requires_if",
+  "mundo": "mundo_pairs",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\""
@@ -7482,6 +9962,16 @@
  {
   "caso": "casos/f1_requires_parcial",
   "mundo": "mundo_rev2",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f1_requires_parcial",
+  "mundo": "mundo_rev2",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\""
@@ -7632,6 +10122,16 @@
  {
   "caso": "casos/f1_requires_parcial",
   "mundo": "mundo_payees",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f1_requires_parcial",
+  "mundo": "mundo_payees",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\""
@@ -7741,6 +10241,166 @@
  },
  {
   "caso": "casos/f1_requires_parcial",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_duas_ops",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f1_requires_parcial",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sem_sombra",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f1_requires_parcial",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_validos",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f1_requires_parcial",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_validos",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f1_requires_parcial",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f1_requires_parcial",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_ok",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f1_requires_parcial",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_dois_validos",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f1_requires_parcial",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_um_invalido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f1_requires_parcial",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_evil",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f1_requires_parcial",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sombra_recusado_valido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f1_requires_parcial",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_op",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f1_requires_parcial",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_fallback",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f1_requires_parcial",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_invalido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f1_requires_parcial",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_vazio",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f1_requires_parcial",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_um_invalido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f1_requires_parcial",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sombra",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f1_requires_parcial",
   "mundo": "mundo_pairs_sim",
   "roteiro": "roteiro_duas_ops",
   "args": [
@@ -7782,6 +10442,16 @@
  {
   "caso": "casos/f1_requires_parcial",
   "mundo": "mundo_pairs_sim",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f1_requires_parcial",
+  "mundo": "mundo_pairs_sim",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\""
@@ -7932,6 +10602,16 @@
  {
   "caso": "casos/f1_requires_parcial",
   "mundo": "mundo_pairs",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f1_requires_parcial",
+  "mundo": "mundo_pairs",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\""
@@ -8130,6 +10810,28 @@
  {
   "caso": "casos/f2_dois_refines",
   "mundo": "mundo_rev2",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f2_dois_refines",
+  "mundo": "mundo_rev2",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f2_dois_refines",
+  "mundo": "mundo_rev2",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\"",
@@ -8460,6 +11162,28 @@
  {
   "caso": "casos/f2_dois_refines",
   "mundo": "mundo_payees",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f2_dois_refines",
+  "mundo": "mundo_payees",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f2_dois_refines",
+  "mundo": "mundo_payees",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\"",
@@ -8691,6 +11415,358 @@
  {
   "caso": "casos/f2_dois_refines",
   "mundo": "mundo_payees",
+  "roteiro": "roteiro_sombra",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f2_dois_refines",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_duas_ops",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f2_dois_refines",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_duas_ops",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f2_dois_refines",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sem_sombra",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f2_dois_refines",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sem_sombra",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f2_dois_refines",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_validos",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f2_dois_refines",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_validos",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f2_dois_refines",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_validos",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f2_dois_refines",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_validos",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f2_dois_refines",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f2_dois_refines",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f2_dois_refines",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_ok",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f2_dois_refines",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_ok",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f2_dois_refines",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_dois_validos",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f2_dois_refines",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_dois_validos",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f2_dois_refines",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_um_invalido",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f2_dois_refines",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_um_invalido",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f2_dois_refines",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_evil",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f2_dois_refines",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_evil",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f2_dois_refines",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sombra_recusado_valido",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f2_dois_refines",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sombra_recusado_valido",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f2_dois_refines",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_op",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f2_dois_refines",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_op",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f2_dois_refines",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_fallback",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f2_dois_refines",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_fallback",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f2_dois_refines",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_invalido",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f2_dois_refines",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_invalido",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f2_dois_refines",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_vazio",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f2_dois_refines",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_vazio",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f2_dois_refines",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_um_invalido",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f2_dois_refines",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_um_invalido",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f2_dois_refines",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sombra",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f2_dois_refines",
+  "mundo": "mundo_fechado",
   "roteiro": "roteiro_sombra",
   "args": [
    "\"x\"",
@@ -8790,6 +11866,28 @@
  {
   "caso": "casos/f2_dois_refines",
   "mundo": "mundo_pairs_sim",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f2_dois_refines",
+  "mundo": "mundo_pairs_sim",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f2_dois_refines",
+  "mundo": "mundo_pairs_sim",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\"",
@@ -9120,6 +12218,28 @@
  {
   "caso": "casos/f2_dois_refines",
   "mundo": "mundo_pairs",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f2_dois_refines",
+  "mundo": "mundo_pairs",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/f2_dois_refines",
+  "mundo": "mundo_pairs",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\"",
@@ -9450,6 +12570,28 @@
  {
   "caso": "casos/g1_campo_dois_elem",
   "mundo": "mundo_rev2",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_dois_elem",
+  "mundo": "mundo_rev2",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_dois_elem",
+  "mundo": "mundo_rev2",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\"",
@@ -9780,6 +12922,28 @@
  {
   "caso": "casos/g1_campo_dois_elem",
   "mundo": "mundo_payees",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_dois_elem",
+  "mundo": "mundo_payees",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_dois_elem",
+  "mundo": "mundo_payees",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\"",
@@ -10011,6 +13175,358 @@
  {
   "caso": "casos/g1_campo_dois_elem",
   "mundo": "mundo_payees",
+  "roteiro": "roteiro_sombra",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_dois_elem",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_duas_ops",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_dois_elem",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_duas_ops",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_dois_elem",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sem_sombra",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_dois_elem",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sem_sombra",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_dois_elem",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_validos",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_dois_elem",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_validos",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_dois_elem",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_validos",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_dois_elem",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_validos",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_dois_elem",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_dois_elem",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_dois_elem",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_ok",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_dois_elem",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_ok",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_dois_elem",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_dois_validos",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_dois_elem",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_dois_validos",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_dois_elem",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_um_invalido",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_dois_elem",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_um_invalido",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_dois_elem",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_evil",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_dois_elem",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_evil",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_dois_elem",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sombra_recusado_valido",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_dois_elem",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sombra_recusado_valido",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_dois_elem",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_op",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_dois_elem",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_op",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_dois_elem",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_fallback",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_dois_elem",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_fallback",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_dois_elem",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_invalido",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_dois_elem",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_invalido",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_dois_elem",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_vazio",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_dois_elem",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_vazio",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_dois_elem",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_um_invalido",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_dois_elem",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_um_invalido",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_dois_elem",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sombra",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_dois_elem",
+  "mundo": "mundo_fechado",
   "roteiro": "roteiro_sombra",
   "args": [
    "\"x\"",
@@ -10110,6 +13626,28 @@
  {
   "caso": "casos/g1_campo_dois_elem",
   "mundo": "mundo_pairs_sim",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_dois_elem",
+  "mundo": "mundo_pairs_sim",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_dois_elem",
+  "mundo": "mundo_pairs_sim",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\"",
@@ -10440,6 +13978,28 @@
  {
   "caso": "casos/g1_campo_dois_elem",
   "mundo": "mundo_pairs",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_dois_elem",
+  "mundo": "mundo_pairs",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_dois_elem",
+  "mundo": "mundo_pairs",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\"",
@@ -10770,6 +14330,28 @@
  {
   "caso": "casos/g1_campo_if",
   "mundo": "mundo_rev2",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_if",
+  "mundo": "mundo_rev2",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_if",
+  "mundo": "mundo_rev2",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\"",
@@ -11100,6 +14682,28 @@
  {
   "caso": "casos/g1_campo_if",
   "mundo": "mundo_payees",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_if",
+  "mundo": "mundo_payees",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_if",
+  "mundo": "mundo_payees",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\"",
@@ -11331,6 +14935,358 @@
  {
   "caso": "casos/g1_campo_if",
   "mundo": "mundo_payees",
+  "roteiro": "roteiro_sombra",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_if",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_duas_ops",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_if",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_duas_ops",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_if",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sem_sombra",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_if",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sem_sombra",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_if",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_validos",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_if",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_validos",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_if",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_validos",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_if",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_validos",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_if",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_if",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_if",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_ok",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_if",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_ok",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_if",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_dois_validos",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_if",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_dois_validos",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_if",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_um_invalido",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_if",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_um_invalido",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_if",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_evil",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_if",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_evil",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_if",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sombra_recusado_valido",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_if",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sombra_recusado_valido",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_if",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_op",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_if",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_op",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_if",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_fallback",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_if",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_fallback",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_if",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_invalido",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_if",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_invalido",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_if",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_vazio",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_if",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_vazio",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_if",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_um_invalido",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_if",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_um_invalido",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_if",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sombra",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_if",
+  "mundo": "mundo_fechado",
   "roteiro": "roteiro_sombra",
   "args": [
    "\"x\"",
@@ -11430,6 +15386,28 @@
  {
   "caso": "casos/g1_campo_if",
   "mundo": "mundo_pairs_sim",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_if",
+  "mundo": "mundo_pairs_sim",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_if",
+  "mundo": "mundo_pairs_sim",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\"",
@@ -11760,6 +15738,28 @@
  {
   "caso": "casos/g1_campo_if",
   "mundo": "mundo_pairs",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_if",
+  "mundo": "mundo_pairs",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g1_campo_if",
+  "mundo": "mundo_pairs",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\"",
@@ -12090,6 +16090,28 @@
  {
   "caso": "casos/g2_else_fallback",
   "mundo": "mundo_rev2",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g2_else_fallback",
+  "mundo": "mundo_rev2",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g2_else_fallback",
+  "mundo": "mundo_rev2",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\"",
@@ -12420,6 +16442,28 @@
  {
   "caso": "casos/g2_else_fallback",
   "mundo": "mundo_payees",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g2_else_fallback",
+  "mundo": "mundo_payees",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g2_else_fallback",
+  "mundo": "mundo_payees",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\"",
@@ -12651,6 +16695,358 @@
  {
   "caso": "casos/g2_else_fallback",
   "mundo": "mundo_payees",
+  "roteiro": "roteiro_sombra",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g2_else_fallback",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_duas_ops",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g2_else_fallback",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_duas_ops",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g2_else_fallback",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sem_sombra",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g2_else_fallback",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sem_sombra",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g2_else_fallback",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_validos",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g2_else_fallback",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_validos",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g2_else_fallback",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_validos",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g2_else_fallback",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_validos",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g2_else_fallback",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g2_else_fallback",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g2_else_fallback",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_ok",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g2_else_fallback",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_ok",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g2_else_fallback",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_dois_validos",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g2_else_fallback",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_dois_validos",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g2_else_fallback",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_um_invalido",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g2_else_fallback",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_um_invalido",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g2_else_fallback",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_evil",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g2_else_fallback",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_evil",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g2_else_fallback",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sombra_recusado_valido",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g2_else_fallback",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sombra_recusado_valido",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g2_else_fallback",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_op",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g2_else_fallback",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_op",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g2_else_fallback",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_fallback",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g2_else_fallback",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_fallback",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g2_else_fallback",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_invalido",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g2_else_fallback",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_invalido",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g2_else_fallback",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_vazio",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g2_else_fallback",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_vazio",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g2_else_fallback",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_um_invalido",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g2_else_fallback",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_um_invalido",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g2_else_fallback",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sombra",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g2_else_fallback",
+  "mundo": "mundo_fechado",
   "roteiro": "roteiro_sombra",
   "args": [
    "\"x\"",
@@ -12750,6 +17146,28 @@
  {
   "caso": "casos/g2_else_fallback",
   "mundo": "mundo_pairs_sim",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g2_else_fallback",
+  "mundo": "mundo_pairs_sim",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g2_else_fallback",
+  "mundo": "mundo_pairs_sim",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\"",
@@ -13080,6 +17498,28 @@
  {
   "caso": "casos/g2_else_fallback",
   "mundo": "mundo_pairs",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g2_else_fallback",
+  "mundo": "mundo_pairs",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g2_else_fallback",
+  "mundo": "mundo_pairs",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\"",
@@ -13410,6 +17850,28 @@
  {
   "caso": "casos/g3_match_um_braco",
   "mundo": "mundo_rev2",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g3_match_um_braco",
+  "mundo": "mundo_rev2",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g3_match_um_braco",
+  "mundo": "mundo_rev2",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\"",
@@ -13740,6 +18202,28 @@
  {
   "caso": "casos/g3_match_um_braco",
   "mundo": "mundo_payees",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g3_match_um_braco",
+  "mundo": "mundo_payees",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g3_match_um_braco",
+  "mundo": "mundo_payees",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\"",
@@ -13971,6 +18455,358 @@
  {
   "caso": "casos/g3_match_um_braco",
   "mundo": "mundo_payees",
+  "roteiro": "roteiro_sombra",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g3_match_um_braco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_duas_ops",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g3_match_um_braco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_duas_ops",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g3_match_um_braco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sem_sombra",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g3_match_um_braco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sem_sombra",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g3_match_um_braco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_validos",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g3_match_um_braco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_validos",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g3_match_um_braco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_validos",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g3_match_um_braco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_validos",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g3_match_um_braco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g3_match_um_braco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g3_match_um_braco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_ok",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g3_match_um_braco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_ok",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g3_match_um_braco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_dois_validos",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g3_match_um_braco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_dois_validos",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g3_match_um_braco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_um_invalido",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g3_match_um_braco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_um_invalido",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g3_match_um_braco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_evil",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g3_match_um_braco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_evil",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g3_match_um_braco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sombra_recusado_valido",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g3_match_um_braco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sombra_recusado_valido",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g3_match_um_braco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_op",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g3_match_um_braco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_op",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g3_match_um_braco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_fallback",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g3_match_um_braco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_fallback",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g3_match_um_braco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_invalido",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g3_match_um_braco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_invalido",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g3_match_um_braco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_vazio",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g3_match_um_braco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_vazio",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g3_match_um_braco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_um_invalido",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g3_match_um_braco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_um_invalido",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g3_match_um_braco",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sombra",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g3_match_um_braco",
+  "mundo": "mundo_fechado",
   "roteiro": "roteiro_sombra",
   "args": [
    "\"x\"",
@@ -14070,6 +18906,28 @@
  {
   "caso": "casos/g3_match_um_braco",
   "mundo": "mundo_pairs_sim",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g3_match_um_braco",
+  "mundo": "mundo_pairs_sim",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g3_match_um_braco",
+  "mundo": "mundo_pairs_sim",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\"",
@@ -14400,6 +19258,28 @@
  {
   "caso": "casos/g3_match_um_braco",
   "mundo": "mundo_pairs",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g3_match_um_braco",
+  "mundo": "mundo_pairs",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/g3_match_um_braco",
+  "mundo": "mundo_pairs",
   "roteiro": "roteiro_parcial_ok",
   "args": [
    "\"x\"",
@@ -14635,6 +19515,806 @@
   "args": [
    "\"x\"",
    "false"
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_rev2",
+  "roteiro": "roteiro_duas_ops",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_rev2",
+  "roteiro": "roteiro_sem_sombra",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_rev2",
+  "roteiro": "roteiro_rows_validos",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_rev2",
+  "roteiro": "roteiro_ops_validos",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_rev2",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_rev2",
+  "roteiro": "roteiro_parcial_ok",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_rev2",
+  "roteiro": "roteiro_dois_validos",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_rev2",
+  "roteiro": "roteiro_ops_um_invalido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_rev2",
+  "roteiro": "roteiro_parcial_evil",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_rev2",
+  "roteiro": "roteiro_sombra_recusado_valido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_rev2",
+  "roteiro": "roteiro_um_op",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_rev2",
+  "roteiro": "roteiro_fallback",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_rev2",
+  "roteiro": "roteiro_um_invalido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_rev2",
+  "roteiro": "roteiro_vazio",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_rev2",
+  "roteiro": "roteiro_rows_um_invalido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_rev2",
+  "roteiro": "roteiro_sombra",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_payees",
+  "roteiro": "roteiro_duas_ops",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_payees",
+  "roteiro": "roteiro_sem_sombra",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_payees",
+  "roteiro": "roteiro_rows_validos",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_payees",
+  "roteiro": "roteiro_ops_validos",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_payees",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_payees",
+  "roteiro": "roteiro_parcial_ok",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_payees",
+  "roteiro": "roteiro_dois_validos",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_payees",
+  "roteiro": "roteiro_ops_um_invalido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_payees",
+  "roteiro": "roteiro_parcial_evil",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_payees",
+  "roteiro": "roteiro_sombra_recusado_valido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_payees",
+  "roteiro": "roteiro_um_op",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_payees",
+  "roteiro": "roteiro_fallback",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_payees",
+  "roteiro": "roteiro_um_invalido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_payees",
+  "roteiro": "roteiro_vazio",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_payees",
+  "roteiro": "roteiro_rows_um_invalido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_payees",
+  "roteiro": "roteiro_sombra",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_duas_ops",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sem_sombra",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_validos",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_validos",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_ok",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_dois_validos",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_ops_um_invalido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_parcial_evil",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sombra_recusado_valido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_op",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_fallback",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_um_invalido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_vazio",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_rows_um_invalido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_fechado",
+  "roteiro": "roteiro_sombra",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_pairs_sim",
+  "roteiro": "roteiro_duas_ops",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_pairs_sim",
+  "roteiro": "roteiro_sem_sombra",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_pairs_sim",
+  "roteiro": "roteiro_rows_validos",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_pairs_sim",
+  "roteiro": "roteiro_ops_validos",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_pairs_sim",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_pairs_sim",
+  "roteiro": "roteiro_parcial_ok",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_pairs_sim",
+  "roteiro": "roteiro_dois_validos",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_pairs_sim",
+  "roteiro": "roteiro_ops_um_invalido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_pairs_sim",
+  "roteiro": "roteiro_parcial_evil",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_pairs_sim",
+  "roteiro": "roteiro_sombra_recusado_valido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_pairs_sim",
+  "roteiro": "roteiro_um_op",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_pairs_sim",
+  "roteiro": "roteiro_fallback",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_pairs_sim",
+  "roteiro": "roteiro_um_invalido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_pairs_sim",
+  "roteiro": "roteiro_vazio",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_pairs_sim",
+  "roteiro": "roteiro_rows_um_invalido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_pairs_sim",
+  "roteiro": "roteiro_sombra",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_pairs",
+  "roteiro": "roteiro_duas_ops",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_pairs",
+  "roteiro": "roteiro_sem_sombra",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_pairs",
+  "roteiro": "roteiro_rows_validos",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_pairs",
+  "roteiro": "roteiro_ops_validos",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_pairs",
+  "roteiro": "roteiro_um_plano",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_pairs",
+  "roteiro": "roteiro_parcial_ok",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_pairs",
+  "roteiro": "roteiro_dois_validos",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_pairs",
+  "roteiro": "roteiro_ops_um_invalido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_pairs",
+  "roteiro": "roteiro_parcial_evil",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_pairs",
+  "roteiro": "roteiro_sombra_recusado_valido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_pairs",
+  "roteiro": "roteiro_um_op",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_pairs",
+  "roteiro": "roteiro_fallback",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_pairs",
+  "roteiro": "roteiro_um_invalido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_pairs",
+  "roteiro": "roteiro_vazio",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_pairs",
+  "roteiro": "roteiro_rows_um_invalido",
+  "args": [
+   "\"x\""
+  ],
+  "r0631": false,
+  "concordam": true
+ },
+ {
+  "caso": "casos/h1_requires_sem_parametro",
+  "mundo": "mundo_pairs",
+  "roteiro": "roteiro_sombra",
+  "args": [
+   "\"x\""
   ],
   "r0631": false,
   "concordam": true
