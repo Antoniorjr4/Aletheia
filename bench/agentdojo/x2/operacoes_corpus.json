@@ -1,0 +1,74 @@
+{
+ "grupos": {
+  "corpus": {
+   "não compila": 31,
+   "programas": 29,
+   "sem origem": 69,
+   "uma": 163,
+   "transformada": 9
+  },
+  "m10/m11 autorias": {
+   "programas": 40,
+   "sem origem": 86,
+   "uma": 203,
+   "não compila": 103
+  },
+  "x2": {
+   "programas": 2,
+   "uma": 1,
+   "mistura": 1
+  },
+  "obrigacoes(casos/revisões)": {
+   "programas": 98,
+   "mistura": 31,
+   "sem origem": 11,
+   "uma": 54,
+   "transformada": 4,
+   "não compila": 6
+  }
+ },
+ "misturas": [
+  [
+   "bench/agentdojo/x2/relacional/misturado.ath",
+   "L19   send_money                   MISTURA de 2 operações: Plan.writes/[*] @L18 | Plan.writes/[*] @L19"
+  ]
+ ],
+ "transformadas": [
+  [
+   "bench/m1/aletheia/agent.ath",
+   "L96   page                         uma operação, transformada"
+  ],
+  [
+   "bench/m1/aletheia/agent.ath",
+   "L109  page                         uma operação, transformada"
+  ],
+  [
+   "bench/replay/2026-11-09-groq-gpt-oss-120b-rev6/rollout-120b.ath",
+   "L104  page                         uma operação, transformada"
+  ],
+  [
+   "examples/rc10/triage.ath",
+   "L128  open_issue                   uma operação, transformada"
+  ],
+  [
+   "examples/rc8/triage.ath",
+   "L125  open_issue                   uma operação, transformada"
+  ],
+  [
+   "examples/rc9/triage.ath",
+   "L114  open_issue                   uma operação, transformada"
+  ],
+  [
+   "examples/remediate.ath",
+   "L91   page                         uma operação, transformada"
+  ],
+  [
+   "examples/remediate.ath",
+   "L104  page                         uma operação, transformada"
+  ],
+  [
+   "examples/rollout.ath",
+   "L104  page                         uma operação, transformada"
+  ]
+ ]
+}

@@ -394,3 +394,18 @@ Também acharam excesso de cautela (F3, G2, G3), corrigido. H2 e H3 ficam aberto
 R0631 caiu de 258 para 0 e a divergência entre os runtimes de 27 para 0; o corpus real ficou
 inalterado. A regressão do M4 saiu idêntica a 17/11. A extensão M4-ext: no X1, a Aletheia pegou na
 compilação e o P1 e o Pysa não; no X2, nenhum dos dois pegou. Gasto adicional: US$ 0,00.
+
+**27/11 — X2: testemunha, contrato relacional e proposta** ([bench/agentdojo/x2/RELATORIO.md](../bench/agentdojo/x2/RELATORIO.md),
+[PROPOSTA-OPERACAO.md](PROPOSTA-OPERACAO.md)). Reprodução dirigida posterior ao M4-ext, não cega,
+US$ 0,00.
+
+- **Testemunha:** com o espião no banco oficial, a mutação X2 envia 4 chamadas na Aletheia (ARX e
+  Python iguais), duas delas não aprovadas, e 2 no P1, uma não aprovada. O journal do P1 registra
+  R2 25,00 enquanto o banco recebe R2 10,00, e a deduplicação do P1 deixa uma transferência aprovada
+  sem sair. Todas as chamadas respeitam a política escrita, que só confere o destinatário.
+- **Contrato relacional (`requires s.binds`):** recusa a combinação fora da lista antes da
+  ferramenta, mas deixa passar combinações que estão na lista e não são a operação aprovada.
+- **Protótipo `athc operacoes` (diagnóstico, sem efeito na aceitação):** acusa a mistura no X2 e
+  não acusa nenhuma nos 69 programas que compilam no corpus.
+- **Proposta (não implementada):** checagem estática E0453; composição explícita como variante do
+  plano aprovada pela política.

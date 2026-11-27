@@ -189,6 +189,7 @@ fn main() -> ExitCode {
         "verify-journal" => cmd_verify(&opts, st),
         "contract-report" => cmd_contract_report(&opts, st),
         "obligations" => cmd_obligations(&opts, st),
+        "operacoes" => cmd_operacoes(&opts, st),
         "emit" => cmd_emit(&opts, st),
         "grant" => cmd_grant(&opts),
         "keygen" => cmd_keygen(&opts),
@@ -293,6 +294,37 @@ fn cmd_check(opts: &Opts, st: Style) -> Result<bool, String> {
             eprintln!("erro[E0430]: a autoridade `{n}` tem garantia {}, mais fraca que a temporal (RC4) exigida por --strict-authority", g.name());
         }
         return Ok(false);
+    }
+    Ok(true)
+}
+
+/// `athc operacoes prog.ath` (protótipo, 27/11/2026): para cada chamada de ferramenta, se os
+/// argumentos vindos de valores endossados formam uma só operação aprovada. Não muda a aceitação.
+fn cmd_operacoes(opts: &Opts, st: Style) -> Result<bool, String> {
+    let (path, src) = load(opts)?;
+    let Some(c) = compile_or_report(&path, &src, st) else { return Ok(false) };
+    let line = |lo: u32| src[..lo as usize].matches('\n').count() + 1;
+    for s in ath_syntax::operations::analyze(&c.module) {
+        use ath_syntax::operations::Finding::*;
+        let what = match &s.finding {
+            Uma => "uma operação".to_string(),
+            SemOrigem => "sem origem endossada".to_string(),
+            Transformada => "uma operação, transformada".to_string(),
+            Mistura(ops) => format!(
+                "MISTURA de {} operações: {}",
+                ops.len(),
+                ops.iter()
+                    .map(|((lo, _), p, id)| format!(
+                        "{}{}{}",
+                        if *lo == 0 { String::new() } else { format!("refine L{} ", line(*lo)) },
+                        p.join("/"),
+                        id.map(|(l, _)| format!(" @L{}", line(l))).unwrap_or_default()
+                    ))
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            ),
+        };
+        println!("  L{:<4} {:<28} {}", line(s.call.lo), s.tool, what);
     }
     Ok(true)
 }
