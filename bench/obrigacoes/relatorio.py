@@ -31,6 +31,15 @@ CASOS = [
     ("b2_as_recusado_valido", "mundo_payees", "roteiro_sombra_recusado_valido",
      "B2: o recusado satisfaz o `requires`"),
     ("c2_sem_sombra", "mundo_payees", "roteiro_sem_sombra", "controle B2: plano mantido, sem sombra"),
+    # achados da revisão independente do reparo (27/11), versionados antes do segundo reparo
+    ("f1_requires_if", "mundo_payees", "roteiro_vazio", "F1: `requires` com `if`, argumentos literais"),
+    ("f1_requires_parcial", "mundo_payees", "roteiro_parcial_ok", "F1: parâmetro lido só dentro de `if`, plano válido"),
+    ("f1_requires_parcial", "mundo_payees", "roteiro_parcial_evil", "F1: parâmetro lido só dentro de `if`, plano inválido"),
+    ("f2_dois_refines", "mundo_pairs", "roteiro_duas_ops", "F2: um campo de cada proposta, por `if`", ['"x"', "true"]),
+    ("c3_if_mesmo_laco", "mundo_pairs_sim", "roteiro_rows_um_invalido",
+     "controle F3: `let o = if c { a } else { b }`, um elemento viola", ['"x"', "true"]),
+    ("c3_lista_dois", "mundo_pairs_sim", "roteiro_rows_um_invalido",
+     "controle F3: `for x in [a, b]`, um elemento viola", ['"x"', "true"]),
 ]
 
 
@@ -52,7 +61,7 @@ def resume(j: list[dict], final) -> dict:
             "eventos": sorted({e["kind"] for e in j})}
 
 
-def run_case(athc: str, prog: str, world: str, models: str) -> dict:
+def run_case(athc: str, prog: str, world: str, models: str, args=('"x"',)) -> dict:
     f, w, m = C / f"{prog}.ath", C / f"{world}.json", C / f"{models}.json"
     ob = subprocess.run([athc, "obligations", str(f)], capture_output=True, text=True)
     claim = [ln.strip() for ln in ob.stdout.splitlines() if ln.startswith("  ")]
@@ -60,14 +69,14 @@ def run_case(athc: str, prog: str, world: str, models: str) -> dict:
     with tempfile.TemporaryDirectory() as d:
         d = Path(d)
         r = subprocess.run([athc, "run", str(f), "--world", str(w), "--models", str(m), "--provider", "scripted",
-                            "--arg", '"x"', "--journal", str(d / "arx.jsonl")], capture_output=True, text=True, env=env)
+                            *sum((["--arg", x] for x in args), []), "--journal", str(d / "arx.jsonl")], capture_output=True, text=True, env=env)
         out = [ln.strip() for ln in (r.stdout + r.stderr).splitlines() if "resultado" in ln or "abortado" in ln]
         arx = resume(journal(d / "arx.jsonl"), out[-1] if out else None)
         subprocess.run([athc, "emit", str(f), "--target", "py", "--out", str(d / "p.py")], check=True,
                        capture_output=True)
         env["PYTHONPATH"] = str(ROOT / "runtimes" / "python")
         subprocess.run(["python3", "-m", "aletheia_runtime", "run", str(d / "p.py"), "--world", str(w), "--models",
-                        str(m), "--provider", "scripted", "--arg-json", '"x"', "--journal", str(d / "py.jsonl"),
+                        str(m), "--provider", "scripted", *sum((["--arg-json", x] for x in args), []), "--journal", str(d / "py.jsonl"),
                         "--report", str(d / "r.json")], capture_output=True, text=True, env=env)
         rep = json.loads((d / "r.json").read_text()) if (d / "r.json").exists() else {}
         py = resume(journal(d / "py.jsonl"), rep.get("result") if rep.get("ok") else rep.get("error"))
@@ -83,8 +92,8 @@ def main():
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
     out = []
-    for prog, world, models, what in CASOS:
-        r = run_case(a.athc, prog, world, models)
+    for prog, world, models, what, *args in CASOS:
+        r = run_case(a.athc, prog, world, models, *args)
         out.append({"caso": prog, "mundo": world, "roteiro": models, "mostra": what, **r})
         print(f"{prog} / {models}: {r['compilador_afirma']} | ARX {r['arx']['chamadas_na_ferramenta']} "
               f"{r['arx']['aborto']} | PY {r['python']['chamadas_na_ferramenta']} {r['python']['aborto']} | "

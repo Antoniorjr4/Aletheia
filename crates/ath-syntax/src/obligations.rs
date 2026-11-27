@@ -30,8 +30,10 @@ pub enum Step {
 /// De onde vem um valor.
 #[derive(Clone, Debug, PartialEq)]
 enum Src {
-    /// do valor devolvido pelo `refine` do sítio, no caminho
-    Refine(Span, Vec<Step>),
+    /// do valor devolvido pelo `refine` do sítio, no caminho. O terceiro campo identifica, para
+    /// cada passo `Elem` do caminho, o laço que escolheu o elemento (o span da variável do `for`):
+    /// dois valores com o mesmo caminho só vêm do mesmo elemento se vieram do mesmo laço (B1).
+    Refine(Span, Vec<Step>, Vec<(u32, u32)>),
     /// de um literal de construtor: a variante e as fontes de cada campo
     Lit(String, Vec<(String, Vec<Src>)>),
     /// de uma lista literal: as fontes de cada elemento
@@ -41,13 +43,22 @@ enum Src {
 }
 
 fn extend(srcs: &[Src], step: &Step) -> Vec<Src> {
+    extend_at(srcs, step, None)
+}
+
+/// Como `extend`; num passo `Elem`, `elem` é o laço que escolhe o elemento.
+fn extend_at(srcs: &[Src], step: &Step, elem: Option<(u32, u32)>) -> Vec<Src> {
     let mut out = Vec::new();
     for s in srcs {
         match (s, step) {
-            (Src::Refine(sp, p), _) => {
+            (Src::Refine(sp, p, ids), _) => {
                 let mut p = p.clone();
                 p.push(step.clone());
-                out.push(Src::Refine(*sp, p));
+                let mut ids = ids.clone();
+                if let (Step::Elem, Some(id)) = (step, elem) {
+                    ids.push(id);
+                }
+                out.push(Src::Refine(*sp, p, ids));
             }
             (Src::Lit(v, fields), Step::Field(vv, f)) => {
                 if v == vv {
@@ -147,7 +158,7 @@ struct An<'m> {
 type Env = Vec<(String, Vec<Src>)>;
 
 /// Por sítio de `refine`: o caminho até o elemento, a variante e as ligações parâmetro ← campo.
-type Lift = Option<(Vec<Step>, String, Vec<(String, String)>)>;
+type Lift = Option<(Vec<Step>, Vec<(u32, u32)>, String, Vec<(String, String)>)>;
 
 fn lookup(env: &Env, x: &str) -> Vec<Src> {
     env.iter()
@@ -165,6 +176,16 @@ impl<'m> An<'m> {
                 Stmt::Let { name, value, .. } => {
                     let v = self.expr(value, env);
                     env.push((name.name.clone(), v));
+                    // `keeping … as nome` liga também o que a política recusou (como no checker e
+                    // nos runtimes: só quando o `refine` é o valor desta ligação). Esses elementos
+                    // não passaram pela política nem pela obrigação levantada: origem desconhecida,
+                    // e a nova ligação sombreia qualquer `nome` de fora (B2).
+                    if let ExprKind::Refine { keep: Some(Keep { bind: Some(b), .. }), .. } = &value.kind {
+                        env.push((
+                            b.name.clone(),
+                            vec![Src::Unknown(format!("`{}` é o que a política recusou no `refine`", b.name))],
+                        ));
+                    }
                 }
                 Stmt::Expr(e) => {
                     self.expr(e, env);
@@ -184,7 +205,7 @@ impl<'m> An<'m> {
             ExprKind::Var(x) => lookup(env, x),
             ExprKind::Refine { draft, els, .. } => {
                 self.expr(draft, env);
-                let mut r = vec![Src::Refine(e.span, Vec::new())];
+                let mut r = vec![Src::Refine(e.span, Vec::new(), Vec::new())];
                 r.extend(self.block(els, env));
                 r
             }
@@ -213,7 +234,7 @@ impl<'m> An<'m> {
             }
             ExprKind::For { var, iter, body } => {
                 let s = self.expr(iter, env);
-                env.push((var.name.clone(), extend(&s, &Step::Elem)));
+                env.push((var.name.clone(), extend_at(&s, &Step::Elem, Some((var.span.lo, var.span.hi)))));
                 self.block(body, env);
                 env.pop();
                 vec![Src::Unknown("o valor de um laço".into())]
@@ -297,7 +318,7 @@ impl<'m> An<'m> {
         for (i, name) in &params {
             for s in args.get(*i).into_iter().flatten() {
                 match s {
-                    Src::Refine(sp, path) => {
+                    Src::Refine(sp, path, ids) => {
                         let Some((Step::Field(v, f), prefix)) = path.split_last() else {
                             return Status::Dynamic {
                                 reason: format!("`{name}` é o valor endossado inteiro, não um campo"),
@@ -305,9 +326,14 @@ impl<'m> An<'m> {
                         };
                         let e = per.entry((sp.lo, sp.hi)).or_insert(None);
                         match e {
-                            None => *e = Some((prefix.to_vec(), v.clone(), vec![(name.to_string(), f.clone())])),
-                            Some((p0, v0, b)) => {
-                                if p0.as_slice() != prefix || v0 != v {
+                            None => {
+                                *e =
+                                    Some((prefix.to_vec(), ids.clone(), v.clone(), vec![(name.to_string(), f.clone())]))
+                            }
+                            Some((p0, ids0, v0, b)) => {
+                                // mesmo caminho não basta: o elemento tem de ser escolhido pelo mesmo
+                                // laço, senão são elementos diferentes da mesma lista (B1)
+                                if p0.as_slice() != prefix || ids0 != ids || v0 != v {
                                     return Status::Dynamic {
                                         reason: format!("`{name}` vem de outro elemento do valor endossado"),
                                     };
@@ -327,14 +353,14 @@ impl<'m> An<'m> {
         }
         // cada parâmetro precisa estar ligado em cada `refine` que alcança o sítio
         for e in per.values() {
-            let Some((_, _, b)) = e else { continue };
+            let Some((_, _, _, b)) = e else { continue };
             if b.len() != params.len() {
                 return Status::Dynamic { reason: "parte dos argumentos não vem do mesmo endosso".into() };
             }
         }
         let mut refines = Vec::new();
         for ((lo, hi), e) in per {
-            let Some((path, variant, mut binds)) = e else { continue };
+            let Some((path, _, variant, mut binds)) = e else { continue };
             binds.sort();
             let l = Lifted { tool: t.name.name.clone(), path, variant, binds };
             let v = self.out.lifted.entry((lo, hi)).or_default();
