@@ -223,3 +223,41 @@ fn f3_escolha_entre_elementos_do_mesmo_laco_continua_descarregada() {
         }
     }
 }
+
+// ---- achados da segunda revisão (27/11), corrigidos no mesmo lote
+
+#[test]
+fn g1_um_parametro_ligado_a_dois_campos_nao_descarrega() {
+    // `one(bank, if c { to } else { memo })` e o mesmo com campos de elementos diferentes: antes do
+    // ajuste, a ligação guardava só o primeiro campo e a obrigação levantada conferia o campo errado
+    for (nome, roteiro) in [("g1_campo_if", "roteiro_um_op"), ("g1_campo_dois_elem", "roteiro_ops_validos")] {
+        let s = sitios(nome);
+        assert!(matches!(&s[..], [Err(_)]), "{nome}: {s:?}");
+        for (calls, abort) in executa_com(nome, "mundo_rev2", roteiro, &[json!("x"), json!(false)]) {
+            assert!(calls.is_empty(), "{nome}");
+            assert_eq!(abort.as_deref(), Some("R0630"), "{nome}: contrato recusado no efeito, não defeito da análise");
+        }
+    }
+}
+
+#[test]
+fn g2_refine_com_else_de_outra_proposta_continua_descarregado() {
+    // a 2ª proposta viola e é recusada no `refine`; o `else` devolve a 1ª, que já foi conferida
+    assert_eq!(sitios("g2_else_fallback"), vec![Ok(2)]);
+    for (calls, abort) in executa_com("g2_else_fallback", "mundo_rev2", "roteiro_fallback", &[json!("x"), json!(true)])
+    {
+        assert_eq!(calls, vec![json!(["alice", "100"])]);
+        assert_eq!(abort, None);
+    }
+}
+
+#[test]
+fn g3_campos_lidos_por_match_de_um_braco_continuam_descarregados() {
+    assert_eq!(sitios("g3_match_um_braco"), vec![Ok(1)]);
+    for (calls, abort) in
+        executa_com("g3_match_um_braco", "mundo_rev2", "roteiro_ops_um_invalido", &[json!("x"), json!(true)])
+    {
+        assert!(calls.is_empty(), "o elemento que viola faz o refine recusar o plano");
+        assert_eq!(abort, None);
+    }
+}
