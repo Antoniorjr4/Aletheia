@@ -225,3 +225,26 @@ fn os_controles_aceitos_executam_igual_nos_dois_runtimes() {
         assert_eq!(J::Array(a.0.clone()), calls, "{nome}");
     }
 }
+
+/// As sondas das duas revisões independentes de 28/11 (`revisao1`, `revisao2`), com o veredito
+/// de cada uma depois das correções: as fugas achadas são E0453; os limites declarados
+/// (dependência de controle, fronteira de ferramenta), a agregação pura e os controles legítimos
+/// são aceitos; as recusas conservadoras continuam E0453.
+#[test]
+fn as_sondas_das_revisoes_tem_o_veredito_registrado() {
+    let base = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../bench/agentdojo/x2/e0453");
+    let esperado: std::collections::BTreeMap<String, Vec<String>> =
+        serde_json::from_str(&std::fs::read_to_string(base.join("revisoes_esperado.json")).unwrap()).unwrap();
+    assert!(esperado.len() > 80);
+    for (f, codes) in esperado {
+        let got: Vec<String> = compile(&std::fs::read_to_string(base.join(&f)).unwrap())
+            .err()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|d| d.code)
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        assert_eq!(got, codes, "{f}");
+    }
+}

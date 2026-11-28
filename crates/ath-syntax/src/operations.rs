@@ -52,6 +52,9 @@ struct Src {
     /// fim: `true` se o item dela já combinava duas ou mais operações (não pode ser unificado
     /// pelo laço que escolhe o item)
     lit: Vec<bool>,
+    /// comprimento do caminho no passo que selecionou a lista (`Plan.ops`, `p.left.ops`): o que
+    /// vem depois são projeções sobre os elementos (`notas.issue`)
+    list_at: Option<usize>,
 }
 
 impl Src {
@@ -66,10 +69,18 @@ impl Src {
             Some(((lo, hi), _)) => Span { lo: *lo, hi: *hi },
             None => Span { lo: self.refine.0, hi: self.refine.1 },
         };
-        let shown = |p: &[String]| p.iter().filter(|x| !x.starts_with('[')).cloned().collect::<Vec<_>>().join("/");
-        let what = if self.coll.or(self.all).is_some() {
-            let p: Vec<String> = self.path.iter().take_while(|x| !x.starts_with("?.")).cloned().collect();
-            format!("todos os elementos de `{}`", shown(&p))
+        let shown = |p: &[String]| {
+            p.iter()
+                .filter(|x| !x.starts_with('['))
+                .map(|x| x.strip_prefix("?.").or_else(|| x.strip_prefix("*.")).unwrap_or(x).to_string())
+                .collect::<Vec<_>>()
+                .join("/")
+        };
+        let what = if self.path.iter().any(|x| x == "[↻]") {
+            "as aprovações de um `refine` repetido a cada iteração de um quantificador".to_string()
+        } else if self.coll.or(self.all).is_some() {
+            let end = self.list_at.unwrap_or(self.path.len()).min(self.path.len());
+            format!("todos os elementos de `{}`", shown(&self.path[..end]))
         } else {
             match self.ids.last() {
                 Some((_, n)) if *n > 0 && self.path.get(n - 1).is_some_and(|x| x == "[*]") => {
@@ -93,9 +104,12 @@ impl Src {
         };
         if self.coll.or(self.all).is_some() {
             // todos os elementos da lista: uma origem marcada `[∀]`, que conta como várias
-            let mut p = self.path[from..]
+            // a lista é a do passo que a selecionou, pelo nome dos campos (`Plan.left`/`Group.ops`
+            // e `p.left.ops` são a mesma lista); as projeções depois dele não mudam a lista
+            let end = self.list_at.unwrap_or(self.path.len()).clamp(from, self.path.len());
+            let mut p = self.path[from..end]
                 .iter()
-                .take_while(|x| !x.starts_with("?."))
+                .filter(|x| !x.starts_with('['))
                 .map(|x| x.split_once('.').map(|(_, f)| f.to_string()).unwrap_or_else(|| x.clone()))
                 .collect::<Vec<_>>();
             p.push("[∀]".into());
@@ -173,16 +187,25 @@ impl An<'_> {
                 }
                 if s == "[*]" {
                     y.coll = None; // um elemento escolhido
+                    if y.all.is_none() {
+                        y.list_at = None;
+                    }
                 } else if let Some((v, f)) = s.split_once('.') {
                     if v != "?" {
                         // campo de variante: lista ou não, pelo tipo declarado
                         y.coll = self.lists.get(&(v.to_string(), f.to_string())).copied();
+                        if y.coll.is_some() {
+                            y.list_at = Some(y.path.len());
+                        }
                     } else if y.coll.is_none() {
                         // `p.ops` num registro: seleciona a lista `ops`, não projeta os elementos;
-                        // entra no caminho como o campo de variante (`Plan.ops`)
+                        // entra no caminho como o campo de variante (`Plan.ops`). Pelo nome do
+                        // campo, sem o tipo do receptor: um campo homônimo que é lista em outro
+                        // tipo faz o acesso por ponto contar como lista (recusa conservadora)
                         if let Some(n) = self.list_fields.get(f) {
                             y.coll = Some(*n);
                             *y.path.last_mut().unwrap() = format!("*.{f}");
+                            y.list_at = Some(y.path.len());
                         }
                     }
                     // `?.campo` mantém `coll`: `notas.issue` é a lista dos campos de todos os elementos
@@ -267,6 +290,7 @@ impl<'m> An<'m> {
                     coll: None,
                     all: None,
                     lit: Vec::new(),
+                    list_at: None,
                 }];
                 let r = vec![me, self.block(els, env)];
                 join(r, e.span)
@@ -386,8 +410,25 @@ impl<'m> An<'m> {
                 let s = self.expr(iter, env);
                 let id = (var.span.lo, var.span.hi);
                 env.push((var.name.clone(), self.step(&s, "[*]", Some(id))));
-                let b: Vec<Src> =
-                    self.expr(body, env).into_iter().filter(|x| !x.ids.iter().any(|(i, _)| *i == id)).collect();
+                let inside = |(lo, hi): (u32, u32)| lo >= body.span.lo && hi <= body.span.hi;
+                let b: Vec<Src> = self
+                    .expr(body, env)
+                    .into_iter()
+                    .filter(|x| !x.ids.iter().any(|(i, _)| *i == id))
+                    .map(|mut x| {
+                        // o corpo roda uma vez por iteração e o quantificador soma as iterações:
+                        // um ponto de escolha dentro do corpo (`if i == 1 { a.n } else { b.n }`)
+                        // não unifica nada, porque cada iteração pode tomar um ramo
+                        x.ids.retain(|(i, _)| !inside(*i));
+                        // um `refine` dentro do corpo aprova um valor por iteração: são várias
+                        // operações, agregadas
+                        if inside(x.refine) {
+                            x.all = Some(x.all.unwrap_or(0).max(2));
+                            x.path.push("[↻]".into());
+                        }
+                        x
+                    })
+                    .collect();
                 env.pop();
                 calc(vec![s, b])
             }

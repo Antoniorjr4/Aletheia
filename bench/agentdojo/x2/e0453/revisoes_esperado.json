@@ -1,0 +1,230 @@
+{
+ "revisao1/f01_if_ramo_misturado.ath": [
+  "E0453"
+ ],
+ "revisao1/f02_if_ramo_misturado_escalar.ath": [
+  "E0453"
+ ],
+ "revisao1/f03_for_lista_literal_ctor.ath": [
+  "E0453"
+ ],
+ "revisao1/f04_for_lista_literal_escalar.ath": [
+  "E0453"
+ ],
+ "revisao1/f05_refine_else_misturado.ath": [
+  "E0453"
+ ],
+ "revisao1/f06_atomic.ath": [
+  "E0453"
+ ],
+ "revisao1/f07_atomic_ok.ath": [
+  "E0453"
+ ],
+ "revisao1/f08_echo_ferramenta.ath": [],
+ "revisao1/f09_infer_lavagem.ath": [
+  "E0008"
+ ],
+ "revisao1/f10_controle_if.ath": [],
+ "revisao1/f11_controle_cond_chamada.ath": [],
+ "revisao1/f12_fora.ath": [
+  "E0412"
+ ],
+ "revisao1/f13_ponto_duas_listas_agregadas.ath": [
+  "E0453"
+ ],
+ "revisao1/f13b_match_duas_listas_agregadas.ath": [
+  "E0453"
+ ],
+ "revisao1/f14_g_xs_ys.ath": [
+  "E0453"
+ ],
+ "revisao1/f15_match_join_dois_ramos.ath": [
+  "E0453"
+ ],
+ "revisao1/f16_lista_de_listas.ath": [],
+ "revisao1/f17_lista_de_listas_duas.ath": [
+  "E0453"
+ ],
+ "revisao1/f18_quant_ramo_misturado.ath": [
+  "E0453"
+ ],
+ "revisao1/f19_if_em_if.ath": [
+  "E0453"
+ ],
+ "revisao1/f20_bloco_retorno.ath": [
+  "E0453"
+ ],
+ "revisao1/f21_sombreamento.ath": [
+  "E0453"
+ ],
+ "revisao1/f22_metodo.ath": [
+  "E0003"
+ ],
+ "revisao1/f23_refine_no_laco_combinado.ath": [
+  "E0023"
+ ],
+ "revisao1/f24_g_match_xs_ys.ath": [
+  "E0453"
+ ],
+ "revisao1/f25_g_lacos_xs_ys.ath": [
+  "E0453"
+ ],
+ "revisao1/f26_match_dois_variantes.ath": [
+  "E0453"
+ ],
+ "revisao1/f27_atomic_on_failure.ath": [
+  "E0453"
+ ],
+ "revisao1/f28_if_sem_else.ath": [
+  "E0453"
+ ],
+ "revisao1/f29_if_aninhado_ramos_iguais.ath": [
+  "E0453"
+ ],
+ "revisao1/f30_mesma_lista_ponto_e_match.ath": [],
+ "revisao1/p01_dois_ifs_mesma_cond.ath": [
+  "E0453"
+ ],
+ "revisao1/p02_elemento_e_len.ath": [
+  "E0453"
+ ],
+ "revisao1/p03_elemento_e_len_lista_de_1.ath": [
+  "E0453"
+ ],
+ "revisao1/p04_elemento_e_nota_do_plano.ath": [
+  "E0453"
+ ],
+ "revisao1/p05_for_literal_um.ath": [
+  "E0453"
+ ],
+ "revisao1/p06_refine_e_elemento_mesmo.ath": [
+  "E0453"
+ ],
+ "revisao1/p07_if_mesmo_ou_literal.ath": [],
+ "revisao1/p08_if_dois_campos_e_campo.ath": [],
+ "revisao1/p09_if_elemento_ou_raiz_depois_elemento.ath": [
+  "E0453"
+ ],
+ "revisao1/p10_count_aggregate_only_one.ath": [],
+ "revisao1/p11_atomic_mesmo.ath": [],
+ "revisao1/p12_dois_matches_ponto.ath": [],
+ "revisao2/a1_atomic_tres_ramos.ath": [],
+ "revisao2/a2_atomic_corpo_misturado.ath": [
+  "E0453"
+ ],
+ "revisao2/a3_atomic_cf_outro.ath": [
+  "E0453"
+ ],
+ "revisao2/a4_atomic_registro.ath": [
+  "E0453"
+ ],
+ "revisao2/a5_atomic_pay_dentro.ath": [
+  "E0453"
+ ],
+ "revisao2/cat1_lista_concat.ath": [
+  "E0008"
+ ],
+ "revisao2/cat2_concat_plano.ath": [
+  "E0008"
+ ],
+ "revisao2/col_memo_lista_noutra.ath": [
+  "E0453"
+ ],
+ "revisao2/col_memo_lista_noutra_raiz.ath": [],
+ "revisao2/ctl_m1.ath": [
+  "E0453"
+ ],
+ "revisao2/ctl_u7.ath": [],
+ "revisao2/d1_ponto_aninhado_duas_listas.ath": [
+  "E0453"
+ ],
+ "revisao2/d1c_match_aninhado_duas_listas.ath": [
+  "E0453"
+ ],
+ "revisao2/d1d_ponto_aninhado_lista_e_tag.ath": [
+  "E0453"
+ ],
+ "revisao2/d1e_ponto_aninhado_elem_e_lista.ath": [
+  "E0453"
+ ],
+ "revisao2/d1f_mesmo_grupo_ponto.ath": [],
+ "revisao2/d1g_ponto_e_match_mesma_lista.ath": [],
+ "revisao2/d2_ponto_depois_match.ath": [
+  "E0453"
+ ],
+ "revisao2/d3_ponto_len_duas.ath": [
+  "E0453"
+ ],
+ "revisao2/f1_quant_if.ath": [
+  "E0453"
+ ],
+ "revisao2/f1b_quant_if_match.ath": [
+  "E0453"
+ ],
+ "revisao2/f1c_quant_bool_lista.ath": [
+  "E0453"
+ ],
+ "revisao2/f1d_quant_match_elem_dentro.ath": [],
+ "revisao2/f1e_quant_sobre_fora.ath": [
+  "E0412",
+  "E0453"
+ ],
+ "revisao2/f2_quant_refine.ath": [],
+ "revisao2/fp_if_agg_elem.ath": [
+  "E0453"
+ ],
+ "revisao2/fp_reconstrucao_agregado.ath": [
+  "E0453"
+ ],
+ "revisao2/fp_sublista_match.ath": [
+  "E0453"
+ ],
+ "revisao2/fp_sublista_ponto.ath": [
+  "E0453"
+ ],
+ "revisao2/l10_any_lit.ath": [],
+ "revisao2/l11_lit_quant_stale.ath": [
+  "E0453"
+ ],
+ "revisao2/l1_lista_de_listas.ath": [
+  "E0453"
+ ],
+ "revisao2/l2_lista_de_listas_agg.ath": [
+  "E0453"
+ ],
+ "revisao2/l3_if_lit_ou_plano.ath": [
+  "E0453"
+ ],
+ "revisao2/l4_ctor_lit.ath": [
+  "E0453"
+ ],
+ "revisao2/l5_lit_projecao.ath": [
+  "E0453"
+ ],
+ "revisao2/l6_quant_lit.ath": [
+  "E0453"
+ ],
+ "revisao2/l7_lit_ctor_mix_proj.ath": [
+  "E0453"
+ ],
+ "revisao2/l8_lit_aninhada.ath": [
+  "E0453"
+ ],
+ "revisao2/l9_lit_aninhada_mix.ath": [
+  "E0453"
+ ],
+ "revisao2/lit12_if_lit_mix_vs_plano.ath": [
+  "E0453"
+ ],
+ "revisao2/lit13_ctor_lit_campo_lista.ath": [
+  "E0453"
+ ],
+ "revisao2/lit14_ponto_lista_literal_campo.ath": [
+  "E0453"
+ ],
+ "revisao2/lit15_sum_lit_dentro_for.ath": [],
+ "revisao2/r1_reconcile_mix.ath": [],
+ "revisao2/r2_reconcile_refine.ath": [
+  "E0453"
+ ]
+}

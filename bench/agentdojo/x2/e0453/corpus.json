@@ -1,17 +1,17 @@
 {
- "programas": 339,
+ "programas": 357,
  "grupos": [
   {
    "grupo": "bench/agentdojo",
    "antes": "aceito",
    "depois": "aceito",
-   "n": 29
+   "n": 33
   },
   {
    "grupo": "bench/agentdojo",
    "antes": "aceito",
    "depois": "recusado",
-   "n": 17
+   "n": 31
   },
   {
    "grupo": "bench/agentdojo",
@@ -169,6 +169,33 @@
    "obrigacoes_antes": []
   },
   {
+   "programa": "bench/agentdojo/x2/e0453/sondas/c1_dois_ifs_mesma_condicao.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/sondas/c2_elemento_e_contagem.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/sondas/c3_lista_literal_de_um.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
    "programa": "bench/agentdojo/x2/e0453/sondas/m11_lista_literal.ath",
    "antes": true,
    "depois": false,
@@ -223,7 +250,106 @@
    "obrigacoes_antes": []
   },
   {
+   "programa": "bench/agentdojo/x2/e0453/sondas/m17_if_ramo_ja_misturado.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/sondas/m18_if_ramo_escalar_misturado.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/sondas/m19_if_sem_outro_ramo_igual.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
    "programa": "bench/agentdojo/x2/e0453/sondas/m1_dois_lacos.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/sondas/m20_if_em_if.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/sondas/m21_for_lista_literal_reconstruida.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/sondas/m22_for_lista_literal_escalar.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/sondas/m23_refine_else_misturado.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/sondas/m24_atomic.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/sondas/m25_atomic_on_failure.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/sondas/m26_ponto_duas_listas_agregadas.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/sondas/m27_reconstrucao_com_lista.ath",
    "antes": true,
    "depois": false,
    "codigos": [

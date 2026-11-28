@@ -8,10 +8,11 @@ ficam como estavam. O que é de depois da E0453 fica nesta pasta.
 ## 1. A garantia, classificada
 
 **O que vale (estático, `athc check`, estrato E3):** uma chamada de ferramenta aceita não combina dados
-de duas ou mais operações aprovadas distintas. "Operação aprovada" é um valor endossado por um
-`refine`: o valor inteiro, ou um elemento de uma lista dele escolhido por um laço. Os dados contam
-mesmo se passarem por variáveis, reconstrução de construtor, transformação, seleção de campo (por
-padrão ou por ponto), junção de `if`/`match`/`else`, lista literal ou quantificador.
+de duas ou mais origens aprovadas distintas. Uma origem é um valor endossado por um `refine` (o
+valor inteiro), um elemento de uma lista dele escolhido por um laço, ou a lista inteira (`[∀]`). Os
+dados contam mesmo se passarem por variáveis, reconstrução de construtor, transformação, seleção de
+campo (por padrão ou por ponto), junção de `if`/`match`/`else`/`atomic`, `reconcile`, lista literal
+ou quantificador.
 
 **O que não vale, e o diagnóstico diz:**
 
@@ -23,18 +24,23 @@ padrão ou por ponto), junção de `if`/`match`/`else`, lista literal ou quantif
   sozinhos) é aceita. Ela depende de todos os elementos, isto é, de várias operações; a E0453 não a
   cobre. Ver a seção 6;
 - **dependência de controle:** a regra é sobre dados. Um `if` cuja condição vem de outro elemento não
-  é mistura para a E0453;
+  é mistura para a E0453, nem quando decide a ocorrência da chamada (`if b.n > 3 { pay(a.to, a.memo) }`,
+  sonda l2), nem quando escolhe o valor do argumento (`pay(a.to, if b.memo == "z" { "z" } else { a.memo })`,
+  l1: o `"z"` sai copiado de `b` por fluxo implícito);
+- **valor que passa por uma ferramenta:** o retorno de ferramenta não carrega a origem aprovada.
+  `let r = echo(bank, b.memo)` e depois `pay(bank, a.to, r)` é aceito, inclusive com o parâmetro
+  `memo: Text ^ Endorsed`, porque o retorno sem rótulo não é Untrusted;
 - **quantidade:** duas chamadas com a mesma operação, ou uma operação aprovada que não é executada,
   não são assunto da E0453 (seção 7).
 
 Texto do diagnóstico (o caminho autorizado citado existe hoje na linguagem):
 
 ```
-error[E0453]: a chamada de `pay` combina dados de 2 operações aprovadas distintas
+error[E0453]: a chamada de `pay` combina dados de 2 origens aprovadas distintas
    |     for a in ops { match a { Pay { to } => for b in ops { …
    |         - origem: um elemento de `Plan.ops`
    |                                               - origem: um elemento de `Plan.ops`
-   = cada operação foi aprovada sozinha pela política; a combinação delas não foi
+   = a política aprovou cada origem; nenhuma aprovou esta combinação numa chamada
    = a E0453 não prova que os argumentos sejam os aprovados: os campos de uma só operação podem
      ser transformados, e a agregação sobre uma lista inteira, sozinha, não é coberta
    = ajuda: use os campos de uma só operação; se a combinação é legítima, declare-a como uma
@@ -63,10 +69,18 @@ gerados). Todas eram aceitas pelo compilador anterior (2950dc5).
 | m14 | `if c { a.to } else { b.to }` com `a.memo` | recusa |
 | m15 | `refine … else { o }` com outro elemento | recusa |
 | m16 | `else` aninhado: elemento + a lista inteira | recusa |
+| m17–m20 | ramo de junção que já misturava (`if c { Pay { to: a.to, memo: b.memo } } else { a }`, escalar, sem ramo igual, `if` em `if`) | recusa |
+| m21–m22 | `for` sobre lista literal cujo item já misturava | recusa |
+| m23 | `refine … else { Pay { to: a.to, memo: b.memo } }` | recusa |
+| m24–m25 | valor de `atomic` (corpo e `on failure`) | recusa |
+| m26 | `p.ops` e `p.extra` por ponto, agregados | recusa |
+| m27 | reconstrução do plano com a lista, dois laços | recusa |
 | m10 | só agregados: `pay(fit(join(ops.to)), join(ops.memo))` | **aceita** (fora da garantia) |
-| u1–u11 | mesmo elemento; literal e dado confiável; transformada; alias e `match` duplo; `if` com o mesmo elemento; lista literal de elementos inteiros; ponto; `else` aninhado agregado; `refine … else { o }`; `if` entre campo e campo transformado; `if` entre dois campos do mesmo elemento | aceitas |
+| u1–u13 | mesmo elemento; literal e dado confiável; transformada; alias e `match` duplo; `if` com o mesmo elemento; lista literal de elementos inteiros; ponto; `else` aninhado agregado; `refine … else { o }`; `if` entre campo e campo transformado; `if` entre dois campos do mesmo elemento; `atomic` com o mesmo elemento; reconstrução do plano com a lista e um laço | aceitas |
+| l1–l2 | dependência de controle (seção 1) | aceitas, fora da garantia |
+| c1–c3 | legítimas recusadas: duas junções com a mesma condição (`if c { a.to } else { b.to }` e `if c { a.memo } else { b.memo }`), elemento com `len(ops)`, `for x in [a]` | recusa conservadora |
 
-Os controles aceitos (u1–u11 e m10) rodam no ARX e no Python com as mesmas chamadas, conferidas uma
+Os controles aceitos (u1–u13, l1–l2 e m10) rodam no ARX e no Python com as mesmas chamadas, conferidas uma
 a uma (`os_controles_aceitos_executam_igual_nos_dois_runtimes`).
 
 **O plano inteiro como origem única.** No protótipo de 27/11, o valor endossado inteiro era uma
@@ -88,6 +102,29 @@ Correção: a operação passou a ser identificada pelo último ponto de escolha
 escolheu o valor em execução), e a junção só registra um ponto de escolha quando os ramos têm
 operações diferentes. Os três viraram controles (u8, u9, u10, u11), com as tentativas de fuga
 correspondentes (m14–m16).
+
+**Revisão independente (28/11).** Sobre o commit 4185d7f, a revisão achou fugas de verdade, que
+compilavam e, no ARX, executavam a recombinação (`pay A,b`):
+
+- a junção unificava um ramo que já misturava: o ponto de escolha era registrado em todas as fontes
+  quando os ramos diferiam, e um ramo com {a, b} virava uma operação só (m17–m20, m23);
+- o `for` sobre lista literal unificava um item que já misturava (m21, m22);
+- `atomic` e `reconcile` devolviam valor sem origem (m24, m25);
+- `p.ops` por ponto não era lista para a análise, e a agregação de duas listas passava como uma
+  operação (m26).
+
+Correções (patch do revisor, validado aqui, mais uma minha): a junção só registra o ponto de escolha
+quando cada ramo tem no máximo uma operação; o laço sobre lista literal não unifica um item que
+misturava; `atomic` é junção do corpo e dos tratadores, e `reconcile` devolve o bloco; `p.f` sobre
+registro liga a lista pelo campo; a reconstrução preserva a lista (antes, `G { xs: ops }` seguido de
+`for o in xs` recusava o mesmo elemento, u13). Todas as sondas da revisão que eram fuga passaram a
+E0453; as aceitas legítimas continuaram aceitas. Uma segunda revisão, sobre as correções, está
+registrada na seção 8.
+
+**Recusas conservadoras, declaradas.** c1–c3 acima, e mais dois casos de desenho: um elemento com um
+campo da raiz do plano (m7: o "assunto comum a todos os pagamentos" vira mistura) e um elemento com a
+contagem de uma lista de no máximo um elemento (`len(one)` com `List[Op, 0..1]`). O caminho, nos
+dois, é pôr o dado na própria operação, proposta pelo modelo e decidida pela política.
 
 ## 3. Exemplo executável: antes permitia, agora recusa
 
@@ -127,9 +164,12 @@ tem uma operação só. A versão correta roda igual antes e depois, nos três e
   elemento" antes. Nenhum exemplo, nenhuma autoria e nenhum programa de benchmark mudou;
 - **triagem RC8–RC10:** o resumo `join(notes.issue, ", #")` continua aceito, como agregação pura;
 - **testes:** `cargo test --all` (335), clippy, fmt, as suítes Python, os smokes RC1–RC10;
-- **tripés gerados:** o gerador do núcleo não conhece a regra e, em 7 de 4000 sementes (núcleo 3,
-  sagas 3, chaves 1), produz uma chamada com valores de dois `refine` (`t2(c, x1 <= x3)`). Esses saem
-  do tripé com registro; qualquer outra recusa continua falha. Nas sementes padrão, só `core/99`.
+- a regressão do corpus e as testemunhas foram refeitas depois das correções da revisão: as mesmas
+  30 mudanças fora das sondas, os mesmos resultados de execução;
+- **tripés gerados:** o gerador do núcleo não conhece a regra e, em 13 de 3000 sementes (núcleo 3,
+  sagas 6, chaves 4), produz uma chamada com valores de dois `refine` (`t2(c, x1 <= x3)`;
+  `if … { x1 } else { x2 - x1 }`). Esses saem do tripé com registro; qualquer outra recusa continua
+  falha. Nas sementes padrão, só `core/99`.
 
 **Desvios declarados.** Os testes B1 e F2 (`ciclo1_obrigacoes`) rodavam as reproduções nos dois
 runtimes; elas não compilam mais, e o teste agora confere a E0453 e a análise de obrigações sobre a
