@@ -770,10 +770,12 @@ fn lean_blake3_matches_the_reference_crate() {
 
 /// Desde 28/11 a E0453 recusa, na superfície, a chamada cujo argumento endossado combina valores
 /// de dois `refine` distintos (`t(c, x1 <= x3)`). O gerador do núcleo não conhece essa regra e,
-/// em cerca de 3 sementes em 1000, produz um programa assim: ele sai do tripé (o núcleo continua
+/// em até 6 sementes em 1000, produz um programa assim: ele sai do tripé (o núcleo continua
 /// bem tipado, mas a tradução não é mais um programa Aletheia aceito). Qualquer outra recusa
-/// continua sendo uma falha. Por gerador, sementes 0..1000: núcleo 3 (99, 599, 713), sagas 3
-/// (427, 553, 647), chaves 1 (800); nas sementes padrão dos testes, só `core/99`.
+/// continua sendo uma falha. Por gerador, sementes 0..1000: núcleo 3 (99, 599, 713), sagas 6
+/// (427, 511, 553, 603, 647, 651), chaves 4 (342, 423, 800, 884); nas sementes padrão dos
+/// testes, só `core/99`. As examinadas (`core/99`, `saga/511`, `keyed/342`) combinam dois `refine`
+/// num valor (`x1 <= x3`; `if … { x1 } else { x2 - x1 }`).
 fn fora_da_superficie(seed: u64, src: &str) -> bool {
     match compile(src) {
         Ok(_) => false,

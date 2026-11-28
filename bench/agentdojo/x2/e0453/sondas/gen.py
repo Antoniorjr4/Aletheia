@@ -41,6 +41,18 @@ C = {
  "m15_else_elemento_e_outro": "for o in ops { for o2 in ops { let q = refine (infer planner -> Op { request = req }) by Q else { o }\n match q { Pay { to } => match o2 { Pay { memo } => pay(bank, to, memo) } } } }",
  # a lista inteira escolhida em `else` aninhado com um elemento dela
  "m16_else_aninhado_elemento_e_lista": "let r = refine (infer planner -> Plan { request = req }) by P else { refine (infer planner -> Plan { request = req }) by P else { return \"none\" } }\n match r { Plan { ops } => for a in ops { match a { Pay { to } => pay(bank, to, join(ops.memo, \",\")) } } }",
+ # achados da revisão independente de 28/11 (fugas da 1ª versão)
+ "m17_if_ramo_ja_misturado": "for a in ops { for b in ops { let x = if c { Pay { to: a.to, memo: b.memo, n: 0 } } else { a }\n match x { Pay { to, memo } => pay(bank, to, memo) } } }",
+ "m18_if_ramo_escalar_misturado": "for a in ops { for b in ops { pay(bank, if c { a.to ++ b.to } else { a.to }, \"m\") } }",
+ "m19_if_sem_outro_ramo_igual": "for a in ops { for b in ops { let x = if c { a.to ++ b.memo } else { b.to }\n pay(bank, x, \"m\") } }",
+ "m20_if_em_if": "for a in ops { for b in ops { let x = if c { if c { a.to ++ b.memo } else { b.to } } else { a.to }\n pay(bank, x, \"m\") } }",
+ "m21_for_lista_literal_reconstruida": "for a in ops { for b in ops { for x in [Pay { to: a.to, memo: b.memo, n: 0 }] { match x { Pay { to, memo } => pay(bank, to, memo) } } } }",
+ "m22_for_lista_literal_escalar": "for a in ops { for b in ops { for t in [a.to ++ b.memo] { pay(bank, t, \"m\") } } }",
+ "m23_refine_else_misturado": "for a in ops { for b in ops { let q = refine (infer planner -> Op { request = req }) by Q else { Pay { to: a.to, memo: b.memo, n: 0 } }\n match q { Pay { to, memo } => pay(bank, to, memo) } } }",
+ "m24_atomic": "for a in ops { for b in ops { let r = atomic recover c { b.memo }\n pay(bank, a.to, r) } }",
+ "m25_atomic_on_failure": "for a in ops { for b in ops { let r = atomic recover c { a.memo } on failure(e) { b.memo }\n pay(bank, a.to, r) } }",
+ "m26_ponto_duas_listas_agregadas": "pay(bank, fit(join(p.ops.to, \"\"), 16), join(p.extra.memo, \"\"))",
+ "m27_reconstrucao_com_lista": "let g = Plan { ops: ops, extra: extra, note: note }\n match g { Plan { ops } => for o1 in ops { for o2 in ops { match o1 { Pay { to } => match o2 { Pay { memo } => pay(bank, to, memo) } } } } }",
  # devem ser UMA (ou transformada)
  "u1_mesmo_elemento": "for a in ops { match a { Pay { to, memo } => pay(bank, to, memo) } }",
  "u2_literal_e_confiavel": "for a in ops { match a { Pay { to } => pay(bank, to, \"pedido \" ++ req) } }",
@@ -57,7 +69,17 @@ C = {
  "u10_if_transformado_mesmo": "for a in ops { match a { Pay { to, memo } => pay(bank, if c { to } else { to ++ \"\" }, memo) } }",
  # o `if` escolhe entre dois campos do mesmo elemento
  "u11_if_dois_campos_mesmo": "for a in ops { match a { Pay { memo } => pay(bank, if c { a.to } else { a.memo }, memo) } }",
+ "u12_atomic_mesmo": "for a in ops { let r = atomic recover c { a.memo }\n pay(bank, a.to, r) }",
+ "u13_reconstrucao_com_lista": "let g = Plan { ops: ops, extra: extra, note: note }\n match g { Plan { ops } => for o in ops { match o { Pay { to, memo } => pay(bank, to, memo) } } }",
  "u8_else_aninhado_agregado": "let r = refine (infer planner -> Plan { request = req }) by P else { refine (infer planner -> Plan { request = req }) by P else { return \"none\" } }\n match r { Plan { ops } => pay(bank, \"r\", join(ops.memo, \",\") ++ text(len(ops))) }",
+
+ # limites declarados: aceitos, fora da garantia (dependência de controle)
+ "l1_valor_por_controle": "for a in ops { for b in ops { pay(bank, a.to, if b.memo == \"z\" { \"z\" } else { a.memo }) } }",
+ "l2_condicao_da_chamada": "for a in ops { for b in ops { if b.n > 3 { pay(bank, a.to, a.memo) } } }",
+ # recusas conservadoras de programas legítimos (declaradas)
+ "c1_dois_ifs_mesma_condicao": "for a in ops { for b in ops { let t = if c { a.to } else { b.to }\n let m = if c { a.memo } else { b.memo }\n pay(bank, t, m) } }",
+ "c2_elemento_e_contagem": "for a in ops { pay(bank, a.to, a.memo ++ text(len(ops))) }",
+ "c3_lista_literal_de_um": "for a in ops { for x in [a] { pay(bank, x.to, a.memo) } }",
 }
 for k, b in C.items():
     open(f"{k}.ath", "w").write(T.format(body=b))

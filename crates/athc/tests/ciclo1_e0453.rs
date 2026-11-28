@@ -29,7 +29,7 @@ fn codigos(nome: &str) -> Vec<String> {
     compile(&src(nome)).err().unwrap_or_default().into_iter().map(|d| d.code).collect()
 }
 
-const MISTURAS: [&str; 15] = [
+const MISTURAS: [&str; 26] = [
     "m1_dois_lacos",
     "m2_variaveis",
     "m3_reconstrucao",
@@ -45,9 +45,28 @@ const MISTURAS: [&str; 15] = [
     "m14_if_campo_de_dois",
     "m15_else_elemento_e_outro",
     "m16_else_aninhado_elemento_e_lista",
+    // fugas da 1ª versão achadas pela revisão independente de 28/11: aceitas em 4185d7f
+    "m17_if_ramo_ja_misturado",
+    "m18_if_ramo_escalar_misturado",
+    "m19_if_sem_outro_ramo_igual",
+    "m20_if_em_if",
+    "m21_for_lista_literal_reconstruida",
+    "m22_for_lista_literal_escalar",
+    "m23_refine_else_misturado",
+    "m24_atomic",
+    "m25_atomic_on_failure",
+    "m26_ponto_duas_listas_agregadas",
+    "m27_reconstrucao_com_lista",
 ];
 
-const UMA: [&str; 11] = [
+/// Fora da garantia, declarados: dependência de controle. Aceitos.
+const LIMITES: [&str; 2] = ["l1_valor_por_controle", "l2_condicao_da_chamada"];
+
+/// Recusas conservadoras de programas legítimos, declaradas: duas junções com a mesma condição
+/// tratadas como independentes; um elemento com a contagem da lista; `for x in [a]`.
+const CONSERVADORAS: [&str; 3] = ["c1_dois_ifs_mesma_condicao", "c2_elemento_e_contagem", "c3_lista_literal_de_um"];
+
+const UMA: [&str; 13] = [
     "u1_mesmo_elemento",
     "u2_literal_e_confiavel",
     "u3_transformada",
@@ -59,6 +78,8 @@ const UMA: [&str; 11] = [
     "u9_else_elemento",
     "u10_if_transformado_mesmo",
     "u11_if_dois_campos_mesmo",
+    "u12_atomic_mesmo",
+    "u13_reconstrucao_com_lista",
 ];
 
 #[test]
@@ -78,7 +99,7 @@ fn as_sondas_geradas_estao_versionadas() {
 
 #[test]
 fn cada_mistura_e_recusada_com_a_e0453_e_so_com_ela() {
-    for m in MISTURAS {
+    for m in MISTURAS.iter().chain(&CONSERVADORAS) {
         assert_eq!(codigos(m), vec!["E0453"], "{m}");
     }
 }
@@ -87,7 +108,7 @@ fn cada_mistura_e_recusada_com_a_e0453_e_so_com_ela() {
 fn o_diagnostico_aponta_as_origens_e_o_caminho_autorizado() {
     let d = compile(&src("m1_dois_lacos")).err().unwrap();
     let d = &d[0];
-    assert!(d.msg.contains("combina dados de 2 operações aprovadas distintas"), "{}", d.msg);
+    assert!(d.msg.contains("combina dados de 2 origens aprovadas distintas"), "{}", d.msg);
     // as duas origens: os dois laços que escolheram os elementos
     let origens: Vec<_> = d.secondary.iter().filter(|(_, l)| l.contains("origem")).collect();
     assert_eq!(origens.len(), 2, "{:?}", d.secondary);
@@ -100,7 +121,7 @@ fn o_diagnostico_aponta_as_origens_e_o_caminho_autorizado() {
 
 #[test]
 fn uma_operacao_literais_e_dados_confiaveis_e_a_agregacao_pura_sao_aceitos() {
-    for u in UMA.iter().chain(&["m10_so_agregados"]) {
+    for u in UMA.iter().chain(&LIMITES).chain(&["m10_so_agregados"]) {
         assert!(codigos(u).is_empty(), "{u}: {:?}", codigos(u));
     }
 }
@@ -109,7 +130,7 @@ fn uma_operacao_literais_e_dados_confiaveis_e_a_agregacao_pura_sao_aceitos() {
 fn executa(nome: &str) -> [(Vec<J>, Option<String>); 2] {
     let c = compile(&src(nome)).unwrap();
     let plano = json!({ "kind": "Plan", "note": "nota",
-        "ops": [{ "kind": "Pay", "to": "A", "memo": "a", "n": 1 }, { "kind": "Pay", "to": "B", "memo": "b", "n": 2 }],
+        "ops": [{ "kind": "Pay", "to": "A", "memo": "a", "n": 1 }, { "kind": "Pay", "to": "B", "memo": "b", "n": 5 }],
         "extra": [{ "kind": "Ex", "memo": "x" }] });
     let world = json!({ "sinks": ["pay"] });
     // `u9` pede uma operação avulsa por iteração depois do plano
@@ -172,7 +193,7 @@ fn executa(nome: &str) -> [(Vec<J>, Option<String>); 2] {
 
 #[test]
 fn os_controles_aceitos_executam_igual_nos_dois_runtimes() {
-    let esperado: [(&str, J); 12] = [
+    let esperado: [(&str, J); 16] = [
         ("u1_mesmo_elemento", json!([["A", "a"], ["B", "b"]])),
         ("u2_literal_e_confiavel", json!([["A", "pedido pague"], ["B", "pedido pague"]])),
         // transformada: os campos são de uma só operação, mas não são os aprovados
@@ -189,6 +210,11 @@ fn os_controles_aceitos_executam_igual_nos_dois_runtimes() {
         ("u9_else_elemento", json!([["X", "x"], ["Y", "y"]])),
         ("u10_if_transformado_mesmo", json!([["A", "a"], ["B", "b"]])),
         ("u11_if_dois_campos_mesmo", json!([["A", "a"], ["B", "b"]])),
+        ("u12_atomic_mesmo", json!([["A", "a"], ["B", "b"]])),
+        ("u13_reconstrucao_com_lista", json!([["A", "a"], ["B", "b"]])),
+        // fora da garantia: o `if` sobre `b` decide o memo e a ocorrência da chamada
+        ("l1_valor_por_controle", json!([["A", "a"], ["A", "a"], ["B", "b"], ["B", "b"]])),
+        ("l2_condicao_da_chamada", json!([["A", "a"], ["B", "b"]])),
         // agregação pura: aceita, e a chamada depende das duas operações (fora da garantia)
         ("m10_so_agregados", json!([["AB", "ab"]])),
     ];

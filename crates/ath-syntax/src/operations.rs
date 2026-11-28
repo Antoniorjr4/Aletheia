@@ -1,27 +1,32 @@
-//! **Protótipo de diagnóstico, sem efeito na aceitação** (27/11/2026): a integridade da operação
-//! endossada.
+//! **Origem das operações endossadas: o motor da E0453** (protótipo em 27/11/2026; verificação
+//! desde 28/11, em `ath-check`).
 //!
-//! Pergunta: numa chamada de ferramenta, os argumentos que vêm de um valor endossado por `refine`
-//! vêm todos da **mesma operação aprovada**? Uma operação é um elemento de lista endossada, ou o
-//! valor endossado inteiro quando não há lista. Ela é identificada como na análise de obrigações:
-//! o `refine`, o caminho até o elemento e o último ponto de escolha (`for`, ou `if`/`match` cujos
-//! ramos têm origens diferentes).
+//! Pergunta: numa chamada de ferramenta, os argumentos que vêm de valores endossados por `refine`
+//! dependem de uma só operação aprovada? Uma operação é um elemento de lista endossada, escolhido
+//! por um laço, ou o valor endossado inteiro. Ela é identificada pelo último ponto de escolha (o
+//! laço ou a junção de `if`/`match`/`else`/`atomic` que escolheu o valor em execução); sem ponto
+//! de escolha, pelo `refine`. A dependência de uma lista inteira (`join`, `len`, quantificador) é
+//! a origem `[∀]`, distinta de cada elemento.
 //!
 //! Diferenças para a análise de obrigações:
 //!
 //! * vale para **toda** chamada de ferramenta, com ou sem `requires`;
-//! * um valor calculado (`a ++ b`, `fit(x, n)`, aritmética) **não** perde a origem: herda a união
-//!   das origens de quem o formou e é marcado como transformado. Assim, `fit(a.subject, 9) ++
-//!   b.amount` ainda conta como mistura de duas operações.
+//! * um valor calculado (`a ++ b`, `fit(x, n)`, aritmética, reconstrução) **não** perde a origem:
+//!   herda a união das origens de quem o formou e é marcado como transformado. Assim,
+//!   `fit(a.subject, 9) ++ b.amount` ainda conta como mistura de duas operações.
 //!
 //! Achados por sítio:
 //!
-//! * `mistura`: os argumentos vêm de duas ou mais operações aprovadas distintas. É o caso X2;
-//! * `transformada`: os argumentos vêm de uma só operação, mas algum passou por um cálculo. Isso
-//!   não é mistura, mas também não é a operação aprovada intacta.
+//! * `mistura` (E0453): duas ou mais origens aprovadas distintas. É o caso X2;
+//! * `agregação`: só a origem `[∀]` de uma lista com mais de um elemento possível. Aceita e fora da
+//!   garantia;
+//! * `transformada`: uma só operação, mas algum argumento passou por um cálculo. Aceita; não há
+//!   prova de que o argumento seja o aprovado.
 //!
-//! Nada aqui muda o que o compilador aceita: é a medida para decidir se a regra proposta (mistura
-//! exige autorização explícita) bloquearia programas legítimos.
+//! Fora do alcance: dependência de controle (a condição de um `if` vinda de outra operação) e o
+//! valor que passa por uma ferramenta, que perde a origem aprovada: `let r = echo(b.memo)` e depois
+//! `pay(a.to, r)` é aceito, inclusive com `memo: Text ^ Endorsed`, porque o retorno de ferramenta
+//! sem rótulo não é Untrusted.
 
 use crate::ast::*;
 use crate::span::Span;
@@ -43,6 +48,10 @@ struct Src {
     /// o valor foi calculado a partir de uma lista inteira (`join`, `len`, quantificador…):
     /// depende de todos os seus elementos, até `n`
     all: Option<u32>,
+    /// uma entrada por lista literal que contém a fonte, da mais interna para a mais externa no
+    /// fim: `true` se o item dela já combinava duas ou mais operações (não pode ser unificado
+    /// pelo laço que escolhe o item)
+    lit: Vec<bool>,
 }
 
 impl Src {
@@ -84,7 +93,11 @@ impl Src {
         };
         if self.coll.or(self.all).is_some() {
             // todos os elementos da lista: uma origem marcada `[∀]`, que conta como várias
-            let mut p = self.path[from..].iter().take_while(|x| !x.starts_with("?.")).cloned().collect::<Vec<_>>();
+            let mut p = self.path[from..]
+                .iter()
+                .take_while(|x| !x.starts_with("?."))
+                .map(|x| x.split_once('.').map(|(_, f)| f.to_string()).unwrap_or_else(|| x.clone()))
+                .collect::<Vec<_>>();
             p.push("[∀]".into());
             return (refine, p, id);
         }
@@ -131,6 +144,8 @@ struct An<'m> {
     tools: BTreeSet<&'m str>,
     /// (variante, campo) → limite superior, quando o campo é uma lista
     lists: HashMap<(String, String), u32>,
+    /// campo → maior limite superior entre as variantes em que ele é lista (para `x.campo`)
+    list_fields: HashMap<String, u32>,
     out: Vec<Site>,
 }
 
@@ -148,8 +163,13 @@ impl An<'_> {
             .map(|x| {
                 let mut y = x.clone();
                 y.path.push(s.to_string());
+                // escolher um item de uma lista literal cujo item já misturava não unifica as
+                // operações do item: elas seguem distintas
+                let mixed = if s == "[*]" { y.lit.pop().unwrap_or(false) } else { false };
                 if let Some(id) = elem {
-                    y.ids.push((id, y.path.len()));
+                    if !mixed {
+                        y.ids.push((id, y.path.len()));
+                    }
                 }
                 if s == "[*]" {
                     y.coll = None; // um elemento escolhido
@@ -157,6 +177,13 @@ impl An<'_> {
                     if v != "?" {
                         // campo de variante: lista ou não, pelo tipo declarado
                         y.coll = self.lists.get(&(v.to_string(), f.to_string())).copied();
+                    } else if y.coll.is_none() {
+                        // `p.ops` num registro: seleciona a lista `ops`, não projeta os elementos;
+                        // entra no caminho como o campo de variante (`Plan.ops`)
+                        if let Some(n) = self.list_fields.get(f) {
+                            y.coll = Some(*n);
+                            *y.path.last_mut().unwrap() = format!("*.{f}");
+                        }
                     }
                     // `?.campo` mantém `coll`: `notas.issue` é a lista dos campos de todos os elementos
                 }
@@ -193,8 +220,10 @@ fn join(branches: Vec<Vec<Src>>, at: Span) -> Vec<Src> {
     // campo nem a transformação: `if c { a.to } else { a.memo ++ "" }` é o mesmo elemento `a`
     let ops = |b: &Vec<Src>| b.iter().map(Src::op).collect::<BTreeSet<Op>>();
     let same = sets.windows(2).all(|w| ops(&w[0]) == ops(&w[1]));
+    // um ramo que já combina operações não pode ser unificado pelo ponto de escolha
+    let single = sets.iter().all(|b| ops(b).len() <= 1);
     let mut srcs = dedup(sets.into_iter().flatten().collect());
-    if !same {
+    if !same && single {
         for s in &mut srcs {
             let n = s.path.len();
             s.ids.push(((at.lo, at.hi), n));
@@ -237,6 +266,7 @@ impl<'m> An<'m> {
                     transformed: false,
                     coll: None,
                     all: None,
+                    lit: Vec::new(),
                 }];
                 let r = vec![me, self.block(els, env)];
                 join(r, e.span)
@@ -275,20 +305,30 @@ impl<'m> An<'m> {
                 let parts: Vec<Vec<Src>> = items.iter().map(|x| self.expr(x, env)).collect();
                 parts
                     .into_iter()
-                    .flatten()
-                    .map(|s| Src {
-                        path: {
-                            let mut p = s.path.clone();
-                            p.push("[lit]".into());
-                            p
-                        },
-                        ..s
+                    .flat_map(|item| {
+                        let mixed = item.iter().map(Src::op).collect::<BTreeSet<Op>>().len() > 1;
+                        item.into_iter().map(move |s| {
+                            let mut s = s;
+                            s.path.push("[lit]".into());
+                            s.lit.push(mixed);
+                            s
+                        })
                     })
                     .collect()
             }
             ExprKind::Ctor { fields, .. } => {
-                // reconstruir um valor a partir de campos: a origem dos campos continua, transformada
-                calc(fields.iter().map(|(_, x)| self.expr(x, env)).collect())
+                // reconstruir um valor a partir de campos: a origem dos campos continua, transformada.
+                // Não é cálculo sobre a lista: um campo que é a lista continua sendo a lista
+                // (`G { xs: ops }` e depois `for o in xs` escolhe um elemento), e a agregação de um
+                // campo continua agregação
+                let mut out: Vec<Src> = Vec::new();
+                for x in fields.iter().flat_map(|(_, x)| self.expr(x, env)) {
+                    let q = Src { transformed: true, ..x };
+                    if !out.contains(&q) {
+                        out.push(q);
+                    }
+                }
+                out
             }
             ExprKind::Commit(x) => self.expr(x, env),
             ExprKind::Return(x) => {
@@ -330,18 +370,16 @@ impl<'m> An<'m> {
             }
             ExprKind::Atomic { recover, body, on_failure, on_cf } => {
                 self.expr(recover, env);
-                self.block(body, env);
+                // o valor do `atomic` é o do corpo ou o de um tratador: uma junção
+                let mut r = vec![self.block(body, env)];
                 for (x, b) in on_failure.iter().chain(on_cf.iter()) {
                     env.push((x.name.clone(), Vec::new()));
-                    self.block(b, env);
+                    r.push(self.block(b, env));
                     env.pop();
                 }
-                Vec::new()
+                join(r, e.span)
             }
-            ExprKind::Reconcile { els, .. } => {
-                self.block(els, env);
-                Vec::new()
-            }
+            ExprKind::Reconcile { els, .. } => self.block(els, env),
             ExprKind::Quant { iter, body, var, .. } => {
                 // `sum w in xs => …` depende de todos os elementos de `xs`: o que o corpo tira de
                 // `w` vira a agregação sobre a lista; o resto do corpo entra como está
@@ -386,7 +424,7 @@ fn finding(args: &[Vec<Src>]) -> Finding {
 
 /// Os sítios de chamada de ferramenta do módulo, com o achado de cada um.
 pub fn analyze(m: &Module) -> Vec<Site> {
-    let mut an = An { tools: BTreeSet::new(), lists: HashMap::new(), out: Vec::new() };
+    let mut an = An { tools: BTreeSet::new(), lists: HashMap::new(), list_fields: HashMap::new(), out: Vec::new() };
     for it in &m.items {
         match it {
             Item::Tool(t) => {
@@ -397,6 +435,8 @@ pub fn analyze(m: &Module) -> Vec<Site> {
                     for f in &v.fields {
                         if let Some(hi) = list_hi(&f.ty) {
                             an.lists.insert((v.name.name.clone(), f.name.name.clone()), hi);
+                            let e = an.list_fields.entry(f.name.name.clone()).or_insert(hi);
+                            *e = (*e).max(hi);
                         }
                     }
                 }

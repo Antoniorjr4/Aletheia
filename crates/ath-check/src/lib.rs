@@ -101,7 +101,7 @@ fn operations_check(m: &Module, diags: &mut Vec<Diag>) {
         let mut d = Diag::new(
             Stratum::E3,
             "E0453",
-            format!("a chamada de `{}` combina dados de {} operações aprovadas distintas", site.tool, ops.len()),
+            format!("a chamada de `{}` combina dados de {} origens aprovadas distintas", site.tool, ops.len()),
             site.call,
             "argumentos de origens aprovadas diferentes",
         );
@@ -112,7 +112,7 @@ fn operations_check(m: &Module, diags: &mut Vec<Diag>) {
             }
         }
         d = d
-            .note("cada operação foi aprovada sozinha pela política; a combinação delas não foi")
+            .note("a política aprovou cada origem; nenhuma aprovou esta combinação numa chamada")
             .note(
                 "a E0453 não prova que os argumentos sejam os aprovados: os campos de uma só operação \
                  podem ser transformados, e a agregação sobre uma lista inteira, sozinha, não é coberta",
