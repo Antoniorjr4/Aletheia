@@ -24,6 +24,13 @@ Para cada chamada registra duas propriedades separadas:
   (o que acusa mistura, duplicata e omissão)?
 
     python3 bench/agentdojo/x2/testemunha.py --out bench/agentdojo/x2/resultado.json
+
+**Desde 28/11 (E0453):** o compilador recusa a mutação X2. Quando `athc emit` recusa uma versão, os
+executores A-ARX e A-Py dela não rodam (nenhuma chamada chega ao banco) e o resultado registra o
+diagnóstico; o P1 continua rodando, porque não passa pelo compilador. Antes e depois:
+
+    ATHC=/tmp/athc-antes-e0453 python3 bench/agentdojo/x2/testemunha.py --out …/e0453/testemunha_antes.json
+    python3 bench/agentdojo/x2/testemunha.py --out …/e0453/testemunha_depois.json
 """
 from __future__ import annotations
 
@@ -233,7 +240,7 @@ def main() -> int:
     results = []
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
-        versions = {}
+        versions, refused = {}, {}
         for name, edits_ath, edits_py in (("correta", [], []), ("X2", x2["ath"], x2["py"])):
             w = tmp / name
             (w / "hardened").parent.mkdir(parents=True, exist_ok=True)
@@ -243,14 +250,22 @@ def main() -> int:
             run_m4.apply(edits_py, w)
             r = subprocess.run([ATHC, "emit", str(w / PROG), "--target", "py", "--out", str(w / "agent.py")],
                                capture_output=True, text=True)
-            assert r.returncode == 0, r.stdout + r.stderr
+            if r.returncode != 0:
+                # a versão não compila: registra os códigos (E…) e não executa A-ARX nem A-Py
+                import re
+                refused[name] = sorted(set(re.findall(r"error\[(E\d{4})\]", r.stdout + r.stderr)))
+                assert refused[name], r.stdout + r.stderr
             versions[name] = w
         for case in CASOS:
             for name, w in versions.items():
                 for impl, fn in (("A-ARX", lambda: run_arx(w / PROG, case)),
                                  ("A-Py", lambda: run_apy(w / "agent.py", case)),
                                  ("P1", lambda: run_p1(w / "hardened", case))):
-                    r = fn()
+                    if name in refused and impl != "P1":
+                        r = {"reached": [], "error": "recusado na compilação: " + ",".join(refused[name]),
+                             "inventories": inventories(case["request"], Bank().env)}
+                    else:
+                        r = fn()
                     inv = r.get("inventories") or inventories(case["request"], Bank().env)
                     j = judge(case, r["reached"], inv)
                     results.append({"caso": case["id"], "versao": name, "executor": impl, "erro": r["error"], **j,

@@ -1,0 +1,491 @@
+{
+ "programas": 312,
+ "grupos": [
+  {
+   "grupo": "bench/agentdojo",
+   "antes": "aceito",
+   "depois": "aceito",
+   "n": 17
+  },
+  {
+   "grupo": "bench/agentdojo",
+   "antes": "aceito",
+   "depois": "recusado",
+   "n": 2
+  },
+  {
+   "grupo": "bench/agentdojo",
+   "antes": "recusado",
+   "depois": "recusado",
+   "n": 5
+  },
+  {
+   "grupo": "bench/m1",
+   "antes": "aceito",
+   "depois": "aceito",
+   "n": 1
+  },
+  {
+   "grupo": "bench/m1",
+   "antes": "recusado",
+   "depois": "recusado",
+   "n": 1
+  },
+  {
+   "grupo": "bench/obrigacoes",
+   "antes": "aceito",
+   "depois": "aceito",
+   "n": 70
+  },
+  {
+   "grupo": "bench/obrigacoes",
+   "antes": "aceito",
+   "depois": "recusado",
+   "n": 28
+  },
+  {
+   "grupo": "bench/obrigacoes",
+   "antes": "recusado",
+   "depois": "recusado",
+   "n": 6
+  },
+  {
+   "grupo": "bench/replay",
+   "antes": "aceito",
+   "depois": "aceito",
+   "n": 1
+  },
+  {
+   "grupo": "docs/p2",
+   "antes": "aceito",
+   "depois": "aceito",
+   "n": 1
+  },
+  {
+   "grupo": "examples/errors",
+   "antes": "recusado",
+   "depois": "recusado",
+   "n": 24
+  },
+  {
+   "grupo": "examples/rc1",
+   "antes": "aceito",
+   "depois": "aceito",
+   "n": 1
+  },
+  {
+   "grupo": "examples/rc10",
+   "antes": "aceito",
+   "depois": "aceito",
+   "n": 1
+  },
+  {
+   "grupo": "examples/rc10",
+   "antes": "recusado",
+   "depois": "recusado",
+   "n": 1
+  },
+  {
+   "grupo": "examples/rc2",
+   "antes": "aceito",
+   "depois": "aceito",
+   "n": 1
+  },
+  {
+   "grupo": "examples/rc3",
+   "antes": "aceito",
+   "depois": "aceito",
+   "n": 1
+  },
+  {
+   "grupo": "examples/rc4",
+   "antes": "aceito",
+   "depois": "aceito",
+   "n": 1
+  },
+  {
+   "grupo": "examples/rc5",
+   "antes": "aceito",
+   "depois": "aceito",
+   "n": 1
+  },
+  {
+   "grupo": "examples/rc6",
+   "antes": "aceito",
+   "depois": "aceito",
+   "n": 2
+  },
+  {
+   "grupo": "examples/rc7",
+   "antes": "aceito",
+   "depois": "aceito",
+   "n": 1
+  },
+  {
+   "grupo": "examples/rc8",
+   "antes": "aceito",
+   "depois": "aceito",
+   "n": 1
+  },
+  {
+   "grupo": "examples/rc9",
+   "antes": "aceito",
+   "depois": "aceito",
+   "n": 2
+  },
+  {
+   "grupo": "examples/remediate.ath",
+   "antes": "aceito",
+   "depois": "aceito",
+   "n": 1
+  },
+  {
+   "grupo": "examples/rollout.ath",
+   "antes": "aceito",
+   "depois": "aceito",
+   "n": 1
+  },
+  {
+   "grupo": "m10/m11 autorias",
+   "antes": "aceito",
+   "depois": "aceito",
+   "n": 38
+  },
+  {
+   "grupo": "m10/m11 autorias",
+   "antes": "recusado",
+   "depois": "recusado",
+   "n": 103
+  }
+ ],
+ "mudaram": [
+  {
+   "programa": "bench/agentdojo/x2/composicao/c3_composicao_do_programa.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/relacional/misturado.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": [
+    "L19 send_money               dinâmica      `amount` vem de outro elemento do valor endossado"
+   ]
+  },
+  {
+   "programa": "bench/obrigacoes/casos/b1_cruzado.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": [
+    "L14 pay                      dinâmica      `memo` vem de outro elemento do valor endossado"
+   ]
+  },
+  {
+   "programa": "bench/obrigacoes/casos/f2_dois_refines.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": [
+    "L14 pay                      dinâmica      `memo` vem de outro elemento do valor endossado"
+   ]
+  },
+  {
+   "programa": "bench/obrigacoes/revisao/c/a1_dois_refines_if.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": [
+    "L19 pay                      dinâmica      `memo` vem de outro elemento do valor endossado"
+   ]
+  },
+  {
+   "programa": "bench/obrigacoes/revisao/c/a2_dois_refines_registro.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": [
+    "L14 pay                      dinâmica      `memo` vem de outro elemento do valor endossado"
+   ]
+  },
+  {
+   "programa": "bench/obrigacoes/revisao/d/x_alias_let_laco.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": [
+    "L17 pay                      dinâmica      `memo` vem de outro elemento do valor endossado"
+   ]
+  },
+  {
+   "programa": "bench/obrigacoes/revisao/d/x_aninhado_cruzado.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": [
+    "L15 pay                      dinâmica      `memo` vem de outro elemento do valor endossado"
+   ]
+  },
+  {
+   "programa": "bench/obrigacoes/revisao/d/x_aninhado_mesma_linha.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": [
+    "L15 pay                      dinâmica      `memo` vem de outro elemento do valor endossado"
+   ]
+  },
+  {
+   "programa": "bench/obrigacoes/revisao/d/x_bloco_sombra.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": [
+    "L18 pay                      dinâmica      `memo` vem de outro elemento do valor endossado"
+   ]
+  },
+  {
+   "programa": "bench/obrigacoes/revisao/d/x_ctor_cruzado.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": [
+    "L16 pay                      dinâmica      `memo` vem de outro elemento do valor endossado"
+   ]
+  },
+  {
+   "programa": "bench/obrigacoes/revisao/d/x_if_campos.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": [
+    "L17 pay                      dinâmica      `memo` vem de outro elemento do valor endossado"
+   ]
+  },
+  {
+   "programa": "bench/obrigacoes/revisao/d/x_lista_cruzada.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": [
+    "L15 pay                      dinâmica      `memo` vem de outro elemento do valor endossado"
+   ]
+  },
+  {
+   "programa": "bench/obrigacoes/revisao/d/x_lista_de_listas.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": [
+    "L15 pay                      dinâmica      `memo` vem de outro elemento do valor endossado"
+   ]
+  },
+  {
+   "programa": "bench/obrigacoes/revisao2/m/m4_v_e_a.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": [
+    "L16 pay                      dinâmica      `memo` vem de outro elemento do valor endossado"
+   ]
+  },
+  {
+   "programa": "bench/obrigacoes/revisao2/m/m8_dois_if_iguais.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": [
+    "L17 pay                      dinâmica      `memo` vem de outro elemento do valor endossado"
+   ]
+  },
+  {
+   "programa": "bench/obrigacoes/revisao2/z10_lista_join_iter.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": [
+    "L20 pay                      dinâmica      `memo` vem de outro elemento do valor endossado"
+   ]
+  },
+  {
+   "programa": "bench/obrigacoes/revisao2/z11_if_dentro_laco_campos.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": [
+    "L21 pay                      dinâmica      `memo` vem de outro elemento do valor endossado"
+   ]
+  },
+  {
+   "programa": "bench/obrigacoes/revisao2/z12_rows_join.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": [
+    "L20 pay                      dinâmica      `memo` vem de outro elemento do valor endossado"
+   ]
+  },
+  {
+   "programa": "bench/obrigacoes/revisao2/z13_lista_join_mesmo_laco.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": [
+    "L20 pay                      dinâmica      `memo` vem de outro elemento do valor endossado"
+   ]
+  },
+  {
+   "programa": "bench/obrigacoes/revisao2/z14_grade_cruzada_join.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": [
+    "L20 pay                      dinâmica      `memo` vem de outro elemento do valor endossado"
+   ]
+  },
+  {
+   "programa": "bench/obrigacoes/revisao2/z15_join_mesmo_if_dois_lados.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": [
+    "L20 pay                      dinâmica      `memo` vem de outro elemento do valor endossado"
+   ]
+  },
+  {
+   "programa": "bench/obrigacoes/revisao2/z16_sombra_var_laco.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": [
+    "L21 pay                      dinâmica      `memo` vem de outro elemento do valor endossado"
+   ]
+  },
+  {
+   "programa": "bench/obrigacoes/revisao2/z1_k_interno.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": [
+    "L20 pay                      dinâmica      `memo` vem de outro elemento do valor endossado"
+   ]
+  },
+  {
+   "programa": "bench/obrigacoes/revisao2/z3_dois_if_mesmo_c.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": [
+    "L21 pay                      dinâmica      `memo` vem de outro elemento do valor endossado"
+   ]
+  },
+  {
+   "programa": "bench/obrigacoes/revisao2/z4_if_de_if.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": [
+    "L21 pay                      dinâmica      `memo` vem de outro elemento do valor endossado"
+   ]
+  },
+  {
+   "programa": "bench/obrigacoes/revisao2/z5_lista_de_listas.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": [
+    "L20 pay                      dinâmica      `memo` vem de outro elemento do valor endossado"
+   ]
+  },
+  {
+   "programa": "bench/obrigacoes/revisao2/z6_lista_lit_listas.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": [
+    "L19 pay                      dinâmica      `memo` vem de outro elemento do valor endossado"
+   ]
+  },
+  {
+   "programa": "bench/obrigacoes/revisao2/z7_pair_join.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": [
+    "L20 pay                      dinâmica      `to` vem de outro elemento do valor endossado"
+   ]
+  },
+  {
+   "programa": "bench/obrigacoes/revisao2/z9_sombra_join.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": [
+    "L22 pay                      dinâmica      `memo` vem de outro elemento do valor endossado"
+   ]
+  }
+ ]
+}

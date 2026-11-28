@@ -25,7 +25,7 @@
 
 use crate::ast::*;
 use crate::span::Span;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
 /// Uma operação aprovada: (`refine`, caminho até o elemento, último ponto de escolha).
 pub type Op = ((u32, u32), Vec<String>, Option<(u32, u32)>);
@@ -34,21 +34,73 @@ pub type Op = ((u32, u32), Vec<String>, Option<(u32, u32)>);
 struct Src {
     refine: (u32, u32),
     path: Vec<String>,
-    ids: Vec<(u32, u32)>,
+    /// pontos de escolha (laço, junção de `if`/`match`/`else`), cada um com o comprimento do
+    /// caminho quando foi registrado: o que vem depois dele vale para todos os ramos
+    ids: Vec<((u32, u32), usize)>,
     transformed: bool,
+    /// o valor É uma lista endossada (ou a projeção de um campo dela), com até `n` elementos
+    coll: Option<u32>,
+    /// o valor foi calculado a partir de uma lista inteira (`join`, `len`, quantificador…):
+    /// depende de todos os seus elementos, até `n`
+    all: Option<u32>,
 }
 
 impl Src {
-    fn op(&self) -> Op {
-        // o elemento: o caminho até o último `[*]` (ou o valor inteiro, sem lista)
-        let cut = self.path.iter().rposition(|p| p == "[*]").map(|i| i + 1).unwrap_or(0);
-        // com um ponto de escolha, ele identifica o valor sozinho: `refine A else { refine B }`
-        // seguido de `for w in …` produz um elemento por iteração, venha de A ou de B
-        match self.ids.last() {
-            Some(id) => ((0, 0), self.path[..cut].to_vec(), Some(*id)),
-            None => (self.refine, self.path[..cut].to_vec(), None),
-        }
+    /// Depende de todos os elementos de uma lista com possivelmente mais de um elemento?
+    fn aggregate(&self) -> bool {
+        self.coll.or(self.all).is_some_and(|n| n >= 2)
     }
+
+    fn origem(&self) -> Origem {
+        let op = self.op();
+        let at = match self.ids.last() {
+            Some(((lo, hi), _)) => Span { lo: *lo, hi: *hi },
+            None => Span { lo: self.refine.0, hi: self.refine.1 },
+        };
+        let shown = |p: &[String]| p.iter().filter(|x| !x.starts_with('[')).cloned().collect::<Vec<_>>().join("/");
+        let what = if self.coll.or(self.all).is_some() {
+            let p: Vec<String> = self.path.iter().take_while(|x| !x.starts_with("?.")).cloned().collect();
+            format!("todos os elementos de `{}`", shown(&p))
+        } else {
+            match self.ids.last() {
+                Some((_, n)) if *n > 0 && self.path.get(n - 1).is_some_and(|x| x == "[*]") => {
+                    format!("um elemento de `{}`", shown(&self.path[..*n]))
+                }
+                Some(_) => "o valor escolhido neste ponto".to_string(),
+                None => "o valor endossado inteiro".to_string(),
+            }
+        };
+        Origem { op, at, what }
+    }
+
+    fn op(&self) -> Op {
+        // o último ponto de escolha identifica um só valor em execução (o elemento desta iteração,
+        // o ramo tomado): tudo o que tem o mesmo último ponto vem desse valor, qualquer que seja o
+        // caminho até ele (`refine A else { refine B }`, `refine … else { o }`). Os passos depois
+        // dele são os mesmos em todos os ramos; só a agregação sobre uma lista os distingue.
+        let (refine, from, id) = match self.ids.last() {
+            Some((id, n)) => ((0, 0), (*n).min(self.path.len()), Some(*id)),
+            None => (self.refine, 0, None),
+        };
+        if self.coll.or(self.all).is_some() {
+            // todos os elementos da lista: uma origem marcada `[∀]`, que conta como várias
+            let mut p = self.path[from..].iter().take_while(|x| !x.starts_with("?.")).cloned().collect::<Vec<_>>();
+            p.push("[∀]".into());
+            return (refine, p, id);
+        }
+        // o elemento escolhido no último ponto, ou o valor endossado inteiro (sem ponto de escolha,
+        // não há `[*]`: todo `[*]` vem de um laço, que registra o seu ponto)
+        (refine, Vec::new(), id)
+    }
+}
+
+/// Uma origem num achado: a operação, onde ela foi escolhida e a descrição para o diagnóstico.
+#[derive(Clone, Debug)]
+pub struct Origem {
+    pub op: Op,
+    /// o ponto de escolha (laço, `if`, `match`, `else`) ou, sem ele, o `refine`
+    pub at: Span,
+    pub what: String,
 }
 
 #[derive(Clone, Debug)]
@@ -57,7 +109,12 @@ pub enum Finding {
     Uma,
     /// sem argumento vindo de valor endossado
     SemOrigem,
-    Mistura(Vec<Op>),
+    /// argumentos de duas ou mais operações aprovadas; entre elas pode haver `[∀]`, a agregação
+    /// sobre todos os elementos de uma lista endossada
+    Mistura(Vec<Origem>),
+    /// só uma agregação sobre todos os elementos de uma lista endossada com mais de um elemento
+    /// possível (`join(notas.issue, …)`): depende de várias operações aprovadas
+    Agregacao(Vec<Origem>),
     Transformada,
 }
 
@@ -72,26 +129,49 @@ type Env = Vec<(String, Vec<Src>)>;
 
 struct An<'m> {
     tools: BTreeSet<&'m str>,
+    /// (variante, campo) → limite superior, quando o campo é uma lista
+    lists: HashMap<(String, String), u32>,
     out: Vec<Site>,
 }
 
-fn step(srcs: &[Src], s: &str, elem: Option<(u32, u32)>) -> Vec<Src> {
-    srcs.iter()
-        .map(|x| {
-            let mut y = x.clone();
-            y.path.push(s.to_string());
-            if let Some(id) = elem {
-                y.ids.push(id);
-            }
-            y
-        })
-        .collect()
+fn list_hi(t: &TypeExpr) -> Option<u32> {
+    match t {
+        TypeExpr::List { hi, .. } => Some(*hi),
+        TypeExpr::Labeled(t, ..) | TypeExpr::ConfLabeled(t, ..) => list_hi(t),
+        _ => None,
+    }
+}
+
+impl An<'_> {
+    fn step(&self, srcs: &[Src], s: &str, elem: Option<(u32, u32)>) -> Vec<Src> {
+        srcs.iter()
+            .map(|x| {
+                let mut y = x.clone();
+                y.path.push(s.to_string());
+                if let Some(id) = elem {
+                    y.ids.push((id, y.path.len()));
+                }
+                if s == "[*]" {
+                    y.coll = None; // um elemento escolhido
+                } else if let Some((v, f)) = s.split_once('.') {
+                    if v != "?" {
+                        // campo de variante: lista ou não, pelo tipo declarado
+                        y.coll = self.lists.get(&(v.to_string(), f.to_string())).copied();
+                    }
+                    // `?.campo` mantém `coll`: `notas.issue` é a lista dos campos de todos os elementos
+                }
+                y
+            })
+            .collect()
+    }
 }
 
 fn calc(parts: Vec<Vec<Src>>) -> Vec<Src> {
     let mut out: Vec<Src> = Vec::new();
     for p in parts.into_iter().flatten() {
-        let q = Src { transformed: true, ..p };
+        // calcular sobre uma lista inteira faz o resultado depender de todos os elementos
+        let all = p.all.max(p.coll);
+        let q = Src { transformed: true, coll: None, all, ..p };
         if !out.contains(&q) {
             out.push(q);
         }
@@ -109,11 +189,15 @@ fn join(branches: Vec<Vec<Src>>, at: Span) -> Vec<Src> {
         })
     };
     let sets: Vec<Vec<Src>> = branches.into_iter().map(dedup).filter(|b| !b.is_empty()).collect();
-    let same = sets.windows(2).all(|w| w[0].len() == w[1].len() && w[0].iter().all(|s| w[1].contains(s)));
+    // os ramos escolhem entre operações diferentes? Compara as operações, não o caminho até o
+    // campo nem a transformação: `if c { a.to } else { a.memo ++ "" }` é o mesmo elemento `a`
+    let ops = |b: &Vec<Src>| b.iter().map(Src::op).collect::<BTreeSet<Op>>();
+    let same = sets.windows(2).all(|w| ops(&w[0]) == ops(&w[1]));
     let mut srcs = dedup(sets.into_iter().flatten().collect());
     if !same {
         for s in &mut srcs {
-            s.ids.push((at.lo, at.hi));
+            let n = s.path.len();
+            s.ids.push(((at.lo, at.hi), n));
         }
     }
     srcs
@@ -146,8 +230,14 @@ impl<'m> An<'m> {
             ExprKind::Var(x) => env.iter().rev().find(|(n, _)| n == x).map(|(_, s)| s.clone()).unwrap_or_default(),
             ExprKind::Refine { draft, els, .. } => {
                 self.expr(draft, env);
-                let me =
-                    vec![Src { refine: (e.span.lo, e.span.hi), path: Vec::new(), ids: Vec::new(), transformed: false }];
+                let me = vec![Src {
+                    refine: (e.span.lo, e.span.hi),
+                    path: Vec::new(),
+                    ids: Vec::new(),
+                    transformed: false,
+                    coll: None,
+                    all: None,
+                }];
                 let r = vec![me, self.block(els, env)];
                 join(r, e.span)
             }
@@ -166,7 +256,7 @@ impl<'m> An<'m> {
                 for a in arms {
                     let n = env.len();
                     for (b, f) in a.binds.iter().zip(&a.fields) {
-                        env.push((b.name.clone(), step(&s, &format!("{}.{}", a.variant.name, f.name), None)));
+                        env.push((b.name.clone(), self.step(&s, &format!("{}.{}", a.variant.name, f.name), None)));
                     }
                     r.push(self.expr(&a.body, env));
                     env.truncate(n);
@@ -175,7 +265,7 @@ impl<'m> An<'m> {
             }
             ExprKind::For { var, iter, body } => {
                 let s = self.expr(iter, env);
-                env.push((var.name.clone(), step(&s, "[*]", Some((var.span.lo, var.span.hi)))));
+                env.push((var.name.clone(), self.step(&s, "[*]", Some((var.span.lo, var.span.hi)))));
                 self.block(body, env);
                 env.pop();
                 Vec::new()
@@ -205,7 +295,10 @@ impl<'m> An<'m> {
                 self.expr(x, env);
                 Vec::new()
             }
-            ExprKind::Field(r, f) => step(&self.expr(r, env), &format!("?.{}", f.name), None),
+            ExprKind::Field(r, f) => {
+                let x = self.expr(r, env);
+                self.step(&x, &format!("?.{}", f.name), None)
+            }
             ExprKind::Call { callee, args } => {
                 let srcs: Vec<Vec<Src>> = args.iter().map(|a| self.expr(a, env)).collect();
                 if self.tools.contains(callee.name.as_str()) {
@@ -250,9 +343,13 @@ impl<'m> An<'m> {
                 Vec::new()
             }
             ExprKind::Quant { iter, body, var, .. } => {
+                // `sum w in xs => …` depende de todos os elementos de `xs`: o que o corpo tira de
+                // `w` vira a agregação sobre a lista; o resto do corpo entra como está
                 let s = self.expr(iter, env);
-                env.push((var.name.clone(), step(&s, "[*]", Some((var.span.lo, var.span.hi)))));
-                let b = self.expr(body, env);
+                let id = (var.span.lo, var.span.hi);
+                env.push((var.name.clone(), self.step(&s, "[*]", Some(id))));
+                let b: Vec<Src> =
+                    self.expr(body, env).into_iter().filter(|x| !x.ids.iter().any(|(i, _)| *i == id)).collect();
                 env.pop();
                 calc(vec![s, b])
             }
@@ -266,9 +363,20 @@ fn finding(args: &[Vec<Src>]) -> Finding {
     if all.is_empty() {
         return Finding::SemOrigem;
     }
-    let ops: BTreeSet<Op> = all.iter().map(|s| s.op()).collect();
+    // uma origem por operação (a primeira fonte dela descreve)
+    let mut ops: Vec<Origem> = Vec::new();
+    for s in &all {
+        let o = s.origem();
+        if !ops.iter().any(|x| x.op == o.op) {
+            ops.push(o);
+        }
+    }
+    ops.sort_by(|a, b| a.op.cmp(&b.op));
     if ops.len() > 1 {
-        return Finding::Mistura(ops.into_iter().collect());
+        return Finding::Mistura(ops);
+    }
+    if all.iter().any(|s| s.aggregate()) {
+        return Finding::Agregacao(ops);
     }
     if all.iter().any(|s| s.transformed) {
         return Finding::Transformada;
@@ -278,10 +386,22 @@ fn finding(args: &[Vec<Src>]) -> Finding {
 
 /// Os sítios de chamada de ferramenta do módulo, com o achado de cada um.
 pub fn analyze(m: &Module) -> Vec<Site> {
-    let mut an = An { tools: BTreeSet::new(), out: Vec::new() };
+    let mut an = An { tools: BTreeSet::new(), lists: HashMap::new(), out: Vec::new() };
     for it in &m.items {
-        if let Item::Tool(t) = it {
-            an.tools.insert(t.name.name.as_str());
+        match it {
+            Item::Tool(t) => {
+                an.tools.insert(t.name.name.as_str());
+            }
+            Item::Type(d) => {
+                for v in &d.variants {
+                    for f in &v.fields {
+                        if let Some(hi) = list_hi(&f.ty) {
+                            an.lists.insert((v.name.name.clone(), f.name.name.clone()), hi);
+                        }
+                    }
+                }
+            }
+            _ => {}
         }
     }
     for it in &m.items {

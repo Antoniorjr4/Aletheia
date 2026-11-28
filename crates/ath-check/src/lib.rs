@@ -59,6 +59,12 @@ pub fn check_module(m: &Module) -> CheckResult {
         }
     }
 
+    // E0453 (28/11/2026): uma chamada de ferramenta não combina dados de operações aprovadas
+    // distintas. A análise de origem (`ath_syntax::operations`) supõe um programa bem tipado.
+    if !diags.iter().any(|d| d.stratum == Stratum::E0) {
+        operations_check(m, &mut diags);
+    }
+
     let mut reports = Vec::new();
     if !diags.iter().any(|d| d.stratum <= Stratum::E5) {
         for item in &m.items {
@@ -79,4 +85,42 @@ pub fn check_module(m: &Module) -> CheckResult {
     }
 
     CheckResult { diags, reports, facts: cx.facts, definitions: m.items.len() }
+}
+
+/// E0453: a chamada combina dados de duas ou mais operações aprovadas (elementos escolhidos de
+/// listas endossadas, valores endossados inteiros, ou a agregação de uma lista com outra origem).
+///
+/// O que ela **não** afirma: que os argumentos sejam idênticos aos de uma operação aprovada. Uma
+/// operação só, com campos transformados (`fit(memo ++ "!", 12)`), continua aceita; e a agregação
+/// sobre uma lista inteira, sozinha, também (`join(notas.issue, …)`), porque ela não escolhe
+/// elementos: essas duas classes ficam fora da garantia e são declaradas como tal.
+fn operations_check(m: &Module, diags: &mut Vec<Diag>) {
+    use ath_syntax::operations::{analyze, Finding};
+    for site in analyze(m) {
+        let Finding::Mistura(ops) = &site.finding else { continue };
+        let mut d = Diag::new(
+            Stratum::E3,
+            "E0453",
+            format!("a chamada de `{}` combina dados de {} operações aprovadas distintas", site.tool, ops.len()),
+            site.call,
+            "argumentos de origens aprovadas diferentes",
+        );
+        let mut seen = std::collections::BTreeSet::new();
+        for o in ops {
+            if seen.insert((o.at.lo, o.at.hi, o.what.clone())) {
+                d = d.secondary(o.at, format!("origem: {}", o.what));
+            }
+        }
+        d = d
+            .note("cada operação foi aprovada sozinha pela política; a combinação delas não foi")
+            .note(
+                "a E0453 não prova que os argumentos sejam os aprovados: os campos de uma só operação \
+                 podem ser transformados, e a agregação sobre uma lista inteira, sozinha, não é coberta",
+            )
+            .help(
+                "use os campos de uma só operação; se a combinação é legítima, declare-a como uma \
+                 variante do plano, proposta pelo modelo e decidida pela política no `refine`",
+            );
+        diags.push(d);
+    }
 }

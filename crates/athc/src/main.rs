@@ -310,18 +310,13 @@ fn cmd_operacoes(opts: &Opts, st: Style) -> Result<bool, String> {
             Uma => "uma operação".to_string(),
             SemOrigem => "sem origem endossada".to_string(),
             Transformada => "uma operação, transformada".to_string(),
+            Agregacao(ops) => {
+                format!("AGREGAÇÃO sobre {}", ops.iter().map(|o| o.what.clone()).collect::<Vec<_>>().join(" | "))
+            }
             Mistura(ops) => format!(
                 "MISTURA de {} operações: {}",
                 ops.len(),
-                ops.iter()
-                    .map(|((lo, _), p, id)| format!(
-                        "{}{}{}",
-                        if *lo == 0 { String::new() } else { format!("refine L{} ", line(*lo)) },
-                        p.join("/"),
-                        id.map(|(l, _)| format!(" @L{}", line(l))).unwrap_or_default()
-                    ))
-                    .collect::<Vec<_>>()
-                    .join(" | ")
+                ops.iter().map(|o| format!("{} @L{}", o.what, line(o.at.lo))).collect::<Vec<_>>().join(" | ")
             ),
         };
         println!("  L{:<4} {:<28} {}", line(s.call.lo), s.tool, what);

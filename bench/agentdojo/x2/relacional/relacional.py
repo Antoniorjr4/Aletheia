@@ -10,6 +10,10 @@ fora do runtime, que grava os argumentos que recebe:
 * Python: o módulo emitido, com um host Python que grava `call(tool, args)`.
 
     python3 bench/agentdojo/x2/relacional/relacional.py --out bench/agentdojo/x2/relacional/resultado.json
+
+Desde 28/11, `misturado.ath` não compila (E0453): os casos dele registram a recusa e nada executa.
+O `resultado.json` desta pasta é o de 27/11, anterior à E0453; o de depois fica em
+`bench/agentdojo/x2/e0453/relacional_depois.json`.
 """
 from __future__ import annotations
 
@@ -45,8 +49,14 @@ CASOS = [
 
 
 def emit(prog: Path, out: Path):
+    """None se emitiu; senão, os códigos com que o compilador recusou."""
+    import re
     r = subprocess.run([ATHC, "emit", str(prog), "--target", "py", "--out", str(out)], capture_output=True, text=True)
-    assert r.returncode == 0, r.stdout + r.stderr
+    if r.returncode == 0:
+        return None
+    codes = sorted(set(re.findall(r"error\[(E\d{4})\]", r.stdout + r.stderr)))
+    assert codes, r.stdout + r.stderr
+    return codes
 
 
 def obligations(prog: Path) -> list:
@@ -143,7 +153,12 @@ def main() -> int:
         for name, allowed, plan, what in CASOS:
             prog = HERE / f"{name}.ath"
             py = Path(d) / f"{name}.py"
-            emit(prog, py)
+            recusa = emit(prog, py)
+            if recusa:
+                out.append({"programa": name, "allowed": allowed, "plano": plan, "mostra": what,
+                            "recusado_na_compilacao": recusa})
+                print(name, "|", what, "\n   recusado na compilação:", recusa)
+                continue
             aprovadas = [(w["recipient"], w["amount"]) for w in plan if w["recipient"] in PAYEES]
             row = {"programa": name, "allowed": allowed, "plano": plan, "mostra": what,
                    "compilador_afirma": obligations(prog), "arx": run_arx(prog, allowed, plan),

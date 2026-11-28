@@ -768,6 +768,23 @@ fn lean_blake3_matches_the_reference_crate() {
     }
 }
 
+/// Desde 28/11 a E0453 recusa, na superfície, a chamada cujo argumento endossado combina valores
+/// de dois `refine` distintos (`t(c, x1 <= x3)`). O gerador do núcleo não conhece essa regra e,
+/// em cerca de 3 sementes em 1000, produz um programa assim: ele sai do tripé (o núcleo continua
+/// bem tipado, mas a tradução não é mais um programa Aletheia aceito). Qualquer outra recusa
+/// continua sendo uma falha. Por gerador, sementes 0..1000: núcleo 3 (99, 599, 713), sagas 3
+/// (427, 553, 647), chaves 1 (800); nas sementes padrão dos testes, só `core/99`.
+fn fora_da_superficie(seed: u64, src: &str) -> bool {
+    match compile(src) {
+        Ok(_) => false,
+        Err(d) if !d.is_empty() && d.iter().all(|x| x.code == "E0453") => {
+            eprintln!("semente {seed}: fora do tripé (E0453, mistura de operações aprovadas)");
+            true
+        }
+        Err(_) => false, // o próprio tripé mostra a recusa
+    }
+}
+
 struct Tripod {
     /// a vista do núcleo do journal de cada backend
     lean: Option<String>,
@@ -942,6 +959,9 @@ fn core_tripod_lean_arx_python_agree_on_generated_programs() {
     let mut with_lean = 0;
     for seed in 0..n {
         let p = lambda_ath::generate(seed);
+        if fora_da_superficie(seed, &p.to_ath()) {
+            continue;
+        }
         p.check().unwrap_or_else(|e| panic!("semente {seed}: {e}"));
         let tag = format!("core/{seed}");
         let t = tripod(&tag, &p.to_ath(), &p.to_json(), &p.world(), &p.models(), vec![]);
@@ -987,6 +1007,9 @@ fn saga_tripod_lean_arx_python_agree_on_generated_programs() {
     let mut with_lean = 0;
     for seed in 0..n {
         let p = lambda_ath::generate_saga(seed);
+        if fora_da_superficie(seed, &p.to_ath()) {
+            continue;
+        }
         p.check().unwrap_or_else(|e| panic!("semente {seed}: {e}"));
         let tag = format!("saga/{seed}");
         let t = tripod(&tag, &p.to_ath(), &p.to_json(), &p.world(), &p.models(), vec![]);
@@ -1317,6 +1340,9 @@ fn keyed_tripod_lean_arx_python_agree_on_generated_programs() {
     let (mut with_lean, mut raw_equal, mut with_keys) = (0, 0, 0);
     for seed in 0..n {
         let p = lambda_ath::generate_keyed(seed);
+        if fora_da_superficie(seed, &p.to_ath()) {
+            continue;
+        }
         p.check().unwrap_or_else(|e| panic!("semente {seed}: {e}"));
         let tag = format!("keyed/{seed}");
         let t = tripod(&tag, &p.to_ath(), &p.to_json(), &p.world(), &p.models(), vec![]);
@@ -1479,6 +1505,9 @@ fn key_normalization_does_not_hide_loss_duplication_or_swap() {
     };
     for seed in 0..n {
         let p = lambda_ath::generate_keyed(seed);
+        if fora_da_superficie(seed, &p.to_ath()) {
+            continue;
+        }
         let tag = format!("mutante/{seed}");
         let t = tripod(&tag, &p.to_ath(), &p.to_json(), &p.world(), &p.models(), vec![]);
         let lean = t.lean.clone().unwrap();
@@ -2083,6 +2112,9 @@ fn paid_compensation_meter_agrees_and_never_exceeds_the_limit() {
     let mut seen = std::collections::BTreeMap::<&str, usize>::new();
     for seed in 0..n {
         let p = lambda_ath::generate_paid(seed);
+        if fora_da_superficie(seed, &p.to_ath()) {
+            continue;
+        }
         p.check().unwrap_or_else(|e| panic!("semente {seed}: {e}"));
         let lim = p.limit.unwrap();
         let tag = format!("paid/{seed}");
@@ -2304,6 +2336,9 @@ fn wal_crash_recovery_never_loses_an_obligation() {
     let mut seen = std::collections::BTreeMap::<String, usize>::new();
     for seed in 0..n {
         let p = lambda_ath::generate_keyed(seed);
+        if fora_da_superficie(seed, &p.to_ath()) {
+            continue;
+        }
         let src = p.to_ath();
         let c = compile(&src).unwrap_or_else(|d| panic!("{seed}: {:?}", d.iter().map(|x| &x.code).collect::<Vec<_>>()));
         let prov: std::collections::HashMap<String, String> = c
@@ -2402,6 +2437,9 @@ fn wal_recovery_is_the_same_in_arx_and_python() {
     let mut compared = 0;
     for seed in 0..n {
         let p = lambda_ath::generate_keyed(seed);
+        if fora_da_superficie(seed, &p.to_ath()) {
+            continue;
+        }
         let src = p.to_ath();
         let c = compile(&src).unwrap();
         let py = ath_emit::python(&c.module, &c.check, &c.codex, "wal.ath").expect("emissão");
@@ -2679,6 +2717,9 @@ fn digests_separate_semantics_from_evidence() {
     let mut moved = 0;
     for seed in 0..n {
         let p = if seed % 2 == 0 { lambda_ath::generate_saga(seed) } else { lambda_ath::generate_keyed(seed) };
+        if fora_da_superficie(seed, &p.to_ath()) {
+            continue;
+        }
         // a latência declarada com folga (5 s): as medições mudam sem que nenhuma passe do
         // contrato Δ — uma latência acima do declarado é semântica (`R0701`), não ruído
         let src = p.to_ath().replace("latency 0.0", "latency 5.0");
