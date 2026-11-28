@@ -23,6 +23,10 @@
 //! * `transformada`: uma só operação, mas algum argumento passou por um cálculo. Aceita; não há
 //!   prova de que o argumento seja o aprovado.
 //!
+//! **Garantia não estabelecida** (28/11): três revisões acharam, cada uma, uma classe nova de fuga;
+//! restam fugas conhecidas (`bench/agentdojo/x2/e0453/fugas_conhecidas.json`): construtor que
+//! embrulha um registro e lista literal de listas.
+//!
 //! Fora do alcance: dependência de controle (a condição de um `if` vinda de outra operação) e o
 //! valor que passa por uma ferramenta, que perde a origem aprovada: `let r = echo(b.memo)` e depois
 //! `pay(a.to, r)` é aceito, inclusive com `memo: Text ^ Endorsed`, porque o retorno de ferramenta
@@ -432,7 +436,13 @@ impl<'m> An<'m> {
                 env.pop();
                 calc(vec![s, b])
             }
-            _ => Vec::new(),
+            ExprKind::Await { cond, .. } => {
+                // a condição do `await` pode chamar ferramenta: cada chamada é um sítio
+                self.expr(cond, env);
+                Vec::new()
+            }
+            // sem origem endossada; listados um a um para que um nó novo obrigue uma decisão
+            ExprKind::Int(_) | ExprKind::Bool(_) | ExprKind::Str(_) | ExprKind::Transfer(_) => Vec::new(),
         }
     }
 }

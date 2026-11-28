@@ -1,0 +1,21 @@
+module t
+type Op = | Pay { to: Text[..16], memo: Text[..16], n: Int[0..9], subs: List[Sub, 0..3] }
+type Sub = | Sub { x: Text[..16] }
+type Ex = | Ex { memo: Text[..16] }
+type G = | G { xs: List[Op, 0..3], ys: List[Op, 0..3], tag: Text[..16] }
+type H = | H { a: G, b: G }
+type Plan = | Plan { ops: List[Op, 0..3], extra: List[Ex, 0..3], note: Text[..16], gs: List[G, 0..2], left: G, right: G, one: List[Op, 0..1] }
+
+model planner { price_in = 0.0  price_out = 0.0  ctx = 8192  max_out = 4000  reasoning = 0  ttft = 1.0  per_tok = 0.01 }
+tool pay(c: Cap[Bank.Pay], to: Text ^ Endorsed, memo: Text) -> Unit ! { Bank.Pay } reversible latency 1.0
+policy Q(o: Op) -> Bool = true
+policy P(p: Plan) -> Bool = true
+policy PG(g: G) -> Bool = true
+agent A(bank: Cap[Bank.Pay]) budget [tok <= 1000000, usd <= 100.0, wall <= 1000000.0] {
+  on go(req: Text[..200] ^ Trusted, c: Bool ^ Trusted) -> Text ! { Infer, Bank.Pay } {
+    let p = refine (infer planner -> Plan { request = req }) by P keeping ops by Q as fora else { return "none" }
+    match p { Plan { ops, extra, note, gs, left, right, one } => {
+      for ll in [[ops, left.xs]] { pay(bank, fit(join(ll.to, ","), 16), "m") }
+      "ok" } }
+  }
+}

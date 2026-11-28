@@ -324,6 +324,16 @@ passar pela reserva. Onze testes offline, inclusive o histórico real do M11 rea
 0,42). Fica separado dos artefatos congelados: `bench/m10/author.py` não foi tocado. Qualquer campanha
 futura precisa ligá-lo ao executor e ao avaliador, e isso depende de autorização de gasto.
 
+**28/11 — E0453: implementada e interrompida; garantia não estabelecida** ([bench/agentdojo/x2/e0453/RELATORIO.md](../bench/agentdojo/x2/e0453/RELATORIO.md)).
+Decisão arquitetural X2 de 28/11. A E0453 recusa a chamada que combina dados de operações aprovadas
+distintas quando detecta a combinação; a testemunha X2 que recombinava (4 chamadas para 2 aprovadas)
+não compila mais, e o corpus muda só em 30 programas construídos para misturar (nenhuma autoria do
+M10/M11). Três revisões independentes acharam, cada uma, uma classe nova de fuga; as duas primeiras e
+parte da terceira foram corrigidas, e restam 5 fugas conhecidas (construtor que embrulha registro;
+lista literal de listas). Pela própria decisão, a implementação parou e o impedimento foi
+apresentado: sustentar a garantia pede a origem no sistema de rótulos e a proveniência medida no
+runtime. Agregação pura fora, com decisão pendente. Sem gasto, sem merge.
+
 ## Parecer do checkpoint (01/12/2026), escrito em 26/11
 
 Resultados medidos, todos mantidos, os contrários inclusive:

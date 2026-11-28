@@ -1,23 +1,23 @@
 {
- "programas": 357,
+ "programas": 446,
  "grupos": [
   {
    "grupo": "bench/agentdojo",
    "antes": "aceito",
    "depois": "aceito",
-   "n": 33
+   "n": 53
   },
   {
    "grupo": "bench/agentdojo",
    "antes": "aceito",
    "depois": "recusado",
-   "n": 31
+   "n": 93
   },
   {
    "grupo": "bench/agentdojo",
    "antes": "recusado",
    "depois": "recusado",
-   "n": 5
+   "n": 12
   },
   {
    "grupo": "bench/m1",
@@ -161,6 +161,564 @@
  "mudaram": [
   {
    "programa": "bench/agentdojo/x2/composicao/c3_composicao_do_programa.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao1/f01_if_ramo_misturado.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao1/f02_if_ramo_misturado_escalar.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao1/f03_for_lista_literal_ctor.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao1/f04_for_lista_literal_escalar.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao1/f05_refine_else_misturado.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao1/f06_atomic.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao1/f07_atomic_ok.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao1/f13_ponto_duas_listas_agregadas.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao1/f13b_match_duas_listas_agregadas.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao1/f14_g_xs_ys.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao1/f15_match_join_dois_ramos.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao1/f17_lista_de_listas_duas.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao1/f18_quant_ramo_misturado.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao1/f19_if_em_if.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao1/f20_bloco_retorno.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao1/f21_sombreamento.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao1/f24_g_match_xs_ys.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao1/f25_g_lacos_xs_ys.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao1/f26_match_dois_variantes.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao1/f27_atomic_on_failure.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao1/f28_if_sem_else.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao1/f29_if_aninhado_ramos_iguais.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao1/p01_dois_ifs_mesma_cond.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao1/p02_elemento_e_len.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao1/p03_elemento_e_len_lista_de_1.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao1/p04_elemento_e_nota_do_plano.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao1/p05_for_literal_um.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao1/p06_refine_e_elemento_mesmo.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao1/p09_if_elemento_ou_raiz_depois_elemento.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao2/a2_atomic_corpo_misturado.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao2/a3_atomic_cf_outro.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao2/a4_atomic_registro.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao2/a5_atomic_pay_dentro.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao2/col_memo_lista_noutra.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao2/ctl_m1.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao2/d1_ponto_aninhado_duas_listas.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao2/d1c_match_aninhado_duas_listas.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao2/d1d_ponto_aninhado_lista_e_tag.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao2/d1e_ponto_aninhado_elem_e_lista.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao2/d2_ponto_depois_match.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao2/d3_ponto_len_duas.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao2/f1_quant_if.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao2/f1b_quant_if_match.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao2/f1c_quant_bool_lista.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao2/fp_if_agg_elem.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao2/fp_reconstrucao_agregado.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao2/fp_sublista_match.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao2/fp_sublista_ponto.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao2/l11_lit_quant_stale.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao2/l1_lista_de_listas.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao2/l2_lista_de_listas_agg.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao2/l3_if_lit_ou_plano.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao2/l4_ctor_lit.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao2/l5_lit_projecao.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao2/l6_quant_lit.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao2/l7_lit_ctor_mix_proj.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao2/l8_lit_aninhada.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao2/l9_lit_aninhada_mix.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao2/lit12_if_lit_mix_vs_plano.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao2/lit13_ctor_lit_campo_lista.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao2/lit14_ponto_lista_literal_campo.ath",
+   "antes": true,
+   "depois": false,
+   "codigos": [
+    "E0453"
+   ],
+   "obrigacoes_antes": []
+  },
+  {
+   "programa": "bench/agentdojo/x2/e0453/revisao2/r2_reconcile_refine.ath",
    "antes": true,
    "depois": false,
    "codigos": [

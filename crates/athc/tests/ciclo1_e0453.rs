@@ -248,3 +248,19 @@ fn as_sondas_das_revisoes_tem_o_veredito_registrado() {
         assert_eq!(got, codes, "{f}");
     }
 }
+
+/// Fugas conhecidas, achadas pela 3ª revisão e **não corrigidas**: a garantia da E0453 não está
+/// estabelecida (bench/agentdojo/x2/e0453/RELATORIO.md, seção 6). Estes programas combinam dados de
+/// origens aprovadas distintas e são aceitos. O teste registra o fato; se uma mudança passar a
+/// recusá-los, ele falha para que o registro seja atualizado.
+#[test]
+fn as_fugas_conhecidas_continuam_registradas_como_aceitas() {
+    let base = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../bench/agentdojo/x2/e0453");
+    let fugas: std::collections::BTreeMap<String, String> =
+        serde_json::from_str(&std::fs::read_to_string(base.join("fugas_conhecidas.json")).unwrap()).unwrap();
+    assert_eq!(fugas.len(), 5);
+    for f in fugas.keys() {
+        let src = std::fs::read_to_string(base.join(f)).unwrap();
+        assert!(compile(&src).is_ok(), "{f}: deixou de ser aceita; atualize fugas_conhecidas.json e o relatório");
+    }
+}

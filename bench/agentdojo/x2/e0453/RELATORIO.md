@@ -5,9 +5,19 @@ gasto com API (orçamento adicional US$ 0,00). Nenhum resultado histórico foi r
 `../resultado.json`, `../relacional/resultado.json`, `bench/obrigacoes/*.json` e as métricas de autoria
 ficam como estavam. O que é de depois da E0453 fica nesta pasta.
 
-## 1. A garantia, classificada
+## 0. Situação: implementação interrompida, garantia não estabelecida
 
-**O que vale (estático, `athc check`, estrato E3):** uma chamada de ferramenta aceita não combina dados
+A E0453 está no compilador e recusa as misturas que detecta, mas **a garantia abaixo não está
+estabelecida**. Três revisões independentes, uma sobre cada versão das correções, acharam cada uma
+uma classe nova de fuga (seção 8). Depois da terceira, restam cinco fugas conhecidas, aceitas pelo
+compilador ([fugas_conhecidas.json](fugas_conhecidas.json), conferidas em teste). Pela decisão de
+28/11 ("se a análise necessária para sustentar essa garantia exigir uma ampliação arquitetural
+extensa, interromper a implementação e apresentar o impedimento"), a implementação parou aqui. O
+impedimento e as opções estão na seção 9.
+
+## 1. A garantia pretendida, classificada
+
+**O que se pretende (estático, `athc check`, estrato E3), ainda não sustentado (seção 0):** uma chamada de ferramenta aceita não combina dados
 de duas ou mais origens aprovadas distintas. Uma origem é um valor endossado por um `refine` (o
 valor inteiro), um elemento de uma lista dele escolhido por um laço, ou a lista inteira (`[∀]`). Os
 dados contam mesmo se passarem por variáveis, reconstrução de construtor, transformação, seleção de
@@ -118,13 +128,34 @@ quando cada ramo tem no máximo uma operação; o laço sobre lista literal não
 misturava; `atomic` é junção do corpo e dos tratadores, e `reconcile` devolve o bloco; `p.f` sobre
 registro liga a lista pelo campo; a reconstrução preserva a lista (antes, `G { xs: ops }` seguido de
 `for o in xs` recusava o mesmo elemento, u13). Todas as sondas da revisão que eram fuga passaram a
-E0453; as aceitas legítimas continuaram aceitas. Uma segunda revisão, sobre as correções, está
-registrada na seção 8.
+E0453; as aceitas legítimas continuaram aceitas.
+
+**Segunda revisão (28/11), sobre as correções (ec02825).** Achou mais três fugas, que compilavam:
+
+- quantificador com junção no corpo: `sum i in [1, 2] => if i == 1 { a.n } else { b.n }` soma
+  `a.n + b.n`. O corpo é analisado uma vez, e o ponto de escolha dentro dele unificava `a` e `b`;
+- `refine` dentro de quantificador: um `refine` só no texto, uma aprovação por iteração, somadas;
+- duas listas aninhadas por ponto: `join(p.left.ops.to)` com `join(p.right.ops.memo)` viravam a
+  mesma origem.
+
+Correções (6786e30): um ponto de escolha dentro do corpo de um quantificador não unifica, porque cada
+iteração pode tomar um ramo; um `refine` no corpo conta como várias aprovações, agregadas (sozinho,
+fica na agregação pura, fora da garantia; com outra origem, é E0453); a lista agregada é identificada
+pelo passo que a selecionou, pelos nomes dos campos, e `p.left.ops` coincide com
+`Plan.left/Group.ops`. As sondas das duas revisões estão versionadas ([revisao1/](revisao1/),
+[revisao2/](revisao2/)), com o veredito de cada uma em [revisoes_esperado.json](revisoes_esperado.json),
+conferido em teste: 62 recusadas pela E0453, 20 aceitas (limites declarados, agregação pura,
+controles legítimos), as demais recusadas por outros códigos (programas inválidos por outras regras).
+Uma terceira revisão, sobre estas correções, fica na seção 8.
 
 **Recusas conservadoras, declaradas.** c1–c3 acima, e mais dois casos de desenho: um elemento com um
 campo da raiz do plano (m7: o "assunto comum a todos os pagamentos" vira mistura) e um elemento com a
-contagem de uma lista de no máximo um elemento (`len(one)` com `List[Op, 0..1]`). O caminho, nos
-dois, é pôr o dado na própria operação, proposta pelo modelo e decidida pela política.
+contagem de uma lista de no máximo um elemento (`len(one)` com `List[Op, 0..1]`). A 2ª revisão
+acrescentou duas: um campo que é lista em outro tipo, com o mesmo nome, faz o acesso por ponto
+`a.memo` contar como lista (a análise não tem o tipo do receptor); e uma sublista do próprio
+elemento (`join(a.subs.x)`) conta como origem distinta do elemento, embora a política tenha aprovado
+o elemento inteiro. O caminho, em todos, é pôr o dado na própria operação, proposta pelo modelo e
+decidida pela política.
 
 ## 3. Exemplo executável: antes permitia, agora recusa
 
@@ -202,3 +233,45 @@ Registradas para decisão própria; nenhuma faz parte da E0453:
 - **idempotência:** repetir a chamada da mesma operação depois de uma falha;
 - **efeitos parciais:** a operação aprovada executada pela metade;
 - **recuperação depois de falhas:** o que o journal deve provar sobre as operações que já executaram.
+
+## 8. Terceira revisão (28/11), sobre 6786e30
+
+As correções da 2ª rodada resistiram (os ids do corpo do quantificador; o caminho da lista pelo passo
+que a selecionou). A revisão achou três classes novas:
+
+- **A1, nó não visitado:** `await` caía no caso genérico da análise, e uma ferramenta chamada na
+  condição do `await` nem virava sítio: `await send(bank, a.to, b.memo)` misturava dois elementos e
+  compilava. **Corrigido** (o percurso agora lista todos os nós de expressão, para que um nó novo
+  obrigue uma decisão); fica recusado;
+- **A2, construtor sem campo:** `let w = W { sub: left }` e depois `join(w.sub.xs.to)` com
+  `join(left.sub.xs.memo)`: a reconstrução não guarda em que campo entrou cada fonte, e o caminho
+  embrulhado coincide com o de outra lista real. **Não corrigido** (b16, b17);
+- **A3, lista literal de listas:** `for ll in [[ops, left.xs]] { … sum l in ll => … }`: o laço
+  sobre o literal trata o item como elemento e perde a lista; a soma sobre duas listas distintas vira
+  "uma operação, transformada". **Não corrigido** (b01, b02, b13).
+
+Falsos positivos novos, registrados: dois campos de um `refine` repetido num quantificador contam como
+duas origens; `if c { left } else { right }` seguido de `join(x.xs.to)`; a mesma lista embrulhada
+e direta; dois laços sobre uma lista de no máximo um elemento. As sondas estão em
+[revisao3/](revisao3/), com os vereditos em `revisoes_esperado.json`.
+
+Avaliação do revisor, que subscrevo: a análise não está estável. Ela codifica a origem em caminhos de
+texto e posições, e cada forma da linguagem que move dados (junção, lista literal, quantificador,
+construtor, `await`) precisou de um caso especial, achado só depois de uma fuga.
+
+## 9. O impedimento e as opções
+
+Para sustentar a garantia, a origem precisa ser parte do que o compilador já calcula com rigor, e
+não uma análise lateral sobre a AST: a origem de cada valor ligada ao tipo (como os rótulos de
+integridade, com junção definida em cada forma da linguagem), construtores sensíveis ao campo, e uma
+prova ou um teste diferencial em que o runtime registre a proveniência real de cada argumento de
+ferramenta e a compare com o veredito estático sobre programas gerados. É uma ampliação
+arquitetural: mexe no checker de rótulos, no runtime e no gerador do tripé.
+
+| opção | o que fica | custo |
+| --- | --- | --- |
+| A. manter a E0453 como erro, com as fugas conhecidas registradas | recusa as misturas que detecta (as 30 do corpus, a X2, as sondas de mistura das quatro rodadas); nenhuma garantia declarada; documentação diz "verificação parcial" | as recusas conservadoras declaradas; risco de alguém ler a E0453 como garantia |
+| B. rebaixar a aviso até o redesenho | nada muda na aceitação; o diagnóstico continua visível | a X2 volta a compilar |
+| C. autorizar o redesenho (origem no sistema de rótulos + proveniência no runtime) | uma garantia que se pode afirmar | nova frente de arquitetura, fora deste ciclo |
+
+O estado atual do ramo é A, sem merge. A decisão é do Antonio.

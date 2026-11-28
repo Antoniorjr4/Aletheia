@@ -226,5 +226,79 @@
  "revisao2/r1_reconcile_mix.ath": [],
  "revisao2/r2_reconcile_refine.ath": [
   "E0453"
+ ],
+ "revisao3/b01_ll_sum.ath": [],
+ "revisao3/b02_ll_sum_noroot.ath": [],
+ "revisao3/b03_ll_ctrl.ath": [],
+ "revisao3/b04_l_single.ath": [
+  "E0453"
+ ],
+ "revisao3/b05_g_sub.ath": [],
+ "revisao3/b06_g_sub_tos.ath": [
+  "E0453"
+ ],
+ "revisao3/b07_q_ll.ath": [
+  "E0453"
+ ],
+ "revisao3/b08_for_l_root.ath": [
+  "E0453"
+ ],
+ "revisao3/b09_for_l_m.ath": [
+  "E0453"
+ ],
+ "revisao3/b10_ll_join_to.ath": [
+  "E0453"
+ ],
+ "revisao3/b11_fp_if_left_right.ath": [
+  "E0453"
+ ],
+ "revisao3/b12_ll_two_lists_join.ath": [
+  "E0005"
+ ],
+ "revisao3/b13_ll_elem_g.ath": [],
+ "revisao3/b14_ll_with_elem.ath": [
+  "E0453"
+ ],
+ "revisao3/b15_await_mix.ath": [
+  "E0453"
+ ],
+ "revisao3/b15b_ctrl.ath": [
+  "E0453"
+ ],
+ "revisao3/b16_ctor_wrap.ath": [],
+ "revisao3/b16_ref_real_two.ath": [
+  "E0453"
+ ],
+ "revisao3/b17_ctor_wrap_match.ath": [],
+ "revisao3/b18_wrap_sum.ath": [
+  "E0453"
+ ],
+ "revisao3/b20_nested_quant.ath": [
+  "E0453"
+ ],
+ "revisao3/b21_lit_of_mixed_lit.ath": [
+  "E0453"
+ ],
+ "revisao3/b22_quant_refine_else_join.ath": [
+  "E0453"
+ ],
+ "revisao3/b23_quant_for_if_lit.ath": [
+  "E0453"
+ ],
+ "revisao3/b24_quant_in_quant_iter_outer.ath": [],
+ "revisao3/b25_lost_g_elem_join.ath": [],
+ "revisao3/ctlA_duas_somas.ath": [
+  "E0453"
+ ],
+ "revisao3/fp1_rep_refine_two_fields.ath": [
+  "E0453"
+ ],
+ "revisao3/fp2_if_left_right_loop.ath": [],
+ "revisao3/fp3_lit_list_same.ath": [],
+ "revisao3/fp4_wrap_same_list.ath": [
+  "E0453"
+ ],
+ "revisao3/fp5_one_two_loops.ath": [
+  "E0453"
  ]
 }

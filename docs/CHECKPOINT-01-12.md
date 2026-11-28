@@ -91,7 +91,8 @@ dinâmica por atacado.
 | estática (`athc check`) | efeito sem capacidade (E0502); dado não confiável como argumento de efeito ou decidindo a ocorrência de efeito irrevogável, inclusive por `return` antecipado (E0412, D15); segredo em saída pública, inclusive por ramo (E0440, D16); prompt sem o inventário em que a política decide (E0421); política por literal (E0422); operação sem regra ou sem executor (E0012); limites do plano × contrato (E0450); aritmética sem limite em política (E0451); orçamento de pior caso (B0201) | compilador |
 | obrigação demonstrada | contrato `requires` levantado para o `refine` quando todos os argumentos que `φ` lê vêm, sem transformação, de campos do mesmo valor endossado; a proposta que viola é recusada antes de qualquer efeito | análise de obrigações (corrigida neste pacote) |
 | barreira em execução | todo `requires` conferido na fronteira do efeito (R0630), nos dois runtimes; decodificação tipada; política no `refine`; journal encadeado | runtimes |
-| **não coberto** | lógica errada da política (o erro mais comum do catálogo cego do M4); argumentos de operações aprovadas diferentes numa ferramenta **sem** `requires` (X2, abaixo); acesso por ponto `o.campo` sempre tratado como dinâmico (conservador); faixa numérica vinda de linha confiável (limitação) | — |
+| estática parcial, desde 28/11 | a E0453 recusa as misturas de operações aprovadas que detecta (X2). **Garantia não estabelecida:** 5 fugas conhecidas depois de três revisões; implementação interrompida ([e0453/RELATORIO.md](../bench/agentdojo/x2/e0453/RELATORIO.md), seções 0, 8 e 9) | compilador |
+| **não coberto** | lógica errada da política (o erro mais comum do catálogo cego do M4); campos transformados de uma só operação e agregação pura sobre a lista inteira (fora da E0453); acesso por ponto `o.campo` sempre tratado como dinâmico (conservador); faixa numérica vinda de linha confiável (limitação) | — |
 
 Premissa da análise, registrada pela 2ª revisão: não há funções nem estado mutável, e um `for` não
 devolve valor. Por isso cada ponto de escolha produz um valor por escopo. Uma construção futura com
@@ -162,6 +163,9 @@ As diferenças de método importam:
 3. **Lógica de política:** o erro mais frequente no catálogo cego não é pego por nenhum dos dois
    lados.
 4. **Endosso por elemento:** campos de elementos diferentes numa ferramenta sem `requires` (X2).
+   Desde 28/11 a E0453 recusa as misturas que detecta, sem garantia estabelecida (fugas conhecidas;
+   redesenho pendente de decisão); continuam abertas a agregação pura e as questões de quantidade
+   (consumo linear, deduplicação, idempotência).
 
 Pendências para a decisão, sem frente aberta neste pacote:
 
@@ -169,7 +173,7 @@ Pendências para a decisão, sem frente aberta neste pacote:
 | --- | --- | --- |
 | sintaxe | os autores escreveram Rust dentro da Aletheia: `let` em posição de expressão, `then`, `!`. Depois da renomeação, 22 versões arquivadas pararam no erro seguinte | aceitar ou diagnosticar com correção exata as formas mais frequentes; medir sobre as 71 versões arquivadas, como diagnóstico; o efeito na autoria só se mede com nova autoria paga |
 | faixa numérica | `CT\|campo\|mín\|máx` não é conferível na política (`contracts`, M11) | busca por chave composta com valor numérico limitado vindo do dado confiável, geral para tabelas; muda gramática e checker |
-| relação entre campos | X2: endosso por elemento | exigir `requires` nas ferramentas com mais de um argumento endossado, ou um aviso quando argumentos de um efeito vêm de elementos diferentes; decisão de arquitetura |
+| relação entre campos | X2: endosso por elemento | E0453 implementada em 28/11 e interrompida: recusa parcial, garantia não estabelecida. Pendentes: manter, rebaixar a aviso ou redesenhar (origem no sistema de rótulos, proveniência no runtime); e a agregação pura |
 | acesso por ponto | `o.campo` é sempre dinâmico na análise de obrigações | rastrear `Field` com informação de tipo; ganho de precisão, não de garantia |
 | obrigação sob condição (H2) | a obrigação levantada vale para todo elemento, mesmo se a chamada está atrás de `if` sobre ele; um plano válido pode ser recusado no `refine` | levantar `cond ⇒ φ`, ou tratar como dinâmico o sítio guardado por condição sobre o elemento; precisão, não segurança |
 | conjunto de caracteres | D5 (P3b) foi para o host | primitiva de texto "todo caractere pertence a um conjunto"; pequena |

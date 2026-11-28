@@ -1,7 +1,14 @@
 # Proposta para a decisão de arquitetura: a operação aprovada como unidade de autorização
 
-27/11/2026. É uma proposta, **não implementada**. A demonstração está em
+27/11/2026. A demonstração está em
 [bench/agentdojo/x2/RELATORIO.md](../bench/agentdojo/x2/RELATORIO.md).
+
+**28/11: o item 1 de "O que decidir" foi decidido e implementado em parte** (E0453, recusa da
+mistura, com o caminho da variante do plano). A implementação foi interrompida com a garantia não
+estabelecida: fugas conhecidas depois de três revisões. O que fica fora (transformação de uma só
+operação, agregação pura), o impedimento e as opções estão em
+[bench/agentdojo/x2/e0453/RELATORIO.md](../bench/agentdojo/x2/e0453/RELATORIO.md). `authorize`, o
+consumo linear e a deduplicação continuam fora, como questões separadas.
 
 ## O que falta hoje
 
@@ -82,8 +89,9 @@ como está. Ele precisa virar uma variante do plano, como no c2, ou esperar o `a
   idempotência. O P1 deduplica, mas no X2 isso fez uma transferência aprovada nunca sair.
 - **Omissão:** uma operação aprovada que não executa. Foi o que aconteceu no P1 com o X2 e na
   recusa parcial do contrato relacional.
-- **Regras omitidas na política:** a integridade garante que a chamada é a operação aprovada, não
-  que a aprovação estava certa. Na base, `SafeWrite` não confere valor nenhum.
+- **Regras omitidas na política:** a E0453 garante que a chamada não combina operações aprovadas
+  distintas (não que seja a operação aprovada, ver "Transformação"), e nada diz sobre a aprovação
+  estar certa. Na base, `SafeWrite` não confere valor nenhum.
 - **Transformação:** um campo calculado a partir da própria operação (`amount ++ "0"`) continua
   permitido. Proibir isso bloquearia os 9 sítios legítimos do corpus. Contratos `requires` continuam
   sendo o recurso para limitar o valor efetivo.
