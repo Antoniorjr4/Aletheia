@@ -82,6 +82,9 @@ impl Style {
     pub fn bold(&self, s: &str) -> String {
         self.paint("1", s)
     }
+    pub fn yellow(&self, s: &str) -> String {
+        self.paint("1;33", s)
+    }
     pub fn dim(&self, s: &str) -> String {
         self.paint("2", s)
     }
@@ -101,8 +104,17 @@ fn underline(src: &str, lo: u32, hi: u32) -> (usize, usize, usize) {
 
 /// Diagnóstico no estilo do rustc, com a linha de código e o trecho sublinhado.
 pub fn render(src: &str, path: &str, d: &Diag, st: Style) -> String {
+    render_as(src, path, d, st, st.red(&format!("error[{}]", d.code)))
+}
+
+/// Um aviso experimental (`aviso[E0453]`), no mesmo formato: não recusa o programa.
+pub fn render_warning(src: &str, path: &str, d: &Diag, st: Style) -> String {
+    render_as(src, path, d, st, st.yellow(&format!("aviso[{}]", d.code)))
+}
+
+fn render_as(src: &str, path: &str, d: &Diag, st: Style, head: String) -> String {
     let mut o = String::new();
-    let _ = writeln!(o, "{}: {}", st.red(&format!("error[{}]", d.code)), st.bold(&d.msg));
+    let _ = writeln!(o, "{}: {}", head, st.bold(&d.msg));
     if d.span.hi == 0 && d.span.lo == 0 && d.code.starts_with('C') {
         return o;
     }

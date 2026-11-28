@@ -1,5 +1,5 @@
-//! **Origem das operações endossadas: o motor da E0453** (protótipo em 27/11/2026; verificação
-//! desde 28/11, em `ath-check`).
+//! **Origem das operações endossadas: o motor do aviso experimental E0453** (protótipo em
+//! 27/11/2026; recusa e depois, pela decisão final de 28/11, aviso em `ath-check`).
 //!
 //! Pergunta: numa chamada de ferramenta, os argumentos que vêm de valores endossados por `refine`
 //! dependem de uma só operação aprovada? Uma operação é um elemento de lista endossada, escolhido
@@ -17,7 +17,7 @@
 //!
 //! Achados por sítio:
 //!
-//! * `mistura` (E0453): duas ou mais origens aprovadas distintas. É o caso X2;
+//! * `mistura` (aviso E0453): duas ou mais origens aprovadas distintas. É o caso X2;
 //! * `agregação`: só a origem `[∀]` de uma lista com mais de um elemento possível. Aceita e fora da
 //!   garantia;
 //! * `transformada`: uma só operação, mas algum argumento passou por um cálculo. Aceita; não há

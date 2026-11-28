@@ -1,14 +1,17 @@
-//! **E0453: mistura de operações aprovadas (28/11/2026).**
+//! **E0453: mistura de operações aprovadas — aviso experimental (28/11/2026).**
 //!
-//! A E0453 recusa, na compilação, a chamada de ferramenta cujos argumentos vindos de valores
-//! endossados dependem de duas ou mais operações aprovadas distintas: dois elementos de uma lista
+//! A E0453 avisa quando os argumentos de uma chamada de ferramenta vindos de valores endossados
+//! parecem depender de duas ou mais origens aprovadas distintas: dois elementos de uma lista
 //! endossada, um elemento e um campo do plano, um elemento e a lista inteira, ou valores de dois
-//! `refine`. Ela não prova que os argumentos sejam os aprovados (os campos de uma só operação ainda
-//! podem ser transformados) e não cobre a agregação sobre uma lista inteira sozinha.
+//! `refine`. Desde a decisão final de 28/11 ela **não recusa** o programa: três revisões
+//! independentes acharam, cada uma, uma classe nova de fuga, e a garantia não está estabelecida.
+//! Ela não prova que os argumentos sejam os aprovados e não cobre a agregação sobre uma lista
+//! inteira sozinha.
 //!
-//! As sondas ficam em `bench/agentdojo/x2/e0453/sondas` (`gen.py`): `m*` misturam e são recusadas;
-//! `u*` usam uma operação só e são aceitas; `m10` só agrega e é aceita, fora da garantia. Os
-//! controles aceitos rodam nos dois runtimes, com as mesmas chamadas.
+//! As sondas ficam em `bench/agentdojo/x2/e0453/sondas` (`gen.py`): `m*` misturam e recebem o
+//! aviso; `u*` usam uma operação só e não recebem; `m10` só agrega e não recebe (fora da
+//! cobertura). Os controles rodam nos dois runtimes, com as mesmas chamadas; as misturas também,
+//! porque o aviso não impede a execução.
 
 use arx::host::SimWorld;
 use arx::model::Scripted;
@@ -25,8 +28,19 @@ fn src(nome: &str) -> String {
     std::fs::read_to_string(sondas().join(format!("{nome}.ath"))).unwrap()
 }
 
-fn codigos(nome: &str) -> Vec<String> {
-    compile(&src(nome)).err().unwrap_or_default().into_iter().map(|d| d.code).collect()
+/// (erros, avisos) da compilação de um programa.
+fn diagnosticos(src: &str) -> (Vec<String>, Vec<String>) {
+    match compile(src) {
+        Ok(c) => (Vec::new(), c.check.warnings.iter().map(|d| d.code.clone()).collect()),
+        Err(d) => (d.into_iter().map(|d| d.code).collect(), Vec::new()),
+    }
+}
+
+/// Os avisos de uma sonda que compila (falha se ela não compila).
+fn avisos(nome: &str) -> Vec<String> {
+    let (erros, avisos) = diagnosticos(&src(nome));
+    assert!(erros.is_empty(), "{nome}: {erros:?}");
+    avisos
 }
 
 const MISTURAS: [&str; 26] = [
@@ -98,22 +112,24 @@ fn as_sondas_geradas_estao_versionadas() {
 }
 
 #[test]
-fn cada_mistura_e_recusada_com_a_e0453_e_so_com_ela() {
+fn cada_mistura_compila_com_o_aviso_e0453_e_so_com_ele() {
     for m in MISTURAS.iter().chain(&CONSERVADORAS) {
-        assert_eq!(codigos(m), vec!["E0453"], "{m}");
+        assert_eq!(avisos(m), vec!["E0453"], "{m}");
     }
 }
 
 #[test]
 fn o_diagnostico_aponta_as_origens_e_o_caminho_autorizado() {
-    let d = compile(&src("m1_dois_lacos")).err().unwrap();
-    let d = &d[0];
-    assert!(d.msg.contains("combina dados de 2 origens aprovadas distintas"), "{}", d.msg);
+    let c = compile(&src("m1_dois_lacos")).unwrap();
+    let d = &c.check.warnings[0];
+    assert!(d.msg.contains("parece combinar dados de 2 origens aprovadas distintas"), "{}", d.msg);
     // as duas origens: os dois laços que escolheram os elementos
     let origens: Vec<_> = d.secondary.iter().filter(|(_, l)| l.contains("origem")).collect();
     assert_eq!(origens.len(), 2, "{:?}", d.secondary);
     let texto = d.notes.join("\n") + "\n" + d.help.as_deref().unwrap_or("");
     assert!(texto.contains("não prova que os argumentos sejam os aprovados"), "{texto}");
+    // o aviso diz que é parcial e que não certifica
+    assert!(texto.contains("aviso experimental") && texto.contains("não recusa o programa nem certifica"), "{texto}");
     // o caminho autorizado existe na linguagem: uma variante do plano decidida no `refine`
     assert!(texto.contains("variante do plano") && texto.contains("`refine`"), "{texto}");
     assert!(!texto.contains("authorize"), "{texto}");
@@ -122,7 +138,7 @@ fn o_diagnostico_aponta_as_origens_e_o_caminho_autorizado() {
 #[test]
 fn uma_operacao_literais_e_dados_confiaveis_e_a_agregacao_pura_sao_aceitos() {
     for u in UMA.iter().chain(&LIMITES).chain(&["m10_so_agregados"]) {
-        assert!(codigos(u).is_empty(), "{u}: {:?}", codigos(u));
+        assert!(avisos(u).is_empty(), "{u}: {:?}", avisos(u));
     }
 }
 
@@ -233,26 +249,21 @@ fn os_controles_aceitos_executam_igual_nos_dois_runtimes() {
 #[test]
 fn as_sondas_das_revisoes_tem_o_veredito_registrado() {
     let base = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../bench/agentdojo/x2/e0453");
-    let esperado: std::collections::BTreeMap<String, Vec<String>> =
+    // arquivo → { "erros": [...], "avisos": [...] }
+    let esperado: std::collections::BTreeMap<String, std::collections::BTreeMap<String, Vec<String>>> =
         serde_json::from_str(&std::fs::read_to_string(base.join("revisoes_esperado.json")).unwrap()).unwrap();
-    assert!(esperado.len() > 80);
-    for (f, codes) in esperado {
-        let got: Vec<String> = compile(&std::fs::read_to_string(base.join(&f)).unwrap())
-            .err()
-            .unwrap_or_default()
-            .into_iter()
-            .map(|d| d.code)
-            .collect::<std::collections::BTreeSet<_>>()
-            .into_iter()
-            .collect();
-        assert_eq!(got, codes, "{f}");
+    assert!(esperado.len() > 110);
+    let set = |v: Vec<String>| v.into_iter().collect::<std::collections::BTreeSet<_>>().into_iter().collect::<Vec<_>>();
+    for (f, e) in esperado {
+        let (erros, avisos) = diagnosticos(&std::fs::read_to_string(base.join(&f)).unwrap());
+        assert_eq!((set(erros), set(avisos)), (e["erros"].clone(), e["avisos"].clone()), "{f}");
     }
 }
 
 /// Fugas conhecidas, achadas pela 3ª revisão e **não corrigidas**: a garantia da E0453 não está
-/// estabelecida (bench/agentdojo/x2/e0453/RELATORIO.md, seção 6). Estes programas combinam dados de
-/// origens aprovadas distintas e são aceitos. O teste registra o fato; se uma mudança passar a
-/// recusá-los, ele falha para que o registro seja atualizado.
+/// estabelecida (bench/agentdojo/x2/e0453/RELATORIO.md). Estes programas combinam dados de origens
+/// aprovadas distintas, compilam e **não** recebem o aviso. O teste registra o fato; se uma mudança
+/// passar a avisá-los, ele falha para que o registro seja atualizado.
 #[test]
 fn as_fugas_conhecidas_continuam_registradas_como_aceitas() {
     let base = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../bench/agentdojo/x2/e0453");
@@ -261,6 +272,17 @@ fn as_fugas_conhecidas_continuam_registradas_como_aceitas() {
     assert_eq!(fugas.len(), 5);
     for f in fugas.keys() {
         let src = std::fs::read_to_string(base.join(f)).unwrap();
-        assert!(compile(&src).is_ok(), "{f}: deixou de ser aceita; atualize fugas_conhecidas.json e o relatório");
+        assert_eq!(diagnosticos(&src), (vec![], vec![]), "{f}: mudou; atualize fugas_conhecidas.json e o relatório");
     }
+}
+
+/// O alcance efetivo do aviso: uma mistura avisada compila e executa, nos dois runtimes, com as
+/// mesmas chamadas. Em `m1` os dois laços produzem as quatro combinações de destinatário e memo,
+/// duas delas recombinadas (A com b, B com a).
+#[test]
+fn uma_mistura_avisada_executa_igual_nos_dois_runtimes() {
+    let [a, p] = executa("m1_dois_lacos");
+    assert_eq!(a, p, "ARX × Python");
+    assert_eq!(a.1, None);
+    assert_eq!(J::Array(a.0), json!([["A", "a"], ["A", "b"], ["B", "a"], ["B", "b"]]));
 }

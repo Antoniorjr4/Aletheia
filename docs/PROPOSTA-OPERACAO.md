@@ -3,10 +3,10 @@
 27/11/2026. A demonstração está em
 [bench/agentdojo/x2/RELATORIO.md](../bench/agentdojo/x2/RELATORIO.md).
 
-**28/11: o item 1 de "O que decidir" foi decidido e implementado em parte** (E0453, recusa da
-mistura, com o caminho da variante do plano). A implementação foi interrompida com a garantia não
-estabelecida: fugas conhecidas depois de três revisões. O que fica fora (transformação de uma só
-operação, agregação pura), o impedimento e as opções estão em
+**28/11, decisão final: a E0453 é aviso experimental** (aponta a mistura, não recusa). A recusa foi
+implementada e interrompida com a garantia não estabelecida (fugas conhecidas depois de três
+revisões); o redesenho fica como frente posterior. O que fica fora (transformação de uma só
+operação, agregação pura), o impedimento e o estado final estão em
 [bench/agentdojo/x2/e0453/RELATORIO.md](../bench/agentdojo/x2/e0453/RELATORIO.md). `authorize`, o
 consumo linear e a deduplicação continuam fora, como questões separadas.
 

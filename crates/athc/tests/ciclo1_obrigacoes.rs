@@ -33,10 +33,9 @@ fn src(nome: &str) -> String {
 
 /// O destino de cada sítio com `requires`: `Ok(n refines)` se descarregada, `Err(motivo)` se dinâmica.
 fn sitios(nome: &str) -> Vec<Result<usize, String>> {
-    // sobre a AST: desde 28/11 a E0453 recusa na compilação as reproduções que misturam
-    // elementos (B1, F2); a análise de obrigações continua conferida sobre elas
-    let m = ath_syntax::parser::parse_module(&src(nome)).unwrap_or_else(|e| panic!("{nome}: {e:?}"));
-    analyze(&m)
+    let c =
+        compile(&src(nome)).unwrap_or_else(|d| panic!("{nome}: {:?}", d.iter().map(|x| &x.msg).collect::<Vec<_>>()));
+    analyze(&c.module)
         .sites
         .iter()
         .map(|s| match &s.status {
@@ -118,8 +117,9 @@ fn executa_com(nome: &str, mundo: &str, roteiro: &str, args: &[J]) -> [(Vec<J>, 
     [a, p]
 }
 
-fn codigos(nome: &str) -> Vec<String> {
-    compile(&src(nome)).err().unwrap_or_default().into_iter().map(|d| d.code).collect()
+/// Os avisos experimentais com que o programa compila.
+fn avisos(nome: &str) -> Vec<String> {
+    compile(&src(nome)).unwrap().check.warnings.into_iter().map(|d| d.code).collect()
 }
 
 #[test]
@@ -127,10 +127,14 @@ fn b1_argumentos_de_elementos_diferentes_nao_descarregam() {
     // antes do reparo: Ok(1) — "levantada para o refine", falso
     let s = sitios("b1_cruzado");
     assert!(matches!(&s[..], [Err(r)] if r.contains("outro elemento")), "{s:?}");
-    // desde 28/11 o programa não compila: a chamada mistura dois elementos aprovados (E0453).
-    // O comportamento em execução de antes (a 1ª chamada executa; a 2ª, R0630) está registrado
-    // em bench/obrigacoes/depois.json.
-    assert_eq!(codigos("b1_cruzado"), vec!["E0453"]);
+    // o monitor do efeito continua: a 1ª chamada (alice, 100) satisfaz o contrato e executa; a 2ª
+    // (alice, 5) é recusada como contrato violado (R0630), não mais como defeito da análise (R0631)
+    for (calls, abort) in executa("b1_cruzado", "mundo_pairs", "roteiro_dois_validos") {
+        assert_eq!(calls, vec![json!(["alice", "100"])]);
+        assert_eq!(abort.as_deref(), Some("R0630"));
+    }
+    // a chamada mistura dois elementos aprovados: aviso experimental E0453 (não recusa)
+    assert_eq!(avisos("b1_cruzado"), vec!["E0453"]);
 }
 
 #[test]
@@ -206,9 +210,13 @@ fn f1_requires_com_if_ou_match_le_todos_os_parametros() {
 fn f2_um_campo_de_cada_proposta_nao_descarrega() {
     let s = sitios("f2_dois_refines");
     assert!(matches!(&s[..], [Err(_)]), "{s:?}");
-    // desde 28/11: um campo de cada proposta é mistura de operações aprovadas (E0453); antes,
-    // nenhuma chamada e R0630 nos dois runtimes (bench/obrigacoes/depois.json)
-    assert_eq!(codigos("f2_dois_refines"), vec!["E0453"]);
+    for (calls, abort) in executa_com("f2_dois_refines", "mundo_pairs", "roteiro_duas_ops", &[json!("x"), json!(true)])
+    {
+        assert!(calls.is_empty());
+        assert_eq!(abort.as_deref(), Some("R0630"));
+    }
+    // um campo de cada proposta: aviso experimental E0453 (não recusa)
+    assert_eq!(avisos("f2_dois_refines"), vec!["E0453"]);
 }
 
 #[test]

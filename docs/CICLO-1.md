@@ -334,6 +334,17 @@ lista literal de listas). Pela própria decisão, a implementação parou e o im
 apresentado: sustentar a garantia pede a origem no sistema de rótulos e a proveniência medida no
 runtime. Agregação pura fora, com decisão pendente. Sem gasto, sem merge.
 
+**28/11 — decisão final: E0453 rebaixada a aviso experimental; defeito no rótulo do resultado de ferramenta** ([bench/agentdojo/x2/e0453/RELATORIO.md](../bench/agentdojo/x2/e0453/RELATORIO.md), seção 10; [bench/ferramentas/DEFEITO.md](../bench/ferramentas/DEFEITO.md)).
+Opção B: a E0453 aponta misturas suspeitas e não recusa; o texto diz que é parcial e não certifica.
+Redesenho não autorizado; agregação pura preservada (triagem RC8–RC10 inalterada). Regressão: 478
+programas versionados com o mesmo veredito do compilador anterior à E0453; os 13 programas gerados
+que tinham saído do tripé voltaram e concordam; B1 e F2 voltaram a rodar nos dois runtimes. A
+investigação do fluxo por ferramentas achou um defeito anterior ao ciclo, de gravidade alta: o
+retorno sem rótulo é `Trusted` e `Public` e não herda os argumentos, o que deixa dado `Untrusted`
+chegar a parâmetro `^ Endorsed` e decidir efeito irrevogável, e segredo chegar a sink público.
+Menor correção indicada e medida (nenhum veredito do corpus muda); não aplicada. Sem gasto, sem
+merge.
+
 ## Parecer do checkpoint (01/12/2026), escrito em 26/11
 
 Resultados medidos, todos mantidos, os contrários inclusive:

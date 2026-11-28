@@ -88,10 +88,10 @@ dinâmica por atacado.
 
 | camada | o que garante | onde fica |
 | --- | --- | --- |
-| estática (`athc check`) | efeito sem capacidade (E0502); dado não confiável como argumento de efeito ou decidindo a ocorrência de efeito irrevogável, inclusive por `return` antecipado (E0412, D15); segredo em saída pública, inclusive por ramo (E0440, D16); prompt sem o inventário em que a política decide (E0421); política por literal (E0422); operação sem regra ou sem executor (E0012); limites do plano × contrato (E0450); aritmética sem limite em política (E0451); orçamento de pior caso (B0201) | compilador |
+| estática (`athc check`) | efeito sem capacidade (E0502); dado não confiável como argumento de efeito ou decidindo a ocorrência de efeito irrevogável, inclusive por `return` antecipado (E0412, D15); segredo em saída pública, inclusive por ramo (E0440, D16) — **E0412, D15 e E0440 supõem que toda ferramenta com retorno sem rótulo devolve valor independente dos argumentos; o compilador não confere isso, e um dado `Untrusted` ou `Secret` passado por uma ferramenta assim sai `Trusted` e `Public`** ([bench/ferramentas/DEFEITO.md](../bench/ferramentas/DEFEITO.md), gravidade alta, não corrigido); prompt sem o inventário em que a política decide (E0421); política por literal (E0422); operação sem regra ou sem executor (E0012); limites do plano × contrato (E0450); aritmética sem limite em política (E0451); orçamento de pior caso (B0201) | compilador |
 | obrigação demonstrada | contrato `requires` levantado para o `refine` quando todos os argumentos que `φ` lê vêm, sem transformação, de campos do mesmo valor endossado; a proposta que viola é recusada antes de qualquer efeito | análise de obrigações (corrigida neste pacote) |
 | barreira em execução | todo `requires` conferido na fronteira do efeito (R0630), nos dois runtimes; decodificação tipada; política no `refine`; journal encadeado | runtimes |
-| estática parcial, desde 28/11 | a E0453 recusa as misturas de operações aprovadas que detecta (X2). **Garantia não estabelecida:** 5 fugas conhecidas depois de três revisões; implementação interrompida ([e0453/RELATORIO.md](../bench/agentdojo/x2/e0453/RELATORIO.md), seções 0, 8 e 9) | compilador |
+| aviso experimental, desde 28/11 | a E0453 aponta chamadas que parecem combinar dados de operações aprovadas distintas (X2); **não recusa e não certifica**: 5 fugas conhecidas depois de três revisões ([e0453/RELATORIO.md](../bench/agentdojo/x2/e0453/RELATORIO.md), seções 0 e 10) | compilador |
 | **não coberto** | lógica errada da política (o erro mais comum do catálogo cego do M4); campos transformados de uma só operação e agregação pura sobre a lista inteira (fora da E0453); acesso por ponto `o.campo` sempre tratado como dinâmico (conservador); faixa numérica vinda de linha confiável (limitação) | — |
 
 Premissa da análise, registrada pela 2ª revisão: não há funções nem estado mutável, e um `for` não
@@ -163,9 +163,24 @@ As diferenças de método importam:
 3. **Lógica de política:** o erro mais frequente no catálogo cego não é pego por nenhum dos dois
    lados.
 4. **Endosso por elemento:** campos de elementos diferentes numa ferramenta sem `requires` (X2).
-   Desde 28/11 a E0453 recusa as misturas que detecta, sem garantia estabelecida (fugas conhecidas;
-   redesenho pendente de decisão); continuam abertas a agregação pura e as questões de quantidade
-   (consumo linear, deduplicação, idempotência).
+   Desde 28/11 só há o aviso experimental E0453, sem garantia; o redesenho (origem no sistema de
+   rótulos, construtores sensíveis ao campo, proveniência medida no runtime) fica como frente
+   posterior, não autorizada neste ciclo. A agregação pura fica fora; as questões de quantidade
+   (consumo linear, deduplicação, idempotência) continuam abertas.
+5. **Rótulo do resultado de ferramenta:** retorno sem rótulo é `Trusted` e `Public`, sem herdar os
+   argumentos. Lava dado não confiável para parâmetro `^ Endorsed` e para a decisão de efeito
+   irrevogável, e segredo para sink público. Menor correção indicada (encontro dos rótulos dos
+   argumentos quando o retorno não tem rótulo), medida sem mudança de veredito no corpus; não
+   aplicada, depende de autorização.
+
+### Decisão final de 28/11: o que está demonstrado, o que é parcial, o que está aberto
+
+| classe | itens |
+| --- | --- |
+| **demonstrado** (verificado no compilador e nos dois runtimes, com reproduções e controles) | capacidades (E0502); `requires` conferido na fronteira do efeito nos dois runtimes (R0630) e obrigação descarregada no `refine` só quando demonstrada (B1, B2, F1–F3, G, H1 corrigidos); política por literal (E0422); prompt sem inventário (E0421); orçamento de pior caso; journal encadeado; equivalência Lean × ARX × Python no tripé |
+| **demonstrado sob hipótese não conferida** | E0412, D15 e E0440: valem se toda ferramenta com retorno sem rótulo devolver valor independente dos argumentos (defeito registrado, item 5) |
+| **proteção parcial** | aviso experimental E0453 (mistura de operações aprovadas), com fugas conhecidas; conferência dinâmica do rótulo de retorno só em ferramentas MCP do ARX, quando o servidor envia o rótulo |
+| **aberto** | lógica de política; endosso por elemento como garantia; agregação pura; transformação de uma só operação; quantidade (consumo linear, deduplicação, idempotência, efeitos parciais, recuperação); autoria por modelo; manutenção |
 
 Pendências para a decisão, sem frente aberta neste pacote:
 

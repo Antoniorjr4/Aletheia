@@ -1,9 +1,9 @@
 //! **Origem das operações endossadas (protótipo de 27/11; E0453 desde 28/11/2026).**
 //!
 //! `ath_syntax::operations` responde se, numa chamada de ferramenta, os argumentos vindos de
-//! valores endossados formam uma só operação aprovada. Desde 28/11 o achado `Mistura` é a E0453:
-//! o programa não compila. Estes testes leem a análise sobre a AST (sem compilar, para ver também
-//! o achado dos programas recusados) e conferem a recusa na compilação.
+//! valores endossados formam uma só operação aprovada. O achado `Mistura` é o aviso experimental
+//! E0453 (não recusa o programa: decisão final de 28/11). Estes testes leem a análise sobre a AST
+//! e conferem o aviso na compilação.
 
 use ath_syntax::operations::{analyze, Finding};
 use athc::compile;
@@ -32,9 +32,15 @@ fn sitios(src: &str) -> Vec<(String, &'static str)> {
         .collect()
 }
 
-/// Os códigos com que a compilação recusa o programa (vazio: aceito).
+/// Os avisos experimentais com que o programa compila (falha se não compila).
 fn codigos(src: &str) -> Vec<String> {
-    compile(src).err().unwrap_or_default().into_iter().map(|d| d.code).collect()
+    compile(src)
+        .unwrap_or_else(|d| panic!("{:?}", d.iter().map(|x| &x.code).collect::<Vec<_>>()))
+        .check
+        .warnings
+        .into_iter()
+        .map(|d| d.code)
+        .collect()
 }
 
 fn arquivo(rel: &str) -> String {

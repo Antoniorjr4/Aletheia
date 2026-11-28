@@ -230,7 +230,13 @@ fn load(opts: &Opts) -> Result<(String, String), String> {
 /// Compila e imprime os diagnósticos; `None` se o programa foi rejeitado.
 fn compile_or_report(path: &str, src: &str, st: Style) -> Option<Compiled> {
     match compile(src) {
-        Ok(c) => Some(c),
+        Ok(c) => {
+            // avisos experimentais na saída de erro: não recusam e não mudam a saída do comando
+            for d in &c.check.warnings {
+                eprintln!("{}", athc::render_warning(src, path, d, st));
+            }
+            Some(c)
+        }
         Err(diags) => {
             for d in &diags {
                 println!("{}", render(src, path, d, st));
@@ -249,6 +255,13 @@ fn cmd_check(opts: &Opts, st: Style) -> Result<bool, String> {
     let Some(c) = compile_or_report(&path, &src, st) else { return Ok(false) };
     println!("$ athc check {path}");
     print!("{}", summary(&c, st));
+    if !c.check.warnings.is_empty() {
+        println!(
+            "{} aviso experimental E0453: {} chamada(s) parecem combinar origens aprovadas distintas (análise parcial, não certifica)",
+            st.bold("!"),
+            c.check.warnings.len()
+        );
+    }
     // **As ligações** (RC5): o que o programa alcança no mundo, e com que segredo (só o nome).
     for i in &c.module.items {
         if let ath_syntax::ast::Item::Bind(b) = i {

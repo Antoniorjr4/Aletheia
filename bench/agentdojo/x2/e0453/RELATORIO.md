@@ -5,15 +5,15 @@ gasto com API (orçamento adicional US$ 0,00). Nenhum resultado histórico foi r
 `../resultado.json`, `../relacional/resultado.json`, `bench/obrigacoes/*.json` e as métricas de autoria
 ficam como estavam. O que é de depois da E0453 fica nesta pasta.
 
-## 0. Situação: implementação interrompida, garantia não estabelecida
+## 0. Situação: aviso experimental (decisão final de 28/11)
 
-A E0453 está no compilador e recusa as misturas que detecta, mas **a garantia abaixo não está
-estabelecida**. Três revisões independentes, uma sobre cada versão das correções, acharam cada uma
-uma classe nova de fuga (seção 8). Depois da terceira, restam cinco fugas conhecidas, aceitas pelo
-compilador ([fugas_conhecidas.json](fugas_conhecidas.json), conferidas em teste). Pela decisão de
-28/11 ("se a análise necessária para sustentar essa garantia exigir uma ampliação arquitetural
-extensa, interromper a implementação e apresentar o impedimento"), a implementação parou aqui. O
-impedimento e as opções estão na seção 9.
+A E0453 é um **aviso experimental**: aponta chamadas que parecem combinar dados de origens aprovadas
+distintas e **não recusa** o programa. A garantia descrita na seção 1 **não está estabelecida**: três
+revisões independentes acharam, cada uma, uma classe nova de fuga (seção 8), e restam cinco fugas
+conhecidas, que compilam sem aviso ([fugas_conhecidas.json](fugas_conhecidas.json)). A ausência do
+aviso não certifica nada. O texto do aviso diz isso. O redesenho (seção 9, opção C) não foi
+autorizado neste ciclo; a agregação pura continua fora da cobertura. As seções 1 a 9 registram a
+implementação como recusa, antes do rebaixamento; a seção 10 registra o estado final.
 
 ## 1. A garantia pretendida, classificada
 
@@ -275,3 +275,27 @@ arquitetural: mexe no checker de rótulos, no runtime e no gerador do tripé.
 | C. autorizar o redesenho (origem no sistema de rótulos + proveniência no runtime) | uma garantia que se pode afirmar | nova frente de arquitetura, fora deste ciclo |
 
 O estado atual do ramo é A, sem merge. A decisão é do Antonio.
+
+## 10. Estado final: o alcance efetivo depois do rebaixamento
+
+- **O que a E0453 faz:** em `athc check`, imprime `aviso[E0453]` (na saída de erro, como nos demais
+  comandos) e uma linha no resumo; a compilação segue e o programa roda. O aviso diz que a análise é
+  parcial, tem fugas conhecidas e não certifica a integridade da operação;
+- **onde avisa:** as 26 sondas `m*` de mistura (menos `m10`), as recusas conservadoras `c1`–`c3`, as
+  sondas das revisões que misturam, e os 30 programas do corpus construídos para misturar
+  (`bench/obrigacoes`, `x2/relacional/misturado`, `x2/composicao/c3`). Nenhum exemplo, nenhuma
+  autoria do M10/M11 e nenhum programa de benchmark recebe o aviso;
+- **onde não avisa e mistura:** as 5 fugas conhecidas; o valor que passa por uma ferramenta (t3 em
+  `bench/ferramentas`); a dependência de controle (`l1`, `l2`); a agregação pura;
+- **efeito na execução:** nenhum. A mutação X2 voltou a executar a recombinação, nos dois runtimes,
+  igual ao comportamento anterior à E0453 ([testemunha_aviso.json](testemunha_aviso.json) é idêntica
+  a [testemunha_antes.json](testemunha_antes.json)); o exemplo relacional é idêntico ao de 27/11
+  ([relacional_aviso.json](relacional_aviso.json)). A sonda `m1` executa as quatro combinações nos
+  dois runtimes (teste `uma_mistura_avisada_executa_igual_nos_dois_runtimes`);
+- **regressão:** 478 programas versionados, nenhum muda de veredito em relação ao compilador anterior
+  à E0453 (2950dc5) ([corpus.json](corpus.json)). Os 13 programas gerados que tinham saído do tripé
+  voltaram e concordam no Lean, no ARX e no Python (núcleo com 1000 sementes, sagas com 700, chaves
+  com 900). B1 e F2 voltaram a rodar nos dois runtimes, com o aviso.
+
+Os resultados intermediários do período em que a E0453 recusava (`testemunha_depois.json`,
+`relacional_depois.json`) ficam como registro.
