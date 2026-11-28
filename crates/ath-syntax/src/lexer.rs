@@ -65,6 +65,12 @@ pub enum Tok {
 }
 
 impl Tok {
+    /// A palavra reservada que este token é, se for uma (`authority`, `policy`, `let`…).
+    pub fn reserved_word(&self) -> Option<&'static str> {
+        let w = symbol(self);
+        keyword(w).map(|_| w)
+    }
+
     pub fn describe(&self) -> String {
         match self {
             Tok::Ident(s) => format!("`{s}`"),

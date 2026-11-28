@@ -1,0 +1,22 @@
+module t
+type Op = | Pay { to: Text[..16], memo: Text[..16] }
+type Plan = | Plan { ops: List[Op, 0..3] }
+model planner { price_in = 0.0  price_out = 0.0  ctx = 8192  max_out = 4000  reasoning = 0  ttft = 1.0  per_tok = 0.01 }
+tool pay(c: Cap[Bank.Pay], to: Text ^ Endorsed, memo: Text ^ Endorsed) -> Unit ! { Bank.Pay } reversible latency 1.0
+  requires s.binds("pairs", to, memo)
+policy P(p: Plan) -> Bool = true
+agent A(bank: Cap[Bank.Pay]) budget [tok <= 10000, usd <= 1.0, wall <= 100.0] {
+  on go(req: Text[..200] ^ Trusted) -> Text ! { Infer, Bank.Pay } {
+    let d1 = infer planner -> Plan { request = req }
+    let p1 = refine d1 by P else { return "none" }
+    let d2 = infer planner -> Plan { request = req }
+    let p2 = refine d2 by P else { return "none" }
+    let o1 = match p1 { Plan { ops } => ops }
+    let o2 = match p2 { Plan { ops } => ops }
+    for a in o1 { for b in o2 {
+      let x = if true { match a { Pay { to } => to } } else { match b { Pay { to } => to } }
+      let y = if false { match a { Pay { memo } => memo } } else { match b { Pay { memo } => memo } }
+      pay(bank, x, y) } }
+    "ok"
+  }
+}

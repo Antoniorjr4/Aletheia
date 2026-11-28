@@ -1,0 +1,34 @@
+{
+ "pack": "travel_expenses",
+ "lang": "ath",
+ "rep": 1,
+ "model": "openai/gpt-oss-120b",
+ "clean": true,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.ath",
+   "tok_in": 4256,
+   "tok_out": 3375,
+   "feedback": "athc check:\nerror[P0001]: esperado `}`, encontrado `:`\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/travel_expenses/ath/rep1/v1.ath:64:34\n   |\n64 |         RequestReceipt { claim_id: cid } => if cid == claim_id { 1 } else { 0 },\n   |                                  ^ aqui\n\nerror[P0001]: esperada uma expressão, encontrado `let`\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/travel_expenses/ath/rep1/v1.ath:92:7\n   |\n92 |       let emp = s.lookup(\"claim_employees\", claim_id) in\n   |       ^^^ aqui\n\nrejeitado: 2 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 2,
+   "file": "v2.ath",
+   "tok_in": 6382,
+   "tok_out": 3299,
+   "feedback": "athc check:\nerror[P0001]: esperado `}`, encontrado `=`\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/travel_expenses/ath/rep1/v2.ath:65:35\n   |\n65 |         RequestReceipt { claim_id = cid } => if cid == claim_id { 1 } else { 0 },\n   |                                   ^ aqui\n\nrejeitado: 1 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 3,
+   "file": "v3.ath",
+   "tok_in": 8351,
+   "tok_out": 3137,
+   "feedback": ""
+  }
+ ],
+ "tok_in": 18989,
+ "tok_out": 9811,
+ "seconds": 23.9,
+ "usd": 0.008735
+}

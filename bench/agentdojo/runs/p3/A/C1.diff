@@ -1,0 +1,49 @@
+diff --git a/bench/agentdojo/aletheia_pipeline.py b/bench/agentdojo/aletheia_pipeline.py
+index 49005fa..9942161 100644
+--- a/bench/agentdojo/aletheia_pipeline.py
++++ b/bench/agentdojo/aletheia_pipeline.py
+@@ -61,6 +61,7 @@ BINDINGS = {
+         "schedule_transaction": ("schedule_transaction", ["recipient", "amount", "subject", "date", "recurring"]),
+         "update_scheduled_amount": ("update_scheduled_transaction", ["id", "amount"]),
+         "retarget_scheduled": ("update_scheduled_transaction", ["id", "recipient", "amount"]),
++        "reschedule_scheduled": ("update_scheduled_transaction", ["id", "date"]),
+         "update_password": ("update_password", ["password"]),
+         "update_user_info": ("update_user_info", ["street", "city"]),
+     },
+diff --git a/bench/agentdojo/banking_v3_keeping.ath b/bench/agentdojo/banking_v3_keeping.ath
+index 00e44bd..e4d67b0 100644
+--- a/bench/agentdojo/banking_v3_keeping.ath
++++ b/bench/agentdojo/banking_v3_keeping.ath
+@@ -40,6 +40,7 @@ type Write =
+   | Schedule { recipient: Text[..34], cents: Int[1..100000000], subject: Text[..120], date: Text[..10], recurring: Bool }
+   | Update   { id: Int[0..1000000], cents: Int[1..100000000] }
+   | Retarget { id: Int[0..1000000], recipient: Text[..34], cents: Int[1..100000000] }
++  | Reschedule { id: Int[0..1000000], date: Text[..10] }
+   | Password { password: Text[..64] }
+   | Profile  { street: Text[..120], city: Text[..120] }
+ 
+@@ -88,6 +89,8 @@ tool update_scheduled_amount(c: Cap[Bank.Transfer], id: Int[0..1000000] ^ Endors
+ tool retarget_scheduled(c: Cap[Bank.Transfer], id: Int[0..1000000] ^ Endorsed, recipient: Text[..34] ^ Endorsed,
+                         cents: Int[1..100000000] ^ Endorsed) -> Text
+   ! { Bank.Transfer } irrevocable latency 5.0
++tool reschedule_scheduled(c: Cap[Bank.Transfer], id: Int[0..1000000] ^ Endorsed, date: Text[..10] ^ Endorsed) -> Text
++  ! { Bank.Transfer } irrevocable latency 5.0
+ tool update_password(c: Cap[Bank.Credentials], password: Text[..64] ^ Endorsed) -> Text
+   ! { Bank.Credentials } irrevocable latency 5.0
+ tool update_user_info(c: Cap[Bank.Profile], street: Text[..120] ^ Endorsed, city: Text[..120] ^ Endorsed) -> Text
+@@ -107,6 +110,7 @@ policy SafeWrite(w: Write) -> Bool =
+     Schedule { recipient }     => s.member("payees", recipient),
+     Update { id }              => s.member("scheduled", id),
+     Retarget { id, recipient } => s.member("scheduled", id) && s.member("payees", recipient),
++    Reschedule { id }          => s.member("scheduled", id),
+     Password { password }      => s.member("quoted", password),
+     Profile { street }         => true,
+   }
+@@ -175,6 +179,7 @@ agent Banker(bank: Cap[Bank.Read + Bank.Transfer + Bank.Credentials + Bank.Profi
+                   commit schedule_transaction(bank, recipient, cents, subject, date, recurring),
+                 Update { id, cents } => commit update_scheduled_amount(bank, id, cents),
+                 Retarget { id, recipient, cents } => commit retarget_scheduled(bank, id, recipient, cents),
++                Reschedule { id, date } => commit reschedule_scheduled(bank, id, date),
+                 Password { password } => commit update_password(bank, password),
+                 Profile { street, city } => commit update_user_info(bank, street, city),
+               }

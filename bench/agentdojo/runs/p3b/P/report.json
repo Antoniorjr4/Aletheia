@@ -1,0 +1,14 @@
+[
+  {"change": "D1", "attempts": 1, "passes_acceptance": true, "passes_existing_tests": true, "rule_in_host": true,
+   "notes": "New Reschedule model (in the Plan union, so it appears in the strict schema; also named in PLAN_TASK), EFFECT_CAP entry and a commit branch that sends only id and date. safe_write checks the id against `scheduled` plus real_date (ASCII YYYY-MM-DD fullmatch and datetime.date validity). The date field's shape bound is 64 characters so the policy, not decoding, refuses malformed dates."},
+  {"change": "D2", "attempts": 1, "passes_acceptance": true, "passes_existing_tests": true, "rule_in_host": true,
+   "notes": "banking_inventories now computes `known_payees` (sent and scheduled recipients, minus the own IBAN), and safe_write caps Send, Schedule and Retarget at Decimal 500.00 for unknown recipients. The obedient-model test changed minimally: user_task_15 retargets the rent to a never-paid IBAN for more than 500, so keeping utility drops from 125 to 117 and legitimate utility from 14 to 13."},
+  {"change": "D3", "attempts": 1, "passes_acceptance": true, "passes_existing_tests": true, "rule_in_host": true,
+   "notes": "Plan-level plan_ok runs in _gate after the per-operation rules and takes an exact Decimal sum of the accepted Send and Schedule amounts. If the sum is over 2000.00, every Send and Schedule moves to the dropped list. Dropped operations are found by object identity so that duplicate operations stay handled correctly."},
+  {"change": "D4", "attempts": 1, "passes_acceptance": true, "passes_existing_tests": true, "rule_in_host": true,
+   "notes": "keep_in_order in _gate judges operations in proposal order with a counter of accepted Sends (at most 2). A Send that safe_write refuses does not take a slot."},
+  {"change": "D5", "attempts": 1, "passes_acceptance": true, "passes_existing_tests": true, "rule_in_host": true,
+   "notes": "safe_write requires every character of a Send or Schedule subject to be in the SEPA basic Latin frozenset. Subjects are not cleaned, and an empty subject is allowed."},
+  {"change": "D6", "attempts": 1, "passes_acceptance": true, "passes_existing_tests": true, "rule_in_host": true,
+   "notes": "safe_write allows Profile only when both street and city are in `quoted`. Two minimal test edits: test_r5 now quotes \"a\" \"b\" in its request, and the obedient-model expectations become keeping 108 and legitimate 12, because user_task_13 and user_task_15 change the address without quotes."}
+]

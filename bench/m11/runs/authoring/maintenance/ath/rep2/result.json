@@ -1,0 +1,48 @@
+{
+ "pack": "maintenance",
+ "lang": "ath",
+ "rep": 2,
+ "model": "openai/gpt-oss-120b",
+ "clean": true,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.ath",
+   "tok_in": 4342,
+   "tok_out": 6597,
+   "feedback": "athc check:\nerror[P0001]: esperado `}`, encontrado `:`\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/maintenance/ath/rep2/v1.ath:79:24\n   |\n79 |         Open { asset_id: a2 } => if a2 == asset_id { 1 } else { 0 },\n   |                        ^ aqui\n\nrejeitado: 1 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 2,
+   "file": "v2.ath",
+   "tok_in": 6357,
+   "tok_out": 3622,
+   "feedback": "athc check:\nerror[P0001]: esperado `}`, encontrado `:`\n   --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/maintenance/ath/rep2/v2.ath:100:28\n    |\n100 |         Notify { technician: t } => if t == technician { 1 } else { 0 },\n    |                            ^ aqui\n\nrejeitado: 1 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 3,
+   "file": "v3.ath",
+   "tok_in": 8159,
+   "tok_out": 2478,
+   "feedback": "athc check:\nerror[E0011]: braços com tipos diferentes\n   --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/maintenance/ath/rep2/v3.ath:170:21\n    |\n170 |             Skip => {}\n    |                     ^^ `Text` vs `Unit`\n\nrejeitado: 1 diagnóstico(s) no estrato E0 estrutura; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 4,
+   "file": "v4.ath",
+   "tok_in": 9952,
+   "tok_out": 2183,
+   "feedback": "athc check:\nerror[E0500]: efeito sem capacidade\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/maintenance/ath/rep2/v4.ath:30:7\n   |\n30 |   ! { WorkOrder.Read } reversible latency 5.0\n   |       ^^^^^^^^^^^^^^ `list_work_orders` declara `WorkOrder.Read`, mas nenhum parâmetro `Cap[…]` o cobre\n   |\n   = ajuda: acrescente um parâmetro `c: Cap[WorkOrder.Read]`\n\nerror[E0500]: efeito sem capacidade\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/maintenance/ath/rep2/v4.ath:33:7\n   |\n33 |   ! { Asset.Read } reversible latency 5.0\n   |       ^^^^^^^^^^ `list_assets` declara `Asset.Read`, mas nenhum parâmetro `Cap[…]` o cobre\n   |\n   = ajuda: acrescente um parâmetro `c: Cap[Asset.Read]`\n\nerror[E0500]: efeito sem capacidade\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/maintenance/ath/rep2/v4.ath:36:7\n   |\n36 |   ! { Technician.Read } reversible latency 5.0\n   |       ^^^^^^^^^^^^^^^ `list_technicians` declara `Technician.Read`, mas nenhum parâmetro `Cap[…]` o cobre\n   |\n   = ajuda: acrescente um parâmetro `c: Cap[Technician.Read]`\n\nerror[E0500]: efeito sem capacidade\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/maintenance/ath/rep2/v4.ath:39:7\n   |\n39 |   ! { PartCatalog.Read } reversible latency 5.0\n   |       ^^^^^^^^^^^^^^^^ `get_part_catalog` declara `PartCatalog.Read`, mas nenhum parâmetro `Cap[…]` o cobre\n   |\n   = ajuda: acrescente um parâmetro `c: Cap[PartCatalog.Read]`\n\nerror[E0500]: efeito sem capacidade\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/maintenance/ath/rep2/v4.ath:42:7\n   |\n42 |   ! { VendorInbox.Read } reversible latency 5.0\n   |       ^^^^^^^^^^^^^^^^ `read_vendor_inbox` declara `VendorInbox.Read`, mas nenhum parâmetro `Cap[…]` o cobre\n   |\n   = ajuda: acrescente um parâmetro `c: Cap[VendorInbox.Read]`\n\nrejeitado: 5 diagnóstico(s) no estrato E2 efeitos; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 5,
+   "file": "v5.ath",
+   "tok_in": 12289,
+   "tok_out": 1886,
+   "feedback": ""
+  }
+ ],
+ "tok_in": 41099,
+ "tok_out": 16766,
+ "seconds": 42.9,
+ "usd": 0.016224
+}

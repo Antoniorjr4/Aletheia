@@ -1,0 +1,508 @@
+[
+ {
+  "caso": "g01_guarda_member",
+  "mundo": "mundo",
+  "rot": "rot_g_dois",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true,
+  "arx": [
+   [
+    [
+     "alice"
+    ],
+    [
+     "bob"
+    ]
+   ],
+   [],
+   0,
+   "◀ resultado: \"ok\""
+  ],
+  "py": [
+   [
+    [
+     "alice"
+    ],
+    [
+     "bob"
+    ]
+   ],
+   [],
+   0,
+   "ok"
+  ]
+ },
+ {
+  "caso": "g01_guarda_member",
+  "mundo": "mundo",
+  "rot": "rot_g_dois",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true,
+  "arx": [
+   [
+    [
+     "alice"
+    ],
+    [
+     "bob"
+    ]
+   ],
+   [],
+   0,
+   "◀ resultado: \"ok\""
+  ],
+  "py": [
+   [
+    [
+     "alice"
+    ],
+    [
+     "bob"
+    ]
+   ],
+   [],
+   0,
+   "ok"
+  ]
+ },
+ {
+  "caso": "g01_guarda_member",
+  "mundo": "mundo",
+  "rot": "rot_g_guarda",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true,
+  "arx": [
+   [],
+   [],
+   1,
+   "◀ resultado: \"none\""
+  ],
+  "py": [
+   [],
+   [],
+   1,
+   "none"
+  ]
+ },
+ {
+  "caso": "g01_guarda_member",
+  "mundo": "mundo",
+  "rot": "rot_g_guarda",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true,
+  "arx": [
+   [],
+   [],
+   1,
+   "◀ resultado: \"none\""
+  ],
+  "py": [
+   [],
+   [],
+   1,
+   "none"
+  ]
+ },
+ {
+  "caso": "g01d_guarda_dinamica",
+  "mundo": "mundo",
+  "rot": "rot_g_dois",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true,
+  "arx": [
+   [
+    [
+     "alice"
+    ],
+    [
+     "bob"
+    ]
+   ],
+   [],
+   0,
+   "◀ resultado: \"ok\""
+  ],
+  "py": [
+   [
+    [
+     "alice"
+    ],
+    [
+     "bob"
+    ]
+   ],
+   [],
+   0,
+   "ok"
+  ]
+ },
+ {
+  "caso": "g01d_guarda_dinamica",
+  "mundo": "mundo",
+  "rot": "rot_g_dois",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true,
+  "arx": [
+   [
+    [
+     "alice"
+    ],
+    [
+     "bob"
+    ]
+   ],
+   [],
+   0,
+   "◀ resultado: \"ok\""
+  ],
+  "py": [
+   [
+    [
+     "alice"
+    ],
+    [
+     "bob"
+    ]
+   ],
+   [],
+   0,
+   "ok"
+  ]
+ },
+ {
+  "caso": "g01d_guarda_dinamica",
+  "mundo": "mundo",
+  "rot": "rot_g_guarda",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true,
+  "arx": [
+   [
+    [
+     "alice"
+    ]
+   ],
+   [],
+   0,
+   "◀ resultado: \"ok\""
+  ],
+  "py": [
+   [
+    [
+     "alice"
+    ]
+   ],
+   [],
+   0,
+   "ok"
+  ]
+ },
+ {
+  "caso": "g01d_guarda_dinamica",
+  "mundo": "mundo",
+  "rot": "rot_g_guarda",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true,
+  "arx": [
+   [
+    [
+     "alice"
+    ]
+   ],
+   [],
+   0,
+   "◀ resultado: \"ok\""
+  ],
+  "py": [
+   [
+    [
+     "alice"
+    ]
+   ],
+   [],
+   0,
+   "ok"
+  ]
+ },
+ {
+  "caso": "g02_dois_destinos",
+  "mundo": "mundo",
+  "rot": "rot_g_dois",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true,
+  "arx": [
+   [],
+   [],
+   1,
+   "◀ resultado: \"none\""
+  ],
+  "py": [
+   [],
+   [],
+   1,
+   "none"
+  ]
+ },
+ {
+  "caso": "g02_dois_destinos",
+  "mundo": "mundo",
+  "rot": "rot_g_dois",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true,
+  "arx": [
+   [],
+   [],
+   1,
+   "◀ resultado: \"none\""
+  ],
+  "py": [
+   [],
+   [],
+   1,
+   "none"
+  ]
+ },
+ {
+  "caso": "g02_dois_destinos",
+  "mundo": "mundo",
+  "rot": "rot_g_guarda",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true,
+  "arx": [
+   [],
+   [],
+   1,
+   "◀ resultado: \"none\""
+  ],
+  "py": [
+   [],
+   [],
+   1,
+   "none"
+  ]
+ },
+ {
+  "caso": "g02_dois_destinos",
+  "mundo": "mundo",
+  "rot": "rot_g_guarda",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true,
+  "arx": [
+   [],
+   [],
+   1,
+   "◀ resultado: \"none\""
+  ],
+  "py": [
+   [],
+   [],
+   1,
+   "none"
+  ]
+ },
+ {
+  "caso": "g02d_dois_destinos_dinamica",
+  "mundo": "mundo",
+  "rot": "rot_g_dois",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true,
+  "arx": [
+   [
+    [
+     "alice"
+    ],
+    [
+     "bob",
+     "5"
+    ]
+   ],
+   [],
+   0,
+   "◀ resultado: \"ok\""
+  ],
+  "py": [
+   [
+    [
+     "alice"
+    ],
+    [
+     "bob",
+     "5"
+    ]
+   ],
+   [],
+   0,
+   "ok"
+  ]
+ },
+ {
+  "caso": "g02d_dois_destinos_dinamica",
+  "mundo": "mundo",
+  "rot": "rot_g_dois",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true,
+  "arx": [
+   [
+    [
+     "alice"
+    ],
+    [
+     "bob",
+     "5"
+    ]
+   ],
+   [],
+   0,
+   "◀ resultado: \"ok\""
+  ],
+  "py": [
+   [
+    [
+     "alice"
+    ],
+    [
+     "bob",
+     "5"
+    ]
+   ],
+   [],
+   0,
+   "ok"
+  ]
+ },
+ {
+  "caso": "g02d_dois_destinos_dinamica",
+  "mundo": "mundo",
+  "rot": "rot_g_guarda",
+  "args": [
+   "\"x\"",
+   "true"
+  ],
+  "r0631": false,
+  "concordam": true,
+  "arx": [
+   [
+    [
+     "alice",
+     "100"
+    ]
+   ],
+   [
+    "R0630"
+   ],
+   0,
+   "✗ abortado: R0630 o contrato `requires` de `pay` recusou os argumentos"
+  ],
+  "py": [
+   [
+    [
+     "alice",
+     "100"
+    ]
+   ],
+   [
+    "R0630"
+   ],
+   0,
+   {
+    "code": "R0630",
+    "msg": "o contrato `requires` de `pay` recusou os argumentos"
+   }
+  ]
+ },
+ {
+  "caso": "g02d_dois_destinos_dinamica",
+  "mundo": "mundo",
+  "rot": "rot_g_guarda",
+  "args": [
+   "\"x\"",
+   "false"
+  ],
+  "r0631": false,
+  "concordam": true,
+  "arx": [
+   [
+    [
+     "alice",
+     "100"
+    ]
+   ],
+   [
+    "R0630"
+   ],
+   0,
+   "✗ abortado: R0630 o contrato `requires` de `pay` recusou os argumentos"
+  ],
+  "py": [
+   [
+    [
+     "alice",
+     "100"
+    ]
+   ],
+   [
+    "R0630"
+   ],
+   0,
+   {
+    "code": "R0630",
+    "msg": "o contrato `requires` de `pay` recusou os argumentos"
+   }
+  ]
+ }
+]

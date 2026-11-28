@@ -1,0 +1,48 @@
+{
+ "pack": "sales_crm",
+ "lang": "ath",
+ "rep": 1,
+ "model": "openai/gpt-oss-120b",
+ "clean": false,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.ath",
+   "tok_in": 4237,
+   "tok_out": 6055,
+   "feedback": "athc check:\nerror[P0001]: esperado `}`, encontrado `:`\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/sales_crm/ath/rep1/v1.ath:59:21\n   |\n59 |       Quote { opp_id: a_opp, product: a_prod } =>\n   |                     ^ aqui\n\nerror[P0001]: esperado `}`, encontrado `:`\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/sales_crm/ath/rep1/v1.ath:70:19\n   |\n70 |       Log { opp_id: a_opp } => if a_opp == opp_id { 1 } else { 0 },\n   |                   ^ aqui\n\nrejeitado: 2 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 2,
+   "file": "v2.ath",
+   "tok_in": 6160,
+   "tok_out": 2868,
+   "feedback": "athc check:\nerror[E0008]: tipo incompatível\n   --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/sales_crm/ath/rep1/v2.ath:105:36\n    |\n105 | policy SafePlan(p: Plan) -> Bool = match p {\n    |                                    ^^^^^^^^^ esperado `Bool`, encontrado `Unit`\n\nerror[E0008]: tipo incompatível\n   --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/sales_crm/ath/rep1/v2.ath:107:42\n    |\n107 |     let total_discount = sum o in ops => match o {\n    |                                          ^^^^^^^^^ esperado `Bool`, encontrado `Int`\n\nerror[E0008]: tipo incompatível\n   --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/sales_crm/ath/rep1/v2.ath:107:42\n    |\n107 |     let total_discount = sum o in ops => match o {\n    |                                          ^^^^^^^^^ esperado `Int`, encontrado `Bool`\n\nerror[E0001]: variável desconhecida `total_discount`\n   --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/sales_crm/ath/rep1/v2.ath:112:52\n    |\n112 |     && s.within(\"discount_budget_remaining_cents\", total_discount)\n    |                                                    ^^^^^^^^^^^^^^ não encontrada neste escopo\n\nrejeitado: 4 diagnóstico(s) no estrato E0 estrutura; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 3,
+   "file": "v3.ath",
+   "tok_in": 8241,
+   "tok_out": 2309,
+   "feedback": "athc check:\nerror[E0008]: tipo incompatível\n   --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/sales_crm/ath/rep1/v3.ath:105:36\n    |\n105 | policy SafePlan(p: Plan) -> Bool = match p {\n    |                                    ^^^^^^^^^ esperado `Bool`, encontrado `Unit`\n\nerror[E0008]: tipo incompatível\n   --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/sales_crm/ath/rep1/v3.ath:107:33\n    |\n107 |     let total = sum o in ops => match o {\n    |                                 ^^^^^^^^^ esperado `Bool`, encontrado `Int`\n\nerror[E0008]: tipo incompatível\n   --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/sales_crm/ath/rep1/v3.ath:107:33\n    |\n107 |     let total = sum o in ops => match o {\n    |                                 ^^^^^^^^^ esperado `Int`, encontrado `Bool`\n\nerror[E0001]: variável desconhecida `total`\n   --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/sales_crm/ath/rep1/v3.ath:112:52\n    |\n112 |     && s.within(\"discount_budget_remaining_cents\", total)\n    |                                                    ^^^^^ não encontrada neste escopo\n\nrejeitado: 4 diagnóstico(s) no estrato E0 estrutura; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 4,
+   "file": "v4.ath",
+   "tok_in": 10316,
+   "tok_out": 1989,
+   "feedback": "athc check:\nerror[P0001]: esperado `}`, encontrado `:`\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/sales_crm/ath/rep1/v4.ath:70:19\n   |\n70 |       Log { opp_id: a_opp } => if a_opp == opp_id { 1 } else { 0 },\n   |                   ^ aqui\n\nrejeitado: 1 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 5,
+   "file": "v5.ath",
+   "tok_in": 12145,
+   "tok_out": 2232,
+   "feedback": "athc check:\nerror[E0422]: descompasso entre o inventário confiável e a política\n   --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/sales_crm/ath/rep1/v5.ath:138:56\n    |\n138 |     let plan = refine draft by SafePlan keeping ops by SafeOp as left retry 1 else {\n    |                                                        ^^^^^^ o prompt recebe `s.managed()`, mas `SafeOp` compara com literais de texto\n    |\n    = ajuda: decida pela mesma fotografia: `s.is_managed(x)` no lugar de `x == \"…\"`\n\nrejeitado: 1 diagnóstico(s) no estrato E3 integridade e confidencialidade; os estratos seguintes não foram avaliados\n"
+  }
+ ],
+ "tok_in": 41099,
+ "tok_out": 15453,
+ "seconds": 39.7,
+ "usd": 0.015437
+}

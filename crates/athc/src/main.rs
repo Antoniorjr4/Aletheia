@@ -189,6 +189,7 @@ fn main() -> ExitCode {
         "verify-journal" => cmd_verify(&opts, st),
         "contract-report" => cmd_contract_report(&opts, st),
         "obligations" => cmd_obligations(&opts, st),
+        "operacoes" => cmd_operacoes(&opts, st),
         "emit" => cmd_emit(&opts, st),
         "grant" => cmd_grant(&opts),
         "keygen" => cmd_keygen(&opts),
@@ -229,7 +230,13 @@ fn load(opts: &Opts) -> Result<(String, String), String> {
 /// Compila e imprime os diagnósticos; `None` se o programa foi rejeitado.
 fn compile_or_report(path: &str, src: &str, st: Style) -> Option<Compiled> {
     match compile(src) {
-        Ok(c) => Some(c),
+        Ok(c) => {
+            // avisos experimentais na saída de erro: não recusam e não mudam a saída do comando
+            for d in &c.check.warnings {
+                eprintln!("{}", athc::render_warning(src, path, d, st));
+            }
+            Some(c)
+        }
         Err(diags) => {
             for d in &diags {
                 println!("{}", render(src, path, d, st));
@@ -248,6 +255,13 @@ fn cmd_check(opts: &Opts, st: Style) -> Result<bool, String> {
     let Some(c) = compile_or_report(&path, &src, st) else { return Ok(false) };
     println!("$ athc check {path}");
     print!("{}", summary(&c, st));
+    if !c.check.warnings.is_empty() {
+        println!(
+            "{} aviso experimental E0453: {} chamada(s) parecem combinar origens aprovadas distintas (análise parcial, não certifica)",
+            st.bold("!"),
+            c.check.warnings.len()
+        );
+    }
     // **As ligações** (RC5): o que o programa alcança no mundo, e com que segredo (só o nome).
     for i in &c.module.items {
         if let ath_syntax::ast::Item::Bind(b) = i {
@@ -293,6 +307,32 @@ fn cmd_check(opts: &Opts, st: Style) -> Result<bool, String> {
             eprintln!("erro[E0430]: a autoridade `{n}` tem garantia {}, mais fraca que a temporal (RC4) exigida por --strict-authority", g.name());
         }
         return Ok(false);
+    }
+    Ok(true)
+}
+
+/// `athc operacoes prog.ath` (protótipo, 27/11/2026): para cada chamada de ferramenta, se os
+/// argumentos vindos de valores endossados formam uma só operação aprovada. Não muda a aceitação.
+fn cmd_operacoes(opts: &Opts, st: Style) -> Result<bool, String> {
+    let (path, src) = load(opts)?;
+    let Some(c) = compile_or_report(&path, &src, st) else { return Ok(false) };
+    let line = |lo: u32| src[..lo as usize].matches('\n').count() + 1;
+    for s in ath_syntax::operations::analyze(&c.module) {
+        use ath_syntax::operations::Finding::*;
+        let what = match &s.finding {
+            Uma => "uma operação".to_string(),
+            SemOrigem => "sem origem endossada".to_string(),
+            Transformada => "uma operação, transformada".to_string(),
+            Agregacao(ops) => {
+                format!("AGREGAÇÃO sobre {}", ops.iter().map(|o| o.what.clone()).collect::<Vec<_>>().join(" | "))
+            }
+            Mistura(ops) => format!(
+                "MISTURA de {} operações: {}",
+                ops.len(),
+                ops.iter().map(|o| format!("{} @L{}", o.what, line(o.at.lo))).collect::<Vec<_>>().join(" | ")
+            ),
+        };
+        println!("  L{:<4} {:<28} {}", line(s.call.lo), s.tool, what);
     }
     Ok(true)
 }

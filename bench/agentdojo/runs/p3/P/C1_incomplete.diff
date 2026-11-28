@@ -1,0 +1,53 @@
+diff --git a/bench/agentdojo/hardened/banking_hardened.py b/bench/agentdojo/hardened/banking_hardened.py
+index 13b5829..7286c8d 100644
+--- a/bench/agentdojo/hardened/banking_hardened.py
++++ b/bench/agentdojo/hardened/banking_hardened.py
+@@ -86,6 +86,12 @@ class Retarget(_Strict):
+     amount: Amount
+ 
+ 
++class Reschedule(_Strict):
++    kind: Literal["Reschedule"]
++    id: Annotated[int, Field(ge=0, le=1_000_000)]
++    date: Str(10)
++
++
+ class Password(_Strict):
+     kind: Literal["Password"]
+     password: Str(64)
+@@ -97,7 +103,7 @@ class Profile(_Strict):
+     city: Str(120)
+ 
+ 
+-Write = Annotated[Union[Send, Schedule, Update, Retarget, Password, Profile], Field(discriminator="kind")]
++Write = Annotated[Union[Send, Schedule, Update, Retarget, Reschedule, Password, Profile], Field(discriminator="kind")]
+ 
+ 
+ class Plan(_Strict):
+@@ -195,7 +201,7 @@ def grant(*kinds: str) -> dict[str, Capability]:
+ 
+ 
+ EFFECT_CAP = {"Send": "Bank.Transfer", "Schedule": "Bank.Transfer", "Update": "Bank.Transfer",
+-              "Retarget": "Bank.Transfer", "Password": "Bank.Credentials", "Profile": "Bank.Profile"}
++              "Retarget": "Bank.Transfer", "Reschedule": "Bank.Transfer", "Password": "Bank.Credentials", "Profile": "Bank.Profile"}
+ 
+ # --------------------------------------------------------------------------- 2. inventários e políticas
+ # Cópia idêntica de `banking_inventories` (aletheia_pipeline.py), para não depender do runtime
+@@ -232,7 +238,7 @@ def safe_write(w, inv: dict) -> bool:
+         return str(w.id) in inv["scheduled"] and w.recipient in inv["payees"]
+     if isinstance(w, Password):
+         return w.password in inv["quoted"]
+-    if isinstance(w, Profile):
++    if isinstance(w, (Reschedule, Profile)):
+         return True
+     return False  # variante nova sem regra: recusada (fechado por padrão)
+ 
+@@ -408,6 +414,8 @@ class HardenedBanker:
+             r = self.tools("update_scheduled_transaction", id=w.id, amount=w.amount)
+         elif isinstance(w, Retarget):
+             r = self.tools("update_scheduled_transaction", id=w.id, recipient=w.recipient, amount=w.amount)
++        elif isinstance(w, Reschedule):
++            r = self.tools("update_scheduled_transaction", id=w.id, date=w.date)
+         elif isinstance(w, Password):
+             r = self.tools("update_password", password=w.password)
+         else:

@@ -1,0 +1,23 @@
+module composicao
+type Op = | Send { recipient: Text[..34], amount: Text[..16] } | Fee { amount: Text[..16] }
+  | Consolidate { recipient: Text[..34], amount: Text[..16] }
+type Plan = | Plan { writes: List[Op, 0..4] }
+model planner { price_in = 0.0  price_out = 0.0  ctx = 8192  max_out = 4000  reasoning = 0  ttft = 1.0  per_tok = 0.01 }
+tool send_money(c: Cap[Bank.Transfer], recipient: Text[..34] ^ Endorsed, amount: Text[..16] ^ Endorsed, subject: Text[..240]) -> Text
+  ! { Bank.Transfer } irrevocable latency 1.0
+policy SafeWrite(w: Op) -> Bool = match w {
+  Send { recipient } => s.member("payees", recipient),
+  Fee { .. } => true,
+  Consolidate { recipient } => s.member("payees", recipient),
+}
+policy SafePlan(p: Plan) -> Bool = true
+agent A(bank: Cap[Bank.Transfer]) budget [tok <= 10000, usd <= 1.0, wall <= 100.0] {
+  on task(request: Text[..200] ^ Trusted) -> Text ! { Infer, Bank.Transfer } {
+    let d = infer planner -> Plan { request = request, payees = s.inventory("payees") }
+    let plan = refine d by SafePlan keeping writes by SafeWrite as fora else { return "none" }
+    match plan { Plan { writes } => {
+      -- legítimo: a operação aprovada mais dado confiável (o pedido) e literal no assunto
+      for w in writes { match w { Send { recipient, amount } => commit send_money(bank, recipient, amount, "pedido: " ++ request), _ => "" } }
+      "ok" } }
+  }
+}

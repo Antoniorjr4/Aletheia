@@ -255,3 +255,178 @@ autorizado"). Interpretação aplicada: cobre as decisões de linguagem dentro d
 construção nova no núcleo (unidades em tipos, proposta em [p4/DIAGNOSTICO.md](p4/DIAGNOSTICO.md)).
 Não cobre merge de PR, gasto acima do orçamento de US$ 1,50 do ciclo nem mudança de critério,
 resultado ou teste; esses continuam exigindo pedido explícito.
+
+**26/11 — P3 medido: critério 5 NÃO atendido** ([bench/agentdojo/p3/PROTOCOLO.md](../bench/agentdojo/p3/PROTOCOLO.md)).
+Seis pedidos de mudança escritos por autor cego e congelados antes das implementações; um
+implementador por lado, sem ver o outro. Linhas de produção alteradas: Aletheia 78, P1 50 (**+56%**,
+margem 25%); tentativas 19 × 6; nenhuma versão incompleta pega estaticamente em nenhum dos lados. Em
+3 dos 6 pedidos (total corrido, tudo-ou-nada, conteúdo de texto) a decisão teve de ir para o host.
+Itens de linguagem que saem daí: predicados de texto em política, `keeping` com acumulador, contagem
+de recusas disponível à decisão de executar.
+
+**26/11 — pós-P3: as três lacunas fechadas na linguagem** ([p3/CAPACIDADES.md](p3/CAPACIDADES.md)).
+Diretiva do dono do projeto autorizando a implementação. Texto na política (`contains`, `lower`,
+`ascii_letters`, `ascii_digits`); `keeping` com a lista dos já aceitos (avaliação ordenada, C3);
+`keeping all` (autorização integral, C5). Modelo Lean estendido (`pruneOrd_sound`, `pruneAll_sound`,
+`pruneOrd_stateless`). Reaplicação dos quatro pedidos que tinham ido para o host: 67 → 27 linhas, host
+intacto, 19/19 casos; total dos seis 78 → 38 (P1: 50). **Diagnóstico sobre casos conhecidos; o
+resultado do P3 não muda.** Núcleo: +215/−16 linhas.
+
+**26/11 — revisão independente das capacidades pós-P3; D15 e D16 fechados.** Revisor sem
+participação nas mudanças: nenhum caminho novo para dado não confiável ou secreto chegar a efeito,
+nenhuma divergência entre runtimes nas entradas aceitas. Achados corrigidos, cada um com teste
+(`crates/athc/tests/ciclo1_revisao.rs`): **D15** (efeito irrevogável sem parâmetro rotulado podia ser
+decidido por dado não confiável; anterior ao ciclo), **D16** (valor de ramo `Secret` saía público de
+`if`/`match`; anterior ao ciclo), veredito de política sobre segredo, estouro em conta de política
+(agora E0451 estático, com aritmética de intervalos), E0422 contornável por `contains`, e quatro
+formas mal conferidas. Nenhum programa do repositório nem do M10 muda de aceitação. Em aberto: `-0`
+aceito só pelo runtime Python. Tabela de garantias corrigida onde afirmava mais que o provado.
+
+**26/11 — reproduções dirigidas de D15/D16 confirmadas e corrigidas; `-0` alinhado.** Os três casos
+pedidos pelo dono do projeto compilavam: `return` condicional sobre dado não confiável seguido de efeito
+irrevogável (inclusive com parâmetro `^ Endorsed`), o mesmo com dado `Secret` e canal público, e
+parâmetro `^ Untrusted` liberando a decisão do efeito. Agora E0412/E0440, com controles seguros
+aceitos e nenhum programa do repositório ou do M10 mudando de aceitação. `-0` lido como no serde_json
+nos dois runtimes. `pruneOrd_sound` documentado como teorema sobre a lista resultante. Auditoria de
+duplicação nos oráculos do M10: 13/40 verificadores legítimos aceitariam um efeito duplicado; nenhum
+cenário aprovado no M10 teve duplicação, então o resultado não muda; vira critério para o M11.
+
+**26/11 — P3b medido: critério 5 ATENDIDO nesta medição** ([bench/agentdojo/p3b/PROTOCOLO.md](../bench/agentdojo/p3b/PROTOCOLO.md)).
+Implementação e guias congelados (`bench/m11/FREEZE.json`, commit `223fb53`) antes dos pedidos. Seis
+pedidos novos de um autor cego, implementadores separados: Aletheia 83 linhas, P1 102 (0,81 × P1;
+margem 1,25). Tentativas 16 × 6. Uma regra (D5, conjunto de caracteres) foi para o host; D3 ficou no
+handler. O P3 (+56%, contra) continua registrado: são duas medições, uma de cada lado, e o relatório
+final traz as duas.
+
+**26/11 — M11: autoria parada no teto, 32/48.** Auditoria dos oráculos antes da autoria: 2 defeitos
+corrigidos em `packs_v2`, iguais para os dois lados. A autoria parou no teto de US$ 0,42, nas
+repetições 1–2. **Gasto do ciclo: US$ 1,1504.** Ainda não houve avaliação; a decisão sobre a terceira
+repetição fica com o Antonio e é tomada antes de ver os resultados.
+
+**26/11 — gasto adicional autorizado: US$ 0,00.** Antonio, 13:32: limite de US$ 1,00 no acumulado,
+já passado (US$ 1,1504), então nenhuma chamada paga. Os jobs pagos do `agentdojo.yml` agora falham
+antes de qualquer requisição se o pedido passar de `bench/orcamento/AUTORIZACAO.json` (hoje 0).
+
+**26/11 — M11: avaliação adversarial local** ([bench/m11/AVALIACAO-LOCAL.md](../bench/m11/AVALIACAO-LOCAL.md)).
+M11 interrompido por orçamento após 32 de 48 autorias. Avaliação adversarial local realizada;
+utilidade com modelo real e critério principal de superioridade não avaliados. Resultado local contra
+a Aletheia: a 1ª versão roda em 0/16 (Python 13/16), a final roda em 9/16 (Python 15/16), a final é
+segura em 6/16 (Python 13/16). Causa dominante: renomeação de campo no padrão, tentada em 15 das 16
+autorias, sem diagnóstico que diga a alternativa. Achados: um defeito no texto do E0422 (cita a
+suíte bancária) e uma limitação de vocabulário (faixa numérica numa linha confiável).
+
+**26/11 — reserva de saldo antes de cada requisição** ([bench/orcamento/reserva.py](../bench/orcamento/reserva.py)).
+O livro do M10 confere o teto antes e debita depois, e as tentativas internas do cliente não passam
+por ele; daí US$ 0,4210 contra um teto de 0,42. O módulo novo calcula o pior caso (entrada por cota em
+bytes, saída por `max_completion_tokens`), recusa sem enviar se não cabe, grava a reserva antes,
+liquida pelo uso informado ou pelo pior caso, desliga as tentativas internas e faz cada tentativa
+passar pela reserva. Onze testes offline, inclusive o histórico real do M11 reaplicado (para antes de
+0,42). Fica separado dos artefatos congelados: `bench/m10/author.py` não foi tocado. Qualquer campanha
+futura precisa ligá-lo ao executor e ao avaliador, e isso depende de autorização de gasto.
+
+**28/11 — E0453: implementada e interrompida; garantia não estabelecida** ([bench/agentdojo/x2/e0453/RELATORIO.md](../bench/agentdojo/x2/e0453/RELATORIO.md)).
+Decisão arquitetural X2 de 28/11. A E0453 recusa a chamada que combina dados de operações aprovadas
+distintas quando detecta a combinação; a testemunha X2 que recombinava (4 chamadas para 2 aprovadas)
+não compila mais, e o corpus muda só em 30 programas construídos para misturar (nenhuma autoria do
+M10/M11). Três revisões independentes acharam, cada uma, uma classe nova de fuga; as duas primeiras e
+parte da terceira foram corrigidas, e restam 5 fugas conhecidas (construtor que embrulha registro;
+lista literal de listas). Pela própria decisão, a implementação parou e o impedimento foi
+apresentado: sustentar a garantia pede a origem no sistema de rótulos e a proveniência medida no
+runtime. Agregação pura fora, com decisão pendente. Sem gasto, sem merge.
+
+**28/11 — decisão final: E0453 rebaixada a aviso experimental; defeito no rótulo do resultado de ferramenta** ([bench/agentdojo/x2/e0453/RELATORIO.md](../bench/agentdojo/x2/e0453/RELATORIO.md), seção 10; [bench/ferramentas/DEFEITO.md](../bench/ferramentas/DEFEITO.md)).
+Opção B: a E0453 aponta misturas suspeitas e não recusa; o texto diz que é parcial e não certifica.
+Redesenho não autorizado; agregação pura preservada (triagem RC8–RC10 inalterada). Regressão: 478
+programas versionados com o mesmo veredito do compilador anterior à E0453; os 13 programas gerados
+que tinham saído do tripé voltaram e concordam; B1 e F2 voltaram a rodar nos dois runtimes. A
+investigação do fluxo por ferramentas achou um defeito anterior ao ciclo, de gravidade alta: o
+retorno sem rótulo é `Trusted` e `Public` e não herda os argumentos, o que deixa dado `Untrusted`
+chegar a parâmetro `^ Endorsed` e decidir efeito irrevogável, e segredo chegar a sink público.
+Menor correção indicada e medida (nenhum veredito do corpus muda); não aplicada. Sem gasto, sem
+merge.
+
+## Parecer do checkpoint (01/12/2026), escrito em 26/11
+
+Resultados medidos, todos mantidos, os contrários inclusive:
+
+| frente | resultado | leitura |
+| --- | --- | --- |
+| capacidades pós-P3 (texto na política, `keeping` com estado, `keeping all`, E0451, D15, D16) | implementadas, com prova Lean de `pruneOrd`/`pruneAll`, revisão independente e reproduções dirigidas recusadas | [docs/p3/CAPACIDADES.md](p3/CAPACIDADES.md) |
+| decisões retiradas do host | reaplicação C2/C3/C5/C6 só no programa: 78 → 38 linhas | diagnóstico, não medição cega |
+| manutenção P3 | 78 × 50, critério **não** atendido | contra |
+| manutenção P3b (pedidos cegos novos, versão congelada) | 83 × 102 (0,81), critério **atendido**; tentativas 16 × 6; D3 no handler; D5 depende do host | a favor nas linhas, com custo em tentativas e uma regra fora da linguagem |
+| autoria e segurança M11 (local) | 1ª versão roda 0/16 × 13/16; final segura 6/16 × 13/16 | contra |
+| utilidade M11 com modelo real | não avaliada | sem orçamento |
+| critério principal de superioridade | não avaliado | sem orçamento |
+
+**Parecer.** Até aqui, o ciclo não demonstra superioridade da Aletheia sobre um Python competente.
+Ele demonstra três coisas menores. Primeiro, com as capacidades novas, as regras do P3 cabem no
+programa e a manutenção ficou mais curta numa medição cega (P3b), ao custo de mais tentativas.
+Segundo, as garantias seguraram: nenhuma violação passou por fora da política escrita, e saída
+malformada nunca foi aceita. Terceiro, a autoria por modelo foi pior no M11 que no M10, com guias v2
+e pacotes novos ao mesmo tempo (a causa não pode ser atribuída exclusivamente aos guias), e a causa
+principal das recusas é estreita e identificável.
+
+Bloqueios, em ordem de efeito medido:
+
+1. **Renomeação de campo no padrão** (`Use { item: k }`). É limitação da linguagem, e a mensagem de
+   erro não diz a alternativa. Pesou em 15 das 16 autorias.
+2. **Texto do E0422.** Defeito de implementação: local errado e ajuda de outra suíte.
+3. **Faixa numérica numa linha confiável** (`chave|mín|máx`). Limitação de vocabulário; causou a
+   única violação exclusiva da Aletheia que não foi omissão do autor.
+4. **Conjunto de caracteres na política** (D5 do P3b). Limitação; levou a regra para o host.
+5. **Palavras reservadas sem aviso** (`authority`, `policy`). Diagnóstico insuficiente.
+
+Corrigir 1, 2 e 5 não exige gasto e não muda a semântica das garantias. Mesmo assim, qualquer
+correção vira uma versão nova: a medição do M11 continua presa a `223fb53`, e um efeito sobre a
+autoria só pode ser medido com nova autorização de gasto. Sem ela, o que cabe até 08/12 é mostrar por
+reaplicação local, declarada como diagnóstico, que as 32 autorias existentes passariam a compilar ou
+não. A decisão final de 08/12 terá de dizer que o critério principal não foi avaliado.
+
+**26/11 — pós-M11: renomeação em padrão, E0422 e palavra reservada** ([docs/POS-M11.md](POS-M11.md)).
+Versão posterior à congelada; a medição do M11 continua presa a `223fb53` e não muda. O padrão
+`Use { item: k }` liga o campo `item` ao nome local `k`, que recebe o tipo, os limites, os rótulos e
+a origem do campo. Campo repetido e nome ligado duas vezes dão E0014. O E0422 aponta a comparação
+responsável e orienta pelas listas do programa, e a palavra reservada usada como nome é dita como
+tal. Corpus versionado (130 programas) idêntico: aceitação, códigos, raiz do Codex e Python emitido.
+Reanálise das 71 versões arquivadas, como diagnóstico: as primeiras que compilam passam de 0 para
+1, as finais ficam em 9; em 22 versões o erro seguinte ficou visível. Avaliação adversarial local
+com a versão nova: finais iguais às da congelada (3 violam, 6 sem violação observada, 7 não
+executam). Revisão independente: três achados da mudança corrigidos (hash do nome local, `campo: _`,
+texto da palavra reservada); dois defeitos anteriores na análise de obrigações (B1, B2) registrados
+como pendência, fechados em runtime por R0631. Gasto US$ 0,00.
+
+**27/11 — estado das avaliações, registrado separadamente** (diretiva do Antonio, 27/11 15:44).
+A autoria por modelo faz parte expressa da tese registrada no M10, no M11 e no plano do ciclo.
+Familiaridade do modelo com Python é explicação plausível para parte das dificuldades, mas a
+contribuição dela não foi isolada da contribuição da linguagem, do guia e dos diagnósticos.
+
+- **M10:** avaliação concluída; resultado não superior.
+- **M11:** 32 autorias realizadas e avaliação adversarial local concluída; resultado local
+  desfavorável.
+- **M11:** utilidade com modelo real e critério principal completo não avaliados.
+- **Correções posteriores** ([POS-M11.md](POS-M11.md)): diagnóstico sobre os programas arquivados.
+  Não se infere economia de tentativas nem de tokens, porque ela não foi medida.
+
+**27/11 — checkpoint de 01/12 escrito** ([CHECKPOINT-01-12.md](CHECKPOINT-01-12.md)). B1 e B2 foram
+reproduzidos, corrigidos e revisados em três rodadas. As revisões acharam outros casos do mesmo
+defeito (F1, F2, G1, H1), anteriores ao ciclo, e eles foram corrigidos com reprodução e teste.
+Também acharam excesso de cautela (F3, G2, G3), corrigido. H2 e H3 ficam abertos. Na varredura,
+R0631 caiu de 258 para 0 e a divergência entre os runtimes de 27 para 0; o corpus real ficou
+inalterado. A regressão do M4 saiu idêntica a 17/11. A extensão M4-ext: no X1, a Aletheia pegou na
+compilação e o P1 e o Pysa não; no X2, nenhum dos dois pegou. Gasto adicional: US$ 0,00.
+
+**27/11 — X2: testemunha, contrato relacional e proposta** ([bench/agentdojo/x2/RELATORIO.md](../bench/agentdojo/x2/RELATORIO.md),
+[PROPOSTA-OPERACAO.md](PROPOSTA-OPERACAO.md)). Reprodução dirigida posterior ao M4-ext, não cega,
+US$ 0,00.
+
+- **Testemunha:** com o espião no banco oficial, a mutação X2 envia 4 chamadas na Aletheia (ARX e
+  Python iguais), duas delas não aprovadas, e 2 no P1, uma não aprovada. O journal do P1 registra
+  R2 25,00 enquanto o banco recebe R2 10,00, e a deduplicação do P1 deixa uma transferência aprovada
+  sem sair. Todas as chamadas respeitam a política escrita, que só confere o destinatário.
+- **Contrato relacional (`requires s.binds`):** recusa a combinação fora da lista antes da
+  ferramenta, mas deixa passar combinações que estão na lista e não são a operação aprovada.
+- **Protótipo `athc operacoes` (diagnóstico, sem efeito na aceitação):** acusa a mistura no X2 e
+  não acusa nenhuma nos 69 programas que compilam no corpus.
+- **Proposta (não implementada):** checagem estática E0453; composição explícita como variante do
+  plano aprovada pela política.

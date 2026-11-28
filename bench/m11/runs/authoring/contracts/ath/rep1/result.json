@@ -1,0 +1,41 @@
+{
+ "pack": "contracts",
+ "lang": "ath",
+ "rep": 1,
+ "model": "openai/gpt-oss-120b",
+ "clean": true,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.ath",
+   "tok_in": 4183,
+   "tok_out": 5877,
+   "feedback": "athc check:\nerror[P0001]: esperado `}`, encontrado `:`\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/contracts/ath/rep1/v1.ath:63:30\n   |\n63 |         SendSig { contract_id: cid } => if cid == contract_id { 1 } else { 0 },\n   |                              ^ aqui\n\nerror[P0001]: esperado identificador, encontrado `authority`\n   --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/contracts/ath/rep1/v1.ath:117:9\n    |\n117 |     let authority = get_signing_authority(caps)\n    |         ^^^^^^^^^ aqui\n\nrejeitado: 2 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 2,
+   "file": "v2.ath",
+   "tok_in": 5989,
+   "tok_out": 3773,
+   "feedback": "athc check:\nerror[P0001]: esperado identificador, encontrado `authority`\n   --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/contracts/ath/rep1/v2.ath:137:7\n    |\n137 |       authority = s.inventory(\"signing_authority_cents\"),\n    |       ^^^^^^^^^ aqui\n\nrejeitado: 1 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 3,
+   "file": "v3.ath",
+   "tok_in": 7724,
+   "tok_out": 2742,
+   "feedback": "athc check:\nerror[E0008]: `any` exige uma lista delimitada\n   --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/contracts/ath/rep1/v3.ath:102:21\n    |\n102 |       && any lim in s.inventory(\"amendment_limits\") =>\n    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ encontrado `Text`\n    |\n    = ajuda: itere uma `List[T, a..b]`: o teto `b` limita o custo do laço no E6\n\nerror[E0008]: `any` exige uma lista delimitada\n   --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/contracts/ath/rep1/v3.ath:108:22\n    |\n108 |       && any appr in s.inventory(\"approved_terms\") =>\n    |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ encontrado `Text`\n    |\n    = ajuda: itere uma `List[T, a..b]`: o teto `b` limita o custo do laço no E6\n\nerror[E0008]: `any` exige uma lista delimitada\n   --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/contracts/ath/rep1/v3.ath:110:25\n    |\n110 |             any sign in s.inventory(\"signed_terms\") => (appr == sign))\n    |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ encontrado `Text`\n    |\n    = ajuda: itere uma `List[T, a..b]`: o teto `b` limita o custo do laço no E6\n\nrejeitado: 3 diagnóstico(s) no estrato E0 estrutura; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 4,
+   "file": "v4.ath",
+   "tok_in": 9798,
+   "tok_out": 2359,
+   "feedback": ""
+  }
+ ],
+ "tok_in": 27694,
+ "tok_out": 14751,
+ "seconds": 37.0,
+ "usd": 0.013005
+}

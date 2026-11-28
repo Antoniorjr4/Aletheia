@@ -1,0 +1,4 @@
+module ex.renomear
+type Op = | Use { item: Text[..20] }
+policy Unico(o: Op, aceitos: List[Op, 0..8]) -> Bool =
+  match o { Use { item: k } => (sum a in aceitos => match a { Use { item } => if item == k { 1 } else { 0 } }) == 0 }

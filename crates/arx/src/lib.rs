@@ -1044,7 +1044,10 @@ impl<'m> Arx<'m> {
                 let scope = arm
                     .binds
                     .iter()
-                    .filter_map(|b| fields.iter().find(|(k, _)| *k == b.name).map(|(k, v)| (k.clone(), v.clone())))
+                    .zip(&arm.fields)
+                    .filter_map(|(b, f)| {
+                        fields.iter().find(|(k, _)| *k == f.name).map(|(_, v)| (b.name.clone(), v.clone()))
+                    })
                     .collect();
                 self.scopes.push(scope);
                 let r = self.eval(&arm.body);
@@ -2086,6 +2089,22 @@ impl<'m> Arx<'m> {
                 }
                 return Ok(Value::Text(parts.join(&sep)));
             }
+            "contains" => {
+                let (Value::Text(t), Value::Text(p)) = (self.eval(&args[0])?, self.eval(&args[1])?) else {
+                    return Err(rt("R0103", "`contains` sobre valor não textual").into());
+                };
+                return Ok(Value::Bool(t.contains(p.as_str())));
+            }
+            "lower" | "ascii_letters" | "ascii_digits" => {
+                let Value::Text(t) = self.eval(&args[0])? else {
+                    return Err(rt("R0103", format!("`{}` sobre valor não textual", callee.name)).into());
+                };
+                return Ok(match callee.name.as_str() {
+                    "lower" => Value::Text(t.to_ascii_lowercase()),
+                    "ascii_letters" => Value::Int(t.chars().filter(char::is_ascii_alphabetic).count() as i64),
+                    _ => Value::Int(t.chars().filter(char::is_ascii_digit).count() as i64),
+                });
+            }
             "len" => {
                 return match self.eval(&args[0])? {
                     Value::List(items) => Ok(Value::Int(items.len() as i64)),
@@ -2115,15 +2134,25 @@ impl<'m> Arx<'m> {
             for a in args {
                 vals.push(self.eval(a)?);
             }
-            let arg = vals.into_iter().next().unwrap_or(Value::Unit);
-            return Ok(Value::Bool(self.eval_policy(p, arg)?));
+            let mut it = vals.into_iter();
+            let arg = it.next().unwrap_or(Value::Unit);
+            return Ok(Value::Bool(self.eval_policy_with(p, arg, it.next())?));
         }
         Err(rt("R0108", format!("função `{}` desconhecida", callee.name)).into())
     }
 
     fn eval_policy(&mut self, p: &'m PolicyDecl, arg: Value) -> R<bool> {
+        self.eval_policy_with(p, arg, None)
+    }
+
+    /// A política de `keeping` com estado: o segundo argumento é a lista dos já aceitos.
+    fn eval_policy_with(&mut self, p: &'m PolicyDecl, arg: Value, accepted: Option<Value>) -> R<bool> {
         let saved = std::mem::take(&mut self.scopes);
-        self.scopes = vec![vec![(p.params[0].name.name.clone(), arg)]];
+        let mut frame = vec![(p.params[0].name.name.clone(), arg)];
+        if let (Some(acc), Some(param)) = (accepted, p.params.get(1)) {
+            frame.push((param.name.name.clone(), acc));
+        }
+        self.scopes = vec![frame];
         let r = self.eval(&p.body);
         self.scopes = saved;
         match r? {
@@ -2410,12 +2439,21 @@ impl<'m> Arx<'m> {
         };
         let Value::List(items) = std::mem::replace(&mut fields[pos].1, Value::Unit) else { unreachable!() };
         let (mut kept, mut dropped) = (Vec::new(), Vec::new());
+        let stateful = q.params.len() == 2;
+        let proposed = if k.all { items.clone() } else { Vec::new() };
         for x in items {
-            if self.eval_policy(q, x.clone())? {
+            // Em ordem. Um erro ao avaliar a política aborta o `refine`: nunca vira aceitação.
+            let acc = stateful.then(|| Value::List(kept.clone()));
+            if self.eval_policy_with(q, x.clone(), acc)? {
                 kept.push(x);
             } else {
                 dropped.push(x);
             }
+        }
+        // `keeping all`: uma recusa basta para nada ficar; o que sai é a proposta inteira.
+        if k.all && !dropped.is_empty() {
+            kept.clear();
+            dropped = proposed;
         }
         let min = self
             .m

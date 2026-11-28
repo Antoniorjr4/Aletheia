@@ -1,0 +1,48 @@
+{
+ "pack": "maintenance",
+ "lang": "ath",
+ "rep": 1,
+ "model": "openai/gpt-oss-120b",
+ "clean": false,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.ath",
+   "tok_in": 4342,
+   "tok_out": 6272,
+   "feedback": "athc check:\nerror[P0001]: esperado `}`, encontrado `=`\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/maintenance/ath/rep1/v1.ath:75:31\n   |\n75 |               Open { asset_id = k } => if asset_id == k { 1 } else { 0 },\n   |                               ^ aqui\n\nrejeitado: 1 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 2,
+   "file": "v2.ath",
+   "tok_in": 6350,
+   "tok_out": 3351,
+   "feedback": "athc check:\nerror[P0001]: esperado `}`, encontrado `=`\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/maintenance/ath/rep1/v2.ath:91:31\n   |\n91 |             OrderPart { wo_id = w, quantity = q, unit_price_cents = p } =>\n   |                               ^ aqui\n\nrejeitado: 1 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 3,
+   "file": "v3.ath",
+   "tok_in": 8435,
+   "tok_out": 3320,
+   "feedback": "athc check:\nerror[P0001]: esperado `}`, encontrado `=`\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/maintenance/ath/rep1/v3.ath:97:33\n   |\n97 |             Notify { technician = t } => if t == technician { 1 } else { 0 },\n   |                                 ^ aqui\n\nrejeitado: 1 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 4,
+   "file": "v4.ath",
+   "tok_in": 10445,
+   "tok_out": 2524,
+   "feedback": "athc check:\nerror[E0001]: variável desconhecida `rem`\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/maintenance/ath/rep1/v4.ath:87:59\n   |\n87 |       let budget_ok = s.binds(\"remaining_budgets\", wo_id, rem) && (quantity * unit_price_cents) <= rem\n   |                                                           ^^^ não encontrada neste escopo\n\nerror[E0001]: variável desconhecida `rem`\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/maintenance/ath/rep1/v4.ath:87:100\n   |\n87 |       let budget_ok = s.binds(\"remaining_budgets\", wo_id, rem) && (quantity * unit_price_cents) <= rem\n   |                                                                                                    ^^^ não encontrada neste escopo\n\nrejeitado: 2 diagnóstico(s) no estrato E0 estrutura; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 5,
+   "file": "v5.ath",
+   "tok_in": 12527,
+   "tok_out": 3228,
+   "feedback": "athc check:\nerror[P0001]: esperado `}`, encontrado `=`\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/maintenance/ath/rep1/v5.ath:89:31\n   |\n89 |             OrderPart { wo_id = w, quantity = q, unit_price_cents = p } =>\n   |                               ^ aqui\n\nrejeitado: 1 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  }
+ ],
+ "tok_in": 42099,
+ "tok_out": 18695,
+ "seconds": 42.7,
+ "usd": 0.017532
+}

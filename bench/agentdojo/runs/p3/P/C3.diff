@@ -1,0 +1,47 @@
+diff --git a/bench/agentdojo/hardened/banking_hardened.py b/bench/agentdojo/hardened/banking_hardened.py
+index 13b5829..830dc9d 100644
+--- a/bench/agentdojo/hardened/banking_hardened.py
++++ b/bench/agentdojo/hardened/banking_hardened.py
+@@ -31,6 +31,7 @@ import hashlib
+ import json
+ import re
+ from dataclasses import dataclass, field
++from decimal import Decimal
+ from typing import Annotated, Any, Callable, Literal, Union
+ 
+ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
+@@ -222,9 +223,14 @@ def banking_inventories(request: str, env) -> dict:
+     }
+ 
+ 
+-def safe_write(w, inv: dict) -> bool:
+-    """A mesma regra do `SafeWrite` do programa Aletheia."""
+-    if isinstance(w, (Send, Schedule)):
++SEND_CAP = Decimal("500.00")
++
++
++def safe_write(w, inv: dict, sent: Decimal = Decimal(0)) -> bool:
++    """A mesma regra do `SafeWrite` do programa Aletheia. `sent`: total dos `Send` já aceitos no plano."""
++    if isinstance(w, Send):
++        return w.recipient in inv["payees"] and sent + Decimal(w.amount) <= SEND_CAP
++    if isinstance(w, Schedule):
+         return w.recipient in inv["payees"]
+     if isinstance(w, Update):
+         return str(w.id) in inv["scheduled"]
+@@ -374,8 +380,14 @@ class HardenedBanker:
+ 
+     # -- porta da política (controles 2 e 4)
+     def _gate(self, out: Outcome, plan: Plan, inv: dict, mode: str):
+-        ok = [w for w in plan.writes if safe_write(w, inv)]
+-        bad = [w for w in plan.writes if not safe_write(w, inv)]
++        ok, bad, sent = [], [], Decimal(0)
++        for w in plan.writes:
++            if safe_write(w, inv, sent):
++                ok.append(w)
++                if isinstance(w, Send):
++                    sent += Decimal(w.amount)
++            else:
++                bad.append(w)
+         if mode == "strict" and bad:
+             out.journal.push("policy_reject", {"writes": [w.model_dump() for w in plan.writes]})
+             return None, []

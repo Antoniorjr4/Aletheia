@@ -1,0 +1,46 @@
+diff --git a/bench/agentdojo/banking_v3_keeping.ath b/bench/agentdojo/banking_v3_keeping.ath
+index 00e44bd..bff60d6 100644
+--- a/bench/agentdojo/banking_v3_keeping.ath
++++ b/bench/agentdojo/banking_v3_keeping.ath
+@@ -168,19 +168,24 @@ agent Banker(bank: Cap[Bank.Read + Bank.Transfer + Bank.Credentials + Bank.Profi
+         -- ③ executar o que a política endossou, com a autoridade da capacidade
+         match plan {
+           Plan { writes, answer } => {
++            -- teto do plano: se o dinheiro novo (Send + Schedule já endossados) passa de 2000.00,
++            -- nenhum Send nem Schedule é executado; as demais operações seguem
++            let fresh = sum w in writes => match w { Send { cents } => cents, Schedule { cents } => cents, _ => 0 }
++            let capped = if fresh > 200000 { sum w in writes => match w { Send { .. } => 1, Schedule { .. } => 1, _ => 0 } } else { 0 }
+             for w in writes {
+               match w {
+-                Send { recipient, cents, subject, date } => commit send_money(bank, recipient, cents, subject, date),
++                Send { recipient, cents, subject, date } =>
++                  if capped == 0 { commit send_money(bank, recipient, cents, subject, date) } else { "" },
+                 Schedule { recipient, cents, subject, date, recurring } =>
+-                  commit schedule_transaction(bank, recipient, cents, subject, date, recurring),
++                  if capped == 0 { commit schedule_transaction(bank, recipient, cents, subject, date, recurring) } else { "" },
+                 Update { id, cents } => commit update_scheduled_amount(bank, id, cents),
+                 Retarget { id, recipient, cents } => commit retarget_scheduled(bank, id, recipient, cents),
+                 Password { password } => commit update_password(bank, password),
+                 Profile { street, city } => commit update_user_info(bank, street, city),
+               }
+             }
+-            if len(fora) == 0 { answer } else {
+-              answer ++ "\n\n[Aletheia] " ++ text(len(fora)) ++ " operation(s) left out by the security policy were NOT executed."
++            if len(fora) + capped == 0 { answer } else {
++              answer ++ "\n\n[Aletheia] " ++ text(len(fora) + capped) ++ " operation(s) left out by the security policy were NOT executed."
+             }
+           },
+         }
+diff --git a/bench/agentdojo/tests/test_v3_cents.py b/bench/agentdojo/tests/test_v3_cents.py
+index b93e521..bcb5cc8 100644
+--- a/bench/agentdojo/tests/test_v3_cents.py
++++ b/bench/agentdojo/tests/test_v3_cents.py
+@@ -75,7 +75,7 @@ class CentsTests(unittest.TestCase):
+             self.assertIsNone(error, repr(bad))
+ 
+     def test_valid_cents_reach_the_official_tool_as_the_exact_amount(self):
+-        for cents, amount in ((1, 0.01), (1234, 12.34), (9870, 98.7), (100000000, 1000000.0)):
++        for cents, amount in ((1, 0.01), (1234, 12.34), (9870, 98.7), (200000, 2000.0)):
+             kinds, sends, error = self.run_plan([send(cents)])
+             self.assertIsNone(error)
+             self.assertEqual([c["args"]["amount"] for c in sends], [amount], cents)

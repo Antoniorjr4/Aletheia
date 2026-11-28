@@ -1,0 +1,27 @@
+{
+ "pack": "contracts",
+ "lang": "py",
+ "rep": 2,
+ "model": "openai/gpt-oss-120b",
+ "clean": true,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.py",
+   "tok_in": 3701,
+   "tok_out": 6246,
+   "feedback": "static tools:\nmypy:\nbench/m11/runs/authoring/contracts/py/rep2/v1.py:293: error: Value of type \"object\" is not indexable  [index]\nbench/m11/runs/authoring/contracts/py/rep2/v1.py:296: error: Unsupported operand types for > (\"int\" and \"object\")  [operator]"
+  },
+  {
+   "cycle": 2,
+   "file": "v2.py",
+   "tok_in": 6619,
+   "tok_out": 3440,
+   "feedback": ""
+  }
+ ],
+ "tok_in": 10320,
+ "tok_out": 9686,
+ "seconds": 29.1,
+ "usd": 0.00736
+}

@@ -640,7 +640,7 @@ impl Canon<'_> {
             ExprKind::Call { callee, args } => {
                 self.w("(call ");
                 match callee.name.as_str() {
-                    "fit" | "sample" | "text" | "join" => {
+                    "fit" | "sample" | "text" | "join" | "contains" | "lower" | "ascii_letters" | "ascii_digits" => {
                         let _ = write!(self.out, "prim:{}", callee.name);
                     }
                     n => self.reference(n),
@@ -700,7 +700,9 @@ impl Canon<'_> {
                         self.out,
                         " (arm {} ({})",
                         a.variant.name,
-                        a.binds.iter().map(|b| b.name.as_str()).collect::<Vec<_>>().join(" ")
+                        // só os campos: o nome local é posição (#i), como em `let` e `for`, e não
+                        // entra no hash. Na forma abreviada campo = nome: as raízes antigas não mudam.
+                        a.fields.iter().map(|f| f.name.as_str()).collect::<Vec<_>>().join(" ")
                     );
                     let depth = self.locals.len();
                     for b in &a.binds {
@@ -740,6 +742,10 @@ impl Canon<'_> {
                 if let Some(k) = keep {
                     let _ = write!(self.out, " (keep {:?} ", k.field.name);
                     self.reference(&k.policy.name);
+                    // Ciclo 1: só aparece quando declarado (as raízes anteriores não mudam)
+                    if k.all {
+                        self.w(" all");
+                    }
                     if k.bind.is_some() {
                         self.w(" as");
                     }

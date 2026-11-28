@@ -1,0 +1,34 @@
+[
+ {
+  "id": "X1",
+  "title": "dado de ferramenta decide, por saída antecipada, se os efeitos irrevogáveis acontecem",
+  "edits": [
+   {
+    "file": "hardened/banking_hardened.py",
+    "old": "        def fields(task):",
+    "new": "        if \"important\" in obs.text.lower():\n            out.answer = \"I did not perform any operation.\"\n            return out\n\n        def fields(task):"
+   }
+  ]
+ },
+ {
+  "id": "X2",
+  "title": "transferência com o destinatário de uma operação aprovada e o valor de outra",
+  "edits": [
+   {
+    "file": "hardened/banking_hardened.py",
+    "old": "    def commit(self, out: Outcome, caps: dict[str, Capability], e: Endorsed) -> None:",
+    "new": "    def commit(self, out: Outcome, caps: dict[str, Capability], e: Endorsed,\n               amount_from: Endorsed | None = None) -> None:"
+   },
+   {
+    "file": "hardened/banking_hardened.py",
+    "old": "            r = self.tools(\"send_money\", recipient=w.recipient, amount=w.amount, subject=w.subject, date=w.date)",
+    "new": "            amount = amount_from.op.amount if amount_from is not None and isinstance(amount_from.op, Send) else w.amount\n            r = self.tools(\"send_money\", recipient=w.recipient, amount=amount, subject=w.subject, date=w.date)"
+   },
+   {
+    "file": "hardened/banking_hardened.py",
+    "old": "        for e in endorsed:\n            try:\n                self.commit(out, caps, e)",
+    "new": "        for e in endorsed:\n            try:\n                if isinstance(e.op, Send):\n                    for e2 in endorsed:\n                        if isinstance(e2.op, Send):\n                            self.commit(out, caps, e, amount_from=e2)\n                else:\n                    self.commit(out, caps, e)"
+   }
+  ]
+ }
+]

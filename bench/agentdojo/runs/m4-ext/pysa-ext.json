@@ -1,0 +1,17 @@
+{
+ "baseline_issues": [],
+ "defects": [
+  {
+   "id": "X1",
+   "title": "dado de ferramenta decide, por saída antecipada, se os efeitos irrevogáveis acontecem",
+   "issues": [],
+   "detected": false
+  },
+  {
+   "id": "X2",
+   "title": "transferência com o destinatário de uma operação aprovada e o valor de outra",
+   "issues": [],
+   "detected": false
+  }
+ ]
+}

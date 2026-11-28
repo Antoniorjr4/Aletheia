@@ -1,0 +1,7 @@
+{
+ "revisao3/b01_ll_sum.ath": "lista literal de listas com listas distintas: o laço sobre o literal zera a lista, e a soma não vira agregação nem mistura",
+ "revisao3/b02_ll_sum_noroot.ath": "idem, sem campo da raiz",
+ "revisao3/b13_ll_elem_g.ath": "idem, com as duas sublistas de um elemento",
+ "revisao3/b16_ctor_wrap.ath": "construtor que embrulha um registro: o caminho embrulhado coincide com o de outra lista real",
+ "revisao3/b17_ctor_wrap_match.ath": "idem, pela forma `match`"
+}

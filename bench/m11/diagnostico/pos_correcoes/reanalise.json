@@ -1,0 +1,7503 @@
+{
+ "m11": [
+  {
+   "autoria": "access_control/rep1",
+   "arquivo": "v1.ath",
+   "tipo": "primeira",
+   "vazio": true,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `module`, encontrado fim do arquivo",
+      "at": [
+       1,
+       1
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `module`, encontrado fim do arquivo",
+      "at": [
+       1,
+       1
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "P0001, mesmo primeiro diagnóstico"
+  },
+  {
+   "autoria": "access_control/rep1",
+   "arquivo": "v2.ath",
+   "tipo": "intermediária",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0001",
+      "msg": "função desconhecida `concat`",
+      "at": [
+       79,
+       35
+      ]
+     },
+     {
+      "code": "E0001",
+      "msg": "função desconhecida `concat`",
+      "at": [
+       83,
+       30
+      ]
+     },
+     {
+      "code": "E0001",
+      "msg": "função desconhecida `concat`",
+      "at": [
+       86,
+       36
+      ]
+     },
+     {
+      "code": "E0008",
+      "msg": "`all` exige uma lista delimitada",
+      "at": [
+       104,
+       17
+      ]
+     },
+     {
+      "code": "E0001",
+      "msg": "variável desconhecida `skip`",
+      "at": [
+       165,
+       21
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0001",
+      "msg": "função desconhecida `concat`",
+      "at": [
+       79,
+       35
+      ]
+     },
+     {
+      "code": "E0001",
+      "msg": "função desconhecida `concat`",
+      "at": [
+       83,
+       30
+      ]
+     },
+     {
+      "code": "E0001",
+      "msg": "função desconhecida `concat`",
+      "at": [
+       86,
+       36
+      ]
+     },
+     {
+      "code": "E0008",
+      "msg": "`all` exige uma lista delimitada",
+      "at": [
+       104,
+       17
+      ]
+     },
+     {
+      "code": "E0001",
+      "msg": "variável desconhecida `skip`",
+      "at": [
+       165,
+       21
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "E0001, mesmo primeiro diagnóstico"
+  },
+  {
+   "autoria": "access_control/rep1",
+   "arquivo": "v3.ath",
+   "tipo": "intermediária",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `{`, encontrado `then`",
+      "at": [
+       86,
+       56
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `{`, encontrado `then`",
+      "at": [
+       86,
+       56
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "P0001, mesmo primeiro diagnóstico"
+  },
+  {
+   "autoria": "access_control/rep1",
+   "arquivo": "v4.ath",
+   "tipo": "intermediária",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `}`, encontrado `:`",
+      "at": [
+       86,
+       24
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0008",
+      "msg": "`all` exige uma lista delimitada",
+      "at": [
+       80,
+       21
+      ]
+     },
+     {
+      "code": "E0011",
+      "msg": "braços com tipos diferentes",
+      "at": [
+       178,
+       21
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "P0001 → E0008 (erro seguinte ficou visível)"
+  },
+  {
+   "autoria": "access_control/rep1",
+   "arquivo": "v5.ath",
+   "tipo": "final",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `}`, encontrado `:`",
+      "at": [
+       107,
+       24
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0001",
+      "msg": "variável desconhecida `in`",
+      "at": [
+       76,
+       29
+      ]
+     },
+     {
+      "code": "E0008",
+      "msg": "`all` exige uma lista delimitada",
+      "at": [
+       81,
+       21
+      ]
+     },
+     {
+      "code": "E0011",
+      "msg": "braços com tipos diferentes",
+      "at": [
+       179,
+       21
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "P0001 → E0001 (erro seguinte ficou visível)"
+  },
+  {
+   "autoria": "access_control/rep2",
+   "arquivo": "v1.ath",
+   "tipo": "primeira",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `}`, encontrado `:`",
+      "at": [
+       72,
+       23
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `!`",
+      "at": [
+       73,
+       13
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "P0001 → P0001 (erro seguinte ficou visível)"
+  },
+  {
+   "autoria": "access_control/rep2",
+   "arquivo": "v2.ath",
+   "tipo": "intermediária",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `}`, encontrado `:`",
+      "at": [
+       73,
+       23
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `!`",
+      "at": [
+       74,
+       13
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "P0001 → P0001 (erro seguinte ficou visível)"
+  },
+  {
+   "autoria": "access_control/rep2",
+   "arquivo": "v3.ath",
+   "tipo": "intermediária",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `let`",
+      "at": [
+       65,
+       7
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `let`",
+      "at": [
+       65,
+       7
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "P0001, mesmo primeiro diagnóstico"
+  },
+  {
+   "autoria": "access_control/rep2",
+   "arquivo": "v4.ath",
+   "tipo": "intermediária",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `}`, encontrado `:`",
+      "at": [
+       72,
+       23
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `!`",
+      "at": [
+       73,
+       13
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "P0001 → P0001 (erro seguinte ficou visível)"
+  },
+  {
+   "autoria": "access_control/rep2",
+   "arquivo": "v5.ath",
+   "tipo": "final",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `!`",
+      "at": [
+       74,
+       15
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `!`",
+      "at": [
+       74,
+       15
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "P0001, mesmo primeiro diagnóstico"
+  },
+  {
+   "autoria": "contracts/rep1",
+   "arquivo": "v1.ath",
+   "tipo": "primeira",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `}`, encontrado `:`",
+      "at": [
+       63,
+       30
+      ]
+     },
+     {
+      "code": "P0001",
+      "msg": "esperado identificador, encontrado `authority`",
+      "at": [
+       117,
+       9
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado um nome, encontrado `authority`: `authority` é palavra reservada e não pode ser usada como nome; se era o nome, escolha outro (por exemplo `authority_value`)",
+      "at": [
+       117,
+       9
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "P0001 → P0001 (erro seguinte ficou visível)"
+  },
+  {
+   "autoria": "contracts/rep1",
+   "arquivo": "v2.ath",
+   "tipo": "intermediária",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado identificador, encontrado `authority`",
+      "at": [
+       137,
+       7
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado um nome, encontrado `authority`: `authority` é palavra reservada e não pode ser usada como nome; se era o nome, escolha outro (por exemplo `authority_value`)",
+      "at": [
+       137,
+       7
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "P0001, mesmo lugar, só a mensagem mudou"
+  },
+  {
+   "autoria": "contracts/rep1",
+   "arquivo": "v3.ath",
+   "tipo": "intermediária",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0008",
+      "msg": "`any` exige uma lista delimitada",
+      "at": [
+       102,
+       21
+      ]
+     },
+     {
+      "code": "E0008",
+      "msg": "`any` exige uma lista delimitada",
+      "at": [
+       108,
+       22
+      ]
+     },
+     {
+      "code": "E0008",
+      "msg": "`any` exige uma lista delimitada",
+      "at": [
+       110,
+       25
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0008",
+      "msg": "`any` exige uma lista delimitada",
+      "at": [
+       102,
+       21
+      ]
+     },
+     {
+      "code": "E0008",
+      "msg": "`any` exige uma lista delimitada",
+      "at": [
+       108,
+       22
+      ]
+     },
+     {
+      "code": "E0008",
+      "msg": "`any` exige uma lista delimitada",
+      "at": [
+       110,
+       25
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "E0008, mesmo primeiro diagnóstico"
+  },
+  {
+   "autoria": "contracts/rep1",
+   "arquivo": "v4.ath",
+   "tipo": "final",
+   "vazio": false,
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "8ba475d60c25",
+     "cd7263836410f37b8b4ddfa71b938599622bb238283fbdc914abdf84ace5ad0a"
+    ],
+    "emit": "1912e9d67589fcbd7405ac805ab2db764b83c997904d2aea59e725bccfa78ac5"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "8ba475d60c25",
+     "cd7263836410f37b8b4ddfa71b938599622bb238283fbdc914abdf84ace5ad0a"
+    ],
+    "emit": "1912e9d67589fcbd7405ac805ab2db764b83c997904d2aea59e725bccfa78ac5"
+   },
+   "transicao": "compilava e compila"
+  },
+  {
+   "autoria": "contracts/rep2",
+   "arquivo": "v1.ath",
+   "tipo": "primeira",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `}`, encontrado `:`",
+      "at": [
+       63,
+       31
+      ]
+     },
+     {
+      "code": "P0001",
+      "msg": "esperado identificador, encontrado `authority`",
+      "at": [
+       102,
+       7
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado um nome, encontrado `authority`: `authority` é palavra reservada e não pode ser usada como nome; se era o nome, escolha outro (por exemplo `authority_value`)",
+      "at": [
+       102,
+       7
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "P0001 → P0001 (erro seguinte ficou visível)"
+  },
+  {
+   "autoria": "contracts/rep2",
+   "arquivo": "v2.ath",
+   "tipo": "intermediária",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado identificador, encontrado `authority`",
+      "at": [
+       106,
+       7
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado um nome, encontrado `authority`: `authority` é palavra reservada e não pode ser usada como nome; se era o nome, escolha outro (por exemplo `authority_value`)",
+      "at": [
+       106,
+       7
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "P0001, mesmo lugar, só a mensagem mudou"
+  },
+  {
+   "autoria": "contracts/rep2",
+   "arquivo": "v3.ath",
+   "tipo": "intermediária",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0011",
+      "msg": "braços com tipos diferentes",
+      "at": [
+       123,
+       21
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0011",
+      "msg": "braços com tipos diferentes",
+      "at": [
+       123,
+       21
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "E0011, mesmo primeiro diagnóstico"
+  },
+  {
+   "autoria": "contracts/rep2",
+   "arquivo": "v4.ath",
+   "tipo": "final",
+   "vazio": false,
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "d69588a4ffa8",
+     "db110b8725e0336d1fabc121137ec93a8448f70e75a321a14bccefbd3e806c24"
+    ],
+    "emit": "4682f07f3930fd5d7eaf4eb4b29f0634278c12f8c2d8cbce4edc86ca1cbadb47"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "d69588a4ffa8",
+     "db110b8725e0336d1fabc121137ec93a8448f70e75a321a14bccefbd3e806c24"
+    ],
+    "emit": "4682f07f3930fd5d7eaf4eb4b29f0634278c12f8c2d8cbce4edc86ca1cbadb47"
+   },
+   "transicao": "compilava e compila"
+  },
+  {
+   "autoria": "fleet/rep1",
+   "arquivo": "v1.ath",
+   "tipo": "primeira",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `}`, encontrado `:`",
+      "at": [
+       76,
+       21
+      ]
+     },
+     {
+      "code": "P0001",
+      "msg": "esperado `{`, encontrado `!`",
+      "at": [
+       126,
+       3
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `{`, encontrado `!`",
+      "at": [
+       126,
+       3
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "P0001 → P0001 (erro seguinte ficou visível)"
+  },
+  {
+   "autoria": "fleet/rep1",
+   "arquivo": "v2.ath",
+   "tipo": "intermediária",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `}`, encontrado `:`",
+      "at": [
+       86,
+       35
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0011",
+      "msg": "braços com tipos diferentes",
+      "at": [
+       170,
+       21
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "P0001 → E0011 (erro seguinte ficou visível)"
+  },
+  {
+   "autoria": "fleet/rep1",
+   "arquivo": "v3.ath",
+   "tipo": "intermediária",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0011",
+      "msg": "braços com tipos diferentes",
+      "at": [
+       170,
+       21
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0011",
+      "msg": "braços com tipos diferentes",
+      "at": [
+       170,
+       21
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "E0011, mesmo primeiro diagnóstico"
+  },
+  {
+   "autoria": "fleet/rep1",
+   "arquivo": "v4.ath",
+   "tipo": "final",
+   "vazio": false,
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "cf2d5fa23dbe",
+     "12c836af195be531ba885eca302d689390f919444a98ff32498eb98537495316"
+    ],
+    "emit": "8f246b0e343f2d5e71490b40b45b1c83e090265ca1d2f771d25966585bb18496"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "cf2d5fa23dbe",
+     "12c836af195be531ba885eca302d689390f919444a98ff32498eb98537495316"
+    ],
+    "emit": "8f246b0e343f2d5e71490b40b45b1c83e090265ca1d2f771d25966585bb18496"
+   },
+   "transicao": "compilava e compila"
+  },
+  {
+   "autoria": "fleet/rep2",
+   "arquivo": "v1.ath",
+   "tipo": "primeira",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `let`",
+      "at": [
+       76,
+       10
+      ]
+     },
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `let`",
+      "at": [
+       93,
+       7
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `let`",
+      "at": [
+       76,
+       10
+      ]
+     },
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `let`",
+      "at": [
+       93,
+       7
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "P0001, mesmo primeiro diagnóstico"
+  },
+  {
+   "autoria": "fleet/rep2",
+   "arquivo": "v2.ath",
+   "tipo": "intermediária",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `let`",
+      "at": [
+       91,
+       13
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `let`",
+      "at": [
+       91,
+       13
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "P0001, mesmo primeiro diagnóstico"
+  },
+  {
+   "autoria": "fleet/rep2",
+   "arquivo": "v3.ath",
+   "tipo": "intermediária",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0008",
+      "msg": "`any` exige uma lista delimitada",
+      "at": [
+       90,
+       18
+      ]
+     },
+     {
+      "code": "E0001",
+      "msg": "função desconhecida `int`",
+      "at": [
+       91,
+       20
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0008",
+      "msg": "`any` exige uma lista delimitada",
+      "at": [
+       90,
+       18
+      ]
+     },
+     {
+      "code": "E0001",
+      "msg": "função desconhecida `int`",
+      "at": [
+       91,
+       20
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "E0008, mesmo primeiro diagnóstico"
+  },
+  {
+   "autoria": "fleet/rep2",
+   "arquivo": "v4.ath",
+   "tipo": "intermediária",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0012",
+      "msg": "`match` não exaustivo",
+      "at": [
+       135,
+       11
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0012",
+      "msg": "`match` não exaustivo",
+      "at": [
+       135,
+       11
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "E0012, mesmo primeiro diagnóstico"
+  },
+  {
+   "autoria": "fleet/rep2",
+   "arquivo": "v5.ath",
+   "tipo": "final",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0500",
+      "msg": "efeito sem capacidade",
+      "at": [
+       30,
+       7
+      ]
+     },
+     {
+      "code": "E0500",
+      "msg": "efeito sem capacidade",
+      "at": [
+       32,
+       7
+      ]
+     },
+     {
+      "code": "E0500",
+      "msg": "efeito sem capacidade",
+      "at": [
+       34,
+       7
+      ]
+     },
+     {
+      "code": "E0500",
+      "msg": "efeito sem capacidade",
+      "at": [
+       36,
+       7
+      ]
+     },
+     {
+      "code": "E0500",
+      "msg": "efeito sem capacidade",
+      "at": [
+       38,
+       7
+      ]
+     },
+     {
+      "code": "E0501",
+      "msg": "efeito não declarado",
+      "at": [
+       95,
+       26
+      ]
+     },
+     {
+      "code": "E0501",
+      "msg": "efeito não declarado",
+      "at": [
+       96,
+       26
+      ]
+     },
+     {
+      "code": "E0501",
+      "msg": "efeito não declarado",
+      "at": [
+       97,
+       26
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0500",
+      "msg": "efeito sem capacidade",
+      "at": [
+       30,
+       7
+      ]
+     },
+     {
+      "code": "E0500",
+      "msg": "efeito sem capacidade",
+      "at": [
+       32,
+       7
+      ]
+     },
+     {
+      "code": "E0500",
+      "msg": "efeito sem capacidade",
+      "at": [
+       34,
+       7
+      ]
+     },
+     {
+      "code": "E0500",
+      "msg": "efeito sem capacidade",
+      "at": [
+       36,
+       7
+      ]
+     },
+     {
+      "code": "E0500",
+      "msg": "efeito sem capacidade",
+      "at": [
+       38,
+       7
+      ]
+     },
+     {
+      "code": "E0501",
+      "msg": "efeito não declarado",
+      "at": [
+       95,
+       26
+      ]
+     },
+     {
+      "code": "E0501",
+      "msg": "efeito não declarado",
+      "at": [
+       96,
+       26
+      ]
+     },
+     {
+      "code": "E0501",
+      "msg": "efeito não declarado",
+      "at": [
+       97,
+       26
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "E0500, mesmo primeiro diagnóstico"
+  },
+  {
+   "autoria": "maintenance/rep1",
+   "arquivo": "v1.ath",
+   "tipo": "primeira",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `}`, encontrado `=`",
+      "at": [
+       75,
+       31
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "num padrão, o campo se renomeia com `:`: escreva `asset_id: nome`, não `asset_id = nome`",
+      "at": [
+       75,
+       31
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "P0001, mesmo lugar, só a mensagem mudou"
+  },
+  {
+   "autoria": "maintenance/rep1",
+   "arquivo": "v2.ath",
+   "tipo": "intermediária",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `}`, encontrado `=`",
+      "at": [
+       91,
+       31
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "num padrão, o campo se renomeia com `:`: escreva `wo_id: nome`, não `wo_id = nome`",
+      "at": [
+       91,
+       31
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "P0001, mesmo lugar, só a mensagem mudou"
+  },
+  {
+   "autoria": "maintenance/rep1",
+   "arquivo": "v3.ath",
+   "tipo": "intermediária",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `}`, encontrado `=`",
+      "at": [
+       97,
+       33
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "num padrão, o campo se renomeia com `:`: escreva `technician: nome`, não `technician = nome`",
+      "at": [
+       97,
+       33
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "P0001, mesmo lugar, só a mensagem mudou"
+  },
+  {
+   "autoria": "maintenance/rep1",
+   "arquivo": "v4.ath",
+   "tipo": "intermediária",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0001",
+      "msg": "variável desconhecida `rem`",
+      "at": [
+       87,
+       59
+      ]
+     },
+     {
+      "code": "E0001",
+      "msg": "variável desconhecida `rem`",
+      "at": [
+       87,
+       100
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0001",
+      "msg": "variável desconhecida `rem`",
+      "at": [
+       87,
+       59
+      ]
+     },
+     {
+      "code": "E0001",
+      "msg": "variável desconhecida `rem`",
+      "at": [
+       87,
+       100
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "E0001, mesmo primeiro diagnóstico"
+  },
+  {
+   "autoria": "maintenance/rep1",
+   "arquivo": "v5.ath",
+   "tipo": "final",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `}`, encontrado `=`",
+      "at": [
+       89,
+       31
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "num padrão, o campo se renomeia com `:`: escreva `wo_id: nome`, não `wo_id = nome`",
+      "at": [
+       89,
+       31
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "P0001, mesmo lugar, só a mensagem mudou"
+  },
+  {
+   "autoria": "maintenance/rep2",
+   "arquivo": "v1.ath",
+   "tipo": "primeira",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `}`, encontrado `:`",
+      "at": [
+       79,
+       24
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `let`",
+      "at": [
+       88,
+       53
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "P0001 → P0001 (erro seguinte ficou visível)"
+  },
+  {
+   "autoria": "maintenance/rep2",
+   "arquivo": "v2.ath",
+   "tipo": "intermediária",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `}`, encontrado `:`",
+      "at": [
+       100,
+       28
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0011",
+      "msg": "braços com tipos diferentes",
+      "at": [
+       169,
+       21
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "P0001 → E0011 (erro seguinte ficou visível)"
+  },
+  {
+   "autoria": "maintenance/rep2",
+   "arquivo": "v3.ath",
+   "tipo": "intermediária",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0011",
+      "msg": "braços com tipos diferentes",
+      "at": [
+       170,
+       21
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0011",
+      "msg": "braços com tipos diferentes",
+      "at": [
+       170,
+       21
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "E0011, mesmo primeiro diagnóstico"
+  },
+  {
+   "autoria": "maintenance/rep2",
+   "arquivo": "v4.ath",
+   "tipo": "intermediária",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0500",
+      "msg": "efeito sem capacidade",
+      "at": [
+       30,
+       7
+      ]
+     },
+     {
+      "code": "E0500",
+      "msg": "efeito sem capacidade",
+      "at": [
+       33,
+       7
+      ]
+     },
+     {
+      "code": "E0500",
+      "msg": "efeito sem capacidade",
+      "at": [
+       36,
+       7
+      ]
+     },
+     {
+      "code": "E0500",
+      "msg": "efeito sem capacidade",
+      "at": [
+       39,
+       7
+      ]
+     },
+     {
+      "code": "E0500",
+      "msg": "efeito sem capacidade",
+      "at": [
+       42,
+       7
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0500",
+      "msg": "efeito sem capacidade",
+      "at": [
+       30,
+       7
+      ]
+     },
+     {
+      "code": "E0500",
+      "msg": "efeito sem capacidade",
+      "at": [
+       33,
+       7
+      ]
+     },
+     {
+      "code": "E0500",
+      "msg": "efeito sem capacidade",
+      "at": [
+       36,
+       7
+      ]
+     },
+     {
+      "code": "E0500",
+      "msg": "efeito sem capacidade",
+      "at": [
+       39,
+       7
+      ]
+     },
+     {
+      "code": "E0500",
+      "msg": "efeito sem capacidade",
+      "at": [
+       42,
+       7
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "E0500, mesmo primeiro diagnóstico"
+  },
+  {
+   "autoria": "maintenance/rep2",
+   "arquivo": "v5.ath",
+   "tipo": "final",
+   "vazio": false,
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "7bdb4d941798",
+     "906cf6f032e1e165cabba11409e10c5991d01462e5fed94d52f3ef866e20ebce"
+    ],
+    "emit": "06eb5c138a00add9a688fce7bc49a5b97415db19e193d3ef928ac05a2337fc41"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "7bdb4d941798",
+     "906cf6f032e1e165cabba11409e10c5991d01462e5fed94d52f3ef866e20ebce"
+    ],
+    "emit": "06eb5c138a00add9a688fce7bc49a5b97415db19e193d3ef928ac05a2337fc41"
+   },
+   "transicao": "compilava e compila"
+  },
+  {
+   "autoria": "sales_crm/rep1",
+   "arquivo": "v1.ath",
+   "tipo": "primeira",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `}`, encontrado `:`",
+      "at": [
+       59,
+       21
+      ]
+     },
+     {
+      "code": "P0001",
+      "msg": "esperado `}`, encontrado `:`",
+      "at": [
+       70,
+       19
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0008",
+      "msg": "tipo incompatível",
+      "at": [
+       103,
+       36
+      ]
+     },
+     {
+      "code": "E0008",
+      "msg": "tipo incompatível",
+      "at": [
+       105,
+       42
+      ]
+     },
+     {
+      "code": "E0008",
+      "msg": "tipo incompatível",
+      "at": [
+       105,
+       42
+      ]
+     },
+     {
+      "code": "E0001",
+      "msg": "variável desconhecida `total_discount`",
+      "at": [
+       110,
+       52
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "P0001 → E0008 (erro seguinte ficou visível)"
+  },
+  {
+   "autoria": "sales_crm/rep1",
+   "arquivo": "v2.ath",
+   "tipo": "intermediária",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0008",
+      "msg": "tipo incompatível",
+      "at": [
+       105,
+       36
+      ]
+     },
+     {
+      "code": "E0008",
+      "msg": "tipo incompatível",
+      "at": [
+       107,
+       42
+      ]
+     },
+     {
+      "code": "E0008",
+      "msg": "tipo incompatível",
+      "at": [
+       107,
+       42
+      ]
+     },
+     {
+      "code": "E0001",
+      "msg": "variável desconhecida `total_discount`",
+      "at": [
+       112,
+       52
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0008",
+      "msg": "tipo incompatível",
+      "at": [
+       105,
+       36
+      ]
+     },
+     {
+      "code": "E0008",
+      "msg": "tipo incompatível",
+      "at": [
+       107,
+       42
+      ]
+     },
+     {
+      "code": "E0008",
+      "msg": "tipo incompatível",
+      "at": [
+       107,
+       42
+      ]
+     },
+     {
+      "code": "E0001",
+      "msg": "variável desconhecida `total_discount`",
+      "at": [
+       112,
+       52
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "E0008, mesmo primeiro diagnóstico"
+  },
+  {
+   "autoria": "sales_crm/rep1",
+   "arquivo": "v3.ath",
+   "tipo": "intermediária",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0008",
+      "msg": "tipo incompatível",
+      "at": [
+       105,
+       36
+      ]
+     },
+     {
+      "code": "E0008",
+      "msg": "tipo incompatível",
+      "at": [
+       107,
+       33
+      ]
+     },
+     {
+      "code": "E0008",
+      "msg": "tipo incompatível",
+      "at": [
+       107,
+       33
+      ]
+     },
+     {
+      "code": "E0001",
+      "msg": "variável desconhecida `total`",
+      "at": [
+       112,
+       52
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0008",
+      "msg": "tipo incompatível",
+      "at": [
+       105,
+       36
+      ]
+     },
+     {
+      "code": "E0008",
+      "msg": "tipo incompatível",
+      "at": [
+       107,
+       33
+      ]
+     },
+     {
+      "code": "E0008",
+      "msg": "tipo incompatível",
+      "at": [
+       107,
+       33
+      ]
+     },
+     {
+      "code": "E0001",
+      "msg": "variável desconhecida `total`",
+      "at": [
+       112,
+       52
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "E0008, mesmo primeiro diagnóstico"
+  },
+  {
+   "autoria": "sales_crm/rep1",
+   "arquivo": "v4.ath",
+   "tipo": "intermediária",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `}`, encontrado `:`",
+      "at": [
+       70,
+       19
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0422",
+      "msg": "descompasso entre o inventário confiável e a política",
+      "at": [
+       83,
+       8
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "P0001 → E0422 (erro seguinte ficou visível)"
+  },
+  {
+   "autoria": "sales_crm/rep1",
+   "arquivo": "v5.ath",
+   "tipo": "final",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0422",
+      "msg": "descompasso entre o inventário confiável e a política",
+      "at": [
+       138,
+       56
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0422",
+      "msg": "descompasso entre o inventário confiável e a política",
+      "at": [
+       84,
+       8
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "E0422, mesma recusa, o diagnóstico aponta outro lugar"
+  },
+  {
+   "autoria": "sales_crm/rep2",
+   "arquivo": "v1.ath",
+   "tipo": "primeira",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `}`, encontrado `:`",
+      "at": [
+       88,
+       29
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0008",
+      "msg": "`all` exige uma lista delimitada",
+      "at": [
+       93,
+       17
+      ]
+     },
+     {
+      "code": "E0001",
+      "msg": "variável desconhecida `skip`",
+      "at": [
+       171,
+       21
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "P0001 → E0008 (erro seguinte ficou visível)"
+  },
+  {
+   "autoria": "sales_crm/rep2",
+   "arquivo": "v2.ath",
+   "tipo": "intermediária",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `}`, encontrado `=`",
+      "at": [
+       86,
+       30
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "num padrão, o campo se renomeia com `:`: escreva `opp_id: nome`, não `opp_id = nome`",
+      "at": [
+       86,
+       30
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "P0001, mesmo lugar, só a mensagem mudou"
+  },
+  {
+   "autoria": "sales_crm/rep2",
+   "arquivo": "v3.ath",
+   "tipo": "intermediária",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `}`, encontrado `:`",
+      "at": [
+       86,
+       29
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0008",
+      "msg": "`all` exige uma lista delimitada",
+      "at": [
+       91,
+       17
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "P0001 → E0008 (erro seguinte ficou visível)"
+  },
+  {
+   "autoria": "sales_crm/rep2",
+   "arquivo": "v4.ath",
+   "tipo": "intermediária",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0008",
+      "msg": "`all` exige uma lista delimitada",
+      "at": [
+       91,
+       19
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0008",
+      "msg": "`all` exige uma lista delimitada",
+      "at": [
+       91,
+       19
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "E0008, mesmo primeiro diagnóstico"
+  },
+  {
+   "autoria": "sales_crm/rep2",
+   "arquivo": "v5.ath",
+   "tipo": "final",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0422",
+      "msg": "descompasso entre o inventário confiável e a política",
+      "at": [
+       148,
+       22
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0422",
+      "msg": "descompasso entre o inventário confiável e a política",
+      "at": [
+       72,
+       7
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "E0422, mesma recusa, o diagnóstico aponta outro lugar"
+  },
+  {
+   "autoria": "shipping/rep1",
+   "arquivo": "v1.ath",
+   "tipo": "primeira",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `}`, encontrado `:`",
+      "at": [
+       69,
+       23
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "e02c2986b280",
+     "4fb522dbb587ec6b64df8998afd68cc3129ee987dad67b3bf93e307387b830e1"
+    ],
+    "emit": "3a7b97ce187ec9c21377c1d5b95cd137b0b6e420971747ea366bbb3699b1e089"
+   },
+   "transicao": "P0001 → compila"
+  },
+  {
+   "autoria": "shipping/rep1",
+   "arquivo": "v2.ath",
+   "tipo": "intermediária",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `}`, encontrado `:`",
+      "at": [
+       69,
+       23
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "e02c2986b280",
+     "4fb522dbb587ec6b64df8998afd68cc3129ee987dad67b3bf93e307387b830e1"
+    ],
+    "emit": "485cc1cfc350cc223717a6382fd2fa7537aa2947e63e4962a278b3d27c565061"
+   },
+   "transicao": "P0001 → compila"
+  },
+  {
+   "autoria": "shipping/rep1",
+   "arquivo": "v3.ath",
+   "tipo": "final",
+   "vazio": false,
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "8d46ddd0fe2a",
+     "141152d5d153a01bc42a54964be94dc90cca70ac1f950702ff4f5133a99b96da"
+    ],
+    "emit": "8abf2733873e6a8a8693ef3523f0422504d6c2d2e3cc9e6b685481ca8276d599"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "8d46ddd0fe2a",
+     "141152d5d153a01bc42a54964be94dc90cca70ac1f950702ff4f5133a99b96da"
+    ],
+    "emit": "8abf2733873e6a8a8693ef3523f0422504d6c2d2e3cc9e6b685481ca8276d599"
+   },
+   "transicao": "compilava e compila"
+  },
+  {
+   "autoria": "shipping/rep2",
+   "arquivo": "v1.ath",
+   "tipo": "primeira",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `}`, encontrado `:`",
+      "at": [
+       76,
+       28
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0011",
+      "msg": "braços com tipos diferentes",
+      "at": [
+       175,
+       21
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "P0001 → E0011 (erro seguinte ficou visível)"
+  },
+  {
+   "autoria": "shipping/rep2",
+   "arquivo": "v2.ath",
+   "tipo": "intermediária",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0011",
+      "msg": "braços com tipos diferentes",
+      "at": [
+       181,
+       21
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0011",
+      "msg": "braços com tipos diferentes",
+      "at": [
+       181,
+       21
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "E0011, mesmo primeiro diagnóstico"
+  },
+  {
+   "autoria": "shipping/rep2",
+   "arquivo": "v3.ath",
+   "tipo": "intermediária",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `)`",
+      "at": [
+       174,
+       77
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `)`",
+      "at": [
+       174,
+       77
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "P0001, mesmo primeiro diagnóstico"
+  },
+  {
+   "autoria": "shipping/rep2",
+   "arquivo": "v4.ath",
+   "tipo": "intermediária",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `)`",
+      "at": [
+       177,
+       22
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `)`",
+      "at": [
+       177,
+       22
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "P0001, mesmo primeiro diagnóstico"
+  },
+  {
+   "autoria": "shipping/rep2",
+   "arquivo": "v5.ath",
+   "tipo": "final",
+   "vazio": false,
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "b4f87d68748a",
+     "b7a23939ff104906fedb5b6c46cce7926144e906fd23b169c55be090c6e555d7"
+    ],
+    "emit": "c6fe4e7e20e7ea9820e2c93716ccaf0c9968128d0e7fc1d0d30c1947271b2026"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "b4f87d68748a",
+     "b7a23939ff104906fedb5b6c46cce7926144e906fd23b169c55be090c6e555d7"
+    ],
+    "emit": "c6fe4e7e20e7ea9820e2c93716ccaf0c9968128d0e7fc1d0d30c1947271b2026"
+   },
+   "transicao": "compilava e compila"
+  },
+  {
+   "autoria": "storeroom/rep1",
+   "arquivo": "v1.ath",
+   "tipo": "primeira",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `}`, encontrado `:`",
+      "at": [
+       80,
+       29
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0011",
+      "msg": "braços com tipos diferentes",
+      "at": [
+       132,
+       21
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "P0001 → E0011 (erro seguinte ficou visível)"
+  },
+  {
+   "autoria": "storeroom/rep1",
+   "arquivo": "v2.ath",
+   "tipo": "intermediária",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0001",
+      "msg": "variável desconhecida `in`",
+      "at": [
+       73,
+       24
+      ]
+     },
+     {
+      "code": "E0011",
+      "msg": "braços com tipos diferentes",
+      "at": [
+       135,
+       21
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0001",
+      "msg": "variável desconhecida `in`",
+      "at": [
+       73,
+       24
+      ]
+     },
+     {
+      "code": "E0011",
+      "msg": "braços com tipos diferentes",
+      "at": [
+       135,
+       21
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "E0001, mesmo primeiro diagnóstico"
+  },
+  {
+   "autoria": "storeroom/rep1",
+   "arquivo": "v3.ath",
+   "tipo": "intermediária",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0011",
+      "msg": "braços com tipos diferentes",
+      "at": [
+       134,
+       21
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0011",
+      "msg": "braços com tipos diferentes",
+      "at": [
+       134,
+       21
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "E0011, mesmo primeiro diagnóstico"
+  },
+  {
+   "autoria": "storeroom/rep1",
+   "arquivo": "v4.ath",
+   "tipo": "final",
+   "vazio": false,
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "c432d8758f5f",
+     "7a9acdf23a3e61e9fc69d50b074d28e8cb6f70e3cd8c02e4e52acce2c535de63"
+    ],
+    "emit": "7922de02167908d254dcf297328ed317a5d26d5fb477f04055fee452649dddf0"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "c432d8758f5f",
+     "7a9acdf23a3e61e9fc69d50b074d28e8cb6f70e3cd8c02e4e52acce2c535de63"
+    ],
+    "emit": "7922de02167908d254dcf297328ed317a5d26d5fb477f04055fee452649dddf0"
+   },
+   "transicao": "compilava e compila"
+  },
+  {
+   "autoria": "storeroom/rep2",
+   "arquivo": "v1.ath",
+   "tipo": "primeira",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `let`",
+      "at": [
+       72,
+       48
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `let`",
+      "at": [
+       72,
+       48
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "P0001, mesmo primeiro diagnóstico"
+  },
+  {
+   "autoria": "storeroom/rep2",
+   "arquivo": "v2.ath",
+   "tipo": "intermediária",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `}`, encontrado `:`",
+      "at": [
+       86,
+       23
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0011",
+      "msg": "braços com tipos diferentes",
+      "at": [
+       153,
+       21
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "P0001 → E0011 (erro seguinte ficou visível)"
+  },
+  {
+   "autoria": "storeroom/rep2",
+   "arquivo": "v3.ath",
+   "tipo": "intermediária",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0011",
+      "msg": "braços com tipos diferentes",
+      "at": [
+       155,
+       21
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0011",
+      "msg": "braços com tipos diferentes",
+      "at": [
+       155,
+       21
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "E0011, mesmo primeiro diagnóstico"
+  },
+  {
+   "autoria": "storeroom/rep2",
+   "arquivo": "v4.ath",
+   "tipo": "final",
+   "vazio": false,
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "c9876ee5d9c3",
+     "c10ffd8c6c764f66f4a296d5d88626e2428f5091dd901171c1d101d45ce318e1"
+    ],
+    "emit": "1c306535cd7c5429f4e4d8c60658986c8d3dd488a0568118b6912978bdf4a972"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "c9876ee5d9c3",
+     "c10ffd8c6c764f66f4a296d5d88626e2428f5091dd901171c1d101d45ce318e1"
+    ],
+    "emit": "1c306535cd7c5429f4e4d8c60658986c8d3dd488a0568118b6912978bdf4a972"
+   },
+   "transicao": "compilava e compila"
+  },
+  {
+   "autoria": "travel_expenses/rep1",
+   "arquivo": "v1.ath",
+   "tipo": "primeira",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `}`, encontrado `:`",
+      "at": [
+       64,
+       34
+      ]
+     },
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `let`",
+      "at": [
+       92,
+       7
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `let`",
+      "at": [
+       92,
+       7
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "P0001 → P0001 (erro seguinte ficou visível)"
+  },
+  {
+   "autoria": "travel_expenses/rep1",
+   "arquivo": "v2.ath",
+   "tipo": "intermediária",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `}`, encontrado `=`",
+      "at": [
+       65,
+       35
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "num padrão, o campo se renomeia com `:`: escreva `claim_id: nome`, não `claim_id = nome`",
+      "at": [
+       65,
+       35
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "P0001, mesmo lugar, só a mensagem mudou"
+  },
+  {
+   "autoria": "travel_expenses/rep1",
+   "arquivo": "v3.ath",
+   "tipo": "final",
+   "vazio": false,
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "1a64c6d7aee7",
+     "6ed1c24f076d891c3610429d541d1cab4921e7e8be3a83145e6e23079105a217"
+    ],
+    "emit": "d735b2a493c4fbf749a14d9fc969e46a08e19a4c97cf51b5c2d20d4104495435"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "1a64c6d7aee7",
+     "6ed1c24f076d891c3610429d541d1cab4921e7e8be3a83145e6e23079105a217"
+    ],
+    "emit": "d735b2a493c4fbf749a14d9fc969e46a08e19a4c97cf51b5c2d20d4104495435"
+   },
+   "transicao": "compilava e compila"
+  },
+  {
+   "autoria": "travel_expenses/rep2",
+   "arquivo": "v1.ath",
+   "tipo": "primeira",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `let`",
+      "at": [
+       70,
+       8
+      ]
+     },
+     {
+      "code": "P0001",
+      "msg": "esperado identificador, encontrado `policy`",
+      "at": [
+       117,
+       7
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `let`",
+      "at": [
+       70,
+       8
+      ]
+     },
+     {
+      "code": "P0001",
+      "msg": "esperado um nome, encontrado `policy`: `policy` é palavra reservada e não pode ser usada como nome; se era o nome, escolha outro (por exemplo `policy_value`)",
+      "at": [
+       117,
+       7
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "P0001, mesmo primeiro diagnóstico"
+  },
+  {
+   "autoria": "travel_expenses/rep2",
+   "arquivo": "v2.ath",
+   "tipo": "intermediária",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `}`, encontrado `:`",
+      "at": [
+       76,
+       36
+      ]
+     },
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `)`",
+      "at": [
+       141,
+       22
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `)`",
+      "at": [
+       141,
+       22
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "P0001 → P0001 (erro seguinte ficou visível)"
+  },
+  {
+   "autoria": "travel_expenses/rep2",
+   "arquivo": "v3.ath",
+   "tipo": "intermediária",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `}`, encontrado `:`",
+      "at": [
+       76,
+       36
+      ]
+     },
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `)`",
+      "at": [
+       141,
+       22
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `)`",
+      "at": [
+       141,
+       22
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "P0001 → P0001 (erro seguinte ficou visível)"
+  },
+  {
+   "autoria": "travel_expenses/rep2",
+   "arquivo": "v4.ath",
+   "tipo": "intermediária",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `}`, encontrado `:`",
+      "at": [
+       76,
+       36
+      ]
+     },
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `)`",
+      "at": [
+       141,
+       22
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `)`",
+      "at": [
+       141,
+       22
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "P0001 → P0001 (erro seguinte ficou visível)"
+  },
+  {
+   "autoria": "travel_expenses/rep2",
+   "arquivo": "v5.ath",
+   "tipo": "final",
+   "vazio": false,
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `)`",
+      "at": [
+       136,
+       22
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `)`",
+      "at": [
+       136,
+       22
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "transicao": "P0001, mesmo primeiro diagnóstico"
+  }
+ ],
+ "corpus": [
+  {
+   "arquivo": "bench/agentdojo/banking.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0421",
+      "msg": "a política decide pela fotografia confiável, mas o prompt não recebe o inventário",
+      "at": [
+       137,
+       21
+      ]
+     },
+     {
+      "code": "E0421",
+      "msg": "a política decide pela fotografia confiável, mas o prompt não recebe o inventário",
+      "at": [
+       146,
+       23
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0421",
+      "msg": "a política decide pela fotografia confiável, mas o prompt não recebe o inventário",
+      "at": [
+       137,
+       21
+      ]
+     },
+     {
+      "code": "E0421",
+      "msg": "a política decide pela fotografia confiável, mas o prompt não recebe o inventário",
+      "at": [
+       146,
+       23
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/agentdojo/banking_contracts.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0421",
+      "msg": "a política decide pela fotografia confiável, mas o prompt não recebe o inventário",
+      "at": [
+       155,
+       21
+      ]
+     },
+     {
+      "code": "E0421",
+      "msg": "a política decide pela fotografia confiável, mas o prompt não recebe o inventário",
+      "at": [
+       164,
+       23
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0421",
+      "msg": "a política decide pela fotografia confiável, mas o prompt não recebe o inventário",
+      "at": [
+       155,
+       21
+      ]
+     },
+     {
+      "code": "E0421",
+      "msg": "a política decide pela fotografia confiável, mas o prompt não recebe o inventário",
+      "at": [
+       164,
+       23
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/agentdojo/banking_grants.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0421",
+      "msg": "a política decide pela fotografia confiável, mas o prompt não recebe o inventário",
+      "at": [
+       176,
+       21
+      ]
+     },
+     {
+      "code": "E0421",
+      "msg": "a política decide pela fotografia confiável, mas o prompt não recebe o inventário",
+      "at": [
+       185,
+       23
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0421",
+      "msg": "a política decide pela fotografia confiável, mas o prompt não recebe o inventário",
+      "at": [
+       176,
+       21
+      ]
+     },
+     {
+      "code": "E0421",
+      "msg": "a política decide pela fotografia confiável, mas o prompt não recebe o inventário",
+      "at": [
+       185,
+       23
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/agentdojo/banking_intents.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0421",
+      "msg": "a política decide pela fotografia confiável, mas o prompt não recebe o inventário",
+      "at": [
+       169,
+       21
+      ]
+     },
+     {
+      "code": "E0421",
+      "msg": "a política decide pela fotografia confiável, mas o prompt não recebe o inventário",
+      "at": [
+       178,
+       23
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0421",
+      "msg": "a política decide pela fotografia confiável, mas o prompt não recebe o inventário",
+      "at": [
+       169,
+       21
+      ]
+     },
+     {
+      "code": "E0421",
+      "msg": "a política decide pela fotografia confiável, mas o prompt não recebe o inventário",
+      "at": [
+       178,
+       23
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/agentdojo/banking_v2_keeping.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "055715433b2c",
+     "4efdd7902c62b9ef055bd74cac8a4cec1f04a64771e7183360fa7418ba0d0206"
+    ],
+    "emit": "4e5d32cf73d6e52370acb85bcc4d7e328c0ef06bc40257f13ad6011250568724"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "055715433b2c",
+     "4efdd7902c62b9ef055bd74cac8a4cec1f04a64771e7183360fa7418ba0d0206"
+    ],
+    "emit": "4e5d32cf73d6e52370acb85bcc4d7e328c0ef06bc40257f13ad6011250568724"
+   }
+  },
+  {
+   "arquivo": "bench/agentdojo/banking_v2_strict.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "49d29dd9c47b",
+     "50fa3846ca6b9daeadf52fc6b9d2546f2907c00698c27b63f16573a205ab4c34"
+    ],
+    "emit": "a982e375c5732834cb055ddbc9b3c22c011af29ecb7a8136dc35270cb76f1762"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "49d29dd9c47b",
+     "50fa3846ca6b9daeadf52fc6b9d2546f2907c00698c27b63f16573a205ab4c34"
+    ],
+    "emit": "a982e375c5732834cb055ddbc9b3c22c011af29ecb7a8136dc35270cb76f1762"
+   }
+  },
+  {
+   "arquivo": "bench/agentdojo/banking_v3_keeping.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "fb2f5fa7619d",
+     "ad7d2bcdfcfd86a90937c3e5e154bd54197ba401fccc4ed41a26474bf5bf0a40"
+    ],
+    "emit": "5dfc357c053de2e530bfb45ee5edde3f0a0d01e02d5b5430463f684e623061fc"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "fb2f5fa7619d",
+     "ad7d2bcdfcfd86a90937c3e5e154bd54197ba401fccc4ed41a26474bf5bf0a40"
+    ],
+    "emit": "5dfc357c053de2e530bfb45ee5edde3f0a0d01e02d5b5430463f684e623061fc"
+   }
+  },
+  {
+   "arquivo": "bench/agentdojo/p3/reaplicacao/C2.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "1dca1fa88c64",
+     "70d16a9cbe0ebeffd474abc188ea01afe818fc120502cc7df6436e1a61e9fee7"
+    ],
+    "emit": "0da1ee1f48fd7a09b19303aa27c3513a2ce61118a4f6fb58ac071db2eda7da46"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "1dca1fa88c64",
+     "70d16a9cbe0ebeffd474abc188ea01afe818fc120502cc7df6436e1a61e9fee7"
+    ],
+    "emit": "0da1ee1f48fd7a09b19303aa27c3513a2ce61118a4f6fb58ac071db2eda7da46"
+   }
+  },
+  {
+   "arquivo": "bench/agentdojo/p3/reaplicacao/C3.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "3d7e99566684",
+     "880bde28a1e6451a587abb13e5341c16ea0b1740afac42646fd48325f1ab048f"
+    ],
+    "emit": "c9c8c12c0f3a326c2524793d9cfa2c3307cfa138e8990ab1b8d531a2b7c1dc8d"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "3d7e99566684",
+     "880bde28a1e6451a587abb13e5341c16ea0b1740afac42646fd48325f1ab048f"
+    ],
+    "emit": "c9c8c12c0f3a326c2524793d9cfa2c3307cfa138e8990ab1b8d531a2b7c1dc8d"
+   }
+  },
+  {
+   "arquivo": "bench/agentdojo/p3/reaplicacao/C5.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "fb4539f766d0",
+     "59f9c32ad2f87092c5f297c17769fe6573f504418ceb14f8fa5869897099fa57"
+    ],
+    "emit": "6b6238515e4393d4ceb6ac574fe903c86ed5be7e058ea70f927c0dd26f707703"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "fb4539f766d0",
+     "59f9c32ad2f87092c5f297c17769fe6573f504418ceb14f8fa5869897099fa57"
+    ],
+    "emit": "6b6238515e4393d4ceb6ac574fe903c86ed5be7e058ea70f927c0dd26f707703"
+   }
+  },
+  {
+   "arquivo": "bench/agentdojo/p3/reaplicacao/C6.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "d163ca0cc0c7",
+     "efa17b733454d1ed447af69a6e324fa772c53d60cc19217a4a9d1a3936ebff63"
+    ],
+    "emit": "e2e2e021cc36b2ffe7f160d1d1309ad941dc299b758811f929b43adfb9034405"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "d163ca0cc0c7",
+     "efa17b733454d1ed447af69a6e324fa772c53d60cc19217a4a9d1a3936ebff63"
+    ],
+    "emit": "e2e2e021cc36b2ffe7f160d1d1309ad941dc299b758811f929b43adfb9034405"
+   }
+  },
+  {
+   "arquivo": "bench/agentdojo/runs/banking-ciclo1-openai-gpt-oss-120b/program/banking_v2_keeping.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "055715433b2c",
+     "4efdd7902c62b9ef055bd74cac8a4cec1f04a64771e7183360fa7418ba0d0206"
+    ],
+    "emit": "3543a19e85398721094611089b5f740970c9498d773e71eb7f4523b3f4a0b339"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "055715433b2c",
+     "4efdd7902c62b9ef055bd74cac8a4cec1f04a64771e7183360fa7418ba0d0206"
+    ],
+    "emit": "3543a19e85398721094611089b5f740970c9498d773e71eb7f4523b3f4a0b339"
+   }
+  },
+  {
+   "arquivo": "bench/agentdojo/runs/banking-ciclo1-openai-gpt-oss-120b/program/banking_v3_keeping.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "fb2f5fa7619d",
+     "ad7d2bcdfcfd86a90937c3e5e154bd54197ba401fccc4ed41a26474bf5bf0a40"
+    ],
+    "emit": "f7db4a84f15b74394f7fabc1622bf13c8bc62b618eeecde2a13293f7046e8c35"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "fb2f5fa7619d",
+     "ad7d2bcdfcfd86a90937c3e5e154bd54197ba401fccc4ed41a26474bf5bf0a40"
+    ],
+    "emit": "f7db4a84f15b74394f7fabc1622bf13c8bc62b618eeecde2a13293f7046e8c35"
+   }
+  },
+  {
+   "arquivo": "bench/agentdojo/runs/banking-openai-gpt-oss-120b/program/banking.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0421",
+      "msg": "a política decide pela fotografia confiável, mas o prompt não recebe o inventário",
+      "at": [
+       137,
+       21
+      ]
+     },
+     {
+      "code": "E0421",
+      "msg": "a política decide pela fotografia confiável, mas o prompt não recebe o inventário",
+      "at": [
+       146,
+       23
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0421",
+      "msg": "a política decide pela fotografia confiável, mas o prompt não recebe o inventário",
+      "at": [
+       137,
+       21
+      ]
+     },
+     {
+      "code": "E0421",
+      "msg": "a política decide pela fotografia confiável, mas o prompt não recebe o inventário",
+      "at": [
+       146,
+       23
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/agentdojo/runs/banking-v2-p1-openai-gpt-oss-120b/program/banking_v2_keeping.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "055715433b2c",
+     "4efdd7902c62b9ef055bd74cac8a4cec1f04a64771e7183360fa7418ba0d0206"
+    ],
+    "emit": "284c379505886422ed12bcc3c5ff1a4dd3376af461b2284308e494dbf53d1de3"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "055715433b2c",
+     "4efdd7902c62b9ef055bd74cac8a4cec1f04a64771e7183360fa7418ba0d0206"
+    ],
+    "emit": "284c379505886422ed12bcc3c5ff1a4dd3376af461b2284308e494dbf53d1de3"
+   }
+  },
+  {
+   "arquivo": "bench/agentdojo/runs/banking-v2-p1-openai-gpt-oss-120b/program/banking_v2_strict.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "49d29dd9c47b",
+     "50fa3846ca6b9daeadf52fc6b9d2546f2907c00698c27b63f16573a205ab4c34"
+    ],
+    "emit": "4ccc66459feab16b749206252fc75bf7f755ee546b6b650b23b8d2a68377b2d0"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "49d29dd9c47b",
+     "50fa3846ca6b9daeadf52fc6b9d2546f2907c00698c27b63f16573a205ab4c34"
+    ],
+    "emit": "4ccc66459feab16b749206252fc75bf7f755ee546b6b650b23b8d2a68377b2d0"
+   }
+  },
+  {
+   "arquivo": "bench/agentdojo/slack.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "9dfb579ef55d",
+     "1982debd5ccd4e068e7d32d4cf105867f616399ef3b1a8d86366a9bd45cf786b"
+    ],
+    "emit": "3eb83ce48fb3001bc67379968584d954f53688ca11b66a0583d64de95fc25ba3"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "9dfb579ef55d",
+     "1982debd5ccd4e068e7d32d4cf105867f616399ef3b1a8d86366a9bd45cf786b"
+    ],
+    "emit": "3eb83ce48fb3001bc67379968584d954f53688ca11b66a0583d64de95fc25ba3"
+   }
+  },
+  {
+   "arquivo": "bench/agentdojo/slack_diag_dm_named.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "fbcfe18411dc",
+     "b0540829086d7370811503487e0e477540eb98da7ab469a7aff55ea49c059544"
+    ],
+    "emit": "4e943bf10da42bc7ff5b3d145a95a73cc9af53b654f4c88ad597c579f925e6eb"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "fbcfe18411dc",
+     "b0540829086d7370811503487e0e477540eb98da7ab469a7aff55ea49c059544"
+    ],
+    "emit": "4e943bf10da42bc7ff5b3d145a95a73cc9af53b654f4c88ad597c579f925e6eb"
+   }
+  },
+  {
+   "arquivo": "bench/agentdojo/slack_v2.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "94400e5a4c02",
+     "4c7d03c9a164f7154344c37cbcb958f027a0d8cfbe8fa6bba0b1b2887dd48886"
+    ],
+    "emit": "3a571438089c55a21594fc7b9bfc42929c4982d9f66541410428055ae6c06e04"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "94400e5a4c02",
+     "4c7d03c9a164f7154344c37cbcb958f027a0d8cfbe8fa6bba0b1b2887dd48886"
+    ],
+    "emit": "3a571438089c55a21594fc7b9bfc42929c4982d9f66541410428055ae6c06e04"
+   }
+  },
+  {
+   "arquivo": "bench/m1/aletheia/agent.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "24450fca9448",
+     "3f744f962d8d52f9a507757e6cb1f8a10f7923ef49b23dc3210bac9f0a9490b8"
+    ],
+    "emit": "1831837d55ae293cf00039a37eac47e6db9ddbc974228551a10d34d9fa7120ec"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "24450fca9448",
+     "3f744f962d8d52f9a507757e6cb1f8a10f7923ef49b23dc3210bac9f0a9490b8"
+    ],
+    "emit": "1831837d55ae293cf00039a37eac47e6db9ddbc974228551a10d34d9fa7120ec"
+   }
+  },
+  {
+   "arquivo": "bench/m1/aletheia/naive_port.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0412",
+      "msg": "fluxo de integridade violado",
+      "at": [
+       91,
+       16
+      ]
+     },
+     {
+      "code": "E0412",
+      "msg": "fluxo de integridade violado",
+      "at": [
+       91,
+       33
+      ]
+     },
+     {
+      "code": "E0412",
+      "msg": "fluxo de integridade violado",
+      "at": [
+       92,
+       16
+      ]
+     },
+     {
+      "code": "E0417",
+      "msg": "a sonda de recuperação de `atomic` com integridade Untrusted",
+      "at": [
+       96,
+       32
+      ]
+     },
+     {
+      "code": "E0412",
+      "msg": "fluxo de integridade violado",
+      "at": [
+       97,
+       26
+      ]
+     },
+     {
+      "code": "E0417",
+      "msg": "a pós-condição de `atomic` com integridade Untrusted",
+      "at": [
+       98,
+       17
+      ]
+     },
+     {
+      "code": "E0412",
+      "msg": "fluxo de integridade violado",
+      "at": [
+       105,
+       16
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0412",
+      "msg": "fluxo de integridade violado",
+      "at": [
+       91,
+       16
+      ]
+     },
+     {
+      "code": "E0412",
+      "msg": "fluxo de integridade violado",
+      "at": [
+       91,
+       33
+      ]
+     },
+     {
+      "code": "E0412",
+      "msg": "fluxo de integridade violado",
+      "at": [
+       92,
+       16
+      ]
+     },
+     {
+      "code": "E0417",
+      "msg": "a sonda de recuperação de `atomic` com integridade Untrusted",
+      "at": [
+       96,
+       32
+      ]
+     },
+     {
+      "code": "E0412",
+      "msg": "fluxo de integridade violado",
+      "at": [
+       97,
+       26
+      ]
+     },
+     {
+      "code": "E0417",
+      "msg": "a pós-condição de `atomic` com integridade Untrusted",
+      "at": [
+       98,
+       17
+      ]
+     },
+     {
+      "code": "E0412",
+      "msg": "fluxo de integridade violado",
+      "at": [
+       105,
+       16
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/m10/packs/_example_mailing/agent.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "a98f8ad7ebad",
+     "197d1f91b6ea0febb26de6517e24208e5274acd6bd0733a71781fe53810d6f96"
+    ],
+    "emit": "ca7acfd2dbb376ee8750c326bbdd823aed42fb62268893fc1e6b956a0fbf8da2"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "a98f8ad7ebad",
+     "197d1f91b6ea0febb26de6517e24208e5274acd6bd0733a71781fe53810d6f96"
+    ],
+    "emit": "ca7acfd2dbb376ee8750c326bbdd823aed42fb62268893fc1e6b956a0fbf8da2"
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/calendar/ath/rep1/v1.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "f285662f9e2e",
+     "6e90725d7b4e89f3d734c02b446a89dce4be9a0570e1b6f472bd19087d59b7b2"
+    ],
+    "emit": "be2b0dbbc75bb27113e52c628686ba5ddfcb6a2983dc196cfae8ed96ec89dd41"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "f285662f9e2e",
+     "6e90725d7b4e89f3d734c02b446a89dce4be9a0570e1b6f472bd19087d59b7b2"
+    ],
+    "emit": "be2b0dbbc75bb27113e52c628686ba5ddfcb6a2983dc196cfae8ed96ec89dd41"
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/calendar/ath/rep1/v2.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `:`, encontrado `,`",
+      "at": [
+       79,
+       68
+      ]
+     },
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `=`",
+      "at": [
+       120,
+       24
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `:`, encontrado `,`",
+      "at": [
+       79,
+       68
+      ]
+     },
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `=`",
+      "at": [
+       120,
+       24
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/calendar/ath/rep1/v3.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `=`",
+      "at": [
+       120,
+       24
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `=`",
+      "at": [
+       120,
+       24
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/calendar/ath/rep1/v4.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `=`",
+      "at": [
+       120,
+       24
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `=`",
+      "at": [
+       120,
+       24
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/calendar/ath/rep2/v1.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0422",
+      "msg": "descompasso entre o inventário confiável e a política",
+      "at": [
+       124,
+       32
+      ]
+     },
+     {
+      "code": "E0422",
+      "msg": "descompasso entre o inventário confiável e a política",
+      "at": [
+       124,
+       56
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0422",
+      "msg": "descompasso entre o inventário confiável e a política",
+      "at": [
+       81,
+       6
+      ]
+     },
+     {
+      "code": "E0422",
+      "msg": "descompasso entre o inventário confiável e a política",
+      "at": [
+       81,
+       6
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/calendar/ath/rep2/v2.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0422",
+      "msg": "descompasso entre o inventário confiável e a política",
+      "at": [
+       124,
+       32
+      ]
+     },
+     {
+      "code": "E0422",
+      "msg": "descompasso entre o inventário confiável e a política",
+      "at": [
+       124,
+       56
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0422",
+      "msg": "descompasso entre o inventário confiável e a política",
+      "at": [
+       81,
+       6
+      ]
+     },
+     {
+      "code": "E0422",
+      "msg": "descompasso entre o inventário confiável e a política",
+      "at": [
+       81,
+       6
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/calendar/ath/rep2/v3.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0422",
+      "msg": "descompasso entre o inventário confiável e a política",
+      "at": [
+       124,
+       32
+      ]
+     },
+     {
+      "code": "E0422",
+      "msg": "descompasso entre o inventário confiável e a política",
+      "at": [
+       124,
+       56
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0422",
+      "msg": "descompasso entre o inventário confiável e a política",
+      "at": [
+       81,
+       6
+      ]
+     },
+     {
+      "code": "E0422",
+      "msg": "descompasso entre o inventário confiável e a política",
+      "at": [
+       81,
+       6
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/calendar/ath/rep2/v4.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0422",
+      "msg": "descompasso entre o inventário confiável e a política",
+      "at": [
+       124,
+       32
+      ]
+     },
+     {
+      "code": "E0422",
+      "msg": "descompasso entre o inventário confiável e a política",
+      "at": [
+       124,
+       56
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0422",
+      "msg": "descompasso entre o inventário confiável e a política",
+      "at": [
+       81,
+       6
+      ]
+     },
+     {
+      "code": "E0422",
+      "msg": "descompasso entre o inventário confiável e a política",
+      "at": [
+       81,
+       6
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/calendar/ath/rep2/v5.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0422",
+      "msg": "descompasso entre o inventário confiável e a política",
+      "at": [
+       124,
+       32
+      ]
+     },
+     {
+      "code": "E0422",
+      "msg": "descompasso entre o inventário confiável e a política",
+      "at": [
+       124,
+       56
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0422",
+      "msg": "descompasso entre o inventário confiável e a política",
+      "at": [
+       81,
+       6
+      ]
+     },
+     {
+      "code": "E0422",
+      "msg": "descompasso entre o inventário confiável e a política",
+      "at": [
+       81,
+       6
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/calendar/ath/rep3/v1.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `)`, encontrado `:`",
+      "at": [
+       134,
+       25
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `)`, encontrado `:`",
+      "at": [
+       134,
+       25
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/calendar/ath/rep3/v2.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `)`, encontrado `:`",
+      "at": [
+       134,
+       25
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `)`, encontrado `:`",
+      "at": [
+       134,
+       25
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/calendar/ath/rep3/v3.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `)`, encontrado `:`",
+      "at": [
+       149,
+       25
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `)`, encontrado `:`",
+      "at": [
+       149,
+       25
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/calendar/ath/rep3/v4.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `)`, encontrado `:`",
+      "at": [
+       149,
+       25
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `)`, encontrado `:`",
+      "at": [
+       149,
+       25
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/calendar/ath/rep3/v5.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `)`, encontrado `:`",
+      "at": [
+       148,
+       25
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `)`, encontrado `:`",
+      "at": [
+       148,
+       25
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/code_repo/ath/rep1/v1.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "B0110",
+      "msg": "contagem de tokens ilimitada no prompt",
+      "at": [
+       74,
+       15
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "B0110",
+      "msg": "contagem de tokens ilimitada no prompt",
+      "at": [
+       74,
+       15
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/code_repo/ath/rep1/v2.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "193e73d0dd5d",
+     "9d0817b0a3aed54aec36b52ba5b3761dce7b7f74dc4cbf0c0776410051207f53"
+    ],
+    "emit": "ba04b5772d90fe3f57fa8e814ede6688baa5c347ffb945c796ee8f3f5674cee1"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "193e73d0dd5d",
+     "9d0817b0a3aed54aec36b52ba5b3761dce7b7f74dc4cbf0c0776410051207f53"
+    ],
+    "emit": "ba04b5772d90fe3f57fa8e814ede6688baa5c347ffb945c796ee8f3f5674cee1"
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/code_repo/ath/rep2/v1.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "eb0fb6378a0d",
+     "49b8d7c080fc999929e65a153884b49884f01d4f6a7734fe80249dad6d948c66"
+    ],
+    "emit": "ad8d3b7cea6aef692e7dfdaa8aa2a79262d03dee82762fe2d241d62036c65e4e"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "eb0fb6378a0d",
+     "49b8d7c080fc999929e65a153884b49884f01d4f6a7734fe80249dad6d948c66"
+    ],
+    "emit": "ad8d3b7cea6aef692e7dfdaa8aa2a79262d03dee82762fe2d241d62036c65e4e"
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/code_repo/ath/rep3/v1.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "f309a18e17d0",
+     "6c452a489845b3bf286f71c2fb24cac670c3eafad561c159c229521be676e0fb"
+    ],
+    "emit": "eaf46f758194d4f0ccd4e4caafe055030cd1192fa11c43f7604a2782132ca3af"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "f309a18e17d0",
+     "6c452a489845b3bf286f71c2fb24cac670c3eafad561c159c229521be676e0fb"
+    ],
+    "emit": "eaf46f758194d4f0ccd4e4caafe055030cd1192fa11c43f7604a2782132ca3af"
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/incidents/ath/rep1/v1.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "eff2032aa171",
+     "40ab8779f628fb905282b56771245c25b7361ebba689cf9ace3cb7d00dc4b86d"
+    ],
+    "emit": "ff7e74fae7b95972b60c88a2bd714f62c243684e6447c20bd995da9312b2b269"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "eff2032aa171",
+     "40ab8779f628fb905282b56771245c25b7361ebba689cf9ace3cb7d00dc4b86d"
+    ],
+    "emit": "ff7e74fae7b95972b60c88a2bd714f62c243684e6447c20bd995da9312b2b269"
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/incidents/ath/rep2/v1.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "B0110",
+      "msg": "contagem de tokens ilimitada no prompt",
+      "at": [
+       81,
+       18
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "B0110",
+      "msg": "contagem de tokens ilimitada no prompt",
+      "at": [
+       81,
+       18
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/incidents/ath/rep2/v2.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "be6175b9ca23",
+     "06a7573c25ca1da29f6981fe32eede96da21b43510aa477172e9116a379293e5"
+    ],
+    "emit": "d7425607b8f67ee59b0de379414e455e8675ac98c1054d939f2720d73c31688c"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "be6175b9ca23",
+     "06a7573c25ca1da29f6981fe32eede96da21b43510aa477172e9116a379293e5"
+    ],
+    "emit": "d7425607b8f67ee59b0de379414e455e8675ac98c1054d939f2720d73c31688c"
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/incidents/ath/rep3/v1.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "79ed9d052b13",
+     "59547b8bc2ffafd2179f13f826198da6c9f370ee8e03dfeca6a7faea51c0e033"
+    ],
+    "emit": "d2a0133b47d2b5539a7b2efba1cf52601d3516c3b8e104d164f9ee083d3fb4d0"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "79ed9d052b13",
+     "59547b8bc2ffafd2179f13f826198da6c9f370ee8e03dfeca6a7faea51c0e033"
+    ],
+    "emit": "d2a0133b47d2b5539a7b2efba1cf52601d3516c3b8e104d164f9ee083d3fb4d0"
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/payments/ath/rep1/v1.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0437",
+      "msg": "`keeping a`: o rascunho não tem um campo de lista `a`",
+      "at": [
+       103,
+       49
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0437",
+      "msg": "`keeping a`: o rascunho não tem um campo de lista `a`",
+      "at": [
+       103,
+       49
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/payments/ath/rep1/v2.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0437",
+      "msg": "`keeping a`: o rascunho não tem um campo de lista `a`",
+      "at": [
+       103,
+       49
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0437",
+      "msg": "`keeping a`: o rascunho não tem um campo de lista `a`",
+      "at": [
+       103,
+       49
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/payments/ath/rep1/v3.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0437",
+      "msg": "`keeping a`: o rascunho não tem um campo de lista `a`",
+      "at": [
+       103,
+       49
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0437",
+      "msg": "`keeping a`: o rascunho não tem um campo de lista `a`",
+      "at": [
+       103,
+       49
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/payments/ath/rep1/v4.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "0424044cbf9e",
+     "9f9e6992afaa3a5a02a445cba3d9ab80ae7a3935bd200cc3dec07847eaa60dec"
+    ],
+    "emit": "9850a1409953846ecf46882c7cdf8a0283aff799c45ab3959880ee6090d4bbba"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "0424044cbf9e",
+     "9f9e6992afaa3a5a02a445cba3d9ab80ae7a3935bd200cc3dec07847eaa60dec"
+    ],
+    "emit": "9850a1409953846ecf46882c7cdf8a0283aff799c45ab3959880ee6090d4bbba"
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/payments/ath/rep1/v5.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "064c87fac84f",
+     "456f983e36287141c439e8ce974cff2eb98152ebb234021a7461c5b0c8c2cb93"
+    ],
+    "emit": "8d0df009010a33465bd3d8373993006497d45e8074248ab87417a2e6b56bcdab"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "064c87fac84f",
+     "456f983e36287141c439e8ce974cff2eb98152ebb234021a7461c5b0c8c2cb93"
+    ],
+    "emit": "8d0df009010a33465bd3d8373993006497d45e8074248ab87417a2e6b56bcdab"
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/payments/ath/rep2/v1.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "544da4e96336",
+     "60044c91194c135813207ca5065a34f626a4e1071d447ed55539cb18fb03b74d"
+    ],
+    "emit": "660adebb6e83671a72aa91bb18f5cec983bcbc72c44c87d262b43a52acc62e47"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "544da4e96336",
+     "60044c91194c135813207ca5065a34f626a4e1071d447ed55539cb18fb03b74d"
+    ],
+    "emit": "660adebb6e83671a72aa91bb18f5cec983bcbc72c44c87d262b43a52acc62e47"
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/payments/ath/rep3/v1.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `let`",
+      "at": [
+       73,
+       7
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `let`",
+      "at": [
+       73,
+       7
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/payments/ath/rep3/v2.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado identificador, encontrado `[`",
+      "at": [
+       83,
+       9
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado identificador, encontrado `[`",
+      "at": [
+       83,
+       9
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/payments/ath/rep3/v3.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0422",
+      "msg": "descompasso entre o inventário confiável e a política",
+      "at": [
+       100,
+       32
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0422",
+      "msg": "descompasso entre o inventário confiável e a política",
+      "at": [
+       69,
+       8
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/payments/ath/rep3/v4.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0422",
+      "msg": "descompasso entre o inventário confiável e a política",
+      "at": [
+       101,
+       32
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0422",
+      "msg": "descompasso entre o inventário confiável e a política",
+      "at": [
+       69,
+       8
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/payments/ath/rep3/v5.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "119343f7fe74",
+     "225c6eb1147b89f4f19972ce33c72346ab5cfcf26f89f2130e02d6063782ba0d"
+    ],
+    "emit": "3ef380837940ead630325d7d11091533b24687cfd4b43603fda20c61e8639830"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "119343f7fe74",
+     "225c6eb1147b89f4f19972ce33c72346ab5cfcf26f89f2130e02d6063782ba0d"
+    ],
+    "emit": "3ef380837940ead630325d7d11091533b24687cfd4b43603fda20c61e8639830"
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/purchasing/ath/rep1/v1.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0001",
+      "msg": "variável desconhecida `_`",
+      "at": [
+       49,
+       31
+      ]
+     },
+     {
+      "code": "E0001",
+      "msg": "variável desconhecida `_`",
+      "at": [
+       55,
+       31
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0001",
+      "msg": "variável desconhecida `_`",
+      "at": [
+       49,
+       31
+      ]
+     },
+     {
+      "code": "E0001",
+      "msg": "variável desconhecida `_`",
+      "at": [
+       55,
+       31
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/purchasing/ath/rep1/v2.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0001",
+      "msg": "variável desconhecida `_`",
+      "at": [
+       49,
+       31
+      ]
+     },
+     {
+      "code": "E0001",
+      "msg": "variável desconhecida `_`",
+      "at": [
+       55,
+       31
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0001",
+      "msg": "variável desconhecida `_`",
+      "at": [
+       49,
+       31
+      ]
+     },
+     {
+      "code": "E0001",
+      "msg": "variável desconhecida `_`",
+      "at": [
+       55,
+       31
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/purchasing/ath/rep1/v3.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "5f028a0ddbe7",
+     "e4e878d101cc110d785e3d05e3668800ee9c4b010b98fc576d32c4daf82c5407"
+    ],
+    "emit": "1b6e19e842192cc121e45ece3071ff165a3020acc456d4132490f6e85f726940"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "5f028a0ddbe7",
+     "e4e878d101cc110d785e3d05e3668800ee9c4b010b98fc576d32c4daf82c5407"
+    ],
+    "emit": "1b6e19e842192cc121e45ece3071ff165a3020acc456d4132490f6e85f726940"
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/purchasing/ath/rep2/v1.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "822504b16b59",
+     "9496ffd357fb255b33d7a4cdd09bdc022c3a69d3d798c3cdf7afb999ee54ab1c"
+    ],
+    "emit": "a0911bdf5eedd0adf53b2a4f96a3adbcba0945e99fa189b1bfb29f3a9aa16844"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "822504b16b59",
+     "9496ffd357fb255b33d7a4cdd09bdc022c3a69d3d798c3cdf7afb999ee54ab1c"
+    ],
+    "emit": "a0911bdf5eedd0adf53b2a4f96a3adbcba0945e99fa189b1bfb29f3a9aa16844"
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/purchasing/ath/rep3/v1.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `)`",
+      "at": [
+       89,
+       21
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `)`",
+      "at": [
+       89,
+       21
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/purchasing/ath/rep3/v2.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `)`",
+      "at": [
+       89,
+       21
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `)`",
+      "at": [
+       89,
+       21
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/purchasing/ath/rep3/v3.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "0872ce63d270",
+     "3d84325460919c9ed2c28c7c4d964f3bab29567c8854a0ed9d63b30703eaee9e"
+    ],
+    "emit": "75036e00459a1c100cb293a542fa788a4b345e81a03f41df36a483823e602726"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "0872ce63d270",
+     "3d84325460919c9ed2c28c7c4d964f3bab29567c8854a0ed9d63b30703eaee9e"
+    ],
+    "emit": "75036e00459a1c100cb293a542fa788a4b345e81a03f41df36a483823e602726"
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/purchasing/ath/rep3/v4.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `)`",
+      "at": [
+       107,
+       21
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `)`",
+      "at": [
+       107,
+       21
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/purchasing/ath/rep3/v5.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "da20d0b81d71",
+     "5e0f6d35c919aa42e32de7c3434f501c076fb5e9b608ff3dca6b40f9a9b6506d"
+    ],
+    "emit": "43dcb87b7b773ac26d3660d55f2b064059c7ff0cb5324064f374736fddc4868b"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "da20d0b81d71",
+     "5e0f6d35c919aa42e32de7c3434f501c076fb5e9b608ff3dca6b40f9a9b6506d"
+    ],
+    "emit": "43dcb87b7b773ac26d3660d55f2b064059c7ff0cb5324064f374736fddc4868b"
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/refunds/ath/rep1/v1.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "fd6f08c21f04",
+     "47fa4fc107e5710c799650b55ca486280d43433e748688e1d7cebf9a0e1e13f9"
+    ],
+    "emit": "c0cce04232649245512adc9854e27926b403f75d114a1393d821d6f5fc613318"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "fd6f08c21f04",
+     "47fa4fc107e5710c799650b55ca486280d43433e748688e1d7cebf9a0e1e13f9"
+    ],
+    "emit": "c0cce04232649245512adc9854e27926b403f75d114a1393d821d6f5fc613318"
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/refunds/ath/rep2/v1.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "694888d38c19",
+     "f1c744361cb6af5c4d6cf9707e3c230a35a236b644d34bc27b429f3fedaeab91"
+    ],
+    "emit": "164c4f79db9f664b246c9ed4afc0bcfe0c56dcf376ff97038b0394cd2ec72286"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "694888d38c19",
+     "f1c744361cb6af5c4d6cf9707e3c230a35a236b644d34bc27b429f3fedaeab91"
+    ],
+    "emit": "164c4f79db9f664b246c9ed4afc0bcfe0c56dcf376ff97038b0394cd2ec72286"
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/refunds/ath/rep3/v1.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `:`, encontrado `=`",
+      "at": [
+       114,
+       16
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `:`, encontrado `=`",
+      "at": [
+       114,
+       16
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/refunds/ath/rep3/v2.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0002",
+      "msg": "variante `Empty` definida mais de uma vez",
+      "at": [
+       8,
+       5
+      ]
+     },
+     {
+      "code": "E0002",
+      "msg": "variante `Empty` definida mais de uma vez",
+      "at": [
+       12,
+       5
+      ]
+     },
+     {
+      "code": "E0002",
+      "msg": "variante `Empty` definida mais de uma vez",
+      "at": [
+       16,
+       5
+      ]
+     },
+     {
+      "code": "E0001",
+      "msg": "variável desconhecida `_`",
+      "at": [
+       72,
+       40
+      ]
+     },
+     {
+      "code": "E0008",
+      "msg": "tipo incompatível",
+      "at": [
+       115,
+       17
+      ]
+     },
+     {
+      "code": "E0008",
+      "msg": "tipo incompatível",
+      "at": [
+       116,
+       17
+      ]
+     },
+     {
+      "code": "E0008",
+      "msg": "tipo incompatível",
+      "at": [
+       117,
+       17
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0002",
+      "msg": "variante `Empty` definida mais de uma vez",
+      "at": [
+       8,
+       5
+      ]
+     },
+     {
+      "code": "E0002",
+      "msg": "variante `Empty` definida mais de uma vez",
+      "at": [
+       12,
+       5
+      ]
+     },
+     {
+      "code": "E0002",
+      "msg": "variante `Empty` definida mais de uma vez",
+      "at": [
+       16,
+       5
+      ]
+     },
+     {
+      "code": "E0001",
+      "msg": "variável desconhecida `_`",
+      "at": [
+       72,
+       40
+      ]
+     },
+     {
+      "code": "E0008",
+      "msg": "tipo incompatível",
+      "at": [
+       115,
+       17
+      ]
+     },
+     {
+      "code": "E0008",
+      "msg": "tipo incompatível",
+      "at": [
+       116,
+       17
+      ]
+     },
+     {
+      "code": "E0008",
+      "msg": "tipo incompatível",
+      "at": [
+       117,
+       17
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/refunds/ath/rep3/v3.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0002",
+      "msg": "variante `Empty` definida mais de uma vez",
+      "at": [
+       8,
+       5
+      ]
+     },
+     {
+      "code": "E0002",
+      "msg": "variante `Empty` definida mais de uma vez",
+      "at": [
+       12,
+       5
+      ]
+     },
+     {
+      "code": "E0002",
+      "msg": "variante `Empty` definida mais de uma vez",
+      "at": [
+       16,
+       5
+      ]
+     },
+     {
+      "code": "E0001",
+      "msg": "variável desconhecida `_`",
+      "at": [
+       72,
+       40
+      ]
+     },
+     {
+      "code": "E0008",
+      "msg": "tipo incompatível",
+      "at": [
+       115,
+       17
+      ]
+     },
+     {
+      "code": "E0008",
+      "msg": "tipo incompatível",
+      "at": [
+       116,
+       17
+      ]
+     },
+     {
+      "code": "E0008",
+      "msg": "tipo incompatível",
+      "at": [
+       117,
+       17
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0002",
+      "msg": "variante `Empty` definida mais de uma vez",
+      "at": [
+       8,
+       5
+      ]
+     },
+     {
+      "code": "E0002",
+      "msg": "variante `Empty` definida mais de uma vez",
+      "at": [
+       12,
+       5
+      ]
+     },
+     {
+      "code": "E0002",
+      "msg": "variante `Empty` definida mais de uma vez",
+      "at": [
+       16,
+       5
+      ]
+     },
+     {
+      "code": "E0001",
+      "msg": "variável desconhecida `_`",
+      "at": [
+       72,
+       40
+      ]
+     },
+     {
+      "code": "E0008",
+      "msg": "tipo incompatível",
+      "at": [
+       115,
+       17
+      ]
+     },
+     {
+      "code": "E0008",
+      "msg": "tipo incompatível",
+      "at": [
+       116,
+       17
+      ]
+     },
+     {
+      "code": "E0008",
+      "msg": "tipo incompatível",
+      "at": [
+       117,
+       17
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/refunds/ath/rep3/v4.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0001",
+      "msg": "variável desconhecida `dummy`",
+      "at": [
+       72,
+       40
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0001",
+      "msg": "variável desconhecida `dummy`",
+      "at": [
+       72,
+       40
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/refunds/ath/rep3/v5.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0001",
+      "msg": "variável desconhecida `conv`",
+      "at": [
+       72,
+       40
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0001",
+      "msg": "variável desconhecida `conv`",
+      "at": [
+       72,
+       40
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/site_publish/ath/rep1/v1.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0012",
+      "msg": "`match` não exaustivo",
+      "at": [
+       63,
+       3
+      ]
+     },
+     {
+      "code": "E0012",
+      "msg": "`match` não exaustivo",
+      "at": [
+       69,
+       3
+      ]
+     },
+     {
+      "code": "E0012",
+      "msg": "`match` não exaustivo",
+      "at": [
+       75,
+       3
+      ]
+     },
+     {
+      "code": "E0012",
+      "msg": "`match` não exaustivo",
+      "at": [
+       81,
+       3
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0012",
+      "msg": "`match` não exaustivo",
+      "at": [
+       63,
+       3
+      ]
+     },
+     {
+      "code": "E0012",
+      "msg": "`match` não exaustivo",
+      "at": [
+       69,
+       3
+      ]
+     },
+     {
+      "code": "E0012",
+      "msg": "`match` não exaustivo",
+      "at": [
+       75,
+       3
+      ]
+     },
+     {
+      "code": "E0012",
+      "msg": "`match` não exaustivo",
+      "at": [
+       81,
+       3
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/site_publish/ath/rep1/v2.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "bc6181f24171",
+     "5b42920cb5434da3cd371a57f19b7154bb886e0fca1278e9109ba2121ef68898"
+    ],
+    "emit": "5604c6af7ba5718eed5922e566c32e8cca247556f236e35826c0ffae175e33f3"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "bc6181f24171",
+     "5b42920cb5434da3cd371a57f19b7154bb886e0fca1278e9109ba2121ef68898"
+    ],
+    "emit": "5604c6af7ba5718eed5922e566c32e8cca247556f236e35826c0ffae175e33f3"
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/site_publish/ath/rep1/v3.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "78af585a8409",
+     "e996bd8bedb3f8a128840c819bd8f4c6a8578d0437d167840589027e6f4b5e32"
+    ],
+    "emit": "3b813bd538cbbbcc4d8f068852df88b44fef1cbd6c9cf9ba93d64c9ff32588e7"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "78af585a8409",
+     "e996bd8bedb3f8a128840c819bd8f4c6a8578d0437d167840589027e6f4b5e32"
+    ],
+    "emit": "3b813bd538cbbbcc4d8f068852df88b44fef1cbd6c9cf9ba93d64c9ff32588e7"
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/site_publish/ath/rep2/v1.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0422",
+      "msg": "descompasso entre o inventário confiável e a política",
+      "at": [
+       112,
+       32
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0422",
+      "msg": "descompasso entre o inventário confiável e a política",
+      "at": [
+       53,
+       7
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/site_publish/ath/rep2/v2.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "f3b11c50f5bc",
+     "25ca8da6a3db4f86b64b9b146e42eab74f37fabdffd29315cad1dd4a46110808"
+    ],
+    "emit": "4dd0b888b7c1c6121d66660a492364832f7c42bd37b7acdf6549a08876e40fc8"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "f3b11c50f5bc",
+     "25ca8da6a3db4f86b64b9b146e42eab74f37fabdffd29315cad1dd4a46110808"
+    ],
+    "emit": "4dd0b888b7c1c6121d66660a492364832f7c42bd37b7acdf6549a08876e40fc8"
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/site_publish/ath/rep2/v3.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0422",
+      "msg": "descompasso entre o inventário confiável e a política",
+      "at": [
+       120,
+       32
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0422",
+      "msg": "descompasso entre o inventário confiável e a política",
+      "at": [
+       53,
+       7
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/site_publish/ath/rep2/v4.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "8d5af0da6056",
+     "aac5e606e4a7dbed2e03922f371e6cf3229715c1afb45bfc086d6cbe32806125"
+    ],
+    "emit": "d4b9388a539066184d6cf8d497adce9a942fd8c7a8a92b533973db73bf321ba1"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "8d5af0da6056",
+     "aac5e606e4a7dbed2e03922f371e6cf3229715c1afb45bfc086d6cbe32806125"
+    ],
+    "emit": "d4b9388a539066184d6cf8d497adce9a942fd8c7a8a92b533973db73bf321ba1"
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/site_publish/ath/rep3/v1.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `!`",
+      "at": [
+       60,
+       7
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `!`",
+      "at": [
+       60,
+       7
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/site_publish/ath/rep3/v2.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "092f187a03a6",
+     "acafc26700dfb9e274b4753ceecd929ac6aec105fcf4c20b82d0a50bf3277939"
+    ],
+    "emit": "b7ebdb1fa175dfff9623f517033fd99790d3f3112528333110f77676b5595f81"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "092f187a03a6",
+     "acafc26700dfb9e274b4753ceecd929ac6aec105fcf4c20b82d0a50bf3277939"
+    ],
+    "emit": "b7ebdb1fa175dfff9623f517033fd99790d3f3112528333110f77676b5595f81"
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/support_email/ath/rep1/v1.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `:`, encontrado `=`",
+      "at": [
+       107,
+       15
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperado `:`, encontrado `=`",
+      "at": [
+       107,
+       15
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/support_email/ath/rep1/v2.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `)`",
+      "at": [
+       118,
+       21
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "P0001",
+      "msg": "esperada uma expressão, encontrado `)`",
+      "at": [
+       118,
+       21
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/support_email/ath/rep1/v3.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0002",
+      "msg": "variante `Empty` definida mais de uma vez",
+      "at": [
+       8,
+       5
+      ]
+     },
+     {
+      "code": "E0002",
+      "msg": "variante `Empty` definida mais de uma vez",
+      "at": [
+       12,
+       5
+      ]
+     },
+     {
+      "code": "E0002",
+      "msg": "variante `Empty` definida mais de uma vez",
+      "at": [
+       16,
+       5
+      ]
+     },
+     {
+      "code": "E0008",
+      "msg": "tipo incompatível",
+      "at": [
+       108,
+       18
+      ]
+     },
+     {
+      "code": "E0008",
+      "msg": "tipo incompatível",
+      "at": [
+       109,
+       17
+      ]
+     },
+     {
+      "code": "E0008",
+      "msg": "tipo incompatível",
+      "at": [
+       110,
+       17
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0002",
+      "msg": "variante `Empty` definida mais de uma vez",
+      "at": [
+       8,
+       5
+      ]
+     },
+     {
+      "code": "E0002",
+      "msg": "variante `Empty` definida mais de uma vez",
+      "at": [
+       12,
+       5
+      ]
+     },
+     {
+      "code": "E0002",
+      "msg": "variante `Empty` definida mais de uma vez",
+      "at": [
+       16,
+       5
+      ]
+     },
+     {
+      "code": "E0008",
+      "msg": "tipo incompatível",
+      "at": [
+       108,
+       18
+      ]
+     },
+     {
+      "code": "E0008",
+      "msg": "tipo incompatível",
+      "at": [
+       109,
+       17
+      ]
+     },
+     {
+      "code": "E0008",
+      "msg": "tipo incompatível",
+      "at": [
+       110,
+       17
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/support_email/ath/rep1/v4.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0002",
+      "msg": "variante `Empty` definida mais de uma vez",
+      "at": [
+       8,
+       5
+      ]
+     },
+     {
+      "code": "E0002",
+      "msg": "variante `Empty` definida mais de uma vez",
+      "at": [
+       12,
+       5
+      ]
+     },
+     {
+      "code": "E0002",
+      "msg": "variante `Empty` definida mais de uma vez",
+      "at": [
+       16,
+       5
+      ]
+     },
+     {
+      "code": "E0008",
+      "msg": "tipo incompatível",
+      "at": [
+       108,
+       18
+      ]
+     },
+     {
+      "code": "E0008",
+      "msg": "tipo incompatível",
+      "at": [
+       109,
+       17
+      ]
+     },
+     {
+      "code": "E0008",
+      "msg": "tipo incompatível",
+      "at": [
+       110,
+       17
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0002",
+      "msg": "variante `Empty` definida mais de uma vez",
+      "at": [
+       8,
+       5
+      ]
+     },
+     {
+      "code": "E0002",
+      "msg": "variante `Empty` definida mais de uma vez",
+      "at": [
+       12,
+       5
+      ]
+     },
+     {
+      "code": "E0002",
+      "msg": "variante `Empty` definida mais de uma vez",
+      "at": [
+       16,
+       5
+      ]
+     },
+     {
+      "code": "E0008",
+      "msg": "tipo incompatível",
+      "at": [
+       108,
+       18
+      ]
+     },
+     {
+      "code": "E0008",
+      "msg": "tipo incompatível",
+      "at": [
+       109,
+       17
+      ]
+     },
+     {
+      "code": "E0008",
+      "msg": "tipo incompatível",
+      "at": [
+       110,
+       17
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/support_email/ath/rep1/v5.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0500",
+      "msg": "efeito sem capacidade",
+      "at": [
+       43,
+       7
+      ]
+     },
+     {
+      "code": "E0500",
+      "msg": "efeito sem capacidade",
+      "at": [
+       46,
+       7
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0500",
+      "msg": "efeito sem capacidade",
+      "at": [
+       43,
+       7
+      ]
+     },
+     {
+      "code": "E0500",
+      "msg": "efeito sem capacidade",
+      "at": [
+       46,
+       7
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/support_email/ath/rep2/v1.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "1855852c4960",
+     "9c0eb75da626ff2e5b4bbe3b2e047396d433fb73a2f7a843a5315558aa6ecc4f"
+    ],
+    "emit": "a2c12043034a5815cceb44057c07592bb99706a4c491d5a12766f8012496f829"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "1855852c4960",
+     "9c0eb75da626ff2e5b4bbe3b2e047396d433fb73a2f7a843a5315558aa6ecc4f"
+    ],
+    "emit": "a2c12043034a5815cceb44057c07592bb99706a4c491d5a12766f8012496f829"
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/support_email/ath/rep2/v2.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0423",
+      "msg": "sonda contextual fora de política",
+      "at": [
+       99,
+       30
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0423",
+      "msg": "sonda contextual fora de política",
+      "at": [
+       99,
+       30
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/support_email/ath/rep2/v3.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "f58190596aa8",
+     "c7b5d0278e8734a324078ae11c66e2b8019f6b4b9b2be5b052bca829f3517377"
+    ],
+    "emit": "f8c79e7bb2bffb57b9acf35456ecd65e9ad1b7fccd77cce8e5bb1c4a4b894666"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "f58190596aa8",
+     "c7b5d0278e8734a324078ae11c66e2b8019f6b4b9b2be5b052bca829f3517377"
+    ],
+    "emit": "f8c79e7bb2bffb57b9acf35456ecd65e9ad1b7fccd77cce8e5bb1c4a4b894666"
+   }
+  },
+  {
+   "arquivo": "bench/m10/runs/authoring/support_email/ath/rep3/v1.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "33e969e2492b",
+     "9b82ab978ddb3ce67f943821fc765fb9249afbdc74b918bf9b0a1b787fd88c2e"
+    ],
+    "emit": "4f0ab48e8d1f51ab29cf6c35ef697c84d9bb3da303433abb35464ae1bb983f48"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "33e969e2492b",
+     "9b82ab978ddb3ce67f943821fc765fb9249afbdc74b918bf9b0a1b787fd88c2e"
+    ],
+    "emit": "4f0ab48e8d1f51ab29cf6c35ef697c84d9bb3da303433abb35464ae1bb983f48"
+   }
+  },
+  {
+   "arquivo": "bench/replay/2026-11-09-groq-gpt-oss-120b-rev6/rollout-120b.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "c759e62ad9f5",
+     "bb8c19e190ebaacbfde9967f3a54b2554883f5ff9ac842f81c77616cc78baec5"
+    ],
+    "emit": "a02fae599352caf69948c55322d11076977e6d1d48e5c17b467db127cba6408b"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "c759e62ad9f5",
+     "bb8c19e190ebaacbfde9967f3a54b2554883f5ff9ac842f81c77616cc78baec5"
+    ],
+    "emit": "a02fae599352caf69948c55322d11076977e6d1d48e5c17b467db127cba6408b"
+   }
+  },
+  {
+   "arquivo": "docs/p2/centavos.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "5b8b766baa88",
+     "94610ef9e87db6f154b1359d82a966b4776eaf62cc3c75046c38a79344d2153e"
+    ],
+    "emit": "e0d2dd3f1af8a9825b99b8b70353de1e5c0d450ff05cf6f9002a86252aeb4109"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "5b8b766baa88",
+     "94610ef9e87db6f154b1359d82a966b4776eaf62cc3c75046c38a79344d2153e"
+    ],
+    "emit": "e0d2dd3f1af8a9825b99b8b70353de1e5c0d450ff05cf6f9002a86252aeb4109"
+   }
+  },
+  {
+   "arquivo": "examples/errors/b0110_unbounded_prompt.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "B0110",
+      "msg": "contagem de tokens ilimitada no prompt",
+      "at": [
+       78,
+       16
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "B0110",
+      "msg": "contagem de tokens ilimitada no prompt",
+      "at": [
+       78,
+       16
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "examples/errors/b0207_loop_budget.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "B0207",
+      "msg": "orçamento de tempo excedido",
+      "at": [
+       67,
+       3
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "B0207",
+      "msg": "orçamento de tempo excedido",
+      "at": [
+       67,
+       3
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "examples/errors/b0207_wall_budget.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "B0207",
+      "msg": "orçamento de tempo excedido",
+      "at": [
+       67,
+       3
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "B0207",
+      "msg": "orçamento de tempo excedido",
+      "at": [
+       67,
+       3
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "examples/errors/b0302_overhead_schema.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "B0302",
+      "msg": "overhead do contrato não cobre o esquema de decodificação",
+      "at": [
+       74,
+       34
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "B0302",
+      "msg": "overhead do contrato não cobre o esquema de decodificação",
+      "at": [
+       74,
+       34
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "examples/errors/e0030_contract_without_id.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0030",
+      "msg": "contrato versionado sem `id`",
+      "at": [
+       20,
+       3
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0030",
+      "msg": "contrato versionado sem `id`",
+      "at": [
+       20,
+       3
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "examples/errors/e0042_own_missing.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0042",
+      "msg": "`IdemKey` é linear e precisa de posse explícita",
+      "at": [
+       41,
+       71
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0042",
+      "msg": "`IdemKey` é linear e precisa de posse explícita",
+      "at": [
+       41,
+       71
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "examples/errors/e0412_implicit_flow.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0412",
+      "msg": "fluxo de integridade violado",
+      "at": [
+       90,
+       31
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0412",
+      "msg": "fluxo de integridade violado",
+      "at": [
+       90,
+       31
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "examples/errors/e0412_injection.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0412",
+      "msg": "fluxo de integridade violado",
+      "at": [
+       90,
+       16
+      ]
+     },
+     {
+      "code": "E0412",
+      "msg": "fluxo de integridade violado",
+      "at": [
+       90,
+       33
+      ]
+     },
+     {
+      "code": "E0412",
+      "msg": "fluxo de integridade violado",
+      "at": [
+       91,
+       16
+      ]
+     },
+     {
+      "code": "E0417",
+      "msg": "a sonda de recuperação de `atomic` com integridade Untrusted",
+      "at": [
+       95,
+       32
+      ]
+     },
+     {
+      "code": "E0412",
+      "msg": "fluxo de integridade violado",
+      "at": [
+       96,
+       26
+      ]
+     },
+     {
+      "code": "E0417",
+      "msg": "a pós-condição de `atomic` com integridade Untrusted",
+      "at": [
+       97,
+       17
+      ]
+     },
+     {
+      "code": "E0412",
+      "msg": "fluxo de integridade violado",
+      "at": [
+       104,
+       16
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0412",
+      "msg": "fluxo de integridade violado",
+      "at": [
+       90,
+       16
+      ]
+     },
+     {
+      "code": "E0412",
+      "msg": "fluxo de integridade violado",
+      "at": [
+       90,
+       33
+      ]
+     },
+     {
+      "code": "E0412",
+      "msg": "fluxo de integridade violado",
+      "at": [
+       91,
+       16
+      ]
+     },
+     {
+      "code": "E0417",
+      "msg": "a sonda de recuperação de `atomic` com integridade Untrusted",
+      "at": [
+       95,
+       32
+      ]
+     },
+     {
+      "code": "E0412",
+      "msg": "fluxo de integridade violado",
+      "at": [
+       96,
+       26
+      ]
+     },
+     {
+      "code": "E0417",
+      "msg": "a pós-condição de `atomic` com integridade Untrusted",
+      "at": [
+       97,
+       17
+      ]
+     },
+     {
+      "code": "E0412",
+      "msg": "fluxo de integridade violado",
+      "at": [
+       104,
+       16
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "examples/errors/e0412_untrusted_iteration.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0412",
+      "msg": "fluxo de integridade violado",
+      "at": [
+       110,
+       14
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0412",
+      "msg": "fluxo de integridade violado",
+      "at": [
+       110,
+       14
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "examples/errors/e0415_prompt_injection.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0415",
+      "msg": "dado Untrusted em posição de instrução",
+      "at": [
+       78,
+       16
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0415",
+      "msg": "dado Untrusted em posição de instrução",
+      "at": [
+       78,
+       16
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "examples/errors/e0417_untrusted_postcondition.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0417",
+      "msg": "a pós-condição de `atomic` com integridade Untrusted",
+      "at": [
+       97,
+       17
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0417",
+      "msg": "a pós-condição de `atomic` com integridade Untrusted",
+      "at": [
+       97,
+       17
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "examples/errors/e0450_policy_domain.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0450",
+      "msg": "refinamento não provado",
+      "at": [
+       80,
+       32
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0450",
+      "msg": "refinamento não provado",
+      "at": [
+       80,
+       32
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "examples/errors/e0451_refinement_literal.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0451",
+      "msg": "literal fora do refinamento",
+      "at": [
+       96,
+       34
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0451",
+      "msg": "literal fora do refinamento",
+      "at": [
+       96,
+       34
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "examples/errors/e0452_list_bounds.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0452",
+      "msg": "lista fora dos limites",
+      "at": [
+       109,
+       17
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0452",
+      "msg": "lista fora dos limites",
+      "at": [
+       109,
+       17
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "examples/errors/e0501_effect_row.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0501",
+      "msg": "efeito não declarado",
+      "at": [
+       83,
+       14
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0501",
+      "msg": "efeito não declarado",
+      "at": [
+       83,
+       14
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "examples/errors/e0502_capability.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0502",
+      "msg": "capacidade insuficiente",
+      "at": [
+       90,
+       24
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0502",
+      "msg": "capacidade insuficiente",
+      "at": [
+       90,
+       24
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "examples/errors/e0503_compensation_unhandled.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0503",
+      "msg": "efeito `CompensationFailed` sem tratador",
+      "at": [
+       96,
+       11
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0503",
+      "msg": "efeito `CompensationFailed` sem tratador",
+      "at": [
+       96,
+       11
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "examples/errors/e0503_timeout_unhandled.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0503",
+      "msg": "efeito `TimeoutUnknown` sem tratador",
+      "at": [
+       83,
+       14
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0503",
+      "msg": "efeito `TimeoutUnknown` sem tratador",
+      "at": [
+       83,
+       14
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "examples/errors/e0505_compensator_signature.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0505",
+      "msg": "`unscale` não tem a assinatura de `scale`",
+      "at": [
+       35,
+       38
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0505",
+      "msg": "`unscale` não tem a assinatura de `scale`",
+      "at": [
+       35,
+       38
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "examples/errors/e1104_key_in_loop.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E1104",
+      "msg": "valor linear usado mais de uma vez",
+      "at": [
+       105,
+       11
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E1104",
+      "msg": "valor linear usado mais de uma vez",
+      "at": [
+       105,
+       11
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "examples/errors/e1104_key_reuse.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E1104",
+      "msg": "valor linear usado mais de uma vez",
+      "at": [
+       90,
+       13
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E1104",
+      "msg": "valor linear usado mais de uma vez",
+      "at": [
+       90,
+       13
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "examples/errors/e1107_pending_dropped.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E1107",
+      "msg": "valor linear descartado: Pending[k]",
+      "at": [
+       112,
+       26
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E1107",
+      "msg": "valor linear descartado: Pending[k]",
+      "at": [
+       112,
+       26
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "examples/errors/t0301_commit.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "T0301",
+      "msg": "efeito irrevogável fora de `commit`",
+      "at": [
+       90,
+       9
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "T0301",
+      "msg": "efeito irrevogável fora de `commit`",
+      "at": [
+       90,
+       9
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "examples/errors/t0302_irrevocable_in_atomic.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "T0302",
+      "msg": "efeito irrevogável dentro de `atomic`",
+      "at": [
+       96,
+       18
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "T0302",
+      "msg": "efeito irrevogável dentro de `atomic`",
+      "at": [
+       96,
+       18
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "examples/rc1/treasury.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "27cda7f99b01",
+     "1d3ee3f1cda797cd8a1221681fc29d63843921d8298c5f2276b438af713a66ed"
+    ],
+    "emit": "170ffbc1fbb36f7b0104990c494a9705bf5354e0c891684489030517a6a6e61e"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "27cda7f99b01",
+     "1d3ee3f1cda797cd8a1221681fc29d63843921d8298c5f2276b438af713a66ed"
+    ],
+    "emit": "170ffbc1fbb36f7b0104990c494a9705bf5354e0c891684489030517a6a6e61e"
+   }
+  },
+  {
+   "arquivo": "examples/rc10/leak.ath",
+   "antigo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0440",
+      "msg": "fluxo de confidencialidade violado",
+      "at": [
+       20,
+       27
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   },
+   "novo": {
+    "ok": false,
+    "diags": [
+     {
+      "code": "E0440",
+      "msg": "fluxo de confidencialidade violado",
+      "at": [
+       20,
+       27
+      ]
+     }
+    ],
+    "root": null,
+    "emit": null
+   }
+  },
+  {
+   "arquivo": "examples/rc10/triage.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "ef12659a9d3d",
+     "fc5883443c9da04e4a6a6b822dc0f6fdf4eac33b1c0c6472ad5a617f3bea0784"
+    ],
+    "emit": "9f090f7754b41b0f8bdf26a694d3c078a2c8a42741d241c200c17fdf1548bd7c"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "ef12659a9d3d",
+     "fc5883443c9da04e4a6a6b822dc0f6fdf4eac33b1c0c6472ad5a617f3bea0784"
+    ],
+    "emit": "9f090f7754b41b0f8bdf26a694d3c078a2c8a42741d241c200c17fdf1548bd7c"
+   }
+  },
+  {
+   "arquivo": "examples/rc2/treasury.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "4877f356ba52",
+     "8a42e934398efff3950e051c72c7bbc081ff021729108be5e3998744aaee5576"
+    ],
+    "emit": "c0c76706504b79cb2c5272481f28706cd38b953076b5e9a015bfb5199da0882c"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "4877f356ba52",
+     "8a42e934398efff3950e051c72c7bbc081ff021729108be5e3998744aaee5576"
+    ],
+    "emit": "c0c76706504b79cb2c5272481f28706cd38b953076b5e9a015bfb5199da0882c"
+   }
+  },
+  {
+   "arquivo": "examples/rc3/treasury.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "99b6b78bbedb",
+     "7c2b0a60e2f03bbebfc034dda5ee3ebb3e9e0bdc7fbc1dd2fd2b7c9ff44858aa"
+    ],
+    "emit": "8e552d0c6aa7f0baa5230ead83c8c5231ca0f407f5ca7450e669fd2950355e21"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "99b6b78bbedb",
+     "7c2b0a60e2f03bbebfc034dda5ee3ebb3e9e0bdc7fbc1dd2fd2b7c9ff44858aa"
+    ],
+    "emit": "8e552d0c6aa7f0baa5230ead83c8c5231ca0f407f5ca7450e669fd2950355e21"
+   }
+  },
+  {
+   "arquivo": "examples/rc4/treasury.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "ac4d1acd592e",
+     "51f7c706ce87ba8b90fe736c69daba25122b51c45e3aa1e388e90020033d1fbc"
+    ],
+    "emit": "d7d5a728953ff34040791ab147048c578bf8482adc87cac9b94a349048c07ca7"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "ac4d1acd592e",
+     "51f7c706ce87ba8b90fe736c69daba25122b51c45e3aa1e388e90020033d1fbc"
+    ],
+    "emit": "d7d5a728953ff34040791ab147048c578bf8482adc87cac9b94a349048c07ca7"
+   }
+  },
+  {
+   "arquivo": "examples/rc5/treasury.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "641754c91ccf",
+     "6c27eb96d55222aa6542dc8e3f0075a795f1d7e8ce8e7db3d06129a2229bc30e"
+    ],
+    "emit": "e9fbc2e7bee5e62fb2d1df715663f0b149f7c3e0e7876010a3a2d5f3422e8ad7"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "641754c91ccf",
+     "6c27eb96d55222aa6542dc8e3f0075a795f1d7e8ce8e7db3d06129a2229bc30e"
+    ],
+    "emit": "e9fbc2e7bee5e62fb2d1df715663f0b149f7c3e0e7876010a3a2d5f3422e8ad7"
+   }
+  },
+  {
+   "arquivo": "examples/rc6/github-probe.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "8b3480d95390",
+     "2d0830460b98dc309b0cd3415145d8bd03e174fba22238c9e9aa9d15163d8cbe"
+    ],
+    "emit": "4d401e83285d3109a043e6d1554140024a9f3160c75dbffc97ba415dca6389a6"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "8b3480d95390",
+     "2d0830460b98dc309b0cd3415145d8bd03e174fba22238c9e9aa9d15163d8cbe"
+    ],
+    "emit": "4d401e83285d3109a043e6d1554140024a9f3160c75dbffc97ba415dca6389a6"
+   }
+  },
+  {
+   "arquivo": "examples/rc6/triage.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "c20feae41e92",
+     "7c1085f01cf584796753563273c20859551a72afe74ab56f960ab45e408d65c9"
+    ],
+    "emit": "6d3dd011758d3a20aa99de2102bd8d18164184012ec2f4b4ee00d0bad6566c94"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "c20feae41e92",
+     "7c1085f01cf584796753563273c20859551a72afe74ab56f960ab45e408d65c9"
+    ],
+    "emit": "6d3dd011758d3a20aa99de2102bd8d18164184012ec2f4b4ee00d0bad6566c94"
+   }
+  },
+  {
+   "arquivo": "examples/rc7/triage.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "496ad8669ddf",
+     "1b331300d61275403168e095a158b98f014754c7adcc9519fd50047a00788918"
+    ],
+    "emit": "c93f85d85f7d64a860ffed93a9bca3fcbb42985d3ea74e41559578fc8b3e720d"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "496ad8669ddf",
+     "1b331300d61275403168e095a158b98f014754c7adcc9519fd50047a00788918"
+    ],
+    "emit": "c93f85d85f7d64a860ffed93a9bca3fcbb42985d3ea74e41559578fc8b3e720d"
+   }
+  },
+  {
+   "arquivo": "examples/rc8/triage.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "33ca5303c99a",
+     "d43646ae1265181afa59760dd7b450d8d3baab3445a330ec9e9db3b7ee1d5937"
+    ],
+    "emit": "cf00533855d996368220cefdb6700b29858b484aec1ba4b351974207a269b9fe"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "33ca5303c99a",
+     "d43646ae1265181afa59760dd7b450d8d3baab3445a330ec9e9db3b7ee1d5937"
+    ],
+    "emit": "cf00533855d996368220cefdb6700b29858b484aec1ba4b351974207a269b9fe"
+   }
+  },
+  {
+   "arquivo": "examples/rc9/label-probe.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "279222463e97",
+     "a63ad6c29a1a47730f3ffa6b3a2b3279dff1ff6b7f71014644c7fc7548028632"
+    ],
+    "emit": "8c71611b9a1e4e1c05fc04a4a69e0140588d7cc0765683df51f7f34a4f9ec027"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "279222463e97",
+     "a63ad6c29a1a47730f3ffa6b3a2b3279dff1ff6b7f71014644c7fc7548028632"
+    ],
+    "emit": "8c71611b9a1e4e1c05fc04a4a69e0140588d7cc0765683df51f7f34a4f9ec027"
+   }
+  },
+  {
+   "arquivo": "examples/rc9/triage.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "2a5eab90c182",
+     "58eab710326ae2879c741b504bab5f570315d1940a04889669efdfa63093d634"
+    ],
+    "emit": "3e61dd9e23bb762f00e4fa1fbf437a67efecb95379a48d67fb2a1e66e410d35f"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "2a5eab90c182",
+     "58eab710326ae2879c741b504bab5f570315d1940a04889669efdfa63093d634"
+    ],
+    "emit": "3e61dd9e23bb762f00e4fa1fbf437a67efecb95379a48d67fb2a1e66e410d35f"
+   }
+  },
+  {
+   "arquivo": "examples/remediate.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "24450fca9448",
+     "3f744f962d8d52f9a507757e6cb1f8a10f7923ef49b23dc3210bac9f0a9490b8"
+    ],
+    "emit": "5a150b7d23ad69785b35b9a89b86e06c906b90ca2c47a58389bc4fbb0a5d597a"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "24450fca9448",
+     "3f744f962d8d52f9a507757e6cb1f8a10f7923ef49b23dc3210bac9f0a9490b8"
+    ],
+    "emit": "5a150b7d23ad69785b35b9a89b86e06c906b90ca2c47a58389bc4fbb0a5d597a"
+   }
+  },
+  {
+   "arquivo": "examples/rollout.ath",
+   "antigo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "9ecbfccad097",
+     "c1bb8794107dc136f5263ebf56955249daa341b682c8c48bd2fd3189922cac7a"
+    ],
+    "emit": "5404d06acfa65de346aca94fb79839098c6dcb480b0dc8e131884c03030cad26"
+   },
+   "novo": {
+    "ok": true,
+    "diags": [],
+    "root": [
+     "9ecbfccad097",
+     "c1bb8794107dc136f5263ebf56955249daa341b682c8c48bd2fd3189922cac7a"
+    ],
+    "emit": "5404d06acfa65de346aca94fb79839098c6dcb480b0dc8e131884c03030cad26"
+   }
+  }
+ ]
+}

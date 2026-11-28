@@ -70,3 +70,20 @@ class Ciclo1Repro(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MenosZeroTests(unittest.TestCase):
+    """Achado 12: `-0` é lido como o serde_json o lê (ponto flutuante), nunca como inteiro."""
+
+    def test_menos_zero_nao_e_inteiro(self):
+        from aletheia_runtime.canon import loads
+        from aletheia_runtime.values import is_int
+
+        for text, want_int in (("-0", False), ("0", True), ("-1", True), ("-00", None), ("[-0, 0]", None)):
+            if want_int is None:
+                continue
+            v = loads(text)
+            self.assertEqual(is_int(v), want_int, text)
+        self.assertEqual([type(x) for x in loads("[-0, 0, -5]")], [float, int, int])
+        with self.assertRaises(ValueError):
+            loads("-00")  # inválido em JSON, como no serde_json

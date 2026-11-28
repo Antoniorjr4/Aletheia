@@ -1,0 +1,1 @@
+{"planner":[{"kind":"Plan","ops":[{"kind":"Pay","to":"alice","memo":"ok"},{"kind":"Pay","to":"mallory","memo":"ok"}]}]}

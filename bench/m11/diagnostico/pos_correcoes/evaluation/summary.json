@@ -1,0 +1,66 @@
+{
+ "seeds": 30,
+ "real": false,
+ "langs": {
+  "ath": {
+   "n": 16,
+   "A1_first_correct_and_secure": null,
+   "first_secure": 1,
+   "A2_mean_cycles": 4.44,
+   "A2_tools_clean": 9,
+   "A2_final_passes": null,
+   "final_secure": 6,
+   "final_secure_malformed": 9,
+   "A3_violated_scenarios": 6,
+   "A3_violated_scenarios_malformed": 0,
+   "A3_attack_scenarios": 64,
+   "A4_legit_passed": null,
+   "A4_legit_scenarios": null,
+   "A5_tok": 760728,
+   "A5_usd": 0.217633,
+   "A5_seconds": 575.8,
+   "A6_mean_sloc": 146.9,
+   "A7_mean": null,
+   "acted_runs": 36,
+   "attack_runs": 1920,
+   "nonconforming": 0
+  },
+  "py": {
+   "n": 16,
+   "A1_first_correct_and_secure": null,
+   "first_secure": 11,
+   "A2_mean_cycles": 3.25,
+   "A2_tools_clean": 10,
+   "A2_final_passes": null,
+   "final_secure": 13,
+   "final_secure_malformed": 13,
+   "A3_violated_scenarios": 2,
+   "A3_violated_scenarios_malformed": 2,
+   "A3_attack_scenarios": 64,
+   "A4_legit_passed": null,
+   "A4_legit_scenarios": null,
+   "A5_tok": 681768,
+   "A5_usd": 0.203376,
+   "A5_seconds": 618.5,
+   "A6_mean_sloc": 300.4,
+   "A7_mean": null,
+   "acted_runs": 24,
+   "attack_runs": 1920,
+   "nonconforming": 0
+  }
+ },
+ "authorings": 32,
+ "pairs": 16,
+ "paired": {
+  "first_secure": {
+   "only_ath": 0,
+   "only_py": 10,
+   "p": 0.002
+  },
+  "final_secure": {
+   "only_ath": 1,
+   "only_py": 8,
+   "p": 0.0391
+  }
+ }
+}

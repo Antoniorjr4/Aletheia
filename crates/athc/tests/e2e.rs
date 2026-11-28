@@ -163,7 +163,12 @@ fn implicit_flow_points_at_the_untrusted_condition() {
 fn injection_diagnostic_traces_the_origin() {
     // o prompt cita o evento (`alerta = quote(service)`) e os logs, ambos Untrusted: a cadeia
     // de origem parte do primeiro deles e atravessa o `infer` e a amostra crua
-    let d = &compile(&read("errors/e0412_injection.ath")).err().unwrap()[0];
+    // Desde 26/11 (D15) o mesmo `commit` também recebe o diagnóstico de ocorrência (efeito
+    // irrevogável num ramo decidido por dado), que vem antes pela posição; a exigência deste teste,
+    // a cadeia de origem do argumento, é a mesma.
+    let all = compile(&read("errors/e0412_injection.ath")).err().unwrap();
+    let d =
+        all.iter().find(|d| d.notes.first().is_some_and(|n| n.starts_with("origem:"))).expect("diagnóstico com origem");
     assert!(d.notes[0].starts_with("origem: evento `alert(service)` ^ Untrusted"), "{:?}", d.notes);
     assert!(d.notes[0].ends_with("→ infer planner → sample(…)"), "{:?}", d.notes);
 }
@@ -426,10 +431,21 @@ fn a_delete_cannot_even_be_emitted() {
 
 #[test]
 fn refinement_without_proof_is_rejected() {
+    // `to` é `Int[2..64]`; `to + 1` pode ser 65 e não cabe no parâmetro `Int[2..64]`.
+    // (Até 26/11/2026 este teste usava `1 + 1`, recusado porque a aritmética não tinha intervalo.
+    // Com a aritmética de intervalos, `1 + 1` é 2 e está provado: a expectativa antiga deixou de
+    // valer porque o provador mudou, não o requisito. O caso abaixo continua exigindo a prova.)
     let src = read("remediate.ath")
-        .replace("scale(cluster, deploy, to, keys.mint())", "scale(cluster, deploy, 1 + 1, keys.mint())");
+        .replace("scale(cluster, deploy, to, keys.mint())", "scale(cluster, deploy, to + 1, keys.mint())");
     let d = &compile(&src).err().unwrap()[0];
     assert_eq!((d.code.as_str(), d.stratum), ("E0450", Stratum::E5));
+    let src = read("remediate.ath")
+        .replace("scale(cluster, deploy, to, keys.mint())", "scale(cluster, deploy, 1 + 0, keys.mint())");
+    let d = &compile(&src).err().unwrap()[0];
+    assert_eq!((d.code.as_str(), d.stratum), ("E0450", Stratum::E5));
+    let src = read("remediate.ath")
+        .replace("scale(cluster, deploy, to, keys.mint())", "scale(cluster, deploy, 1 + 1, keys.mint())");
+    assert!(compile(&src).is_ok());
 }
 
 #[test]

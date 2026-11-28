@@ -581,9 +581,9 @@ impl<'m> Gen<'m> {
                     self.line(format!("{kw} {v} == {}:", py_str(&arm.variant.name)));
                     self.indented(|g| {
                         g.env.push(Vec::new());
-                        for b in &arm.binds {
+                        for (b, f) in arm.binds.iter().zip(&arm.fields) {
                             let p = g.bind(&b.name);
-                            g.line(format!("{p} = R.bind({s}, {})", py_str(&b.name)));
+                            g.line(format!("{p} = R.bind({s}, {})", py_str(&f.name)));
                         }
                         let a = g.expr(&arm.body);
                         g.env.pop();
@@ -664,8 +664,22 @@ impl<'m> Gen<'m> {
                                 }
                             }
                         }
+                        // Ciclo 1: os dois últimos só aparecem quando usados (o código emitido para
+                        // os programas anteriores não muda)
+                        let stateful = self.m.items.iter().any(
+                            |i| matches!(i, Item::Policy(p) if p.name.name == k.policy.name && p.params.len() == 2),
+                        );
+                        let modes = if stateful || k.all {
+                            format!(
+                                ", {}, {}",
+                                if stateful { "True" } else { "False" },
+                                if k.all { "True" } else { "False" }
+                            )
+                        } else {
+                            String::new()
+                        };
                         format!(
-                            ", keep=({}, policy_{}, {}, {{{}}})",
+                            ", keep=({}, policy_{}, {}, {{{}}}{modes})",
                             py_str(&k.field.name),
                             ident(&k.policy.name),
                             py_str(&k.policy.name),
@@ -860,6 +874,15 @@ impl<'m> Gen<'m> {
             "text" => {
                 let a = self.expr(&args[0])?;
                 return Ok(self.assign("t", format!("R.text_({a})")));
+            }
+            "contains" => {
+                let a = self.expr(&args[0])?;
+                let b = self.expr(&args[1])?;
+                return Ok(self.assign("t", format!("R.contains({a}, {b})")));
+            }
+            name @ ("lower" | "ascii_letters" | "ascii_digits") => {
+                let a = self.expr(&args[0])?;
+                return Ok(self.assign("t", format!("R.{name}({a})")));
             }
             "join" => {
                 let a = self.expr(&args[0])?;

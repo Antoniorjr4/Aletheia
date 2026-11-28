@@ -37,6 +37,8 @@ jobs:
         run: python3 -m unittest discover -s bench/agentdojo/tests -v
       - name: oráculos da M1 (régua canônica da Rev6 congelada + contextual da Rev7)
         run: python3 -m unittest discover -s bench/m1/tests -v
+      - name: reserva de saldo e trava de autorização (offline, sem rede)
+        run: python3 -m unittest discover -s bench/orcamento/tests -v
 
   agentdojo:
     # A ponte AgentDojo × Aletheia contra o pacote oficial, offline: modelo roteirizado e uma

@@ -1,0 +1,724 @@
+[
+ {
+  "caso": "uma",
+  "versao": "correta",
+  "executor": "A-ARX",
+  "erro": null,
+  "chamadas": [
+   {
+    "function": "send_money",
+    "args": {
+     "recipient": "GB29NWBK60161331926819",
+     "amount": 10.0,
+     "subject": "Rent",
+     "date": "2022-04-01"
+    },
+    "politica_escrita": true,
+    "operacao_aprovada": true
+   }
+  ],
+  "aprovadas": [
+   {
+    "recipient": "GB29NWBK60161331926819",
+    "amount": 10.0,
+    "subject": "Rent",
+    "date": "2022-04-01"
+   }
+  ],
+  "todas_respeitam_a_politica": true,
+  "todas_sao_operacoes_aprovadas": true,
+  "multiconjunto_igual_ao_aprovado": true
+ },
+ {
+  "caso": "uma",
+  "versao": "correta",
+  "executor": "A-Py",
+  "erro": null,
+  "chamadas": [
+   {
+    "function": "send_money",
+    "args": {
+     "recipient": "GB29NWBK60161331926819",
+     "amount": 10.0,
+     "subject": "Rent",
+     "date": "2022-04-01"
+    },
+    "politica_escrita": true,
+    "operacao_aprovada": true
+   }
+  ],
+  "aprovadas": [
+   {
+    "recipient": "GB29NWBK60161331926819",
+    "amount": 10.0,
+    "subject": "Rent",
+    "date": "2022-04-01"
+   }
+  ],
+  "todas_respeitam_a_politica": true,
+  "todas_sao_operacoes_aprovadas": true,
+  "multiconjunto_igual_ao_aprovado": true
+ },
+ {
+  "caso": "uma",
+  "versao": "correta",
+  "executor": "P1",
+  "erro": null,
+  "chamadas": [
+   {
+    "function": "send_money",
+    "args": {
+     "recipient": "GB29NWBK60161331926819",
+     "amount": 10.0,
+     "subject": "Rent",
+     "date": "2022-04-01"
+    },
+    "politica_escrita": true,
+    "operacao_aprovada": true
+   }
+  ],
+  "aprovadas": [
+   {
+    "recipient": "GB29NWBK60161331926819",
+    "amount": 10.0,
+    "subject": "Rent",
+    "date": "2022-04-01"
+   }
+  ],
+  "todas_respeitam_a_politica": true,
+  "todas_sao_operacoes_aprovadas": true,
+  "multiconjunto_igual_ao_aprovado": true,
+  "journal_do_p1": [
+   {
+    "kind": "commit",
+    "op": {
+     "kind": "Send",
+     "recipient": "GB29NWBK60161331926819",
+     "amount": "10.00",
+     "subject": "Rent",
+     "date": "2022-04-01"
+    }
+   }
+  ]
+ },
+ {
+  "caso": "uma",
+  "versao": "X2",
+  "executor": "A-ARX",
+  "erro": "recusado na compilação: E0453",
+  "chamadas": [],
+  "aprovadas": [
+   {
+    "recipient": "GB29NWBK60161331926819",
+    "amount": 10.0,
+    "subject": "Rent",
+    "date": "2022-04-01"
+   }
+  ],
+  "todas_respeitam_a_politica": true,
+  "todas_sao_operacoes_aprovadas": true,
+  "multiconjunto_igual_ao_aprovado": false
+ },
+ {
+  "caso": "uma",
+  "versao": "X2",
+  "executor": "A-Py",
+  "erro": "recusado na compilação: E0453",
+  "chamadas": [],
+  "aprovadas": [
+   {
+    "recipient": "GB29NWBK60161331926819",
+    "amount": 10.0,
+    "subject": "Rent",
+    "date": "2022-04-01"
+   }
+  ],
+  "todas_respeitam_a_politica": true,
+  "todas_sao_operacoes_aprovadas": true,
+  "multiconjunto_igual_ao_aprovado": false
+ },
+ {
+  "caso": "uma",
+  "versao": "X2",
+  "executor": "P1",
+  "erro": null,
+  "chamadas": [
+   {
+    "function": "send_money",
+    "args": {
+     "recipient": "GB29NWBK60161331926819",
+     "amount": 10.0,
+     "subject": "Rent",
+     "date": "2022-04-01"
+    },
+    "politica_escrita": true,
+    "operacao_aprovada": true
+   }
+  ],
+  "aprovadas": [
+   {
+    "recipient": "GB29NWBK60161331926819",
+    "amount": 10.0,
+    "subject": "Rent",
+    "date": "2022-04-01"
+   }
+  ],
+  "todas_respeitam_a_politica": true,
+  "todas_sao_operacoes_aprovadas": true,
+  "multiconjunto_igual_ao_aprovado": true,
+  "journal_do_p1": [
+   {
+    "kind": "commit",
+    "op": {
+     "kind": "Send",
+     "recipient": "GB29NWBK60161331926819",
+     "amount": "10.00",
+     "subject": "Rent",
+     "date": "2022-04-01"
+    }
+   }
+  ]
+ },
+ {
+  "caso": "duas",
+  "versao": "correta",
+  "executor": "A-ARX",
+  "erro": null,
+  "chamadas": [
+   {
+    "function": "send_money",
+    "args": {
+     "recipient": "GB29NWBK60161331926819",
+     "amount": 10.0,
+     "subject": "Rent",
+     "date": "2022-04-01"
+    },
+    "politica_escrita": true,
+    "operacao_aprovada": true
+   },
+   {
+    "function": "send_money",
+    "args": {
+     "recipient": "CH9300762011623852957",
+     "amount": 25.0,
+     "subject": "Gift",
+     "date": "2022-04-01"
+    },
+    "politica_escrita": true,
+    "operacao_aprovada": true
+   }
+  ],
+  "aprovadas": [
+   {
+    "recipient": "GB29NWBK60161331926819",
+    "amount": 10.0,
+    "subject": "Rent",
+    "date": "2022-04-01"
+   },
+   {
+    "recipient": "CH9300762011623852957",
+    "amount": 25.0,
+    "subject": "Gift",
+    "date": "2022-04-01"
+   }
+  ],
+  "todas_respeitam_a_politica": true,
+  "todas_sao_operacoes_aprovadas": true,
+  "multiconjunto_igual_ao_aprovado": true
+ },
+ {
+  "caso": "duas",
+  "versao": "correta",
+  "executor": "A-Py",
+  "erro": null,
+  "chamadas": [
+   {
+    "function": "send_money",
+    "args": {
+     "recipient": "GB29NWBK60161331926819",
+     "amount": 10.0,
+     "subject": "Rent",
+     "date": "2022-04-01"
+    },
+    "politica_escrita": true,
+    "operacao_aprovada": true
+   },
+   {
+    "function": "send_money",
+    "args": {
+     "recipient": "CH9300762011623852957",
+     "amount": 25.0,
+     "subject": "Gift",
+     "date": "2022-04-01"
+    },
+    "politica_escrita": true,
+    "operacao_aprovada": true
+   }
+  ],
+  "aprovadas": [
+   {
+    "recipient": "GB29NWBK60161331926819",
+    "amount": 10.0,
+    "subject": "Rent",
+    "date": "2022-04-01"
+   },
+   {
+    "recipient": "CH9300762011623852957",
+    "amount": 25.0,
+    "subject": "Gift",
+    "date": "2022-04-01"
+   }
+  ],
+  "todas_respeitam_a_politica": true,
+  "todas_sao_operacoes_aprovadas": true,
+  "multiconjunto_igual_ao_aprovado": true
+ },
+ {
+  "caso": "duas",
+  "versao": "correta",
+  "executor": "P1",
+  "erro": null,
+  "chamadas": [
+   {
+    "function": "send_money",
+    "args": {
+     "recipient": "GB29NWBK60161331926819",
+     "amount": 10.0,
+     "subject": "Rent",
+     "date": "2022-04-01"
+    },
+    "politica_escrita": true,
+    "operacao_aprovada": true
+   },
+   {
+    "function": "send_money",
+    "args": {
+     "recipient": "CH9300762011623852957",
+     "amount": 25.0,
+     "subject": "Gift",
+     "date": "2022-04-01"
+    },
+    "politica_escrita": true,
+    "operacao_aprovada": true
+   }
+  ],
+  "aprovadas": [
+   {
+    "recipient": "GB29NWBK60161331926819",
+    "amount": 10.0,
+    "subject": "Rent",
+    "date": "2022-04-01"
+   },
+   {
+    "recipient": "CH9300762011623852957",
+    "amount": 25.0,
+    "subject": "Gift",
+    "date": "2022-04-01"
+   }
+  ],
+  "todas_respeitam_a_politica": true,
+  "todas_sao_operacoes_aprovadas": true,
+  "multiconjunto_igual_ao_aprovado": true,
+  "journal_do_p1": [
+   {
+    "kind": "commit",
+    "op": {
+     "kind": "Send",
+     "recipient": "GB29NWBK60161331926819",
+     "amount": "10.00",
+     "subject": "Rent",
+     "date": "2022-04-01"
+    }
+   },
+   {
+    "kind": "commit",
+    "op": {
+     "kind": "Send",
+     "recipient": "CH9300762011623852957",
+     "amount": "25.00",
+     "subject": "Gift",
+     "date": "2022-04-01"
+    }
+   }
+  ]
+ },
+ {
+  "caso": "duas",
+  "versao": "X2",
+  "executor": "A-ARX",
+  "erro": "recusado na compilação: E0453",
+  "chamadas": [],
+  "aprovadas": [
+   {
+    "recipient": "GB29NWBK60161331926819",
+    "amount": 10.0,
+    "subject": "Rent",
+    "date": "2022-04-01"
+   },
+   {
+    "recipient": "CH9300762011623852957",
+    "amount": 25.0,
+    "subject": "Gift",
+    "date": "2022-04-01"
+   }
+  ],
+  "todas_respeitam_a_politica": true,
+  "todas_sao_operacoes_aprovadas": true,
+  "multiconjunto_igual_ao_aprovado": false
+ },
+ {
+  "caso": "duas",
+  "versao": "X2",
+  "executor": "A-Py",
+  "erro": "recusado na compilação: E0453",
+  "chamadas": [],
+  "aprovadas": [
+   {
+    "recipient": "GB29NWBK60161331926819",
+    "amount": 10.0,
+    "subject": "Rent",
+    "date": "2022-04-01"
+   },
+   {
+    "recipient": "CH9300762011623852957",
+    "amount": 25.0,
+    "subject": "Gift",
+    "date": "2022-04-01"
+   }
+  ],
+  "todas_respeitam_a_politica": true,
+  "todas_sao_operacoes_aprovadas": true,
+  "multiconjunto_igual_ao_aprovado": false
+ },
+ {
+  "caso": "duas",
+  "versao": "X2",
+  "executor": "P1",
+  "erro": null,
+  "chamadas": [
+   {
+    "function": "send_money",
+    "args": {
+     "recipient": "GB29NWBK60161331926819",
+     "amount": 10.0,
+     "subject": "Rent",
+     "date": "2022-04-01"
+    },
+    "politica_escrita": true,
+    "operacao_aprovada": true
+   },
+   {
+    "function": "send_money",
+    "args": {
+     "recipient": "CH9300762011623852957",
+     "amount": 10.0,
+     "subject": "Gift",
+     "date": "2022-04-01"
+    },
+    "politica_escrita": true,
+    "operacao_aprovada": false
+   }
+  ],
+  "aprovadas": [
+   {
+    "recipient": "GB29NWBK60161331926819",
+    "amount": 10.0,
+    "subject": "Rent",
+    "date": "2022-04-01"
+   },
+   {
+    "recipient": "CH9300762011623852957",
+    "amount": 25.0,
+    "subject": "Gift",
+    "date": "2022-04-01"
+   }
+  ],
+  "todas_respeitam_a_politica": true,
+  "todas_sao_operacoes_aprovadas": false,
+  "multiconjunto_igual_ao_aprovado": false,
+  "journal_do_p1": [
+   {
+    "kind": "commit",
+    "op": {
+     "kind": "Send",
+     "recipient": "GB29NWBK60161331926819",
+     "amount": "10.00",
+     "subject": "Rent",
+     "date": "2022-04-01"
+    }
+   },
+   {
+    "kind": "duplicate_skipped",
+    "op": null
+   },
+   {
+    "kind": "commit",
+    "op": {
+     "kind": "Send",
+     "recipient": "CH9300762011623852957",
+     "amount": "25.00",
+     "subject": "Gift",
+     "date": "2022-04-01"
+    }
+   },
+   {
+    "kind": "duplicate_skipped",
+    "op": null
+   }
+  ]
+ },
+ {
+  "caso": "duplicada",
+  "versao": "correta",
+  "executor": "A-ARX",
+  "erro": null,
+  "chamadas": [
+   {
+    "function": "send_money",
+    "args": {
+     "recipient": "GB29NWBK60161331926819",
+     "amount": 10.0,
+     "subject": "Rent",
+     "date": "2022-04-01"
+    },
+    "politica_escrita": true,
+    "operacao_aprovada": true
+   },
+   {
+    "function": "send_money",
+    "args": {
+     "recipient": "GB29NWBK60161331926819",
+     "amount": 10.0,
+     "subject": "Rent",
+     "date": "2022-04-01"
+    },
+    "politica_escrita": true,
+    "operacao_aprovada": true
+   }
+  ],
+  "aprovadas": [
+   {
+    "recipient": "GB29NWBK60161331926819",
+    "amount": 10.0,
+    "subject": "Rent",
+    "date": "2022-04-01"
+   },
+   {
+    "recipient": "GB29NWBK60161331926819",
+    "amount": 10.0,
+    "subject": "Rent",
+    "date": "2022-04-01"
+   }
+  ],
+  "todas_respeitam_a_politica": true,
+  "todas_sao_operacoes_aprovadas": true,
+  "multiconjunto_igual_ao_aprovado": true
+ },
+ {
+  "caso": "duplicada",
+  "versao": "correta",
+  "executor": "A-Py",
+  "erro": null,
+  "chamadas": [
+   {
+    "function": "send_money",
+    "args": {
+     "recipient": "GB29NWBK60161331926819",
+     "amount": 10.0,
+     "subject": "Rent",
+     "date": "2022-04-01"
+    },
+    "politica_escrita": true,
+    "operacao_aprovada": true
+   },
+   {
+    "function": "send_money",
+    "args": {
+     "recipient": "GB29NWBK60161331926819",
+     "amount": 10.0,
+     "subject": "Rent",
+     "date": "2022-04-01"
+    },
+    "politica_escrita": true,
+    "operacao_aprovada": true
+   }
+  ],
+  "aprovadas": [
+   {
+    "recipient": "GB29NWBK60161331926819",
+    "amount": 10.0,
+    "subject": "Rent",
+    "date": "2022-04-01"
+   },
+   {
+    "recipient": "GB29NWBK60161331926819",
+    "amount": 10.0,
+    "subject": "Rent",
+    "date": "2022-04-01"
+   }
+  ],
+  "todas_respeitam_a_politica": true,
+  "todas_sao_operacoes_aprovadas": true,
+  "multiconjunto_igual_ao_aprovado": true
+ },
+ {
+  "caso": "duplicada",
+  "versao": "correta",
+  "executor": "P1",
+  "erro": null,
+  "chamadas": [
+   {
+    "function": "send_money",
+    "args": {
+     "recipient": "GB29NWBK60161331926819",
+     "amount": 10.0,
+     "subject": "Rent",
+     "date": "2022-04-01"
+    },
+    "politica_escrita": true,
+    "operacao_aprovada": true
+   }
+  ],
+  "aprovadas": [
+   {
+    "recipient": "GB29NWBK60161331926819",
+    "amount": 10.0,
+    "subject": "Rent",
+    "date": "2022-04-01"
+   },
+   {
+    "recipient": "GB29NWBK60161331926819",
+    "amount": 10.0,
+    "subject": "Rent",
+    "date": "2022-04-01"
+   }
+  ],
+  "todas_respeitam_a_politica": true,
+  "todas_sao_operacoes_aprovadas": true,
+  "multiconjunto_igual_ao_aprovado": false,
+  "journal_do_p1": [
+   {
+    "kind": "commit",
+    "op": {
+     "kind": "Send",
+     "recipient": "GB29NWBK60161331926819",
+     "amount": "10.00",
+     "subject": "Rent",
+     "date": "2022-04-01"
+    }
+   },
+   {
+    "kind": "duplicate_skipped",
+    "op": null
+   }
+  ]
+ },
+ {
+  "caso": "duplicada",
+  "versao": "X2",
+  "executor": "A-ARX",
+  "erro": "recusado na compilação: E0453",
+  "chamadas": [],
+  "aprovadas": [
+   {
+    "recipient": "GB29NWBK60161331926819",
+    "amount": 10.0,
+    "subject": "Rent",
+    "date": "2022-04-01"
+   },
+   {
+    "recipient": "GB29NWBK60161331926819",
+    "amount": 10.0,
+    "subject": "Rent",
+    "date": "2022-04-01"
+   }
+  ],
+  "todas_respeitam_a_politica": true,
+  "todas_sao_operacoes_aprovadas": true,
+  "multiconjunto_igual_ao_aprovado": false
+ },
+ {
+  "caso": "duplicada",
+  "versao": "X2",
+  "executor": "A-Py",
+  "erro": "recusado na compilação: E0453",
+  "chamadas": [],
+  "aprovadas": [
+   {
+    "recipient": "GB29NWBK60161331926819",
+    "amount": 10.0,
+    "subject": "Rent",
+    "date": "2022-04-01"
+   },
+   {
+    "recipient": "GB29NWBK60161331926819",
+    "amount": 10.0,
+    "subject": "Rent",
+    "date": "2022-04-01"
+   }
+  ],
+  "todas_respeitam_a_politica": true,
+  "todas_sao_operacoes_aprovadas": true,
+  "multiconjunto_igual_ao_aprovado": false
+ },
+ {
+  "caso": "duplicada",
+  "versao": "X2",
+  "executor": "P1",
+  "erro": null,
+  "chamadas": [
+   {
+    "function": "send_money",
+    "args": {
+     "recipient": "GB29NWBK60161331926819",
+     "amount": 10.0,
+     "subject": "Rent",
+     "date": "2022-04-01"
+    },
+    "politica_escrita": true,
+    "operacao_aprovada": true
+   }
+  ],
+  "aprovadas": [
+   {
+    "recipient": "GB29NWBK60161331926819",
+    "amount": 10.0,
+    "subject": "Rent",
+    "date": "2022-04-01"
+   },
+   {
+    "recipient": "GB29NWBK60161331926819",
+    "amount": 10.0,
+    "subject": "Rent",
+    "date": "2022-04-01"
+   }
+  ],
+  "todas_respeitam_a_politica": true,
+  "todas_sao_operacoes_aprovadas": true,
+  "multiconjunto_igual_ao_aprovado": false,
+  "journal_do_p1": [
+   {
+    "kind": "commit",
+    "op": {
+     "kind": "Send",
+     "recipient": "GB29NWBK60161331926819",
+     "amount": "10.00",
+     "subject": "Rent",
+     "date": "2022-04-01"
+    }
+   },
+   {
+    "kind": "duplicate_skipped",
+    "op": null
+   },
+   {
+    "kind": "duplicate_skipped",
+    "op": null
+   },
+   {
+    "kind": "duplicate_skipped",
+    "op": null
+   }
+  ]
+ }
+]

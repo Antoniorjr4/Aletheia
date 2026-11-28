@@ -1,0 +1,40 @@
+diff --git a/bench/agentdojo/hardened/banking_hardened.py b/bench/agentdojo/hardened/banking_hardened.py
+index 13b5829..35a91ab 100644
+--- a/bench/agentdojo/hardened/banking_hardened.py
++++ b/bench/agentdojo/hardened/banking_hardened.py
+@@ -237,6 +237,24 @@ def safe_write(w, inv: dict) -> bool:
+     return False  # variante nova sem regra: recusada (fechado por padrão)
+ 
+ 
++MAX_SENDS = 2
++
++
++def keep_in_order(writes: list, inv: dict) -> list:
++    """As operações aceitas, julgadas na ordem proposta. Regra com estado: no máximo `MAX_SENDS`
++    `Send` por plano; só um `Send` que já passou pelas regras por operação ocupa uma vaga."""
++    kept, sends = [], 0
++    for w in writes:
++        if not safe_write(w, inv):
++            continue
++        if isinstance(w, Send):
++            if sends >= MAX_SENDS:
++                continue
++            sends += 1
++        kept.append(w)
++    return kept
++
++
+ # --------------------------------------------------------------------------- 5. orçamento
+ 
+ 
+@@ -374,8 +392,8 @@ class HardenedBanker:
+ 
+     # -- porta da política (controles 2 e 4)
+     def _gate(self, out: Outcome, plan: Plan, inv: dict, mode: str):
+-        ok = [w for w in plan.writes if safe_write(w, inv)]
+-        bad = [w for w in plan.writes if not safe_write(w, inv)]
++        ok = keep_in_order(plan.writes, inv)
++        bad = [w for w in plan.writes if not any(w is k for k in ok)]
+         if mode == "strict" and bad:
+             out.journal.push("policy_reject", {"writes": [w.model_dump() for w in plan.writes]})
+             return None, []

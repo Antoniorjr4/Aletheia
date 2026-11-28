@@ -1,0 +1,41 @@
+{
+ "pack": "storeroom",
+ "lang": "ath",
+ "rep": 1,
+ "model": "openai/gpt-oss-120b",
+ "clean": true,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.ath",
+   "tok_in": 4260,
+   "tok_out": 5715,
+   "feedback": "athc check:\nerror[P0001]: esperado `}`, encontrado `:`\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/storeroom/ath/rep1/v1.ath:80:29\n   |\n80 |               Reorder { part: p } => if p == part { 1 } else { 0 },\n   |                             ^ aqui\n\nrejeitado: 1 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 2,
+   "file": "v2.ath",
+   "tok_in": 5758,
+   "tok_out": 2977,
+   "feedback": "athc check:\nerror[E0001]: variável desconhecida `in`\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/storeroom/ath/rep1/v2.ath:73:24\n   |\n73 |       { let cur = part in\n   |                        ^^ não encontrada neste escopo\n\nerror[E0011]: braços com tipos diferentes\n   --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/storeroom/ath/rep1/v2.ath:135:21\n    |\n135 |             Skip => {}\n    |                     ^^ `Text` vs `Unit`\n\nrejeitado: 2 diagnóstico(s) no estrato E0 estrutura; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 3,
+   "file": "v3.ath",
+   "tok_in": 7326,
+   "tok_out": 1555,
+   "feedback": "athc check:\nerror[E0011]: braços com tipos diferentes\n   --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/storeroom/ath/rep1/v3.ath:134:21\n    |\n134 |             Skip => {}\n    |                     ^^ `Text` vs `Unit`\n\nrejeitado: 1 diagnóstico(s) no estrato E0 estrutura; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 4,
+   "file": "v4.ath",
+   "tok_in": 8815,
+   "tok_out": 1911,
+   "feedback": ""
+  }
+ ],
+ "tok_in": 26159,
+ "tok_out": 12158,
+ "seconds": 29.2,
+ "usd": 0.011219
+}

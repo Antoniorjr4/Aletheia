@@ -1,0 +1,34 @@
+{
+ "pack": "shipping",
+ "lang": "ath",
+ "rep": 1,
+ "model": "openai/gpt-oss-120b",
+ "clean": true,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.ath",
+   "tok_in": 4347,
+   "tok_out": 6551,
+   "feedback": "athc check:\nerror[P0001]: esperado `}`, encontrado `:`\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/shipping/ath/rep1/v1.ath:69:23\n   |\n69 |         Create { order: o2 } => if o2 == order { 1 } else { 0 },\n   |                       ^ aqui\n\nrejeitado: 1 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 2,
+   "file": "v2.ath",
+   "tok_in": 6186,
+   "tok_out": 2908,
+   "feedback": "athc check:\nerror[P0001]: esperado `}`, encontrado `:`\n  --> /home/runner/work/Aletheia/Aletheia/bench/m11/runs/authoring/shipping/ath/rep1/v2.ath:69:23\n   |\n69 |         Create { order: o2 } => if o2 == order { 1 } else { 0 },\n   |                       ^ aqui\n\nrejeitado: 1 diagnóstico(s) no estrato sintaxe; os estratos seguintes não foram avaliados\n"
+  },
+  {
+   "cycle": 3,
+   "file": "v3.ath",
+   "tok_in": 8024,
+   "tok_out": 2271,
+   "feedback": ""
+  }
+ ],
+ "tok_in": 18557,
+ "tok_out": 11730,
+ "seconds": 30.9,
+ "usd": 0.009822
+}

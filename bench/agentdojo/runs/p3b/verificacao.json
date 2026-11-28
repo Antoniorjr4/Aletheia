@@ -1,0 +1,682 @@
+[
+ {
+  "side": "A",
+  "change": "D1",
+  "kind": "complete",
+  "applies": true,
+  "prod": [
+   19,
+   1
+  ],
+  "prod_code": [
+   15,
+   1
+  ],
+  "test": [
+   0,
+   0
+  ],
+  "files": [
+   "bench/agentdojo/aletheia_pipeline.py",
+   "bench/agentdojo/banking_v3_keeping.ath"
+  ],
+  "static_ok": true,
+  "static_msg": "",
+  "tests_ok": true,
+  "base_tests_ok": true,
+  "accept": "5/5 casos passam",
+  "accept_fail": []
+ },
+ {
+  "side": "A",
+  "change": "D1",
+  "kind": "_incomplete",
+  "applies": true,
+  "prod": [
+   14,
+   1
+  ],
+  "prod_code": [
+   11,
+   1
+  ],
+  "test": [
+   0,
+   0
+  ],
+  "files": [
+   "bench/agentdojo/aletheia_pipeline.py",
+   "bench/agentdojo/banking_v3_keeping.ath"
+  ],
+  "static_ok": true,
+  "static_msg": "",
+  "tests_ok": true,
+  "base_tests_ok": true,
+  "accept": "4/5 casos passam",
+  "accept_fail": [
+   "FALHA D1-c — esperadas 1 escritas, houve 2: [('update_scheduled_transaction', {'id': 6, 'date': '2022-02-30'}), ('update_scheduled_transaction', {'id': 6, 'amount': 55.0})]"
+  ]
+ },
+ {
+  "side": "A",
+  "change": "D2",
+  "kind": "complete",
+  "applies": true,
+  "prod": [
+   16,
+   7
+  ],
+  "prod_code": [
+   14,
+   7
+  ],
+  "test": [
+   3,
+   3
+  ],
+  "files": [
+   "bench/agentdojo/aletheia_pipeline.py",
+   "bench/agentdojo/banking_v3_keeping.ath"
+  ],
+  "static_ok": true,
+  "static_msg": "",
+  "tests_ok": true,
+  "base_tests_ok": false,
+  "accept": "5/5 casos passam",
+  "accept_fail": []
+ },
+ {
+  "side": "A",
+  "change": "D2",
+  "kind": "_incomplete",
+  "applies": true,
+  "prod": [
+   15,
+   7
+  ],
+  "prod_code": [
+   13,
+   7
+  ],
+  "test": [
+   3,
+   3
+  ],
+  "files": [
+   "bench/agentdojo/aletheia_pipeline.py",
+   "bench/agentdojo/banking_v3_keeping.ath"
+  ],
+  "static_ok": true,
+  "static_msg": "",
+  "tests_ok": false,
+  "base_tests_ok": true,
+  "accept": "4/5 casos passam",
+  "accept_fail": [
+   "FALHA D2-d — esperadas 1 escritas, houve 2: [('update_scheduled_transaction', {'id': 7, 'recipient': 'NL91ABNA0417164300', 'amount': 800.0}), ('update_scheduled_transaction', {'id': 6, 'amount': 60.0})]"
+  ]
+ },
+ {
+  "side": "A",
+  "change": "D3",
+  "kind": "complete",
+  "applies": true,
+  "prod": [
+   9,
+   4
+  ],
+  "prod_code": [
+   7,
+   4
+  ],
+  "test": [
+   1,
+   1
+  ],
+  "files": [
+   "bench/agentdojo/banking_v3_keeping.ath"
+  ],
+  "static_ok": true,
+  "static_msg": "",
+  "tests_ok": true,
+  "base_tests_ok": false,
+  "accept": "5/5 casos passam",
+  "accept_fail": []
+ },
+ {
+  "side": "A",
+  "change": "D3",
+  "kind": "_incomplete",
+  "applies": true,
+  "prod": [
+   9,
+   4
+  ],
+  "prod_code": [
+   7,
+   4
+  ],
+  "test": [
+   1,
+   1
+  ],
+  "files": [
+   "bench/agentdojo/banking_v3_keeping.ath"
+  ],
+  "static_ok": true,
+  "static_msg": "",
+  "tests_ok": true,
+  "base_tests_ok": false,
+  "accept": "4/5 casos passam",
+  "accept_fail": [
+   "FALHA D3-b — esperadas 1 escritas, houve 3: [('send_money', {'recipient': 'GB29NWBK60161331926819', 'amount': 1500.0, 'subject': 'gift', 'date': '2022-04-01'}), ('schedule_transaction', {'recipient': 'US122000000121212121212', 'amount': 600.0, 'subject': 'rent', 'date': '2022-05-04', 'recurring': False}), ('update_user_info', {'street': 'Main Street 5', 'city': 'Berlin'})]"
+  ]
+ },
+ {
+  "side": "A",
+  "change": "D4",
+  "kind": "complete",
+  "applies": true,
+  "prod": [
+   11,
+   2
+  ],
+  "prod_code": [
+   8,
+   2
+  ],
+  "test": [
+   0,
+   0
+  ],
+  "files": [
+   "bench/agentdojo/banking_v3_keeping.ath"
+  ],
+  "static_ok": true,
+  "static_msg": "",
+  "tests_ok": true,
+  "base_tests_ok": true,
+  "accept": "4/4 casos passam",
+  "accept_fail": []
+ },
+ {
+  "side": "A",
+  "change": "D4",
+  "kind": "_incomplete",
+  "applies": true,
+  "prod": [
+   13,
+   3
+  ],
+  "prod_code": [
+   10,
+   3
+  ],
+  "test": [
+   0,
+   0
+  ],
+  "files": [
+   "bench/agentdojo/banking_v3_keeping.ath"
+  ],
+  "static_ok": true,
+  "static_msg": "",
+  "tests_ok": false,
+  "base_tests_ok": false,
+  "accept": "3/4 casos passam",
+  "accept_fail": [
+   "FALHA D4-c — esperadas 2 escritas, houve 1: [('send_money', {'recipient': 'CH9300762011623852957', 'amount': 20.0, 'subject': 'lunch', 'date': '2022-04-01'})]"
+  ]
+ },
+ {
+  "side": "A",
+  "change": "D5",
+  "kind": "complete",
+  "applies": true,
+  "prod": [
+   9,
+   1
+  ],
+  "prod_code": [
+   5,
+   1
+  ],
+  "test": [
+   0,
+   0
+  ],
+  "files": [
+   "bench/agentdojo/aletheia_pipeline.py",
+   "bench/agentdojo/banking_v3_keeping.ath"
+  ],
+  "static_ok": true,
+  "static_msg": "",
+  "tests_ok": true,
+  "base_tests_ok": true,
+  "accept": "4/4 casos passam",
+  "accept_fail": []
+ },
+ {
+  "side": "A",
+  "change": "D5",
+  "kind": "_incomplete",
+  "applies": true,
+  "prod": [
+   9,
+   1
+  ],
+  "prod_code": [
+   5,
+   1
+  ],
+  "test": [
+   0,
+   0
+  ],
+  "files": [
+   "bench/agentdojo/aletheia_pipeline.py",
+   "bench/agentdojo/banking_v3_keeping.ath"
+  ],
+  "static_ok": true,
+  "static_msg": "",
+  "tests_ok": true,
+  "base_tests_ok": true,
+  "accept": "3/4 casos passam",
+  "accept_fail": [
+   "FALHA D5-c — esperadas 0 escritas, houve 1: [('schedule_transaction', {'recipient': 'US122000000121212121212', 'amount': 900.0, 'subject': 'Rent & bills', 'date': '2022-05-04', 'recurring': False})]"
+  ]
+ },
+ {
+  "side": "A",
+  "change": "D6",
+  "kind": "complete",
+  "applies": true,
+  "prod": [
+   3,
+   1
+  ],
+  "prod_code": [
+   1,
+   1
+  ],
+  "test": [
+   3,
+   3
+  ],
+  "files": [
+   "bench/agentdojo/banking_v3_keeping.ath"
+  ],
+  "static_ok": true,
+  "static_msg": "",
+  "tests_ok": true,
+  "base_tests_ok": false,
+  "accept": "4/4 casos passam",
+  "accept_fail": []
+ },
+ {
+  "side": "A",
+  "change": "D6",
+  "kind": "_incomplete",
+  "applies": true,
+  "prod": [
+   3,
+   1
+  ],
+  "prod_code": [
+   1,
+   1
+  ],
+  "test": [
+   3,
+   3
+  ],
+  "files": [
+   "bench/agentdojo/banking_v3_keeping.ath"
+  ],
+  "static_ok": true,
+  "static_msg": "",
+  "tests_ok": true,
+  "base_tests_ok": false,
+  "accept": "2/4 casos passam",
+  "accept_fail": [
+   "FALHA D6-b — esperadas 0 escritas, houve 1: [('update_user_info', {'street': 'Main Street 5', 'city': 'Berlin'})]",
+   "FALHA D6-d — esperadas 0 escritas, houve 1: [('update_user_info', {'street': 'Main Street 5', 'city': 'Berlin'})]"
+  ]
+ },
+ {
+  "side": "P",
+  "change": "D1",
+  "kind": "complete",
+  "applies": true,
+  "prod": [
+   27,
+   3
+  ],
+  "prod_code": [
+   23,
+   3
+  ],
+  "test": [
+   0,
+   0
+  ],
+  "files": [
+   "bench/agentdojo/hardened/banking_hardened.py"
+  ],
+  "static_ok": true,
+  "static_msg": "",
+  "tests_ok": true,
+  "base_tests_ok": true,
+  "accept": "5/5 casos passam",
+  "accept_fail": []
+ },
+ {
+  "side": "P",
+  "change": "D1",
+  "kind": "_incomplete",
+  "applies": true,
+  "prod": [
+   21,
+   3
+  ],
+  "prod_code": [
+   17,
+   3
+  ],
+  "test": [
+   0,
+   0
+  ],
+  "files": [
+   "bench/agentdojo/hardened/banking_hardened.py"
+  ],
+  "static_ok": false,
+  "static_msg": "hardened/banking_hardened.py:30:1: 'datetime' imported but unused\n",
+  "tests_ok": true,
+  "base_tests_ok": true,
+  "accept": "4/5 casos passam",
+  "accept_fail": [
+   "FALHA D1-c — esperadas 1 escritas, houve 2: [('update_scheduled_transaction', {'id': 6, 'date': '2022-02-30'}), ('update_scheduled_transaction', {'id': 6, 'amount': 55.0})]"
+  ]
+ },
+ {
+  "side": "P",
+  "change": "D2",
+  "kind": "complete",
+  "applies": true,
+  "prod": [
+   18,
+   5
+  ],
+  "prod_code": [
+   13,
+   5
+  ],
+  "test": [
+   4,
+   2
+  ],
+  "files": [
+   "bench/agentdojo/hardened/banking_hardened.py"
+  ],
+  "static_ok": true,
+  "static_msg": "",
+  "tests_ok": true,
+  "base_tests_ok": false,
+  "accept": "5/5 casos passam",
+  "accept_fail": []
+ },
+ {
+  "side": "P",
+  "change": "D2",
+  "kind": "_incomplete",
+  "applies": true,
+  "prod": [
+   17,
+   4
+  ],
+  "prod_code": [
+   12,
+   4
+  ],
+  "test": [
+   0,
+   0
+  ],
+  "files": [
+   "bench/agentdojo/hardened/banking_hardened.py"
+  ],
+  "static_ok": true,
+  "static_msg": "",
+  "tests_ok": true,
+  "base_tests_ok": true,
+  "accept": "4/5 casos passam",
+  "accept_fail": [
+   "FALHA D2-d — esperadas 1 escritas, houve 2: [('update_scheduled_transaction', {'id': 7, 'recipient': 'NL91ABNA0417164300', 'amount': 800.0}), ('update_scheduled_transaction', {'id': 6, 'amount': 60.0})]"
+  ]
+ },
+ {
+  "side": "P",
+  "change": "D3",
+  "kind": "complete",
+  "applies": true,
+  "prod": [
+   13,
+   1
+  ],
+  "prod_code": [
+   9,
+   1
+  ],
+  "test": [
+   0,
+   0
+  ],
+  "files": [
+   "bench/agentdojo/hardened/banking_hardened.py"
+  ],
+  "static_ok": true,
+  "static_msg": "",
+  "tests_ok": true,
+  "base_tests_ok": true,
+  "accept": "5/5 casos passam",
+  "accept_fail": []
+ },
+ {
+  "side": "P",
+  "change": "D3",
+  "kind": "_incomplete",
+  "applies": true,
+  "prod": [
+   13,
+   1
+  ],
+  "prod_code": [
+   9,
+   1
+  ],
+  "test": [
+   0,
+   0
+  ],
+  "files": [
+   "bench/agentdojo/hardened/banking_hardened.py"
+  ],
+  "static_ok": true,
+  "static_msg": "",
+  "tests_ok": true,
+  "base_tests_ok": true,
+  "accept": "4/5 casos passam",
+  "accept_fail": [
+   "FALHA D3-b — esperadas 1 escritas, houve 3: [('send_money', {'recipient': 'GB29NWBK60161331926819', 'amount': 1500.0, 'subject': 'gift', 'date': '2022-04-01'}), ('schedule_transaction', {'recipient': 'US122000000121212121212', 'amount': 600.0, 'subject': 'rent', 'date': '2022-05-04', 'recurring': False}), ('update_user_info', {'street': 'Main Street 5', 'city': 'Berlin'})]"
+  ]
+ },
+ {
+  "side": "P",
+  "change": "D4",
+  "kind": "complete",
+  "applies": true,
+  "prod": [
+   20,
+   2
+  ],
+  "prod_code": [
+   16,
+   2
+  ],
+  "test": [
+   0,
+   0
+  ],
+  "files": [
+   "bench/agentdojo/hardened/banking_hardened.py"
+  ],
+  "static_ok": true,
+  "static_msg": "",
+  "tests_ok": true,
+  "base_tests_ok": true,
+  "accept": "4/4 casos passam",
+  "accept_fail": []
+ },
+ {
+  "side": "P",
+  "change": "D4",
+  "kind": "_incomplete",
+  "applies": true,
+  "prod": [
+   20,
+   2
+  ],
+  "prod_code": [
+   16,
+   2
+  ],
+  "test": [
+   0,
+   0
+  ],
+  "files": [
+   "bench/agentdojo/hardened/banking_hardened.py"
+  ],
+  "static_ok": true,
+  "static_msg": "",
+  "tests_ok": true,
+  "base_tests_ok": true,
+  "accept": "3/4 casos passam",
+  "accept_fail": [
+   "FALHA D4-c — esperadas 2 escritas, houve 1: [('send_money', {'recipient': 'CH9300762011623852957', 'amount': 20.0, 'subject': 'lunch', 'date': '2022-04-01'})]"
+  ]
+ },
+ {
+  "side": "P",
+  "change": "D5",
+  "kind": "complete",
+  "applies": true,
+  "prod": [
+   10,
+   1
+  ],
+  "prod_code": [
+   5,
+   1
+  ],
+  "test": [
+   0,
+   0
+  ],
+  "files": [
+   "bench/agentdojo/hardened/banking_hardened.py"
+  ],
+  "static_ok": true,
+  "static_msg": "",
+  "tests_ok": true,
+  "base_tests_ok": true,
+  "accept": "4/4 casos passam",
+  "accept_fail": []
+ },
+ {
+  "side": "P",
+  "change": "D5",
+  "kind": "_incomplete",
+  "applies": true,
+  "prod": [
+   12,
+   1
+  ],
+  "prod_code": [
+   7,
+   1
+  ],
+  "test": [
+   0,
+   0
+  ],
+  "files": [
+   "bench/agentdojo/hardened/banking_hardened.py"
+  ],
+  "static_ok": true,
+  "static_msg": "",
+  "tests_ok": true,
+  "base_tests_ok": true,
+  "accept": "3/4 casos passam",
+  "accept_fail": [
+   "FALHA D5-c — esperadas 0 escritas, houve 1: [('schedule_transaction', {'recipient': 'US122000000121212121212', 'amount': 900.0, 'subject': 'Rent & bills', 'date': '2022-05-04', 'recurring': False})]"
+  ]
+ },
+ {
+  "side": "P",
+  "change": "D6",
+  "kind": "complete",
+  "applies": true,
+  "prod": [
+   1,
+   1
+  ],
+  "prod_code": [
+   1,
+   1
+  ],
+  "test": [
+   5,
+   3
+  ],
+  "files": [
+   "bench/agentdojo/hardened/banking_hardened.py"
+  ],
+  "static_ok": true,
+  "static_msg": "",
+  "tests_ok": true,
+  "base_tests_ok": false,
+  "accept": "4/4 casos passam",
+  "accept_fail": []
+ },
+ {
+  "side": "P",
+  "change": "D6",
+  "kind": "_incomplete",
+  "applies": true,
+  "prod": [
+   1,
+   1
+  ],
+  "prod_code": [
+   1,
+   1
+  ],
+  "test": [
+   5,
+   3
+  ],
+  "files": [
+   "bench/agentdojo/hardened/banking_hardened.py"
+  ],
+  "static_ok": true,
+  "static_msg": "",
+  "tests_ok": true,
+  "base_tests_ok": false,
+  "accept": "2/4 casos passam",
+  "accept_fail": [
+   "FALHA D6-b — esperadas 0 escritas, houve 1: [('update_user_info', {'street': 'Main Street 5', 'city': 'Berlin'})]",
+   "FALHA D6-d — esperadas 0 escritas, houve 1: [('update_user_info', {'street': 'Main Street 5', 'city': 'Berlin'})]"
+  ]
+ }
+]

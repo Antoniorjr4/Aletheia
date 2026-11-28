@@ -1,0 +1,48 @@
+{
+ "pack": "maintenance",
+ "lang": "py",
+ "rep": 1,
+ "model": "openai/gpt-oss-120b",
+ "clean": false,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.py",
+   "tok_in": 3860,
+   "tok_out": 6207,
+   "feedback": "static tools:\nbench/m11/runs/authoring/maintenance/py/rep1/v1.py:45:9: F841 Local variable `wo_list` is assigned to but never used\nbench/m11/runs/authoring/maintenance/py/rep1/v1.py:46:9: F841 Local variable `assets` is assigned to but never used\nbench/m11/runs/authoring/maintenance/py/rep1/v1.py:47:9: F841 Local variable `techs` is assigned to but never used\nbench/m11/runs/authoring/maintenance/py/rep1/v1.py:48:9: F841 Local variable `catalog` is assigned to but never used\nFound 4 errors.\nNo fixes available (4 hidden fixes can be enabled with the `--unsafe-fixes` option).\nmypy:\nbench/m11/runs/authoring/maintenance/py/rep1/v1.py:243: error: Argument 1 to \"get\" of \"dict\" has incompatible type \"Any | None\"; expected \"str\"  [arg-type]\nbench/m11/runs/authoring/maintenance/py/rep1/v1.py:248: error: Argument 1 to \"get\" of \"dict\" has incompatible type \"Any | None\"; expected \"str\"  [arg-type]\nbench/m11/runs/authoring/maintenance/py/rep1/v1.py:250: error: Argument 1 to \"date_ok\" has incompatible type \"Any | None\"; expected \"str\"  [arg-type]\nbench/m11/runs/authoring/maintenance/py/rep1/v1.py:272: error: Unsupported operand types for <= (\"int\" and \"None\")  [operator]\nbench/m11/runs/authoring/maintenance/py/rep1/v1.py:272: note: Right operand is of type \"Any | None\"\nbench/m11/runs/authoring/maintenance/py/rep1/v1.py:272: error: Unsupported operand types for >= (\"int\" and \"None\")  [operator]\nbench/m11/runs/authoring/maintenance/py/rep1/v1.py:272: note: Left operand is of type \"Any | None\"\nbench/m11/runs/authoring/maintenance/py/rep1/v1.py:275: error: Argument 1 to \"get\" of \"dict\" has incompatible type \"Any | None\"; expected \"str\"  [arg-type]\nbench/m11/runs/authoring/maintenance/py/rep1/v1.py:277: error: Argument 1 to \"get\" of \"dict\" has incompatible type \"Any | None\"; expected \"str\"  [arg-type]\nbench/m11/runs/authoring/maintenance/py/rep1/v1.py:283: error: Invalid index type \"Any | None\" for \"dict[str, int]\"; expected type \"str\"  [index]\nbench/m11/runs/authoring/maintenance/py/rep1/v1.py:306: error: Argument 1 to \"links_ok\" has incompatible type \"Any | None\"; expected \"str\"  [arg-type]\nbench/m11/runs/authoring/maintenance/py/rep1/v1.py:308: error: Item \"None\" of \"Any | None\" has no attribute \"lower\"  [union-attr]"
+  },
+  {
+   "cycle": 2,
+   "file": "v2.py",
+   "tok_in": 7688,
+   "tok_out": 4177,
+   "feedback": "static tools:\nmypy:\nbench/m11/runs/authoring/maintenance/py/rep1/v2.py:274: error: Unsupported operand types for <= (\"int\" and \"None\")  [operator]\nbench/m11/runs/authoring/maintenance/py/rep1/v2.py:274: note: Right operand is of type \"Any | None\"\nbench/m11/runs/authoring/maintenance/py/rep1/v2.py:274: error: Unsupported operand types for >= (\"int\" and \"None\")  [operator]\nbench/m11/runs/authoring/maintenance/py/rep1/v2.py:274: note: Left operand is of type \"Any | None\""
+  },
+  {
+   "cycle": 3,
+   "file": "v3.py",
+   "tok_in": 11083,
+   "tok_out": 4459,
+   "feedback": "static tools:\nmypy:\nbench/m11/runs/authoring/maintenance/py/rep1/v3.py:274: error: Unsupported operand types for <= (\"int\" and \"None\")  [operator]\nbench/m11/runs/authoring/maintenance/py/rep1/v3.py:274: note: Right operand is of type \"Any | None\"\nbench/m11/runs/authoring/maintenance/py/rep1/v3.py:274: error: Unsupported operand types for >= (\"int\" and \"None\")  [operator]\nbench/m11/runs/authoring/maintenance/py/rep1/v3.py:274: note: Left operand is of type \"Any | None\""
+  },
+  {
+   "cycle": 4,
+   "file": "v4.py",
+   "tok_in": 14505,
+   "tok_out": 3607,
+   "feedback": "static tools:\nmypy:\nbench/m11/runs/authoring/maintenance/py/rep1/v4.py:274: error: Unsupported operand types for <= (\"int\" and \"None\")  [operator]\nbench/m11/runs/authoring/maintenance/py/rep1/v4.py:274: note: Right operand is of type \"Any | None\"\nbench/m11/runs/authoring/maintenance/py/rep1/v4.py:274: error: Unsupported operand types for >= (\"int\" and \"None\")  [operator]\nbench/m11/runs/authoring/maintenance/py/rep1/v4.py:274: note: Left operand is of type \"Any | None\""
+  },
+  {
+   "cycle": 5,
+   "file": "v5.py",
+   "tok_in": 17909,
+   "tok_out": 3816,
+   "feedback": "static tools:\nmypy:\nbench/m11/runs/authoring/maintenance/py/rep1/v5.py:275: error: Unsupported operand types for > (\"int\" and \"None\")  [operator]\nbench/m11/runs/authoring/maintenance/py/rep1/v5.py:275: note: Left operand is of type \"Any | None\"\nbench/m11/runs/authoring/maintenance/py/rep1/v5.py:275: error: Unsupported operand types for < (\"int\" and \"None\")  [operator]"
+  }
+ ],
+ "tok_in": 55045,
+ "tok_out": 22266,
+ "seconds": 59.6,
+ "usd": 0.021616
+}

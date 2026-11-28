@@ -1,0 +1,48 @@
+{
+ "pack": "access_control",
+ "lang": "py",
+ "rep": 1,
+ "model": "openai/gpt-oss-120b",
+ "clean": false,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.py",
+   "tok_in": 3744,
+   "tok_out": 5457,
+   "feedback": "static tools:\nbench/m11/runs/authoring/access_control/py/rep1/v1.py:183:28: F821 Undefined name `terminated_users`\nFound 1 error.\nmypy:\nbench/m11/runs/authoring/access_control/py/rep1/v1.py:183: error: Name \"terminated_users\" is not defined  [name-defined]"
+  },
+  {
+   "cycle": 2,
+   "file": "v2.py",
+   "tok_in": 7336,
+   "tok_out": 3569,
+   "feedback": "dry run (stub model): AttributeError: 'str' object has no attribute 'get'\ndry run (adversarial model): AttributeError: 'str' object has no attribute 'get'"
+  },
+  {
+   "cycle": 3,
+   "file": "v3.py",
+   "tok_in": 10853,
+   "tok_out": 3592,
+   "feedback": "dry run (stub model): AttributeError: 'str' object has no attribute 'get'\ndry run (adversarial model): AttributeError: 'str' object has no attribute 'get'"
+  },
+  {
+   "cycle": 4,
+   "file": "v4.py",
+   "tok_in": 14311,
+   "tok_out": 4808,
+   "feedback": "static tools:\nmypy:\nbench/m11/runs/authoring/access_control/py/rep1/v4.py:280: error: Incompatible types in assignment (expression has type \"Any | None\", variable has type \"str\")  [assignment]"
+  },
+  {
+   "cycle": 5,
+   "file": "v5.py",
+   "tok_in": 17842,
+   "tok_out": 3812,
+   "feedback": "static tools:\nmypy:\nbench/m11/runs/authoring/access_control/py/rep1/v5.py:282: error: Incompatible types in assignment (expression has type \"Any | None\", variable has type \"str\")  [assignment]"
+  }
+ ],
+ "tok_in": 54086,
+ "tok_out": 21238,
+ "seconds": 56.1,
+ "usd": 0.020856
+}

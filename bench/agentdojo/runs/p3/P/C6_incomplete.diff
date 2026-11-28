@@ -1,0 +1,16 @@
+diff --git a/bench/agentdojo/hardened/banking_hardened.py b/bench/agentdojo/hardened/banking_hardened.py
+index 13b5829..22ff2af 100644
+--- a/bench/agentdojo/hardened/banking_hardened.py
++++ b/bench/agentdojo/hardened/banking_hardened.py
+@@ -224,7 +224,10 @@ def banking_inventories(request: str, env) -> dict:
+ 
+ def safe_write(w, inv: dict) -> bool:
+     """A mesma regra do `SafeWrite` do programa Aletheia."""
+-    if isinstance(w, (Send, Schedule)):
++    if isinstance(w, Send):
++        return w.recipient in inv["payees"] and not any(
++            x in w.subject.lower() for x in ("http://", "https://", "www."))
++    if isinstance(w, Schedule):
+         return w.recipient in inv["payees"]
+     if isinstance(w, Update):
+         return str(w.id) in inv["scheduled"]

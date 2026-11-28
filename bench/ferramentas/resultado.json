@@ -1,0 +1,419 @@
+[
+ {
+  "programa": "t0_direto.ath",
+  "compila": false,
+  "codigos": [
+   "E0412"
+  ]
+ },
+ {
+  "programa": "t1_untrusted_por_ferramenta.ath",
+  "compila": true,
+  "codigos": [],
+  "arx": {
+   "recebido": [
+    {
+     "tool": "echo",
+     "args": [
+      "alice"
+     ]
+    },
+    {
+     "tool": "pay",
+     "args": [
+      "alice",
+      "alice"
+     ]
+    }
+   ],
+   "aborto": null,
+   "rc": 0,
+   "saida": [
+    "◀ resultado: \"ok\""
+   ]
+  },
+  "python": {
+   "recebido": [
+    {
+     "tool": "echo",
+     "args": [
+      "alice"
+     ]
+    },
+    {
+     "tool": "pay",
+     "args": [
+      "alice",
+      "alice"
+     ]
+    }
+   ],
+   "aborto": null
+  },
+  "runtimes_concordam": true
+ },
+ {
+  "programa": "t1b_untrusted_decide_efeito.ath",
+  "compila": true,
+  "codigos": [],
+  "arx": {
+   "recebido": [
+    {
+     "tool": "echo",
+     "args": [
+      "sim"
+     ]
+    },
+    {
+     "tool": "pay",
+     "args": [
+      "alice",
+      "x"
+     ]
+    }
+   ],
+   "aborto": null,
+   "rc": 0,
+   "saida": [
+    "◀ resultado: \"ok\""
+   ]
+  },
+  "python": {
+   "recebido": [
+    {
+     "tool": "echo",
+     "args": [
+      "sim"
+     ]
+    },
+    {
+     "tool": "pay",
+     "args": [
+      "alice",
+      "x"
+     ]
+    }
+   ],
+   "aborto": null
+  },
+  "runtimes_concordam": true
+ },
+ {
+  "programa": "t1c_inline_na_condicao.ath",
+  "compila": true,
+  "codigos": [],
+  "arx": {
+   "recebido": [
+    {
+     "tool": "echo",
+     "args": [
+      "sim"
+     ]
+    },
+    {
+     "tool": "pay",
+     "args": [
+      "alice",
+      "x"
+     ]
+    }
+   ],
+   "aborto": null,
+   "rc": 0,
+   "saida": [
+    "◀ resultado: \"ok\""
+   ]
+  },
+  "python": {
+   "recebido": [
+    {
+     "tool": "echo",
+     "args": [
+      "sim"
+     ]
+    },
+    {
+     "tool": "pay",
+     "args": [
+      "alice",
+      "x"
+     ]
+    }
+   ],
+   "aborto": null
+  },
+  "runtimes_concordam": true
+ },
+ {
+  "programa": "t2_retorno_untrusted.ath",
+  "compila": false,
+  "codigos": [
+   "E0412"
+  ]
+ },
+ {
+  "programa": "t2b_retorno_trusted_explicito.ath",
+  "compila": true,
+  "codigos": [],
+  "arx": {
+   "recebido": [
+    {
+     "tool": "echot",
+     "args": [
+      "alice"
+     ]
+    },
+    {
+     "tool": "pay",
+     "args": [
+      "alice",
+      "alice"
+     ]
+    }
+   ],
+   "aborto": null,
+   "rc": 0,
+   "saida": [
+    "◀ resultado: \"ok\""
+   ]
+  },
+  "python": {
+   "recebido": [
+    {
+     "tool": "echot",
+     "args": [
+      "alice"
+     ]
+    },
+    {
+     "tool": "pay",
+     "args": [
+      "alice",
+      "alice"
+     ]
+    }
+   ],
+   "aborto": null
+  },
+  "runtimes_concordam": true
+ },
+ {
+  "programa": "t3_endossado_por_ferramenta.ath",
+  "compila": true,
+  "codigos": [],
+  "arx": {
+   "recebido": [
+    {
+     "tool": "echo",
+     "args": [
+      "a"
+     ]
+    },
+    {
+     "tool": "pay",
+     "args": [
+      "alice",
+      "a"
+     ]
+    },
+    {
+     "tool": "echo",
+     "args": [
+      "b"
+     ]
+    },
+    {
+     "tool": "pay",
+     "args": [
+      "alice",
+      "b"
+     ]
+    },
+    {
+     "tool": "echo",
+     "args": [
+      "a"
+     ]
+    },
+    {
+     "tool": "pay",
+     "args": [
+      "bob",
+      "a"
+     ]
+    },
+    {
+     "tool": "echo",
+     "args": [
+      "b"
+     ]
+    },
+    {
+     "tool": "pay",
+     "args": [
+      "bob",
+      "b"
+     ]
+    }
+   ],
+   "aborto": null,
+   "rc": 0,
+   "saida": [
+    "◀ resultado: \"ok\""
+   ]
+  },
+  "python": {
+   "recebido": [
+    {
+     "tool": "echo",
+     "args": [
+      "a"
+     ]
+    },
+    {
+     "tool": "pay",
+     "args": [
+      "alice",
+      "a"
+     ]
+    },
+    {
+     "tool": "echo",
+     "args": [
+      "b"
+     ]
+    },
+    {
+     "tool": "pay",
+     "args": [
+      "alice",
+      "b"
+     ]
+    },
+    {
+     "tool": "echo",
+     "args": [
+      "a"
+     ]
+    },
+    {
+     "tool": "pay",
+     "args": [
+      "bob",
+      "a"
+     ]
+    },
+    {
+     "tool": "echo",
+     "args": [
+      "b"
+     ]
+    },
+    {
+     "tool": "pay",
+     "args": [
+      "bob",
+      "b"
+     ]
+    }
+   ],
+   "aborto": null
+  },
+  "runtimes_concordam": true
+ },
+ {
+  "programa": "t4_recusado_pela_politica_por_ferramenta.ath",
+  "compila": true,
+  "codigos": [],
+  "arx": {
+   "recebido": [
+    {
+     "tool": "echo",
+     "args": [
+      "mallory"
+     ]
+    },
+    {
+     "tool": "pay2",
+     "args": [
+      "mallory"
+     ]
+    }
+   ],
+   "aborto": null,
+   "rc": 0,
+   "saida": [
+    "◀ resultado: \"ok\""
+   ]
+  },
+  "python": {
+   "recebido": [
+    {
+     "tool": "echo",
+     "args": [
+      "mallory"
+     ]
+    },
+    {
+     "tool": "pay2",
+     "args": [
+      "mallory"
+     ]
+    }
+   ],
+   "aborto": null
+  },
+  "runtimes_concordam": true
+ },
+ {
+  "programa": "t5_segredo_por_ferramenta.ath",
+  "compila": true,
+  "codigos": [],
+  "arx": {
+   "recebido": [
+    {
+     "tool": "echo",
+     "args": [
+      "s3gr3do"
+     ]
+    },
+    {
+     "tool": "pub",
+     "args": [
+      "s3gr3do"
+     ]
+    }
+   ],
+   "aborto": null,
+   "rc": 0,
+   "saida": [
+    "◀ resultado: \"ok\""
+   ]
+  },
+  "python": {
+   "recebido": [
+    {
+     "tool": "echo",
+     "args": [
+      "s3gr3do"
+     ]
+    },
+    {
+     "tool": "pub",
+     "args": [
+      "s3gr3do"
+     ]
+    }
+   ],
+   "aborto": null
+  },
+  "runtimes_concordam": true
+ },
+ {
+  "programa": "t5b_segredo_direto.ath",
+  "compila": false,
+  "codigos": [
+   "E0440"
+  ]
+ }
+]

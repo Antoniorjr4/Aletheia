@@ -89,10 +89,12 @@ fn intervalo_da_soma_e_provado_pelo_tipo() {
     assert!(codes(&bound_prog("x", "List[Int[-5..10], 1..3]", "Int[-14..30]")).contains(&"E0450".to_string()));
     // termos sem limite: sem intervalo provado
     assert!(codes(&bound_prog("x", "List[Int, 0..3]", "Int[0..30]")).contains(&"E0450".to_string()));
-    // Limite declarado, não estendido pela soma: o provador do E5 não deriva intervalos de `match`
-    // nem de literais; um corpo `match` dá `Int` sem intervalo, como em qualquer outra posição.
+    // Corpo `match`: desde a revisão de 26/11 o intervalo de `if`/`match` é o menor que contém os
+    // ramos (antes, `Int` sem intervalo). A expectativa mudou porque a capacidade mudou; a de baixo
+    // (teto 29) mostra que o intervalo não é frouxo.
     let body = "match x { Pay { cents } => cents, Nop => 0 }";
-    assert!(codes(&bound_prog(body, "List[Op, 0..3]", "Int[0..30]")).contains(&"E0450".to_string()));
+    assert!(codes(&bound_prog(body, "List[Op, 0..3]", "Int[0..30]")).is_empty());
+    assert!(codes(&bound_prog(body, "List[Op, 0..3]", "Int[0..29]")).contains(&"E0450".to_string()));
     // Teto que transborda 64 bits: sem intervalo provado, nunca um intervalo errado.
     let c = codes(&bound_prog("x", "List[Int[0..9223372036854775807], 0..3]", "Int[0..9223372036854775807]"));
     assert!(c.contains(&"E0450".to_string()), "{c:?}");

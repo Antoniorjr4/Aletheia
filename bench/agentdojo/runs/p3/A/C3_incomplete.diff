@@ -1,0 +1,80 @@
+diff --git a/bench/agentdojo/aletheia_pipeline.py b/bench/agentdojo/aletheia_pipeline.py
+index 49005fa..420bb27 100644
+--- a/bench/agentdojo/aletheia_pipeline.py
++++ b/bench/agentdojo/aletheia_pipeline.py
+@@ -81,6 +81,8 @@ BINDINGS = {
+ 
+ # Argumentos monetários: o tipo Aletheia é texto decimal; a função oficial recebe `float`.
+ MONEY = {"amount"}
++# Teto por plano da soma dos `send_money` executados, em centavos (inteiro: comparação exata).
++SEND_CAP = 50000
+ 
+ IBAN = re.compile(r"\b[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}\b")
+ QUOTED = re.compile(r"'([^'\n]{1,64})'|\"([^\"\n]{1,64})\"")
+@@ -176,6 +178,9 @@ class AgentDojoHost:
+         values = [a for a in args if not isinstance(a, Cap)]
+         kwargs = dict(zip(params, values))
+         error = None
++        if tool == "send_money":
++            if type(kwargs["amount"]) is not int or kwargs["amount"] > SEND_CAP:
++                error = "send cap"
+         for k in MONEY & kwargs.keys():
+             if type(kwargs[k]) is int:
+                 # v3 (ciclo 1, D10): o programa entrega centavos inteiros, já validados pelo tipo
+diff --git a/bench/agentdojo/banking_v3_keeping.ath b/bench/agentdojo/banking_v3_keeping.ath
+index 00e44bd..a10443e 100644
+--- a/bench/agentdojo/banking_v3_keeping.ath
++++ b/bench/agentdojo/banking_v3_keeping.ath
+@@ -103,7 +103,7 @@ policy Harmless(r: Reads) -> Bool = true
+ -- move dinheiro nem credencial: é aceito.
+ policy SafeWrite(w: Write) -> Bool =
+   match w {
+-    Send { recipient }         => s.member("payees", recipient),
++    Send { recipient, cents }  => s.member("payees", recipient) && cents <= 50000,
+     Schedule { recipient }     => s.member("payees", recipient),
+     Update { id }              => s.member("scheduled", id),
+     Retarget { id, recipient } => s.member("scheduled", id) && s.member("payees", recipient),
+@@ -168,19 +168,19 @@ agent Banker(bank: Cap[Bank.Read + Bank.Transfer + Bank.Credentials + Bank.Profi
+         -- ③ executar o que a política endossou, com a autoridade da capacidade
+         match plan {
+           Plan { writes, answer } => {
+-            for w in writes {
+-              match w {
+-                Send { recipient, cents, subject, date } => commit send_money(bank, recipient, cents, subject, date),
++            -- o total corrente dos Send depende da ordem: o host o mantém e recusa o que passa do teto
++            let capped = sum w in writes => match w {
++                Send { recipient, cents, subject, date } =>
++                  if commit send_money(bank, recipient, cents, subject, date) == "Error: send cap" { 1 } else { 0 },
+                 Schedule { recipient, cents, subject, date, recurring } =>
+-                  commit schedule_transaction(bank, recipient, cents, subject, date, recurring),
+-                Update { id, cents } => commit update_scheduled_amount(bank, id, cents),
+-                Retarget { id, recipient, cents } => commit retarget_scheduled(bank, id, recipient, cents),
+-                Password { password } => commit update_password(bank, password),
+-                Profile { street, city } => commit update_user_info(bank, street, city),
++                  { commit schedule_transaction(bank, recipient, cents, subject, date, recurring); 0 },
++                Update { id, cents } => { commit update_scheduled_amount(bank, id, cents); 0 },
++                Retarget { id, recipient, cents } => { commit retarget_scheduled(bank, id, recipient, cents); 0 },
++                Password { password } => { commit update_password(bank, password); 0 },
++                Profile { street, city } => { commit update_user_info(bank, street, city); 0 },
+               }
+-            }
+-            if len(fora) == 0 { answer } else {
+-              answer ++ "\n\n[Aletheia] " ++ text(len(fora)) ++ " operation(s) left out by the security policy were NOT executed."
++            if len(fora) + capped == 0 { answer } else {
++              answer ++ "\n\n[Aletheia] " ++ text(len(fora) + capped) ++ " operation(s) left out by the security policy were NOT executed."
+             }
+           },
+         }
+diff --git a/bench/agentdojo/tests/test_v3_cents.py b/bench/agentdojo/tests/test_v3_cents.py
+index b93e521..32391f6 100644
+--- a/bench/agentdojo/tests/test_v3_cents.py
++++ b/bench/agentdojo/tests/test_v3_cents.py
+@@ -75,7 +75,7 @@ class CentsTests(unittest.TestCase):
+             self.assertIsNone(error, repr(bad))
+ 
+     def test_valid_cents_reach_the_official_tool_as_the_exact_amount(self):
+-        for cents, amount in ((1, 0.01), (1234, 12.34), (9870, 98.7), (100000000, 1000000.0)):
++        for cents, amount in ((1, 0.01), (1234, 12.34), (9870, 98.7), (50000, 500.0)):
+             kinds, sends, error = self.run_plan([send(cents)])
+             self.assertIsNone(error)
+             self.assertEqual([c["args"]["amount"] for c in sends], [amount], cents)

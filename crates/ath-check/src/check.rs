@@ -58,19 +58,69 @@ fn snapshot_method(e: &Expr) -> Option<&str> {
     }
 }
 
+/// O menor intervalo que contém os dois (ramos de `if`/`match`); sem os dois, nenhum.
+fn int_hull(a: Option<Refn>, b: Option<Refn>) -> Option<Refn> {
+    match (a, b) {
+        (Some(Refn::Int { lo: l1, hi: h1 }), Some(Refn::Int { lo: l2, hi: h2 })) => {
+            Some(Refn::Int { lo: l1.zip(l2).map(|(x, y)| x.min(y)), hi: h1.zip(h2).map(|(x, y)| x.max(y)) })
+        }
+        _ => None,
+    }
+}
+
+/// Aritmética de intervalos fechados. `None` se um limite falta, se a conta pode sair de `i64`
+/// ou se o divisor pode ser zero: nesses casos nada é provado.
+fn int_arith(op: BinOp, a: Option<Refn>, b: Option<Refn>) -> Option<Refn> {
+    let (Some(Refn::Int { lo: Some(al), hi: Some(ah) }), Some(Refn::Int { lo: Some(bl), hi: Some(bh) })) = (a, b)
+    else {
+        return None;
+    };
+    let corners = |f: fn(i64, i64) -> Option<i64>| -> Option<(i64, i64)> {
+        let c = [f(al, bl)?, f(al, bh)?, f(ah, bl)?, f(ah, bh)?];
+        Some((*c.iter().min()?, *c.iter().max()?))
+    };
+    let (lo, hi) = match op {
+        BinOp::Add => (al.checked_add(bl)?, ah.checked_add(bh)?),
+        BinOp::Sub => (al.checked_sub(bh)?, ah.checked_sub(bl)?),
+        BinOp::Mul => corners(i64::checked_mul)?,
+        BinOp::Div => {
+            if bl <= 0 && bh >= 0 {
+                return None;
+            }
+            corners(i64::checked_div)?
+        }
+        _ => return None,
+    };
+    Some(Refn::Int { lo: Some(lo), hi: Some(hi) })
+}
+
 /// A política decide pela fotografia confiável (`s.is_managed`, `s.scale_justified`…).
 fn reads_snapshot(e: &Expr) -> bool {
     expr_any(e, &|x| snapshot_method(x).is_some())
 }
 
 /// A política compara texto com um literal (`deploy == "api"`): um inventário escrito à mão.
-fn compares_text_literal(e: &Expr) -> bool {
-    expr_any(e, &|x| match &x.kind {
-        ExprKind::Binary(BinOp::Eq | BinOp::Ne, l, r) => {
-            matches!(l.kind, ExprKind::Str(_)) || matches!(r.kind, ExprKind::Str(_))
+/// Devolve a primeira dessas comparações, para o diagnóstico apontar a expressão responsável.
+fn text_literal_comparison(e: &Expr) -> Option<Span> {
+    let hit = std::cell::Cell::new(None);
+    expr_any(e, &|x| {
+        let found = match &x.kind {
+            ExprKind::Binary(BinOp::Eq | BinOp::Ne, l, r) => {
+                matches!(l.kind, ExprKind::Str(_)) || matches!(r.kind, ExprKind::Str(_))
+            }
+            // `contains("ana bia", nome)`: o mesmo inventário escrito à mão, com outra função.
+            // (Literal no segundo argumento é um padrão procurado no valor, não um inventário.)
+            ExprKind::Call { callee, args } if callee.name == "contains" => {
+                matches!(args.first().map(|a| &a.kind), Some(ExprKind::Str(_)))
+            }
+            _ => false,
+        };
+        if found {
+            hit.set(Some(x.span));
         }
-        _ => false,
-    })
+        found
+    });
+    hit.get()
 }
 
 /// Os inventários confiáveis em que a política decide: `s.is_managed`/`s.scale_justified`
@@ -175,7 +225,8 @@ pub const MODEL_PROPS: [&str; 6] = ["price_in", "price_out", "ctx", "max_out", "
 pub const MODEL_OPTIONAL: [&str; 2] = ["reasoning", "overhead"];
 /// Identidade versionada do contrato Δ.
 pub const MODEL_META: [&str; 3] = ["id", "provider", "version"];
-const BUILTINS: [&str; 5] = ["fit", "sample", "len", "text", "join"];
+const BUILTINS: [&str; 9] =
+    ["fit", "sample", "len", "text", "join", "contains", "lower", "ascii_letters", "ascii_digits"];
 
 pub struct Ctx<'m> {
     pub m: &'m Module,
@@ -202,6 +253,15 @@ pub struct Ctx<'m> {
     ret: Option<Ty>,
     ret_refn: Option<Refn>,
     in_policy: bool,
+    /// D15: como `pc`, mas só rebaixado por `if`/`match`/`for` sobre dado; o `else` de um
+    /// `refine` é o veredito de uma política auditada e não o rebaixa.
+    pc_data: Label,
+    /// Ciclo 1 (reproduções de 26/11): o piso do contexto depois de um `return` condicional.
+    /// O código que vem depois de `if dado { return … }` só roda se a condição foi falsa: depende
+    /// dela como se estivesse no ramo. Acumula até o fim do handler; `refine` não o baixa.
+    exit_data: Label,
+    exit_conf: Conf,
+    exit_span: Option<Span>,
     /// dentro de um contrato `requires` (onde `s.authorizes` é permitido)
     in_requires: bool,
     commit_ok: bool,
@@ -243,6 +303,10 @@ impl<'m> Ctx<'m> {
             ret: None,
             ret_refn: None,
             in_policy: false,
+            pc_data: Label::Trusted,
+            exit_data: Label::Trusted,
+            exit_conf: Conf::Public,
+            exit_span: None,
             in_requires: false,
             commit_ok: false,
             atomic_stack: Vec::new(),
@@ -357,6 +421,40 @@ impl<'m> Ctx<'m> {
         if let Some(s) = self.scopes.last_mut() {
             s.push((name.to_string(), t));
         }
+    }
+
+    /// Depois de um `if`/`match`/`for`, o contexto não volta acima do piso dos `return`
+    /// condicionais já vistos neste handler.
+    fn apply_exit_floor(&mut self) {
+        if self.exit_data < self.pc {
+            self.pc = self.exit_data;
+            self.pc_span = self.exit_span;
+        }
+        self.pc_data = self.pc_data.meet(self.exit_data);
+        if self.exit_conf > self.pc_conf {
+            self.pc_conf = self.exit_conf;
+            self.pc_conf_span = self.exit_span;
+        }
+    }
+
+    /// **Ciclo 1 (revisão independente, achado 2).** Numa política, toda conta tem de ter o
+    /// resultado limitado pelos tipos: a aritmética é de 64 bits com volta, e uma volta poderia
+    /// transformar uma recusa em aceitação. Sem intervalo provado, o programa é recusado aqui.
+    fn unbounded_arith(&mut self, span: Span, what: &str) {
+        if !self.in_policy {
+            return;
+        }
+        self.push(
+            Diag::new(
+                E5,
+                "E0451",
+                "aritmética sem limite provado numa política",
+                span,
+                format!("o resultado de {what} pode sair de 64 bits ou dividir por zero"),
+            )
+            .note("a política decide o que é executado: um estouro não pode virar aceitação")
+            .help("declare limites nos tipos dos operandos (`Int[a..b]`, `List[T, 0..n]`); divida só por valor que o tipo prova diferente de zero"),
+        );
     }
 
     /// A expressão da fotografia a que `e` equivale, se `e` for `s.inventory("k")`/`s.managed()`
@@ -1204,6 +1302,10 @@ impl<'m> Ctx<'m> {
         self.in_policy = true;
         self.scopes = vec![vec![]];
         self.pc = Label::Trusted;
+        self.pc_data = Label::Trusted;
+        self.exit_data = Label::Trusted;
+        self.exit_conf = Conf::Public;
+        self.exit_span = None;
         self.pc_span = None;
         self.used.clear();
         self.ret = None;
@@ -1292,12 +1394,28 @@ impl<'m> Ctx<'m> {
         self.in_policy = true;
         self.scopes = vec![vec![]];
         self.pc = Label::Trusted;
+        self.pc_data = Label::Trusted;
+        self.exit_data = Label::Trusted;
+        self.exit_conf = Conf::Public;
+        self.exit_span = None;
         self.pc_span = None;
         self.used.clear();
         self.ret = None;
+        let mut names: HashSet<&str> = HashSet::new();
         for prm in &p.params {
+            if !names.insert(prm.name.name.as_str()) {
+                self.push(Diag::new(
+                    E0,
+                    "E0002",
+                    format!("parâmetro `{}` repetido", prm.name.name),
+                    prm.name.span,
+                    "já declarado nesta política",
+                ));
+            }
             let (t, _) = self.resolve(&prm.ty);
-            self.bind(&prm.name.name, LTy::trusted(t));
+            // o refinamento declarado vale dentro da política: toda chamada o prova (E0450)
+            let refn = self.refn_of(&prm.ty);
+            self.bind(&prm.name.name, LTy::declared(t, Label::Trusted, refn, Vec::new()));
         }
         let (rt, _) = self.resolve(&p.ret);
         if !assignable(&rt, &Ty::Bool) {
@@ -1321,6 +1439,10 @@ impl<'m> Ctx<'m> {
     fn agent_scope(&mut self, a: &'m AgentDecl, report: bool) {
         self.scopes = vec![vec![]];
         self.pc = Label::Trusted;
+        self.pc_data = Label::Trusted;
+        self.exit_data = Label::Trusted;
+        self.exit_conf = Conf::Public;
+        self.exit_span = None;
         self.pc_span = None;
         self.used.clear();
         self.in_policy = false;
@@ -1577,7 +1699,11 @@ impl<'m> Ctx<'m> {
 
     fn expr(&mut self, e: &Expr) -> LTy {
         match &e.kind {
-            ExprKind::Int(_) => LTy::trusted(Ty::Int),
+            ExprKind::Int(n) => {
+                let mut t = LTy::trusted(Ty::Int);
+                t.refn = Some(Refn::Int { lo: Some(*n), hi: Some(*n) });
+                t
+            }
             ExprKind::Bool(_) => LTy::trusted(Ty::Bool),
             // (v1.0-RC8: o literal carrega o seu comprimento, para a composição de texto provar limites)
             ExprKind::Str(s) => LTy {
@@ -1626,7 +1752,19 @@ impl<'m> Ctx<'m> {
                 if !assignable(&t.ty, &want) {
                     self.mismatch(x.span, &want, &t.ty);
                 }
-                LTy { ty: want, tok: None, refn: None, ..t }
+                let refn = match (op, t.refn) {
+                    (UnOp::Neg, Some(Refn::Int { lo: Some(a), hi: Some(b) })) => {
+                        match (b.checked_neg(), a.checked_neg()) {
+                            (Some(lo), Some(hi)) => Some(Refn::Int { lo: Some(lo), hi: Some(hi) }),
+                            _ => None,
+                        }
+                    }
+                    _ => None,
+                };
+                if *op == UnOp::Neg && refn.is_none() {
+                    self.unbounded_arith(e.span, "`-`");
+                }
+                LTy { ty: want, tok: None, refn, ..t }
             }
             ExprKind::If { cond, then, els } => self.if_expr(cond, then, els.as_ref()),
             ExprKind::Match { scrut, arms } => self.match_expr(e, scrut, arms),
@@ -1635,6 +1773,12 @@ impl<'m> Ctx<'m> {
                 if self.in_policy {
                     self.impure(e.span, "`return`");
                 }
+                // Um `return` num ramo decidido por dado torna o resto do handler dependente dele.
+                if self.pc_data < self.exit_data || self.pc_conf > self.exit_conf {
+                    self.exit_span = self.pc_span.or(self.pc_conf_span).or(Some(e.span));
+                }
+                self.exit_data = self.exit_data.meet(self.pc_data);
+                self.exit_conf = self.exit_conf.join(self.pc_conf);
                 if !self.atomic_stack.is_empty() {
                     self.push(
                         Diag::new(E2, "E0602", "`return` dentro de `atomic`", e.span, "a saga precisa confirmar ou falhar")
@@ -1717,6 +1861,8 @@ impl<'m> Ctx<'m> {
                 let saved = (self.pc, self.pc_span, self.pc_conf, self.pc_conf_span);
                 // O número de iterações é decidido pela lista: fluxo implícito, como num `match`,
                 // para a integridade e para a confidencialidade.
+                let saved_data = self.pc_data;
+                self.pc_data = self.pc_data.meet(it.lab);
                 if it.lab < self.pc {
                     self.pc = it.lab;
                     self.pc_span = Some(iter.span);
@@ -1729,6 +1875,8 @@ impl<'m> Ctx<'m> {
                 self.block(body);
                 self.scopes.pop();
                 (self.pc, self.pc_span, self.pc_conf, self.pc_conf_span) = saved;
+                self.pc_data = saved_data;
+                self.apply_exit_floor();
                 LTy::trusted(Ty::Unit)
             }
             ExprKind::Quant { op, var, iter, body } => {
@@ -1774,6 +1922,9 @@ impl<'m> Ctx<'m> {
                         let lo = lo.and_then(|a| if a >= 0 { n_lo.checked_mul(a) } else { n_hi.checked_mul(a) });
                         let hi = hi.and_then(|b| if b >= 0 { n_hi.checked_mul(b) } else { n_lo.checked_mul(b) });
                         out.refn = Some(Refn::Int { lo, hi });
+                    }
+                    if !matches!(out.refn, Some(Refn::Int { lo: Some(_), hi: Some(_) })) {
+                        self.unbounded_arith(e.span, "`sum`");
                     }
                 }
                 out
@@ -2358,6 +2509,68 @@ impl<'m> Ctx<'m> {
                 }
                 return out;
             }
+            // **Ciclo 1 (P3): propriedades de texto.** Funções puras e totais sobre `Text`, para a
+            // política decidir sobre conteúdo sem passar a regra ao host. O resultado herda os
+            // rótulos dos argumentos: inspecionar um texto não o endossa nem o torna público.
+            //   contains(t, p)    Bool  `p` ocorre em `t` (pontos de código, exato; "" ocorre sempre)
+            //   lower(t)          Text  só A–Z viram a–z; todo o resto fica como está
+            //   ascii_letters(t)  Int   quantos caracteres em A–Z ou a–z
+            //   ascii_digits(t)   Int   quantos caracteres em 0–9
+            "contains" => {
+                if args.len() != 2 {
+                    self.push(Diag::new(
+                        E0,
+                        "E0007",
+                        "`contains(texto, trecho)` recebe 2 argumentos",
+                        e.span,
+                        "aridade",
+                    ));
+                    return LTy::never();
+                }
+                let t = self.expr(&args[0]);
+                let p = self.expr(&args[1]);
+                for (a, x) in [(&args[0], &t), (&args[1], &p)] {
+                    if !assignable(&x.ty, &Ty::Text) {
+                        self.mismatch(a.span, &Ty::Text, &x.ty);
+                    }
+                }
+                let mut out = LTy::trusted(Ty::Bool);
+                out.meet_from(&t);
+                out.meet_from(&p);
+                out.join_conf_from(&t);
+                out.join_conf_from(&p);
+                return out;
+            }
+            "lower" | "ascii_letters" | "ascii_digits" => {
+                let name = callee.name.as_str();
+                if args.len() != 1 {
+                    self.push(Diag::new(E0, "E0007", format!("`{name}(texto)` recebe 1 argumento"), e.span, "aridade"));
+                    return LTy::never();
+                }
+                let t = self.expr(&args[0]);
+                if !assignable(&t.ty, &Ty::Text) {
+                    self.mismatch(args[0].span, &Ty::Text, &t.ty);
+                    return LTy::never();
+                }
+                if name == "lower" {
+                    // mesmo número de caracteres e de tokens: os limites do argumento valem
+                    return LTy { ty: Ty::Text, lab: t.lab, conf: t.conf, tok: t.tok, origin: t.origin, refn: t.refn };
+                }
+                return LTy {
+                    ty: Ty::Int,
+                    lab: t.lab,
+                    conf: t.conf,
+                    tok: None,
+                    origin: t.origin.clone(),
+                    refn: Some(Refn::Int {
+                        lo: Some(0),
+                        hi: match t.refn {
+                            Some(Refn::Text { max }) => Some(max as i64),
+                            _ => None,
+                        },
+                    }),
+                };
+            }
             "len" => {
                 if args.len() != 1 {
                     self.push(Diag::new(E0, "E0007", "`len(lista ou texto)` recebe 1 argumento", e.span, "aridade"));
@@ -2455,6 +2668,8 @@ impl<'m> Ctx<'m> {
                     self.expect_param(a, &at, &prm.ty, &format!("{}({})", callee.name, prm.name.name));
                 }
                 out.meet_from(&at);
+                // Revisão, achado 4: o veredito sobre um segredo é segredo, como na forma inline.
+                out.join_conf_from(&at);
             }
             return out;
         }
@@ -2557,6 +2772,10 @@ impl<'m> Ctx<'m> {
             }
             return LTy::never();
         }
+        // **D15.** Autoridade para o efeito acontecer é separada do conteúdo que ele aceita: um
+        // efeito irrevogável só ocorre em contexto confiável ou endossado, qualquer que seja o
+        // rótulo dos parâmetros (inclusive `^ Untrusted`, que só libera o conteúdo).
+        let occurrence_denied = tool.class == EffClass::Irrevocable && self.pc_data < Label::Endorsed;
         let mut taint = LTy::trusted(Ty::Unit);
         for (p, a) in tool.params.iter().zip(args) {
             let at = self.expr(a);
@@ -2589,7 +2808,8 @@ impl<'m> Ctx<'m> {
             if let Some(req) = req {
                 self.facts.integrity_checks += 1;
                 let eff = at.lab.meet(self.pc);
-                if eff < req {
+                // a falha só de contexto já sai, uma vez, pelo diagnóstico de ocorrência abaixo
+                if eff < req && !(at.lab >= req && occurrence_denied) {
                     let implicit = at.lab >= req;
                     let mut d = Diag::new(
                         E3,
@@ -2655,6 +2875,29 @@ impl<'m> Ctx<'m> {
                 );
                 self.push(d);
             }
+        }
+        // **D15 (Ciclo 1).** Um efeito irrevogável não pode ser decidido por dado não confiável.
+        // Antes, o `pc` só era conferido junto com um parâmetro rotulado `^ Endorsed`, e
+        // `if web == "x" { commit wipe(c) }` compilava.
+        if occurrence_denied {
+            let mut d = Diag::new(
+                E3,
+                "E0412",
+                "fluxo de integridade violado",
+                callee.span,
+                format!("efeito irrevogável decidido por dado {}", self.pc_data.name()),
+            )
+            .note(format!(
+                "`{}` é irrevocable e a chamada ocorre num ramo decidido por dado {}",
+                callee.name,
+                self.pc_data.name()
+            ))
+            .note("o rótulo de um parâmetro diz que conteúdo a ferramenta aceita; decidir se o efeito acontece exige contexto confiável ou endossado")
+            .help("decida o ramo com dado confiável ou endossado (`refine … by <policy>`)");
+            if let Some(ps) = self.pc_span {
+                d = d.secondary(ps, format!("ramo decidido por dado {}", self.pc_data.name()));
+            }
+            self.push(d);
         }
         for eff in &tool.effects {
             self.use_effect(&eff.name, e.span);
@@ -2774,6 +3017,12 @@ impl<'m> Ctx<'m> {
         out.meet_from(&rt);
         out.join_conf_from(&lt);
         out.join_conf_from(&rt);
+        if matches!(op, BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div) {
+            out.refn = int_arith(op, lt.refn, rt.refn);
+            if out.refn.is_none() {
+                self.unbounded_arith(e.span, &format!("`{}`", op.symbol()));
+            }
+        }
         if op == BinOp::Concat {
             out.tok = match (lt.tok, rt.tok) {
                 (Some(a), Some(b)) => Some(a + b),
@@ -2796,6 +3045,8 @@ impl<'m> Ctx<'m> {
             self.mismatch(cond.span, &Ty::Bool, &c.ty);
         }
         let saved = (self.pc, self.pc_span, self.pc_conf, self.pc_conf_span);
+        let saved_data = self.pc_data;
+        self.pc_data = self.pc_data.meet(c.lab);
         if c.lab < self.pc {
             self.pc = c.lab;
             self.pc_span = Some(cond.span);
@@ -2813,6 +3064,10 @@ impl<'m> Ctx<'m> {
                         let mut o = LTy::trusted(ty);
                         o.meet_from(&t);
                         o.meet_from(&f);
+                        // D16: o valor de um ramo secreto continua secreto fora do `if`
+                        o.join_conf_from(&t);
+                        o.join_conf_from(&f);
+                        o.refn = int_hull(t.refn, f.refn);
                         o
                     }
                     None => {
@@ -2830,6 +3085,8 @@ impl<'m> Ctx<'m> {
             None => LTy::trusted(Ty::Unit),
         };
         (self.pc, self.pc_span, self.pc_conf, self.pc_conf_span) = saved;
+        self.pc_data = saved_data;
+        self.apply_exit_floor();
         out.meet_from(&c);
         out.join_conf_from(&c);
         out
@@ -2853,6 +3110,10 @@ impl<'m> Ctx<'m> {
         };
         let decl: &'m TypeDecl = self.types[&tname];
         let saved = (self.pc, self.pc_span, self.pc_conf, self.pc_conf_span);
+        let saved_data = self.pc_data;
+        if arms.len() > 1 {
+            self.pc_data = self.pc_data.meet(s.lab);
+        }
         if arms.len() > 1 && s.lab < self.pc {
             self.pc = s.lab;
             self.pc_span = Some(scrut.span);
@@ -2878,9 +3139,57 @@ impl<'m> Ctx<'m> {
                 self.push(Diag::new(E0, "E0013", "braço duplicado", arm.variant.span, "variante já tratada"));
             }
             self.scopes.push(Vec::new());
-            for b in &arm.binds {
-                match v.fields.iter().find(|f| f.name.name == b.name) {
+            let mut seen_fields: HashMap<&str, Span> = HashMap::new();
+            let mut seen_names: HashMap<&str, Span> = HashMap::new();
+            // `campo: _` não liga nada, mas o campo tem de existir e conta para a repetição
+            for f in &arm.ignored {
+                if let Some(first) = seen_fields.insert(&f.name, f.span) {
+                    self.push(
+                        Diag::new(E0, "E0014", format!("campo `{}` repetido no padrão", f.name), f.span, "segunda vez")
+                            .secondary(first, "primeira vez"),
+                    );
+                }
+                if !v.fields.iter().any(|fd| fd.name.name == f.name) {
+                    self.push(Diag::new(
+                        E0,
+                        "E0010",
+                        format!("`{}` não tem campo `{}`", v.name.name, f.name),
+                        f.span,
+                        "campo inexistente",
+                    ));
+                }
+            }
+            for (b, fname) in arm.binds.iter().zip(&arm.fields) {
+                // cada campo aparece uma vez; cada nome é ligado uma vez (`Use { a: k, b: k }` e
+                // `Use { item: k, k }` são recusados: o corpo não saberia qual valor `k` é)
+                if let Some(first) = seen_fields.insert(&fname.name, fname.span) {
+                    self.push(
+                        Diag::new(
+                            E0,
+                            "E0014",
+                            format!("campo `{}` repetido no padrão", fname.name),
+                            fname.span,
+                            "segunda vez",
+                        )
+                        .secondary(first, "primeira vez"),
+                    );
+                }
+                if let Some(first) = seen_names.insert(&b.name, b.span) {
+                    self.push(
+                        Diag::new(
+                            E0,
+                            "E0014",
+                            format!("o padrão liga `{}` duas vezes", b.name),
+                            b.span,
+                            "segunda ligação",
+                        )
+                        .secondary(first, "primeira ligação")
+                        .help("dê um nome diferente a cada campo: `Campo { a: x, b: y }`"),
+                    );
+                }
+                match v.fields.iter().find(|f| f.name.name == fname.name) {
                     Some(fd) => {
+                        // o nome local recebe tudo o que o campo tem: tipo, limites, rótulos e origem
                         let (ft, _) = self.resolve(&fd.ty);
                         let refn = self.refn_of(&fd.ty);
                         self.bind(&b.name, LTy::declared(ft, s.lab, refn, s.origin.clone()).with_conf(s.conf));
@@ -2889,8 +3198,8 @@ impl<'m> Ctx<'m> {
                         self.push(Diag::new(
                             E0,
                             "E0010",
-                            format!("`{}` não tem campo `{}`", v.name.name, b.name),
-                            b.span,
+                            format!("`{}` não tem campo `{}`", v.name.name, fname.name),
+                            fname.span,
                             "campo inexistente",
                         ));
                         self.bind(&b.name, LTy::never());
@@ -2906,6 +3215,10 @@ impl<'m> Ctx<'m> {
                         let mut o = LTy::trusted(ty);
                         o.meet_from(&prev);
                         o.meet_from(&bt);
+                        // D16: idem para os braços de um `match`
+                        o.join_conf_from(&prev);
+                        o.join_conf_from(&bt);
+                        o.refn = int_hull(prev.refn, bt.refn);
                         o
                     }
                     None => {
@@ -2922,6 +3235,8 @@ impl<'m> Ctx<'m> {
             });
         }
         (self.pc, self.pc_span, self.pc_conf, self.pc_conf_span) = saved;
+        self.pc_data = saved_data;
+        self.apply_exit_floor();
         let missing: Vec<String> =
             decl.variants.iter().filter(|v| !seen.contains(&v.name.name)).map(|v| v.name.name.clone()).collect();
         if !missing.is_empty() {
@@ -3274,7 +3589,7 @@ impl<'m> Ctx<'m> {
         let bodies = self.policy_closure(p);
         let read: BTreeSet<String> = bodies.iter().flat_map(|b| policy_inventories(b)).collect();
         let reads = bodies.iter().any(|b| reads_snapshot(b));
-        let literal = bodies.iter().any(|b| compares_text_literal(b));
+        let literal = bodies.iter().find_map(|b| text_literal_comparison(b));
         let missing: Vec<String> = read.difference(&given).cloned().collect();
         if reads && (!anchored || !missing.is_empty()) {
             let want = missing
@@ -3295,16 +3610,33 @@ impl<'m> Ctx<'m> {
                     .help(format!("passe o inventário ao modelo como `campo = {want}`: nunca copiado de literal, log ou resposta de modelo")),
                 );
         }
-        if anchored && literal {
+        if let (true, Some(at)) = (anchored, literal) {
+            // A orientação cita o que este programa entrega ao modelo, não uma suíte específica.
+            let shown: Vec<String> = given
+                .iter()
+                .map(|k| if k == "managed" { "`s.managed()`".to_string() } else { format!("`s.inventory(\"{k}\")`") })
+                .collect();
+            let help = match given.iter().find(|k| *k != "managed") {
+                Some(k) => format!(
+                    "decida pela lista confiável no lugar do literal: `s.member(\"{k}\", x)` ou \
+                     `s.binds(\"{k}\", chave, x)`; se essa lista já garante a regra, apague a comparação"
+                ),
+                None => "decida pela fotografia: `s.is_managed(x)` no lugar de `x == \"…\"`".to_string(),
+            };
             self.push(
                 Diag::new(
                     E3,
                     "E0422",
                     "descompasso entre o inventário confiável e a política",
-                    policy.span,
-                    format!("o prompt recebe `s.managed()`, mas `{}` compara com literais de texto", policy.name),
+                    at,
+                    "compara texto com um literal escrito no programa",
                 )
-                .help("decida pela mesma fotografia: `s.is_managed(x)` no lugar de `x == \"…\"`"),
+                .secondary(policy.span, format!("`{}` decide este rascunho", policy.name))
+                .note(format!(
+                    "o prompt recebe {}; a política tem de decidir pelas mesmas listas, não por valores escritos à mão",
+                    shown.join(", ")
+                ))
+                .help(help),
             );
         }
     }
@@ -3356,6 +3688,11 @@ impl<'m> Ctx<'m> {
                 for f in v.fields.iter().filter(|f| f.name.name == field) {
                     match f.ty.unlabeled() {
                         TypeExpr::List { elem: e, hi: h, .. } => {
+                            // a mesma política julga o campo em todas as variantes: o tipo do
+                            // elemento tem de ser o mesmo em todas (revisão, achado 7)
+                            if elem.as_ref().is_some_and(|prev| prev.sig() != e.sig()) {
+                                not_list = true;
+                            }
                             elem = Some((**e).clone());
                             hi = hi.max(*h);
                         }
@@ -3390,15 +3727,57 @@ impl<'m> Ctx<'m> {
         if let Some(ispan) = infer_span {
             self.anchor_check(p, &k.policy, ispan);
         }
-        if p.params.len() != 1 {
-            self.push(Diag::new(
-                E0,
-                "E0437",
-                "a política de `keeping` recebe exatamente um elemento",
-                k.policy.span,
-                "aridade",
-            ));
+        if p.params.len() != 1 && p.params.len() != 2 {
+            self.push(
+                Diag::new(
+                    E0,
+                    "E0437",
+                    "a política de `keeping` recebe o elemento, ou o elemento e a lista dos já aceitos",
+                    k.policy.span,
+                    "aridade",
+                )
+                .help("`policy Q(x: T) -> Bool` ou `policy Q(x: T, aceitos: List[T, 0..n]) -> Bool`"),
+            );
             return None;
+        }
+        // **Ciclo 1 (P3, C3): avaliação ordenada.** Com um segundo parâmetro, `Q` decide cada
+        // elemento, na ordem proposta, vendo a lista dos que ela mesma já aceitou neste plano.
+        // O estado é essa lista: limitada pelo tipo, sem efeito, refeita a cada `refine`.
+        if let Some(acc) = p.params.get(1) {
+            let (at, _) = self.resolve(&acc.ty);
+            let (et0, _) = self.resolve(&elem);
+            // o tipo do elemento da lista de aceitos é o do próprio elemento julgado (mesmos
+            // limites: o que foi aceito cabe nela) e não tem rótulo próprio
+            let same_elem = match acc.ty.unlabeled() {
+                TypeExpr::List { elem: ae, .. } => {
+                    ae.unlabeled().sig() == elem.unlabeled().sig()
+                        && ae.sig() == ae.unlabeled().sig()
+                        && self.conf_of(&acc.ty).is_none()
+                }
+                _ => false,
+            };
+            let ok = same_elem
+                && match &at {
+                    Ty::List(inner, _, lo, h) => *lo == 0 && *h >= hi && assignable(&et0, inner),
+                    _ => false,
+                };
+            if !ok {
+                self.push(
+                    Diag::new(
+                        E0,
+                        "E0437",
+                        "o segundo parâmetro da política de `keeping` é a lista dos elementos já aceitos",
+                        acc.name.span,
+                        format!("encontrado `{}`", at.show()),
+                    )
+                    .help(format!(
+                        "declare `{}: List[{}, 0..{hi}]`: começa vazia e pode chegar ao tamanho máximo de `{field}`",
+                        acc.name.name,
+                        et0.show()
+                    )),
+                );
+                return None;
+            }
         }
         let (et, _) = self.resolve(&elem);
         let (pt, _) = self.resolve(&p.params[0].ty);

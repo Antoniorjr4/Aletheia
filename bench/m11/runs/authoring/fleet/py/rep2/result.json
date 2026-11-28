@@ -1,0 +1,20 @@
+{
+ "pack": "fleet",
+ "lang": "py",
+ "rep": 2,
+ "model": "openai/gpt-oss-120b",
+ "clean": true,
+ "cycles": [
+  {
+   "cycle": 1,
+   "file": "v1.py",
+   "tok_in": 3887,
+   "tok_out": 6252,
+   "feedback": ""
+  }
+ ],
+ "tok_in": 3887,
+ "tok_out": 6252,
+ "seconds": 15.1,
+ "usd": 0.004334
+}

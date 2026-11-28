@@ -1,0 +1,16 @@
+module t
+type Op = | Pay { to: Text[..16], memo: Text[..16], n: Int[0..9] }
+type Ex = | Ex { memo: Text[..16] }
+type Plan = | Plan { ops: List[Op, 0..3], extra: List[Ex, 0..3], note: Text[..16] }
+model planner { price_in = 0.0  price_out = 0.0  ctx = 8192  max_out = 4000  reasoning = 0  ttft = 1.0  per_tok = 0.01 }
+tool pay(c: Cap[Bank.Pay], to: Text ^ Endorsed, memo: Text) -> Unit ! { Bank.Pay } reversible latency 1.0
+policy Q(o: Op) -> Bool = true
+policy P(p: Plan) -> Bool = true
+agent A(bank: Cap[Bank.Pay]) budget [tok <= 10000, usd <= 1.0, wall <= 100.0] {
+  on go(req: Text[..200] ^ Trusted, c: Bool ^ Trusted) -> Text ! { Infer, Bank.Pay } {
+    let p = refine (infer planner -> Plan { request = req }) by P keeping ops by Q as fora else { return "none" }
+    match p { Plan { ops, extra, note } => {
+      for a in ops { for b in ops { for x in [Pay { to: a.to, memo: b.memo, n: 0 }] { match x { Pay { to, memo } => pay(bank, to, memo) } } } }
+      "ok" } }
+  }
+}
